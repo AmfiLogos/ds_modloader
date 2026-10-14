@@ -71,6 +71,8 @@ pub fn prepare(paths: &Paths, install: Option<&Install>, state: &State, which: &
 pub struct Session {
     pub world: Option<String>,
     pub modset: String,
+    /// The lines behind `modset` (recipe: join::modset_hash), so the loader can log which mod differs.
+    pub modset_lines: Vec<String>,
     pub rule: crate::join::MatchRule,
     /// None when the rule cannot be hosted with these mods (vanilla rule + gameplay mods on).
     pub offer: Option<crate::join::HostOffer>,
@@ -90,7 +92,8 @@ pub fn session(ready: &Ready, which: &Which, platform: &str) -> Session {
     };
     Session {
         world: match which { Which::World(g) => Some(g.clone()), Which::New => None },
-        modset: ready.modset.clone(), rule, offer, offer_error,
+        modset: ready.modset.clone(), modset_lines: crate::join::modset_lines(&ready.mods, &ready.build, platform),
+        rule, offer, offer_error,
         client_mods: ready.mods.iter().filter(|m| m.scope == crate::model::Scope::Client).map(crate::join::ModRef::of).collect(),
         worlds: ready.state.worlds.iter().filter_map(|(g, w)| w.modset.clone().map(|m| (g.clone(), m))).collect(),
     }

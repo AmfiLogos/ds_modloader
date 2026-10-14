@@ -20,24 +20,37 @@ impl ModRef {
 
 pub fn gameplay(mods: &[ModRelease]) -> Vec<&ModRelease> { mods.iter().filter(|m| m.scope == Scope::Gameplay).collect() }
 
-/// sha256 over the sorted gameplay mods: `id@version` + every file sha256 + the patches of this build.
-pub fn modset_hash(mods: &[ModRelease], build: &str, platform: &str) -> String {
+/// One line per gameplay mod (the loader computes the same lines; recipe in `modset_hash`).
+pub fn modset_lines(mods: &[ModRelease], build: &str, platform: &str) -> Vec<String> {
     let mut lines: Vec<String> = gameplay(mods).into_iter().map(|m| {
         let mut l = m.key();
         if let Some(p) = m.platforms.get(platform) {
-            let mut shas: Vec<&str> = p.files.iter().map(|f| f.sha256.as_str()).collect();
+            let mut shas: Vec<String> = p.files.iter().map(|f| f.sha256.to_ascii_lowercase()).collect();
             shas.sort();
             l.push(':');
             l.push_str(&shas.join(","));
             if let Some(ps) = p.patches.get(build) {
+                let text: Vec<String> = ps.iter()
+                    .map(|x| format!("{}|{}|{}|{}|{}", x.file, x.slice, x.offset, x.expect.to_ascii_lowercase(), x.new.to_ascii_lowercase()))
+                    .collect();
                 l.push(':');
-                l.push_str(&crate::crypto::sha256_hex(&serde_json::to_vec(ps).unwrap_or_default()));
+                l.push_str(&crate::crypto::sha256_hex(text.join("\n").as_bytes()));
             }
         }
         l
     }).collect();
     lines.sort();
-    crate::crypto::sha256_hex(lines.join("\n").as_bytes())
+    lines
+}
+
+/// Gameplay mod-set hash. Recipe (the loader must match it byte for byte):
+/// for each GAMEPLAY mod: `<id>@<version>`; if the mod has a part for this platform, add `:` + the sha256 of
+/// its files (lowercase hex, sorted, joined by `,`; empty when it has no files); if it has byte patches for
+/// this build, add `:` + sha256 hex of the patch lines `file|slice|offset|expect|new` (manifest order,
+/// lowercase hex bytes, joined by `\n`). Sort the lines (byte order), join by `\n`, sha256, lowercase hex.
+/// No mods: sha256 of the empty string.
+pub fn modset_hash(mods: &[ModRelease], build: &str, platform: &str) -> String {
+    crate::crypto::sha256_hex(modset_lines(mods, build, platform).join("\n").as_bytes())
 }
 
 /// The host's rule for a match (set per world). Shown in the lobby / PvP screens.
@@ -165,6 +178,21 @@ mod tests {
     }
 
     fn get(i: &Index, id: &str, v: &str) -> ModRelease { i.mods.iter().find(|m| m.id == id && m.version == v).unwrap().clone() }
+
+    #[test]
+    fn recipe_is_fixed() {
+        // pinned values: if this changes, the loader's hash (dsload) must change the same way
+        let i = idx();
+        let a = vec![get(&i, "multiplayer", "1.0.0"), get(&i, "hell", "1.0.0")];
+        assert_eq!(modset_lines(&a, "1", "mac-arm64"), vec!["hell@1.0.0:bb", "multiplayer@1.0.0:aa"]);
+        assert_eq!(modset_hash(&a, "1", "mac-arm64"), crate::crypto::sha256_hex(b"hell@1.0.0:bb\nmultiplayer@1.0.0:aa"));
+        assert_eq!(modset_hash(&[], "1", "mac-arm64"), crate::crypto::sha256_hex(b""));
+        let mut p = get(&i, "hell", "1.0.0");
+        p.platforms.get_mut("mac-arm64").unwrap().patches.insert("1".into(), vec![crate::model::BytePatch {
+            file: "Contents/x".into(), slice: "arm64".into(), offset: "0x10".into(), expect: "AA".into(), new: "bb".into() }]);
+        let want = format!("hell@1.0.0:bb:{}", crate::crypto::sha256_hex(b"Contents/x|arm64|0x10|aa|bb"));
+        assert_eq!(modset_lines(&[p], "1", "mac-arm64"), vec![want]);
+    }
 
     #[test]
     fn client_mods_do_not_change_the_hash() {

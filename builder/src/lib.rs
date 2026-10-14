@@ -11,6 +11,7 @@ pub mod compute;
 pub mod data;
 pub mod export;
 pub mod model;
+pub mod validate;
 
 pub use compute::{compute, Sheet};
 pub use model::Build;

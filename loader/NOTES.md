@@ -72,7 +72,26 @@ To refresh the MP snapshot: re-copy `~/ds_multiplayer/src` (+ `win/math/{math_ma
   session through dsload (see Results).
 
 ## Results (2026-10-14)
-RESULTS_PLACEHOLDER
+- Host test: 20/20 PASS (`test/run_tests.sh`).
+- Game copy L, hidden `-batchmode`, guard never saw a window, owner prefs identical before/after every run.
+  `dsload.log`: build 25846389 from the file, load order multiplayer, gcd-cdr, floor-logger; engine region at
+  GameAssembly+0x6c90000, stubs through the RW alias; multiplayer 131 hooks (same count as the release dsrig in
+  instance C), gcd-cdr 1, floor-logger 1.0.0 (API 1 binary) 2, loader 2 (`il2cpp_init`, `_utf16`): 136 hooks, 0 refused,
+  "modules: 3 loaded of 3 opened". `DYLD_INSERT_LIBRARIES`: our entry removed, the foreign test dylib kept (it saw
+  only its own entry).
+- `game_test.py` (single-player rig smoke): title, load save, order_move, fingerprints advance, screenshot: PASS.
+- `mp_host_test.py` (SOAK_S=600): host session up, lockstep locked; 4 orders through the capture path (ord_inject ->
+  ord -> dsnet host) -> mp orders 8, 4/4 units moved; 10 min soak: alive, tick 8940925 -> 8975583, det tick_errors 0,
+  16 enemies -> 0 killed, clean exit, PASS. `test_env/smoke_out/*/mp_host_results.json`.
+- gcd-cdr: hook installed at 0xDDBA18 and module loaded, but **no global cooldown happened in the 10 min fight**
+  (0 calls logged), so its in-game effect is NOT proven yet. Its only caller is `TickEventApplier.Apply(GlobalCooldownApplyData)`
+  (tail call at 0xAC71CC), fed by `CooldownCondition` skills. The fight above probably used no such skill [U].
+- Found while porting [V: disassembly, not an in-game test]: build 25846389 now HAS
+  `Refactor.Combat.SkillCooldownCalculator.GetAdjustedGlobalCooldown` (0x8A54B8 / 0x8ABF6C) = base / (1 + stat 28 / 100),
+  the same formula as the owner's patch. `CooldownCondition` MoveNext computes it (0x8A5208) and puts it in
+  `GlobalCooldownApplyData`, but `Apply` only checks its sign and then calls `SetGlobalCooldown()`, which uses the
+  unadjusted `_globalCooldownValue`. So stock still ignores CDR for GCD in practice and the module is still needed;
+  if a later build passes the adjusted value through, the module would divide twice. Owner check in game needed.
 
 ## Open points
 - A real 2-copy multiplayer pair through dsload (mp2_test-style) is NOT run yet: the pairs were busy with the
