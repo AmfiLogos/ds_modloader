@@ -67,7 +67,6 @@ fn clone(src: &Path, dst: &Path) -> Result<()> {
 }
 
 pub fn base_app(paths: &Paths, build: &str) -> PathBuf { paths.game_dir(build).join("base/DungeonSettlers.app") }
-pub fn play_app(paths: &Paths, build: &str) -> PathBuf { paths.game_dir(build).join("play/DungeonSettlers.app") }
 
 /// Steam seal of the real app: relative path under Contents -> sha256 (hash2) of every sealed resource.
 pub fn read_seal(steam_app: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
@@ -175,47 +174,117 @@ fn walk(d: &Path) -> Result<Vec<PathBuf>> {
 pub fn wanted_marker(build: &str, mods: &[(ModRelease, PathBuf)], opts: &CopyOptions) -> PlayMarker {
     let mut m = BTreeMap::new();
     for (r, _) in mods {
-        let files = r.platforms.get(MAC_ARM64).map(|p| p.files.iter().map(|f| (f.name.clone(), f.sha256.clone())).collect())
-            .unwrap_or_default();
+        let mut files: BTreeMap<String, String> = r.platforms.get(MAC_ARM64)
+            .map(|p| p.files.iter().map(|f| (f.name.clone(), f.sha256.clone())).collect()).unwrap_or_default();
+        if let Some(ps) = r.platforms.get(MAC_ARM64).and_then(|p| p.patches.get(build)) {
+            files.insert("(patches)".into(), crate::crypto::sha256_hex(&serde_json::to_vec(ps).unwrap_or_default()));
+        }
         m.insert(r.key(), files);
     }
     PlayMarker { build: build.into(), mods: m, bundle_id: opts.bundle_id.clone(), background_only: opts.background_only, created: 0 }
 }
 
-/// True when the play copy already has exactly these mods.
+/// Short key of a mod set: one play copy per build and mod set (worlds with other mods get their own copy).
+pub fn set_key(build: &str, mods: &[(ModRelease, PathBuf)], opts: &CopyOptions) -> String {
+    let m = wanted_marker(build, mods, opts);
+    crate::crypto::sha256_hex(&serde_json::to_vec(&m).unwrap_or_default())[..12].to_string()
+}
+
+pub fn play_dir(paths: &Paths, build: &str, key: &str) -> PathBuf { paths.game_dir(build).join(format!("play-{key}")) }
+pub fn play_app(paths: &Paths, build: &str, key: &str) -> PathBuf { play_dir(paths, build, key).join("DungeonSettlers.app") }
+
+/// True when the play copy for this mod set exists and is complete.
 pub fn play_is_current(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], opts: &CopyOptions) -> bool {
-    let p = paths.game_dir(build).join("play.json");
+    let key = set_key(build, mods, opts);
+    let p = paths.game_dir(build).join(format!("play-{key}.json"));
     let Ok(b) = std::fs::read(p) else { return false };
     let Ok(mut have) = serde_json::from_slice::<PlayMarker>(&b) else { return false };
     have.created = 0;
-    play_app(paths, build).exists() && have == wanted_marker(build, mods, opts)
+    play_app(paths, build, &key).exists() && have == wanted_marker(build, mods, opts)
 }
 
-/// Apply one byte patch inside the app. Already patched = fine. Neither old nor new bytes = refused.
-fn apply_patch(app: &Path, p: &crate::model::BytePatch) -> Result<PathBuf> {
-    let rel = Path::new(&p.file);
-    if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-        bail!("patch path {:?} is not inside the app", p.file);
+fn inside_app(rel: &str) -> Result<&Path> {
+    let r = Path::new(rel);
+    if r.is_absolute() || r.components().any(|c| matches!(c, std::path::Component::ParentDir)) || !rel.starts_with("Contents/") {
+        bail!("path {rel:?} is not inside the app");
     }
-    let f = app.join(rel);
-    let mut b = std::fs::read(&f).with_context(|| format!("read {}", f.display()))?;
-    let (base, size) = if p.slice == "arm64" { macho::arm64_slice(&b)? } else { (0, b.len()) };
-    let off = usize::from_str_radix(p.offset.trim_start_matches("0x"), 16)?;
-    let expect = hex::decode(&p.expect)?;
-    let new = hex::decode(&p.new)?;
-    if expect.len() != new.len() || off + new.len() > size { bail!("patch {} {} is out of range", p.file, p.offset) }
-    let at = base + off;
-    let cur = &b[at..at + new.len()];
-    if cur == new.as_slice() { return Ok(f) }
-    if cur != expect.as_slice() {
-        bail!("{} at {}: found {}, expected {} (wrong game build?)", p.file, p.offset, hex::encode(cur), p.expect);
+    Ok(r)
+}
+
+/// Apply byte patches (several mods, several files). Each file is read and written once. Two mods that patch
+/// the same bytes are refused. Already patched = fine; neither old nor new bytes = refused (wrong build).
+/// Returns the patched Mach-O files (they need a new signature).
+pub fn apply_patches(app: &Path, patches: &[(String, crate::model::BytePatch)]) -> Result<Vec<PathBuf>> {
+    let mut by_file: BTreeMap<String, Vec<&(String, crate::model::BytePatch)>> = BTreeMap::new();
+    for e in patches { by_file.entry(e.1.file.clone()).or_default().push(e); }
+    let mut out = Vec::new();
+    for (file, ps) in by_file {
+        let f = app.join(inside_app(&file)?);
+        let mut b = std::fs::read(&f).with_context(|| format!("read {}", f.display()))?;
+        let mut taken: Vec<(usize, usize, &str)> = Vec::new();
+        let mut changed = false;
+        for (mod_id, p) in ps {
+            let (base, size) = match p.slice.as_str() {
+                "arm64" => macho::arm64_slice(&b)?,
+                "file" => (0, b.len()),
+                s => bail!("{mod_id}: unknown slice {s:?}"),
+            };
+            let off = usize::from_str_radix(p.offset.trim_start_matches("0x"), 16)?;
+            let expect = hex::decode(&p.expect)?;
+            let new = hex::decode(&p.new)?;
+            if expect.len() != new.len() || new.is_empty() || off + new.len() > size {
+                bail!("{mod_id}: patch {} {} is out of range", p.file, p.offset);
+            }
+            let (lo, hi) = (base + off, base + off + new.len());
+            if let Some((_, _, o)) = taken.iter().find(|(a, z, _)| lo < *z && *a < hi) {
+                bail!("{o} and {mod_id} both change {} at {}", p.file, p.offset);
+            }
+            taken.push((lo, hi, mod_id.as_str()));
+            let cur = &b[lo..hi];
+            if cur == new.as_slice() { continue }
+            if cur != expect.as_slice() {
+                bail!("{mod_id}: {} at {}: found {}, expected {} (wrong game build?)", p.file, p.offset, hex::encode(cur), p.expect);
+            }
+            b[lo..hi].copy_from_slice(&new);
+            changed = true;
+        }
+        if changed {
+            // new inode (never write into a file a process may have mapped)
+            let t = f.with_extension("patchtmp");
+            std::fs::write(&t, &b)?;
+            std::fs::rename(&t, &f)?;
+        }
+        if macho::is_macho(&b) { out.push(f); }
     }
-    b[at..at + new.len()].copy_from_slice(&new);
-    // new inode (never write into a file a process may have mapped)
-    let t = f.with_extension("patchtmp");
-    std::fs::write(&t, &b)?;
-    std::fs::rename(&t, &f)?;
-    Ok(f)
+    Ok(out)
+}
+
+/// Publisher helper: the byte patches that turn `stock` into `modded` (same size). Runs closer than 16 bytes
+/// are merged. `slice` "arm64" compares the arm64 slices only.
+pub fn diff_patches(stock: &[u8], modded: &[u8], file: &str, slice: &str) -> Result<Vec<crate::model::BytePatch>> {
+    let (a, b) = if slice == "arm64" {
+        let (o1, s1) = macho::arm64_slice(stock)?;
+        let (o2, s2) = macho::arm64_slice(modded)?;
+        if s1 != s2 { bail!("arm64 slices differ in size: not a byte patch") }
+        (&stock[o1..o1 + s1], &modded[o2..o2 + s2])
+    } else {
+        if stock.len() != modded.len() { bail!("files differ in size: not a byte patch") }
+        (stock, modded)
+    };
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] == b[i] { i += 1; continue }
+        let start = i;
+        let mut end = i;
+        while i < a.len() && i < end + 16 { if a[i] != b[i] { end = i + 1 } i += 1 }
+        out.push(crate::model::BytePatch {
+            file: file.into(), slice: slice.into(), offset: format!("0x{start:X}"),
+            expect: hex::encode(&a[start..end]), new: hex::encode(&b[start..end]),
+        });
+        i = end;
+    }
+    Ok(out)
 }
 
 /// Play copy = clone of base + mods, then one ad-hoc signature.
@@ -223,8 +292,9 @@ pub fn build_play(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], op
     let gd = paths.game_dir(build);
     let base = base_app(paths, build);
     if !gd.join("base.json").exists() { bail!("no base copy for build {build}") }
-    let tmp = gd.join("play.building");
-    if tmp.exists() { paths.retire(&tmp, &format!("{build}-play.building"))?; }
+    let key = set_key(build, mods, opts);
+    let tmp = gd.join(format!("play-{key}.building"));
+    if tmp.exists() { paths.retire(&tmp, &format!("{build}-play-{key}.building"))?; }
     std::fs::create_dir_all(&tmp)?;
     let app = tmp.join("DungeonSettlers.app");
     clone(&base, &app)?;
@@ -233,13 +303,14 @@ pub fn build_play(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], op
     let os = macho::running_macos();
     let mut to_sign: Vec<PathBuf> = Vec::new();
     let mut placed: BTreeMap<String, String> = BTreeMap::new();
+    let mut patches: Vec<(String, crate::model::BytePatch)> = Vec::new();
 
     for (m, dir) in mods {
         let part = m.platforms.get(MAC_ARM64).ok_or_else(|| anyhow!("{} has no Mac files", m.name))?;
-        if let Some(ps) = part.patches.get(build) {
-            for p in ps { let f = apply_patch(&app, p)?; if !to_sign.contains(&f) { to_sign.push(f) } }
-        } else if m.kind == Kind::Patch {
-            bail!("{} has no patch for build {build}", m.name);
+        match part.patches.get(build) {
+            Some(ps) => patches.extend(ps.iter().map(|p| (m.id.clone(), p.clone()))),
+            None if m.kind == Kind::Patch => bail!("{} has no patch for build {build}", m.name),
+            None => {}
         }
         for f in &part.files {
             if !safe_name(&f.name) { bail!("bad file name {:?}", f.name) }
@@ -247,10 +318,8 @@ pub fn build_play(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], op
             let bytes = std::fs::read(&src)?;
             if let Some(dest) = &f.dest {
                 // data mod: replace one stock file of the game
-                let rel = Path::new(dest);
-                if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) || !dest.starts_with("Contents/Resources/") {
-                    bail!("{}: target {dest:?} is not a game resource", m.name);
-                }
+                let rel = inside_app(dest)?;
+                if !dest.starts_with("Contents/Resources/") { bail!("{}: target {dest:?} is not a game resource", m.name) }
                 let t = app.join(rel);
                 if !t.exists() { bail!("{}: {dest} is not in this game build", m.name) }
                 if let Some(o) = placed.insert(dest.clone(), m.id.clone()) { bail!("{} and {} both replace {dest}", o, m.id) }
@@ -279,6 +348,11 @@ pub fn build_play(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], op
             }
         }
     }
+    // byte patches after the file replacements; a patch on a file another mod replaced is a conflict
+    for (id, p) in &patches {
+        if let Some(o) = placed.get(&p.file) { bail!("{o} replaces {} and {id} patches it", p.file) }
+    }
+    for f in apply_patches(&app, &patches)? { if !to_sign.contains(&f) { to_sign.push(f) } }
 
     let pl = c.join("Info.plist");
     run(Command::new("/usr/bin/plutil").args(["-replace", "CFBundleIdentifier", "-string", &opts.bundle_id]).arg(&pl))?;
@@ -296,13 +370,13 @@ pub fn build_play(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], op
     run(Command::new("/usr/bin/nice").args(["-n", "10", "/usr/bin/codesign", "-f", "-s", "-"]).arg(&app))?;
     run(Command::new("/usr/bin/codesign").arg("-v").arg(&app)).context("signature check of the new copy")?;
 
-    let play_dir = gd.join("play");
-    if play_dir.exists() { paths.retire(&play_dir, &format!("{build}-play"))?; }
-    std::fs::rename(&tmp, &play_dir)?;
+    let pd = play_dir(paths, build, &key);
+    if pd.exists() { paths.retire(&pd, &format!("{build}-play-{key}"))?; }
+    std::fs::rename(&tmp, &pd)?;
     let mut mk = wanted_marker(build, mods, opts);
     mk.created = now_secs();
-    write_atomic(&gd.join("play.json"), &serde_json::to_vec_pretty(&mk)?)?;
-    Ok(play_app(paths, build))
+    write_atomic(&gd.join(format!("play-{key}.json")), &serde_json::to_vec_pretty(&mk)?)?;
+    Ok(play_app(paths, build, &key))
 }
 
 #[cfg(test)]
@@ -310,24 +384,63 @@ mod tests {
     use super::*;
     use crate::model::BytePatch;
 
-    #[test]
-    fn byte_patch_checks_old_bytes() {
-        let d = std::env::temp_dir().join(format!("dsml_patch_{}", std::process::id()));
+    fn thin_dylib(d: &Path) {
         std::fs::create_dir_all(d.join("Contents")).unwrap();
-        // thin arm64 header + payload
         let mut b = vec![0u8; 64];
         b[0..4].copy_from_slice(&0xFEEDFACFu32.to_le_bytes());
         b[4..8].copy_from_slice(&0x0100000Cu32.to_le_bytes());
         b[40..44].copy_from_slice(&[0x20, 0x00, 0x80, 0x52]);
         std::fs::write(d.join("Contents/x.dylib"), &b).unwrap();
-        let mut p = BytePatch { file: "Contents/x.dylib".into(), slice: "arm64".into(), offset: "0x28".into(),
-                                expect: "20008052".into(), new: "00008052".into() };
-        apply_patch(&d, &p).unwrap();
+        std::fs::write(d.join("Contents/catalog.bin"), b"0123456789abcdef").unwrap();
+    }
+
+    fn bp(file: &str, slice: &str, off: &str, expect: &str, new: &str) -> BytePatch {
+        BytePatch { file: file.into(), slice: slice.into(), offset: off.into(), expect: expect.into(), new: new.into() }
+    }
+
+    #[test]
+    fn byte_patch_checks_old_bytes() {
+        let d = std::env::temp_dir().join(format!("dsml_patch_{}", std::process::id()));
+        thin_dylib(&d);
+        let p = bp("Contents/x.dylib", "arm64", "0x28", "20008052", "00008052");
+        let signed = apply_patches(&d, &[("m".into(), p.clone())]).unwrap();
+        assert_eq!(signed, vec![d.join("Contents/x.dylib")]);
         assert_eq!(&std::fs::read(d.join("Contents/x.dylib")).unwrap()[40..44], &[0, 0, 0x80, 0x52]);
-        apply_patch(&d, &p).unwrap(); // already patched: fine
-        p.expect = "11111111".into(); p.new = "22222222".into();
-        assert!(apply_patch(&d, &p).unwrap_err().to_string().contains("wrong game build"));
-        p.file = "../escape".into();
-        assert!(apply_patch(&d, &p).is_err());
+        apply_patches(&d, &[("m".into(), p)]).unwrap(); // already patched: fine
+        let bad = bp("Contents/x.dylib", "arm64", "0x28", "11111111", "22222222");
+        assert!(apply_patches(&d, &[("m".into(), bad)]).unwrap_err().to_string().contains("wrong game build"));
+        let esc = bp("../escape", "file", "0x0", "00", "01");
+        assert!(apply_patches(&d, &[("m".into(), esc)]).is_err());
+    }
+
+    #[test]
+    fn two_mods_compose_on_one_file_but_not_on_the_same_bytes() {
+        let d = std::env::temp_dir().join(format!("dsml_patch2_{}", std::process::id()));
+        thin_dylib(&d);
+        // like Hell (catalog offset 51234) + weapon slot (51768): different bytes of catalog.bin
+        let a = bp("Contents/catalog.bin", "file", "0x2", "3233", "5858"); // "23" -> "XX"
+        let b = bp("Contents/catalog.bin", "file", "0xA", "6162", "5959"); // "ab" -> "YY"
+        let out = apply_patches(&d, &[("hell".into(), a.clone()), ("ws".into(), b)]).unwrap();
+        assert!(out.is_empty(), "catalog.bin is not Mach-O: no signature");
+        assert_eq!(std::fs::read(d.join("Contents/catalog.bin")).unwrap(), b"01XX456789YYcdef");
+        let c = bp("Contents/catalog.bin", "file", "0x3", "5834", "0000");
+        let err = apply_patches(&d, &[("hell".into(), a), ("other".into(), c)]).unwrap_err().to_string();
+        assert!(err.contains("both change"), "{err}");
+    }
+
+    #[test]
+    fn diff_makes_patches_that_apply() {
+        let stock = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_vec();
+        let mut modded = stock.clone();
+        modded[3] = b'X'; modded[6] = b'Y'; modded[40] = b'Z';
+        let ps = diff_patches(&stock, &modded, "Contents/f.bin", "file").unwrap();
+        assert_eq!(ps.len(), 2, "near runs merge, far runs split: {ps:?}");
+        assert_eq!(ps[0].offset, "0x3");
+        let d = std::env::temp_dir().join(format!("dsml_diff_{}", std::process::id()));
+        std::fs::create_dir_all(d.join("Contents")).unwrap();
+        std::fs::write(d.join("Contents/f.bin"), &stock).unwrap();
+        let tagged: Vec<_> = ps.into_iter().map(|p| ("m".to_string(), p)).collect();
+        apply_patches(&d, &tagged).unwrap();
+        assert_eq!(std::fs::read(d.join("Contents/f.bin")).unwrap(), modded);
     }
 }

@@ -55,9 +55,13 @@ pub struct ModRelease {
     pub kind: Kind,
     #[serde(default = "one")]
     pub api: u32,
-    /// Changes the simulation: must match between players in multiplayer.
+    /// gameplay: changes how the game works; every player in a multiplayer game must have it (auto-download,
+    /// part of the mod-set hash). client: only changes things for this player; never required from others.
     #[serde(default)]
-    pub sim: bool,
+    pub scope: Scope,
+    /// Set when this mod is a custom difficulty (for example Hell).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty: Option<CustomDifficulty>,
     /// Exact Steam build ids, or "*" for a mod with no per-build data.
     pub game_builds: Vec<String>,
     pub platforms: BTreeMap<String, PlatformPart>,
@@ -73,6 +77,26 @@ pub struct ModRelease {
 }
 
 fn one() -> u32 { 1 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    /// Default: a mod that does not say otherwise is treated as required from every player.
+    #[default]
+    Gameplay,
+    Client,
+}
+
+/// A difficulty step the game does not have. `value` = the campaign's CombatDifficulty number it adds
+/// (stock: Easy 0 .. Devastation 4; Hell = 5).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CustomDifficulty {
+    pub value: u8,
+    pub name: String,
+    /// Locked behind the same in-game unlock as Devastation (clear Very Hard).
+    #[serde(default)]
+    pub needs_devastation_unlock: bool,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct PlatformPart {
@@ -108,6 +132,7 @@ pub struct BytePatch {
     /// Path inside the app bundle, for example "Contents/Frameworks/GameAssembly.dylib".
     pub file: String,
     /// "arm64": offset is relative to the arm64 slice of a fat file (thin file: the file start).
+    /// "file": offset is relative to the file start (data files such as catalog.bin).
     #[serde(default = "arm64")]
     pub slice: String,
     /// Hex, for example "0xD25730".
@@ -129,17 +154,45 @@ impl ModRelease {
     pub fn key(&self) -> String { format!("{}@{}", self.id, self.version) }
 }
 
-/// What the launcher shows and keeps: enabled mods, pinned build, last index seq.
+/// Mods of one world (one campaign / save). `mods` and `groups` are ids; the difficulty mod is added on top.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct WorldProfile {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub mods: Vec<String>,
+    /// Names of mod groups (folders) applied to this world.
+    #[serde(default)]
+    pub groups: Vec<String>,
+    /// Custom difficulty mod id (None = a vanilla difficulty, picked in the game).
+    #[serde(default)]
+    pub custom_difficulty: Option<String>,
+    /// The build this world plays on (pinned per world).
+    #[serde(default)]
+    pub build: Option<String>,
+}
+
+/// What the launcher keeps: mods per world, groups, pinned builds, last index seq.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct State {
-    /// The build the player plays on (the pinned copy).
+    /// The newest build in use (the copy new worlds start on).
     #[serde(default)]
     pub active_build: Option<String>,
     /// The build before it; its copy is kept so the player can still join a friend who has not updated.
     #[serde(default)]
     pub previous_build: Option<String>,
+    /// Profile for a NEW world (before the game has made its save). Older states: the global enabled list.
+    #[serde(default, alias = "enabled")]
+    pub new_world: Vec<String>,
+    /// CampaignGuid (from the save header) -> its mods.
     #[serde(default)]
-    pub enabled: Vec<String>,
+    pub worlds: std::collections::BTreeMap<String, WorldProfile>,
+    /// Mod groups: name -> mod ids.
+    #[serde(default)]
+    pub groups: std::collections::BTreeMap<String, Vec<String>>,
+    /// Show custom difficulties (off: only the game's own difficulties).
+    #[serde(default)]
+    pub custom_difficulties: bool,
     #[serde(default)]
     pub last_index_seq: u64,
     #[serde(default)]

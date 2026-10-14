@@ -13,25 +13,48 @@
 </header>
 
 <main>
-  <section class="frame game">
-    <h2>Game</h2>
-    <dl>
-      <dt>Steam build</dt><dd id="steam-build">-</dd>
-      <dt>You play on</dt><dd id="active-build">-</dd>
-      <dt>Copies</dt><dd id="copies">-</dd>
-    </dl>
-    <p id="plan" class="plan"></p>
-    <div id="plan-actions" class="actions"></div>
-    <div id="removable"></div>
-  </section>
+  <div class="side">
+    <section class="frame worlds">
+      <h2>Worlds</h2>
+      <ul id="world-list" class="pick-list"></ul>
+    </section>
+    <section class="frame game">
+      <h2>Game</h2>
+      <dl>
+        <dt>Steam build</dt><dd id="steam-build">-</dd>
+        <dt>This world on</dt><dd id="pinned-build">-</dd>
+        <dt>Copies</dt><dd id="copies">-</dd>
+      </dl>
+      <p id="plan" class="plan"></p>
+      <div id="plan-actions" class="actions"></div>
+      <div id="removable" class="actions"></div>
+    </section>
+  </div>
 
   <section class="frame mods">
     <div class="title-row">
-      <h2>Mods</h2>
+      <h2 id="mods-title">Mods</h2>
       <button id="refresh" class="secondary" type="button">Check for updates</button>
     </div>
     <p id="index-line" class="meta"></p>
     <ul id="mod-list"></ul>
+
+    <div class="sub-block">
+      <div class="title-row">
+        <h3>Groups</h3>
+        <button id="save-group" class="secondary" type="button">Save these mods as a group</button>
+      </div>
+      <div id="group-list" class="chips"></div>
+    </div>
+
+    <div class="sub-block">
+      <div class="title-row">
+        <h3>Difficulty</h3>
+        <label class="inline"><span class="switch"><input id="custom-toggle" type="checkbox" aria-label="Custom difficulties on or off"></span> Custom difficulties</label>
+      </div>
+      <ul id="difficulty-list" class="difficulty"></ul>
+      <p id="difficulty-note" class="meta"></p>
+    </div>
   </section>
 </main>
 
@@ -39,6 +62,18 @@
   <p id="message" class="meta" role="status"></p>
   <button id="play" class="primary" type="button">Play</button>
 </footer>
+
+<dialog id="group-dialog">
+  <form method="dialog">
+    <h3>New group</h3>
+    <p class="meta">The mods that are on for this world now go into the group.</p>
+    <input id="group-name" type="text" maxlength="40" placeholder="Group name" aria-label="Group name">
+    <div class="actions">
+      <button value="cancel" class="secondary" type="submit">Cancel</button>
+      <button value="ok" class="secondary" type="submit">Save group</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="app.js"></script>
 </body>

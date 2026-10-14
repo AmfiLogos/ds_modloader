@@ -22,6 +22,10 @@ pub struct LaunchSpec {
     pub extra_env: BTreeMap<String, String>,
     pub extra_args: Vec<String>,
     pub nice: i32,
+    /// The world this Play is for (None = a new world) and its gameplay mod-set hash. Passed to the game as
+    /// DSML_WORLD / DSML_MODSET so a loader can refuse a world loaded with other mods (loader step 2).
+    pub world: Option<String>,
+    pub modset: String,
 }
 
 /// Normal game save folder (only ever read).
@@ -55,6 +59,8 @@ pub fn env_for(spec: &LaunchSpec) -> Result<BTreeMap<String, String>> {
         env.insert("SteamAppId".into(), APP_ID.into());
         env.insert("SteamGameId".into(), APP_ID.into());
     }
+    env.insert("DSML_MODSET".into(), spec.modset.clone());
+    if let Some(w) = &spec.world { env.insert("DSML_WORLD".into(), w.clone()); }
     for (k, v) in &spec.extra_env { env.insert(k.clone(), v.clone()); }
     env.retain(|_, v| !v.is_empty());
     Ok(env)

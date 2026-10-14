@@ -3,6 +3,7 @@
 //!   dsml-tool sign <index.json> <secret-key>       writes <index.json>.sig
 //!   dsml-tool verify <index.json> <public-key>...  checks <index.json>.sig
 //!   dsml-tool file <path> <url>                    prints a FileEntry (name, sha256, size, url)
+//!   dsml-tool patches <stock> <modded> <path-in-app> <arm64|file>   prints the byte patches (JSON)
 use anyhow::{bail, Context, Result};
 use dsml_core::crypto;
 
@@ -40,6 +41,10 @@ fn main() -> Result<()> {
                 dest: None,
             };
             println!("{}", serde_json::to_string_pretty(&e)?);
+        }
+        Some("patches") if a.len() == 5 => {
+            let ps = dsml_core::copy_mac::diff_patches(&std::fs::read(&a[1])?, &std::fs::read(&a[2])?, &a[3], &a[4])?;
+            println!("{}", serde_json::to_string_pretty(&ps)?);
         }
         _ => bail!("usage: dsml-tool keygen|sign|verify|file ... (see the source header)"),
     }

@@ -1,0 +1,24 @@
+[package]
+name = "ds-unit-builder"
+version = "0.1.0"
+edition = "2021"
+description = "Unit Builder engine for the DS mod launcher: wiki builder stat sheet, share links, my units, PvP / Foreign Expedition export"
+
+[lib]
+name = "ds_unit_builder"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Tauri 2 plugin with the commands for the UI (src/tauri_plugin.rs)
+tauri = ["dep:tauri"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+indexmap = { version = "2", features = ["serde"] }
+flate2 = "1"
+tauri = { version = "2", optional = true }
+
+# Standalone until the launcher adds it to its workspace (NOTES.md, "Wiring into the launcher").
+[workspace]

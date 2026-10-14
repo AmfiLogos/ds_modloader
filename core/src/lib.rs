@@ -3,7 +3,9 @@
 pub mod copy_mac;
 pub mod crypto;
 pub mod decide;
+pub mod difficulty;
 pub mod fetch;
+pub mod join;
 #[cfg(unix)]
 pub mod flow;
 #[cfg(unix)]
@@ -12,6 +14,7 @@ pub mod macho;
 pub mod model;
 pub mod steam;
 pub mod windows;
+pub mod worlds;
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
