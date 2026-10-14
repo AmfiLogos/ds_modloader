@@ -80,6 +80,7 @@ fn opts() -> CopyOptions {
 /// Starts the copy hidden (rig.py method), waits until `ready(status)` holds, stops it. Returns the last
 /// status answer and the rig.log text. Panics if a window ever shows.
 fn hidden_run(app: &Path, profile: &Path, mods: &[dsml_core::model::ModRelease], world: Option<String>, modset: &str,
+              session: Option<flow::Session>,
               ready: impl Fn(&serde_json::Value) -> bool, limit: Duration) -> (serde_json::Value, String, u32) {
     let mut env = BTreeMap::new();
     for (k, v) in [("DSRIG_LIVE", ""), ("DSRIG_BATCH", "1"), ("DSRIG_FPS", "30")] { env.insert(k.to_string(), v.to_string()); }
@@ -89,7 +90,7 @@ fn hidden_run(app: &Path, profile: &Path, mods: &[dsml_core::model::ModRelease],
         extra_env: env,
         extra_args: ["-batchmode", "-screen-fullscreen", "0", "-screen-width", "960", "-screen-height", "540"]
             .iter().map(|s| s.to_string()).collect(),
-        nice: 5, world, modset: modset.into(),
+        nice: 5, world, modset: modset.into(), session,
     };
     let e = launch::env_for(&spec).unwrap();
     assert!(e["DYLD_INSERT_LIBRARIES"].ends_with("/DungeonSettlers.app/Contents/Frameworks/dsrig.dylib"));
@@ -206,7 +207,7 @@ fn side_copy_and_hidden_launch() {
 
     // 5. hidden launch
     let profile = paths.profile_dir("test");
-    let (v, log, pid) = hidden_run(&app, &profile, &ready.mods, None, &ready.modset, |_| true, Duration::from_secs(180));
+    let (v, log, pid) = hidden_run(&app, &profile, &ready.mods, None, &ready.modset, None, |_| true, Duration::from_secs(180));
     println!("rig.log: {}", log.lines().find(|l| l.contains("rig start pid")).unwrap_or("(none)"));
     println!("socket status answer: {v}");
     assert!(log.contains(&format!("rig start pid {pid}")), "dylib did not log its start for pid {pid}");
@@ -337,9 +338,14 @@ fn worlds_hell_and_client_mod_compose() {
     println!("hell world copy: {}\nplain world copy: {}", r_hell.app.display(), r_plain.app.display());
 
     // the composed Hell + weapon-slot + multiplayer copy boots to the title screen (hidden)
-    let (v, log, pid) = hidden_run(&r_hell.app, &profile, &r_hell.mods, Some("hellworld".into()), &r_hell.modset,
+    let sess = flow::session(&r_hell, &hw, "mac-arm64");
+    assert_eq!(sess.worlds.get("hellworld"), Some(&r_hell.modset));
+    assert_eq!(sess.offer.as_ref().unwrap().gameplay.len(), 3, "multiplayer + steam gate + hell, not the client weapon slot");
+    let (v, log, pid) = hidden_run(&r_hell.app, &profile, &r_hell.mods, Some("hellworld".into()), &r_hell.modset, Some(sess.clone()),
                                    |v| v["scene"].as_i64() == Some(1) && v["busy"].as_bool() == Some(false), Duration::from_secs(300));
     assert!(log.contains(&format!("rig start pid {pid}")));
+    let written: flow::Session = serde_json::from_slice(&std::fs::read(profile.join("dsml_session.json")).unwrap()).unwrap();
+    assert_eq!(written, sess);
     assert_eq!(v["scene"].as_i64(), Some(1), "did not reach the title screen: {v}");
     println!("Hell + weapon slot copy reached the title screen: scene {} frames {}", v["scene"], v["frames"]);
     assert_eq!(before, owner_files());

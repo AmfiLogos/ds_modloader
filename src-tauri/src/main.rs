@@ -173,6 +173,14 @@ fn set_new_world_difficulty(mod_id: Option<String>) -> Result<Status, String> {
     status(Which::New)
 }
 
+/// Host rule of a world: "mods" (Allow mods) or "vanilla" (Vanilla check).
+#[tauri::command]
+fn set_match_rule(which: Which, rule: dsml_core::join::MatchRule) -> Result<Status, String> {
+    let Which::World(g) = &which else { return Err("the rule belongs to a world".into()) };
+    edit(|st| st.worlds.entry(g.clone()).or_default().match_rule = rule)?;
+    status(which)
+}
+
 #[derive(Serialize)]
 struct Played { build: String, pid: u32, removable: Vec<String> }
 
@@ -189,6 +197,7 @@ async fn play(which: Which) -> Result<Played, String> {
             app: ready.app.clone(), profile_dir: p.profile_dir(PROFILE), saves_from: Some(launch::normal_saves()),
             mods: ready.mods.clone(), steam: true, extra_env: BTreeMap::new(), extra_args: vec![], nice: 0,
             world: match &which { Which::World(g) => Some(g.clone()), Which::New => None }, modset: ready.modset.clone(),
+            session: Some(flow::session(&ready, &which, this_platform())),
         };
         let child = launch::launch(&spec).map_err(err)?;
         Ok(Played { build: ready.build, pid: child.id(), removable: ready.removable })
@@ -208,7 +217,7 @@ fn remove_copy(which: Which, build: String) -> Result<Status, String> {
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![status, refresh_index, set_mod, save_group, apply_group,
-                                                 set_custom_difficulties, set_new_world_difficulty, play, remove_copy])
+                                                 set_custom_difficulties, set_new_world_difficulty, set_match_rule, play, remove_copy])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");
 }

@@ -25,15 +25,11 @@ function load() {
   const lift = name => {
     const at = src.indexOf('\nfunction ' + name + '(');
     if (at < 0) throw new Error('no function ' + name);
-    let i = src.indexOf('{', at), depth = 0, q = null;
-    for (; i < src.length; i++) {
-      const ch = src[i];
-      if (q) { if (ch === '\\') { i++; continue; } if (ch === q) q = null; continue; }
-      if (ch === "'" || ch === '"') { q = ch; continue; }
-      if (ch === '{') depth++;
-      else if (ch === '}') { depth--; if (!depth) break; }
-    }
-    return src.slice(at + 1, i + 1);
+    // a top-level function of the closure runs until the next line that starts at column 0 with something
+    // other than '}' (the file is formatted that way)
+    const ls = src.slice(at + 1).split('\n'), keep = [ls[0]];
+    for (let j = 1; j < ls.length && /^(\s|\}|$)/.test(ls[j]); j++) keep.push(ls[j]);
+    return keep.join('\n');
   };
   const names = ['validate', 'raceOf', 'poolWeight', 'bgStarter', 'bgAvail', 'ammoOfPrimary', 'ammoFits', 'sanitizeEq', 'shelfOf',
     'treeOfSkillAny', 'shelfPut', 'shelfDrop', 'tagShelfOf', 'shelfTagsFor', 'unshelfTagsFor', 'setSlotItem', 'normTags', 'treeOfSkill', 'b64enc'];

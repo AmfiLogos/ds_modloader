@@ -137,3 +137,6 @@ footer {
 footer .meta { margin: 0; flex: 1; }
 
 @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+.rule { margin: 10px 0; }
+.rule .chips { margin-top: 4px; }
+.rule .meta { margin: 4px 0; }

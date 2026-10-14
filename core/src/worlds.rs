@@ -102,12 +102,13 @@ pub fn pinned_build<'a>(state: &'a State, which: &Which) -> Option<&'a str> {
 pub fn register_worlds(state: &mut State, saves: &[SaveInfo], created_with: &[String], build: Option<&str>,
                        index: Option<&Index>) -> Vec<String> {
     let mut added = Vec::new();
+    let new_modset = state.new_world_modset.clone();
     for s in saves {
         let custom = index.and_then(|i| crate::difficulty::mod_for_value(i, s.combat_difficulty));
         let w = state.worlds.entry(s.guid.clone()).or_insert_with(|| {
             added.push(s.guid.clone());
-            WorldProfile { name: s.clan.clone(), mods: created_with.to_vec(), groups: vec![], custom_difficulty: None,
-                           build: build.map(Into::into) }
+            WorldProfile { name: s.clan.clone(), mods: created_with.to_vec(), build: build.map(Into::into),
+                           modset: new_modset.clone(), ..Default::default() }
         });
         if w.name.is_empty() { w.name = s.clan.clone(); }
         if w.custom_difficulty.is_none() { w.custom_difficulty = custom; }

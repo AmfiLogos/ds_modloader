@@ -170,6 +170,12 @@ pub struct WorldProfile {
     /// The build this world plays on (pinned per world).
     #[serde(default)]
     pub build: Option<String>,
+    /// Host rule when this world is hosted: "mods" (Allow mods) or "vanilla" (Vanilla check).
+    #[serde(default)]
+    pub match_rule: crate::join::MatchRule,
+    /// Gameplay mod-set hash of the last Play of this world (the in-game check compares it).
+    #[serde(default)]
+    pub modset: Option<String>,
 }
 
 /// What the launcher keeps: mods per world, groups, pinned builds, last index seq.
@@ -193,6 +199,9 @@ pub struct State {
     /// Show custom difficulties (off: only the game's own difficulties).
     #[serde(default)]
     pub custom_difficulties: bool,
+    /// Gameplay mod-set hash of the last new-world Play (a world the game makes then gets it).
+    #[serde(default)]
+    pub new_world_modset: Option<String>,
     #[serde(default)]
     pub last_index_seq: u64,
     #[serde(default)]

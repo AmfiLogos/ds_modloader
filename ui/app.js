@@ -175,6 +175,18 @@ function render(st) {
 
   $("index-line").textContent = st.index_error ? st.index_error : (st.index_seq ? `Mod list ${st.index_seq}, signature checked.` : "");
   $("index-line").classList.toggle("warn-text", !!st.index_error);
+  const w = which.kind === "world" ? st.state.worlds[which.guid] : null;
+  $("rule-row").hidden = !w;
+  if (w) {
+    const rule = w.match_rule || "mods";
+    $("rule-mods").setAttribute("aria-pressed", rule === "mods" ? "true" : "false");
+    $("rule-vanilla").setAttribute("aria-pressed", rule === "vanilla" ? "true" : "false");
+    const gp = st.mods.filter((m) => m.enabled && m.scope !== "client").map((m) => m.name);
+    $("rule-note").textContent = rule === "vanilla"
+      ? (gp.length ? `Vanilla only: turn off ${gp.join(", ")} to host.` : "Nobody may use gameplay mods. Mods only for yourself are fine.")
+      : "Players get your gameplay mods from the signed list when they join.";
+    $("rule-note").classList.toggle("warn-text", rule === "vanilla" && gp.length > 0);
+  }
   renderMods(st, pinned);
   renderGroups(st);
   renderDifficulty(st);
@@ -192,6 +204,9 @@ $("refresh").onclick = async () => {
   if (st) say(st.index_error ? "" : "Mod list is up to date.");
   $("refresh").disabled = false;
 };
+
+$("rule-mods").onclick = () => call("set_match_rule", { rule: "mods" });
+$("rule-vanilla").onclick = () => call("set_match_rule", { rule: "vanilla" });
 
 $("custom-toggle").onchange = (e) => call("set_custom_difficulties", { on: e.target.checked });
 

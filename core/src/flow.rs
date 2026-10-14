@@ -54,8 +54,44 @@ pub fn prepare(paths: &Paths, install: Option<&Install>, state: &State, which: &
     }
     let app = if play_is_current(paths, &build, &with_dirs, opts) { play_app(paths, &build, &set_key(&build, &with_dirs, opts)) }
               else { build_play(paths, &build, &with_dirs, opts)? };
-    let state = after_switch(state, which, &build);
+    let mut state = after_switch(state, which, &build);
     let removable = crate::decide::removable(&state, &paths.copies());
     let modset = crate::join::modset_hash(&set, &build, platform);
+    match which {
+        Which::World(g) => state.worlds.entry(g.clone()).or_default().modset = Some(modset.clone()),
+        Which::New => state.new_world_modset = Some(modset.clone()),
+    }
     Ok(Ready { build, app, mods: set, state, modset, removable })
+}
+
+/// What the game side reads (env DSML_SESSION points at it; written next to the saves before each Play):
+/// the world started, its gameplay mod-set hash, the host rule + offer for the lobby / PvP screens, and the
+/// known mod-set hash of every world, so a loader can refuse a world loaded with another mod set.
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
+pub struct Session {
+    pub world: Option<String>,
+    pub modset: String,
+    pub rule: crate::join::MatchRule,
+    /// None when the rule cannot be hosted with these mods (vanilla rule + gameplay mods on).
+    pub offer: Option<crate::join::HostOffer>,
+    pub offer_error: Option<String>,
+    pub client_mods: Vec<crate::join::ModRef>,
+    pub worlds: std::collections::BTreeMap<String, String>,
+}
+
+pub fn session(ready: &Ready, which: &Which, platform: &str) -> Session {
+    let rule = match which {
+        Which::World(g) => ready.state.worlds.get(g).map(|w| w.match_rule).unwrap_or_default(),
+        Which::New => Default::default(),
+    };
+    let (offer, offer_error) = match crate::join::host_offer(rule, &ready.mods, &ready.build, platform) {
+        Ok(o) => (Some(o), None),
+        Err(e) => (None, Some(e.to_string())),
+    };
+    Session {
+        world: match which { Which::World(g) => Some(g.clone()), Which::New => None },
+        modset: ready.modset.clone(), rule, offer, offer_error,
+        client_mods: ready.mods.iter().filter(|m| m.scope == crate::model::Scope::Client).map(crate::join::ModRef::of).collect(),
+        worlds: ready.state.worlds.iter().filter_map(|(g, w)| w.modset.clone().map(|m| (g.clone(), m))).collect(),
+    }
 }

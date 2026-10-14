@@ -26,6 +26,8 @@ pub struct LaunchSpec {
     /// DSML_WORLD / DSML_MODSET so a loader can refuse a world loaded with other mods (loader step 2).
     pub world: Option<String>,
     pub modset: String,
+    /// Written to <profile>/dsml_session.json; DSML_SESSION points at it.
+    pub session: Option<crate::flow::Session>,
 }
 
 /// Normal game save folder (only ever read).
@@ -61,6 +63,10 @@ pub fn env_for(spec: &LaunchSpec) -> Result<BTreeMap<String, String>> {
     }
     env.insert("DSML_MODSET".into(), spec.modset.clone());
     if let Some(w) = &spec.world { env.insert("DSML_WORLD".into(), w.clone()); }
+    if let Some(s) = &spec.session {
+        env.insert("DSML_SESSION".into(), spec.profile_dir.join("dsml_session.json").to_string_lossy().into_owned());
+        env.insert("DSML_RULE".into(), serde_json::to_value(s.rule)?.as_str().unwrap_or("mods").to_string());
+    }
     for (k, v) in &spec.extra_env { env.insert(k.clone(), v.clone()); }
     env.retain(|_, v| !v.is_empty());
     Ok(env)
@@ -87,6 +93,9 @@ pub fn launch(spec: &LaunchSpec) -> Result<Child> {
     std::fs::create_dir_all(spec.profile_dir.join("home"))?;
     if let Some(src) = &spec.saves_from { copy_first_saves(src, &data)?; }
     if spec.steam { std::fs::write(spec.profile_dir.join("steam_appid.txt"), format!("{APP_ID}\n"))?; }
+    if let Some(s) = &spec.session {
+        crate::write_atomic(&spec.profile_dir.join("dsml_session.json"), &serde_json::to_vec_pretty(s)?)?;
+    }
     let env = env_for(spec)?;
     let log = std::fs::OpenOptions::new().create(true).append(true).open(spec.profile_dir.join("stdout.log"))?;
     let mut cmd = Command::new(&exe);
