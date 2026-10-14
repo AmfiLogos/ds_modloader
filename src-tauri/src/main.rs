@@ -215,9 +215,16 @@ fn remove_copy(which: Which, build: String) -> Result<Status, String> {
 }
 
 fn main() {
+    use ds_unit_builder::tauri_cmds::*;
     tauri::Builder::default()
+        // Unit Builder: "my units" live in <launcher root>/builder/units.json
+        .manage(UnitBuilderState::new(paths().root))
         .invoke_handler(tauri::generate_handler![status, refresh_index, set_mod, save_group, apply_group,
-                                                 set_custom_difficulties, set_new_world_difficulty, set_match_rule, play, remove_copy])
+                                                 set_custom_difficulties, set_new_world_difficulty, set_match_rule, play, remove_copy,
+                                                 builder_catalog, builder_new_unit, builder_compute, builder_validate,
+                                                 builder_set_item, builder_set_stack_level, builder_decode_link, builder_encode_link,
+                                                 units_list, units_save, units_rename, units_duplicate, units_delete, units_import_link,
+                                                 teams_create, teams_update, teams_delete, units_export])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");
 }

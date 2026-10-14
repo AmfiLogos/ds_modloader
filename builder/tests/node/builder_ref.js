@@ -6,6 +6,7 @@
 //   node builder_ref.js encode          <- builds               -> {v1, v2, b64, dec} (codes and the builder's own decode)
 //   node builder_ref.js decode          <- codes (one per line)  -> decodeTeam result (v1 raw or v2 deflate-raw)
 //   node builder_ref.js validate        <- builds               -> the build after validate()
+// Input: stdin, or the file named by DSB_IN.
 const fs = require('fs'), vm = require('vm'), path = require('path'), zlib = require('zlib');
 const dir = process.env.DSB_DIR || path.join(process.env.HOME, 'dungeonsettlersdb', 'site', 'builder');
 function load() {
@@ -37,7 +38,7 @@ function load() {
   return ctx;
 }
 const c = load(), D = c.D, X = c.dsbIdx();
-const lines = () => fs.readFileSync(0, 'utf8').split('\n').filter(l => l.trim());
+const lines = () => fs.readFileSync(process.env.DSB_IN || 0, 'utf8').split('\n').filter(l => l.trim());
 const out = o => process.stdout.write(JSON.stringify(o) + '\n');
 const mode = process.argv[2];
 
@@ -143,4 +144,6 @@ function decodeCode(code) {
   else if (mode === 'validate') lines().forEach(l => { c.S = JSON.parse(l); c.validate(); out(c.S); });
   else if (mode === 'probe') out({ err: c.__err, fp: X.fp, has: [typeof c.computeBuild, typeof c.validate, typeof c.encodeTeam] });
   else { process.stderr.write('mode?\n'); process.exit(2); }
+  // builder.js arms UI timers on load: leave without waiting for them
+  process.stdout.write('', () => process.exit(0));
 })();

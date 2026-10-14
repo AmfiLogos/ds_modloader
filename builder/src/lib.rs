@@ -10,8 +10,13 @@ pub mod codec;
 pub mod compute;
 pub mod data;
 pub mod export;
+pub mod handoff;
 pub mod model;
+pub mod store;
 pub mod validate;
+
+#[cfg(feature = "tauri")]
+pub mod tauri_cmds;
 
 pub use compute::{compute, Sheet};
 pub use model::Build;

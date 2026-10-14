@@ -9,7 +9,6 @@ use ds_unit_builder::compute::{self, Sheet};
 use ds_unit_builder::model::Build;
 use ds_unit_builder::validate::validate;
 use serde_json::{json, Value};
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -28,22 +27,14 @@ fn node_ok() -> bool {
     true
 }
 fn node(args: &[&str], input: &str) -> Vec<Value> {
+    // input through a file, not a pipe: test threads spawn in parallel and a pipe end can leak into a sibling child
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/node/builder_ref.js");
-    let mut ch = Command::new("node")
-        .arg(&script)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .expect("node");
-    let inp = input.to_string();
-    let mut sin = ch.stdin.take().unwrap();
-    let t = std::thread::spawn(move || {
-        sin.write_all(inp.as_bytes()).unwrap();
-    });
-    let out = ch.wait_with_output().unwrap();
-    t.join().unwrap();
+    let inp = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("dsb_in_{}_{}.jsonl", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+    std::fs::write(&inp, input).unwrap();
+    let out = Command::new("node").arg(&script).args(args).env("DSB_IN", &inp).stdin(Stdio::null()).stderr(Stdio::inherit()).output().expect("node");
+    let _ = std::fs::remove_file(&inp);
     assert!(out.status.success(), "node {:?} failed", args);
     String::from_utf8(out.stdout).unwrap().lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).unwrap()).collect()
 }

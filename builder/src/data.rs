@@ -330,8 +330,10 @@ static DATA: OnceLock<Data> = OnceLock::new();
 /// the embedded payload, parsed once
 pub fn data() -> &'static Data {
     DATA.get_or_init(|| {
+        // typed straight from the text: a serde_json Value object does not keep key order, and the builder's
+        // iteration order (passiveGrants, items, trees...) is part of its arithmetic
+        let d: Dsb = serde_json::from_str(DSB_JSON).expect("data/dsb.json: payload shape");
         let raw: Value = serde_json::from_str(DSB_JSON).expect("data/dsb.json");
-        let d: Dsb = serde_json::from_value(raw.clone()).expect("data/dsb.json: payload shape");
         Data { d, raw }
     })
 }

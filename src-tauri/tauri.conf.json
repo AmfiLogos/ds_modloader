@@ -7,7 +7,7 @@
   "app": {
     "withGlobalTauri": true,
     "windows": [
-      { "title": "Dungeon Settlers Mod Launcher", "width": 980, "height": 680, "minWidth": 760, "minHeight": 520, "resizable": true }
+      { "title": "Dungeon Settlers Mod Launcher", "width": 1240, "height": 800, "minWidth": 760, "minHeight": 520, "resizable": true }
     ],
     "security": { "csp": "default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:" }
   },

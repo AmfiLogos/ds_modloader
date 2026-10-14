@@ -5,13 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DS Mod Launcher</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="builder.css">
 </head>
 <body>
 <header class="band">
   <h1>Dungeon Settlers</h1>
   <span class="sub">Mod Launcher</span>
+  <nav class="tabs" aria-label="Screens">
+    <button type="button" class="tab" data-view="launcher" aria-pressed="true">Play and mods</button>
+    <button type="button" class="tab" data-view="builder" aria-pressed="false">Unit Builder</button>
+    <button type="button" class="tab" data-view="units" aria-pressed="false">My Units</button>
+  </nav>
+  <span id="game-line" class="game-line"></span>
 </header>
 
+<div id="view-launcher" class="view">
 <main>
   <div class="side">
     <section class="frame worlds">
@@ -70,6 +78,81 @@
   <p id="message" class="meta" role="status"></p>
   <button id="play" class="primary" type="button">Play</button>
 </footer>
+</div>
+
+<div id="view-builder" class="view" hidden>
+  <div class="ub">
+    <aside class="ub-plan frame">
+      <h2 class="ub-rule">Plan</h2>
+      <ol id="ub-steps" class="ub-steps"></ol>
+      <p class="meta">Every choice is yours. Nothing is rolled at random.</p>
+      <button id="ub-new" class="secondary" type="button">New unit</button>
+    </aside>
+    <section class="ub-center">
+      <div id="ub-card" class="ub-card frame"></div>
+      <h2 id="ub-step-title" class="ub-rule"></h2>
+      <p id="ub-step-help" class="ub-help"></p>
+      <div id="ub-step" class="ub-step"></div>
+      <div class="ub-nav">
+        <button id="ub-back" class="secondary wide" type="button">Back</button>
+        <button id="ub-next" class="primary small" type="button">Next</button>
+      </div>
+    </section>
+    <aside class="ub-sheet frame">
+      <h2 class="ub-rule">Stat sheet</h2>
+      <div id="ub-sheet" class="ub-sheet-body"></div>
+      <div class="ub-actions">
+        <button id="ub-copy" class="secondary" type="button">Copy wiki link</button>
+        <button id="ub-paste" class="secondary" type="button">Paste wiki link</button>
+        <button id="ub-save" class="secondary full" type="button">Save to my units</button>
+        <button id="ub-bring" class="primary full" type="button">Bring to PvP / Foreign Expedition</button>
+      </div>
+      <p id="ub-msg" class="meta" role="status"></p>
+    </aside>
+  </div>
+</div>
+
+<div id="view-units" class="view" hidden>
+  <div class="mu">
+    <section class="frame mu-list">
+      <div class="title-row">
+        <h2>My Units</h2>
+        <div class="actions">
+          <button id="mu-import" class="secondary" type="button">Paste wiki link</button>
+          <button id="mu-new" class="secondary" type="button">New unit</button>
+        </div>
+      </div>
+      <p id="mu-count" class="meta"></p>
+      <ul id="mu-units" class="mu-units"></ul>
+    </section>
+    <section class="frame mu-side">
+      <h2>Teams</h2>
+      <p class="meta">Tick 1 to 8 units on the left, then bring them or save them as a team.</p>
+      <p id="mu-picked" class="mu-picked"></p>
+      <div class="actions">
+        <button id="mu-team-save" class="secondary" type="button">Save as team</button>
+        <button id="mu-team-copy" class="secondary" type="button">Copy team link</button>
+      </div>
+      <button id="mu-bring" class="primary full" type="button">Bring to PvP / Foreign Expedition</button>
+      <ul id="mu-teams" class="mu-teams"></ul>
+      <p id="mu-msg" class="meta" role="status"></p>
+    </section>
+  </div>
+</div>
+
+<dialog id="ub-dialog">
+  <form method="dialog">
+    <h3 id="ub-dlg-title"></h3>
+    <p id="ub-dlg-text" class="meta"></p>
+    <textarea id="ub-dlg-area" rows="4" aria-label="Link"></textarea>
+    <input id="ub-dlg-input" type="text" maxlength="40" aria-label="Name">
+    <div id="ub-dlg-extra"></div>
+    <div class="actions">
+      <button value="cancel" class="secondary" type="submit" id="ub-dlg-cancel">Cancel</button>
+      <button value="ok" class="secondary" type="submit" id="ub-dlg-ok">OK</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="group-dialog">
   <form method="dialog">
@@ -84,5 +167,6 @@
 </dialog>
 
 <script src="app.js"></script>
+<script src="builder.js"></script>
 </body>
 </html>

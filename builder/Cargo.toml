@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# Tauri 2 plugin with the commands for the UI (src/tauri_plugin.rs)
+# Tauri 2 app commands for the UI (src/tauri_cmds.rs)
 tauri = ["dep:tauri"]
 
 [dependencies]
@@ -20,5 +20,3 @@ indexmap = { version = "2", features = ["serde"] }
 flate2 = "1"
 tauri = { version = "2", optional = true }
 
-# Standalone until the launcher adds it to its workspace (NOTES.md, "Wiring into the launcher").
-[workspace]

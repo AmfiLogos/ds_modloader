@@ -721,11 +721,23 @@ name = "ds-mod-launcher"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ds-unit-builder",
  "dsml-core",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+]
+
+[[package]]
+name = "ds-unit-builder"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+ "tauri",
 ]
 
 [[package]]

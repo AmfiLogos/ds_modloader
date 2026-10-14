@@ -573,7 +573,7 @@ fn dec_build(r: &mut R, gone: &mut Vec<String>) -> Build {
             let si = r.u() as usize;
             let val = r.zz() as f64 / 100.0;
             if let Some(sk) = x.stat.get(si) {
-                b.manual.insert(sk.clone(), serde_json::json!(val));
+                b.manual.insert(sk.clone(), num_value(val));
             }
         }
     }
@@ -816,4 +816,13 @@ pub fn b64_build(b: &Build) -> String {
 /// manual values as numbers (for callers that need f64)
 pub fn manual_f64(b: &Build) -> IndexMap<String, f64> {
     b.manual.iter().filter_map(|(k, v)| Some((k.clone(), crate::model::manual_num(v)?))).collect::<IndexMap<_, _>>()
+}
+
+/// a number as JSON the way JavaScript writes it: whole values as integers
+pub fn num_value(v: f64) -> serde_json::Value {
+    if v.fract() == 0.0 && v.abs() < 9.0e15 {
+        serde_json::json!(v as i64)
+    } else {
+        serde_json::json!(v)
+    }
 }
