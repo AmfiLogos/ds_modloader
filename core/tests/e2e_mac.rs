@@ -344,3 +344,46 @@ fn worlds_hell_and_client_mod_compose() {
     println!("Hell + weapon slot copy reached the title screen: scene {} frames {}", v["scene"], v["frames"]);
     assert_eq!(before, owner_files());
 }
+
+/// Copies for the weapon-slot pair test (tests/weaponslot_pair.py): host = weapon slot + no-Steam patch,
+/// guest = no-Steam patch only. Each with the rig's own bundle id for its instance letter (own prefs domain).
+/// Env PAIR=EF (the leased pair). Writes test_env/pair/<X>/DungeonSettlers.app.
+#[test]
+#[ignore]
+fn make_pair_copies() {
+    let pair = std::env::var("PAIR").expect("PAIR=<leased pair, e.g. EF>");
+    let (h, g) = (&pair[0..1], &pair[1..2]);
+    let steam_root = fake_steam();
+    let inst = steam::find_install(&[steam_root]).unwrap();
+    let rel = fresh_dir("pair-release");
+    let url = serve(rel.clone());
+    let stock_ga = inst.game_path.join(format!("Contents/Frameworks/GameAssembly.dylib.stock_{BUILD}"));
+    let ws = home().join("ds_weaponslot/b25846389");
+    let ui = "uiprefab_assets_all_836f445db0845d9456ec1355aac5cbbb.bundle";
+    let ws_mod = patch_mod(&rel, &url, "weapon-skill-slot", "Weapon-skill slot", "client", &stock_ga,
+        &launcher_dir().join("test_env/modsrc/ws/GameAssembly.dylib"),
+        (&ws.join("assets/work/stock_aa/catalog.bin"), &ws.join("staged/catalog.bin")),
+        &[(&ws.join("staged").join(ui), &format!("{AA}/StandaloneOSX/{ui}"))], None);
+    let idx = serde_json::json!({ "schema": 1, "seq": 1, "games": { BUILD: { "mac-arm64": { "gameassembly_sha256": sha(&stock_ga) } } },
+        "mods": [ ws_mod,
+          { "id": "test-steam-gate-off", "name": "TEST: no Steam", "version": "1.0.0", "kind": "patch", "dev_only": true,
+            "game_builds": [BUILD], "platforms": { "mac-arm64": { "patches": { BUILD: [
+              { "file": GA, "offset": "0xD25730", "expect": "20008052", "new": "00008052" } ] } } } } ] });
+    publish_index(&rel, &idx);
+    let paths = Paths::new(launcher_dir().join("test_env/pair/launcher_root"));
+    let mut st = State { new_world: vec!["test-steam-gate-off".into()], ..Default::default() };
+    let index = fetch::fetch_index(&paths, &format!("{url}/index.json"), &[&dev_pub()], &mut st).unwrap();
+    st.worlds.insert("host".into(), dsml_core::model::WorldProfile { mods: vec!["test-steam-gate-off".into(), "weapon-skill-slot".into()], ..Default::default() });
+    st.worlds.insert("guest".into(), dsml_core::model::WorldProfile { mods: vec!["test-steam-gate-off".into()], ..Default::default() });
+    for (x, w) in [(h, "host"), (g, "guest")] {
+        let mut o = opts();
+        o.bundle_id = format!("com.CanOpener.Dungeon-Settlers.mp{x}");
+        o.name = format!("DS pair {x}");
+        let r = flow::prepare(&paths, Some(&inst), &st, &Which::World(w.into()), &index, "mac-arm64", &o).unwrap();
+        let dst = launcher_dir().join(format!("test_env/pair/{x}/DungeonSettlers.app"));
+        if dst.exists() { paths.retire(&dst, &format!("pair-{x}")).unwrap(); }
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        assert!(Command::new("/bin/cp").args(["-c", "-R"]).arg(&r.app).arg(&dst).status().unwrap().success());
+        println!("{w} {x}: {} mods {:?}", dst.display(), r.mods.iter().map(|m| m.key()).collect::<Vec<_>>());
+    }
+}
