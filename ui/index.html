@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DS Mod Launcher</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="band">
+  <h1>Dungeon Settlers</h1>
+  <span class="sub">Mod Launcher</span>
+</header>
+
+<main>
+  <section class="frame game">
+    <h2>Game</h2>
+    <dl>
+      <dt>Steam build</dt><dd id="steam-build">-</dd>
+      <dt>You play on</dt><dd id="active-build">-</dd>
+      <dt>Copies</dt><dd id="copies">-</dd>
+    </dl>
+    <p id="plan" class="plan"></p>
+    <div id="plan-actions" class="actions"></div>
+    <div id="removable"></div>
+  </section>
+
+  <section class="frame mods">
+    <div class="title-row">
+      <h2>Mods</h2>
+      <button id="refresh" class="secondary" type="button">Check for updates</button>
+    </div>
+    <p id="index-line" class="meta"></p>
+    <ul id="mod-list"></ul>
+  </section>
+</main>
+
+<footer>
+  <p id="message" class="meta" role="status"></p>
+  <button id="play" class="primary" type="button">Play</button>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+/* Palette and fonts from the game (research/ux_design_2026-10-13.md, section 2). */
+@font-face { font-family: "Cinzel"; src: url("fonts/Cinzel.ttf") format("truetype"); font-weight: 400 900; }
+@font-face { font-family: "Lora"; src: url("fonts/Lora.ttf") format("truetype"); font-weight: 400 700; }
+
+:root {
+  --text: #ccbeb8;
+  --muted: #a69085;
+  --gold: #d9be8f;
+  --copper: #b6835a;
+  --border: #915847;
+  --warn: #f16071;
+  --red: #6b1410;
+  --red-dark: #420808;
+  --window: #222025;
+  --column: #211e24;
+  --inner: #2d2a31;
+  --band: #36323a;
+  --row1: #36323a;
+  --row2: #2b282f;
+  --ok: #93b07c;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--column);
+  color: var(--text);
+  font: 16px/1.45 "Lora", Georgia, serif;
+  display: flex; flex-direction: column;
+  user-select: none; -webkit-user-select: none;
+}
+
+.band {
+  display: flex; align-items: baseline; gap: 14px;
+  padding: 14px 22px;
+  background: linear-gradient(var(--band), var(--window));
+  border-bottom: 2px solid var(--copper);
+}
+h1, h2 { font-family: "Cinzel", serif; font-weight: 700; font-variant: small-caps; margin: 0; color: var(--text); }
+h1 { font-size: 26px; letter-spacing: .04em; }
+h2 { font-size: 20px; }
+.sub { font-family: "Cinzel", serif; color: var(--gold); font-size: 16px; }
+
+main {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 300px 1fr; gap: 16px;
+  padding: 16px 22px;
+}
+.frame {
+  background: var(--window);
+  border: 2px solid var(--border);
+  box-shadow: inset 0 0 0 4px var(--window), inset 0 0 0 5px var(--copper);
+  padding: 16px 18px;
+  min-height: 0;
+}
+.mods { display: flex; flex-direction: column; }
+.title-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+
+dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 14px 0; }
+dt { color: var(--muted); font-size: 14px; }
+dd { margin: 0; color: var(--gold); font-variant-numeric: tabular-nums; }
+.plan { background: var(--inner); border-left: 3px solid var(--copper); padding: 10px 12px; margin: 10px 0; font-size: 15px; }
+.plan.warn { border-left-color: var(--warn); }
+.meta { color: var(--muted); font-size: 14px; margin: 6px 0 10px; }
+.warn-text { color: var(--warn); }
+
+#mod-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+#mod-list li {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid var(--window);
+}
+#mod-list li:nth-child(odd) { background: var(--row1); }
+#mod-list li:nth-child(even) { background: var(--row2); }
+.mod-name { font-size: 17px; }
+.mod-desc { grid-column: 2 / 4; color: var(--muted); font-size: 14px; }
+.tags { display: flex; gap: 6px; justify-self: end; }
+.tag { font-size: 12px; border: 1px solid var(--copper); color: var(--gold); padding: 1px 6px; }
+.tag.no { border-color: var(--warn); color: var(--warn); }
+.tag.yes { border-color: var(--ok); color: var(--ok); }
+
+/* toggle: one click flips it; the label says what it does */
+.switch { position: relative; width: 40px; height: 22px; }
+.switch input { appearance: none; -webkit-appearance: none; margin: 0; width: 40px; height: 22px; cursor: pointer;
+  background: var(--inner); border: 1px solid var(--copper); }
+.switch input::after { content: ""; position: absolute; top: 4px; left: 4px; width: 14px; height: 14px; background: var(--muted); transition: left .12s; }
+.switch input:checked { background: var(--red); }
+.switch input:checked::after { left: 22px; background: var(--gold); }
+.switch input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+button { font: inherit; cursor: pointer; color: var(--text); }
+button:disabled { opacity: .5; cursor: default; }
+.primary {
+  min-width: 232px; height: 48px; font-size: 20px;
+  background: linear-gradient(var(--red), var(--red-dark));
+  border: 2px solid var(--copper);
+  box-shadow: inset 0 0 0 2px var(--red-dark);
+}
+.primary:not(:disabled):hover { border-color: var(--gold); }
+.secondary {
+  height: 30px; padding: 0 14px; font-size: 15px;
+  background: var(--inner); border: 1px solid var(--copper);
+}
+.secondary:not(:disabled):hover { border-color: var(--gold); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 22px 16px; border-top: 1px solid var(--border); background: var(--window);
+}
+footer .meta { margin: 0; flex: 1; }
+
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } }

@@ -1,0 +1,25 @@
+[package]
+name = "dsml-core"
+version = "0.1.0"
+edition = "2021"
+description = "Dungeon Settlers mod launcher core: Steam detection, signed index, pin rules, side copy, launch"
+
+[lib]
+name = "dsml_core"
+
+[[bin]]
+name = "dsml-tool"
+path = "src/bin/dsml_tool.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+ed25519-dalek = "2"
+base64 = "0.22"
+hex = "0.4"
+semver = "1"
+plist = "1"
+ureq = "3"
+libc = "0.2"
