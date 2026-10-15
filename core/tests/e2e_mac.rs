@@ -407,7 +407,9 @@ fn owner_app_smoke() {
     let app = std::env::var_os("OWNER_APP").map(PathBuf::from)
         .unwrap_or_else(|| home().join("Applications/DS Mod Launcher.app"));
     let exe = std::fs::read_dir(app.join("Contents/MacOS")).unwrap().next().unwrap().unwrap().path();
-    let root = fresh_dir("owner-app-root");
+    // short folder: the control socket path must stay under the 104-byte unix socket limit
+    let root = launcher_dir().join(format!("test_env/oa{}", dsml_core::now_secs() % 100000));
+    std::fs::create_dir_all(&root).unwrap();
     let run = |what: &str| -> serde_json::Value {
         let out = Command::new(&exe).env("DSML_ROOT", &root).env("DSML_SMOKE", what).env_remove("DSML_SEED_DIR").output().unwrap();
         assert!(out.status.success(), "DSML_SMOKE={what} failed: {}", String::from_utf8_lossy(&out.stderr));
