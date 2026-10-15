@@ -1,0 +1,3 @@
+{ "id": "gcd-probe", "name": "GCD probe (test only)", "version": "1.0.0", "kind": "code", "api": 2, "scope": "client",
+  "game_builds": ["25846389"], "platforms": { "mac-arm64": { "entry": "gcd-probe.dylib" } },
+  "tables": { "25846389": { "mac-arm64": "rva/25846389_mac.tsv" } }, "requires": ["loader>=2.0.0"] }
