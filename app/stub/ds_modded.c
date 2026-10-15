@@ -285,6 +285,67 @@ static int ensure_steam(const char *app) {
     return 1;
 }
 
+/* 6. BepInEx (kind "bepinex" mods, lane bepinexmac): when an enabled mod is a BepInEx plugin, install BepInEx at first
+   use (app Resources/dsml/install_bepinex.sh -> ROOT/bepinex/mac-arm64/<ver>) and start the game through Doorstop.
+   The loader gets the same paths for its soft restarts (DSML_BEPINEX_DIR / _SCRIPT, DSML_DSLOAD). */
+#define BIE_VER "0.1.0"
+static void bg_notification(const char *text) {             /* non-blocking banner; the game start goes on */
+    if (getenv("DSMP_NO_DIALOG")) { logf_("notification (not shown): %s", text); return; }
+    char sc[600]; snprintf(sc, sizeof sc, "display notification \"%s\" with title \"Dungeon Settlers Modded\"", text);
+    char *av[] = { "/usr/bin/osascript", "-e", sc, NULL }; pid_t pid;
+    if (posix_spawn(&pid, av[0], NULL, NULL, av, environ) == 0) logf_("notification: %s", text);
+}
+static int bepinex_launch(const char *root, const char *data, char *dyld, size_t cap) {
+    char bdir[PATH_MAX], script[PATH_MAX], act[PATH_MAX], mods[PATH_MAX];
+    snprintf(bdir, sizeof bdir, "%s/bepinex/mac-arm64/" BIE_VER, root);
+    snprintf(script, sizeof script, "%s/loader/install_bepinex.sh", root);
+    snprintf(mods, sizeof mods, "%s/loader/mods", root);
+    setenv("DSML_BEPINEX_DIR", bdir, 1); setenv("DSML_BEPINEX_SCRIPT", script, 1);
+    snprintf(act, sizeof act, "%s/Mods/active.json", data);
+    char *j = slurp(act); if (!j) return 0;
+    char *e = strstr(j, "\"enabled\""), *lb = e ? strchr(e, '[') : NULL, *rb = lb ? strchr(lb, ']') : NULL;
+    char dirs[8192] = ""; int n = 0;
+    for (char *p = lb; p && p < rb; ) {                      /* enabled ids in profile order */
+        char *q1 = strchr(p, '"'); if (!q1 || q1 > rb) break;
+        char *q2 = strchr(q1 + 1, '"'); if (!q2 || q2 > rb) break;
+        char id[128]; snprintf(id, sizeof id, "%.*s", (int)(q2 - q1 - 1), q1 + 1); p = q2 + 1;
+        char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, id);
+        char *m = slurp(mj); if (!m) continue;
+        char *k = strstr(m, "\"kind\""); char *v = k ? strchr(k + 6, '"') : NULL;
+        int bie = v && !strncmp(v, "\"bepinex\"", 9);
+        free(m);
+        if (!bie) continue;
+        if (n++) strlcat(dirs, ":", sizeof dirs);
+        strlcat(dirs, mods, sizeof dirs); strlcat(dirs, "/", sizeof dirs); strlcat(dirs, id, sizeof dirs);
+    }
+    free(j);
+    if (!n) return 0;
+    char probe[PATH_MAX]; snprintf(probe, sizeof probe, "%s/libdoorstop.dylib", bdir);
+    if (!exists(probe)) {
+        bg_notification("Preparing mods (first start): downloading BepInEx (31 MB).");
+        char out[2048] = ""; char *av[] = { "/bin/zsh", script, bdir, NULL };
+        int r = run_cmd(av, out, sizeof out);
+        if (r != 0) {
+            char *er = strstr(out, "ERROR "); char msg[900];
+            snprintf(msg, sizeof msg, "BepInEx could not be installed (%s). The game starts without the BepInEx mods.", er ? er + 6 : "unknown error");
+            for (char *c = msg; *c; c++) if (*c == '\n') *c = ' ';
+            logf_("bepinex install failed: %s", out); notice(msg); return 0;
+        }
+        logf_("bepinex installed into %s", bdir);
+    }
+    char ready[PATH_MAX]; snprintf(ready, sizeof ready, "%s/ds_ready_%s", bdir, getenv("DSML_BUILD") ? getenv("DSML_BUILD") : "");
+    if (!exists(ready)) bg_notification("Preparing mods (first start): BepInEx prepares its files for this game version. About 2 minutes, once.");
+    char v[PATH_MAX];
+    snprintf(dyld + strlen(dyld), cap - strlen(dyld), ":%s/libdoorstop.dylib", bdir);
+    setenv("DOORSTOP_ENABLED", "1", 1); setenv("DOORSTOP_IGNORE_DISABLED_ENV", "0", 1);
+    snprintf(v, sizeof v, "%s/BepInEx/core/BepInEx.Unity.IL2CPP.dll", bdir); setenv("DOORSTOP_TARGET_ASSEMBLY", v, 1);
+    snprintf(v, sizeof v, "%s/dotnet/libcoreclr.dylib", bdir); setenv("DOORSTOP_CLR_RUNTIME_CORECLR_PATH", v, 1);
+    snprintf(v, sizeof v, "%s/dotnet", bdir); setenv("DOORSTOP_CLR_CORLIB_DIR", v, 1);
+    setenv("BEPINEX_PLUGIN_DIRS", dirs, 1);
+    logf_("bepinex: %d plugin folder(s): %s", n, dirs);
+    return n;
+}
+
 int main(int argc, char **argv) {
     const char *h = getenv("HOME");
     if (!h || !*h) { struct passwd *pw = getpwuid(getuid()); h = pw ? pw->pw_dir : "/tmp"; }
@@ -340,7 +401,10 @@ int main(int argc, char **argv) {
     setenv("DSRIG_DIR", profile, 1);
     setenv("DSRIG_LIVE", "1", 1);
     if (!getenv("DSRIG_FPS")) setenv("DSRIG_FPS", "60", 1);
-    snprintf(v, sizeof v, "%s/loader/dsload.dylib", root); setenv("DYLD_INSERT_LIBRARIES", v, 1);
+    snprintf(v, sizeof v, "%s/loader/dsload.dylib", root); setenv("DSML_DSLOAD", v, 1);
+    setenv("DSML_BUILD", build, 1);                          /* bepinex_launch reads it (first-start marker) */
+    bepinex_launch(root, data, v, sizeof v);
+    setenv("DYLD_INSERT_LIBRARIES", v, 1);
     snprintf(v, sizeof v, "%s/loader/mods", root); setenv("DSL_MODS_DIR", v, 1);
     snprintf(v, sizeof v, "%s/Mods/active.json", data); setenv("DSL_PROFILE", v, 1);
     setenv("DSL_LOG_DIR", profile, 1);
@@ -357,8 +421,10 @@ int main(int argc, char **argv) {
     if (dry) {
         const char *keys[] = { "SteamAppId", "SteamGameId", "CFFIXED_USER_HOME", "DSRIG_DIR", "DSRIG_LIVE", "DSRIG_FPS",
                                "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
-                               "DSML_BUILD", "DSML_APP", "DSML_DATA" };
-        for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) printf("ENV %s=%s\n", keys[i], getenv(keys[i]));
+                               "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
+                               "DOORSTOP_ENABLED", "DOORSTOP_TARGET_ASSEMBLY", "DOORSTOP_CLR_RUNTIME_CORECLR_PATH",
+                               "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS" };
+        for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) if (getenv(keys[i])) printf("ENV %s=%s\n", keys[i], getenv(keys[i]));
         char cwd[PATH_MAX]; printf("CWD %s\n", getcwd(cwd, sizeof cwd) ? cwd : "?");
         for (int i = 0; i < k; i++) printf("ARGV %s\n", av[i]);
         logf_("dry run: would start %s", game);

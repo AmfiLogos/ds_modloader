@@ -11,6 +11,7 @@
 // by modules from their own main-thread code).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
+#include "dsl_bie.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,14 +92,19 @@ static void mods_scan(void) {
         x->name = xstrdup(json_str(m, "name") ? json_str(m, "name") : id);
         x->version = xstrdup(json_str(m, "version"));
         x->description = xstrdup(json_str(m, "description"));
-        const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
-        JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         const char *kd = json_str(m, "kind"); if (!kd) kd = json_str(m, "type");
         x->kind = xstrdup(kd ? kd : "code");
+        const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
+        JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         int on = 1;
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
         const char *why = NULL; int st = dsl_mod_state(id, &why);
+        if (!strcmp(x->kind, "bepinex")) {                               /* BepInEx plugins run when their folder is in this start */
+            char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);
+            st = dsl_bie_running_dir(pd) ? 1 : 0;
+            why = dsl_bie_state() < 0 ? "BepInEx is not available in this start" : "BepInEx plugin: not running in this start";
+        }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
         x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "not loaded (see dsload.log)"));
         json_free(m);
@@ -257,6 +263,12 @@ static int write_profile(const char *path, const char *const *ids, int n) {
     snprintf(b + k, cap - k, "]}\n");
     int r = put_file(path, b); free(b); return r;
 }
+static int tip_first_run;
+static char bp_ids[MAXM][64], bp_env[700]; static int bp_n = -1;
+static void bie_pending_set(const char *const *ids, int n, const char *env) {
+    bp_n = 0; for (int i = 0; i < n && i < MAXM; i++) snprintf(bp_ids[bp_n++], 64, "%s", ids[i]);
+    snprintf(bp_env, sizeof bp_env, "%s", env ? env : "");
+}
 static int apply_ids(const char *const *ids, int n, const char *env, char *why, size_t cap) {
     const char *busy = dsl_busy_reason();
     if (busy) { snprintf(why, cap, "%s", busy); dsl_log("reg: Apply refused: %s", busy); return -1; }
@@ -267,7 +279,22 @@ static int apply_ids(const char *const *ids, int n, const char *env, char *why, 
     char p[1200]; dpath(p, sizeof p, "pending.json");
     if (write_profile(p, all, k)) { snprintf(why, cap, "cannot write %s", p); return -1; }
     char kk[512]; key_of(all, k, kk, sizeof kk);
-    char envl[1400]; snprintf(envl, sizeof envl, "DSML_MODSET=%s\n%s", kk, env ? env : "");
+    /* BepInEx plugins of the new set (profile order): install at first use, Doorstop env for the new process */
+    char pdirs[MAXM][1300]; const char *pd[MAXM]; int nb = 0;
+    for (int i = 0; i < k; i++) { const DSLModInfo *m = mod_by_id(all[i]); if (m && !strcmp(m->kind, "bepinex")) { snprintf(pdirs[nb], sizeof pdirs[nb], "%s/%s", dsl_mods_dir(), all[i]); pd[nb] = pdirs[nb]; nb++; } }
+    int bs = dsl_bie_state();
+    if (nb && bs < 0) { snprintf(why, cap, "BepInEx mods need the Dungeon Settlers Modded app (no BepInEx folder in this start)"); return -1; }
+    if (nb && bs == 0) {                                               /* first use: download, then this Apply runs again */
+        if (dsl_bie_install_start()) { snprintf(why, cap, "the BepInEx download could not start"); return -1; }
+        bie_pending_set(all, k, env);
+        const DSLUi *u = dsl_ui_kit();
+        if (u) u->notice("Preparing mods (first start)\nDownloading BepInEx (31 MB). The game restarts with the new mods when it is ready.", "OK", NULL, NULL, NULL, NULL);
+        dsl_log("reg: Apply waits for the BepInEx download"); return 0;
+    }
+    char bie[4096] = ""; if (dsl_bie_env(pd, nb, bie, sizeof bie)) bie[0] = 0;
+    int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */
+    if (first) { setenv("DSL_SOFT_TIMEOUT", "300", 1); tip_first_run = 1; } else { unsetenv("DSL_SOFT_TIMEOUT"); tip_first_run = 0; }
+    char envl[6000]; snprintf(envl, sizeof envl, "DSML_MODSET=%s\n%s%s%s", kk, bie, first ? "DSL_SOFT_TIMEOUT=300\n" : "", env ? env : "");
     dsl_log("reg: Apply: %d mod(s) (%s) -> soft restart", k, kk);
     char g[40]; Obj mf = mainflow();
     if (!env && mf && off_scene >= 0 && AT(mf, off_scene, int32_t) == 2 && world_guid(g)) {   /* in a world: it keeps the new set */
@@ -461,8 +488,57 @@ static void test_frame(void) {
 }
 
 /* ------------------------------------------------------------------ frame + install */
+/* BepInEx: a waiting Apply after the download; "Preparing mods (first start)" on the loading screen; first start done */
+static void *(*il_str2)(const char *);
+static void loading_tip(const char *text) {
+    static void *k_fade, *k_tmp; static int32_t o_lui = -1, o_tip = -1, o_key = -1; static void (*set_text)(void *, void *, const void *);
+    static void *(*find)(void *, int, const void *); static void *t_fade;
+    if (!k_fade) {
+        k_fade = dsl_find_class("Refactor.UI", "ScreenFadeEffectView"); void *k_lui = dsl_find_class("Refactor", "LoadingUI");
+        void *k_das = dsl_find_class("Refactor.UI", "DASText"); k_tmp = dsl_find_class("TMPro", "TMP_Text");
+        o_lui = k_fade ? dsl_field_offset(k_fade, "_loadingUI") : -1; o_tip = k_lui ? dsl_field_offset(k_lui, "_tipText") : -1;
+        o_key = k_das ? dsl_field_offset(k_das, "_useTextKey") : -1;
+        void *m = k_tmp ? dsl_find_method(k_tmp, "set_text", 1) : NULL; set_text = m ? dsl_method_address(m) : NULL;
+        void *ko = dsl_find_class("UnityEngine", "Object"); void *mf = ko ? dsl_find_method(ko, "FindObjectOfType", 2) : NULL; find = mf ? dsl_method_address(mf) : NULL;
+        void *(*ct)(void *) = dsl_ga_sym("il2cpp_class_get_type"); void *(*to)(void *) = dsl_ga_sym("il2cpp_type_get_object");
+        if (ct && to && k_fade) t_fade = to(ct(k_fade));
+        il_str2 = dsl_ga_sym("il2cpp_string_new");
+    }
+    static int said;
+    if (!find || !t_fade || o_lui < 0 || o_tip < 0 || !set_text || !il_str2) { if (!said++) dsl_log("reg: loading tip off (names: find %p type %p lui %d tip %d set %p)", find, t_fade, o_lui, o_tip, set_text); return; }
+    Obj f = find(t_fade, 0, NULL), lui = f ? AT(f, o_lui, Obj) : NULL, tip = lui ? AT(lui, o_tip, Obj) : NULL;
+    if (said < 2) { said = 2; dsl_log("reg: loading tip: view %p loading ui %p tip text %p (useTextKey at %d)", f, lui, tip, o_key); }
+    if (!tip) return;
+    if (o_key >= 0) AT(tip, o_key, uint8_t) = 0;                       /* plain text, not a text key */
+    set_text(tip, il_str2(text), NULL);
+}
+static void bie_frame(void) {
+    static unsigned f; ++f;
+    if (bp_n >= 0 && f % 15 == 0) {
+        char why[300] = ""; int r = dsl_bie_install_poll(why, sizeof why);
+        if (r == 0) {
+            const char *ids[MAXM]; for (int i = 0; i < bp_n; i++) ids[i] = bp_ids[i];
+            int n = bp_n; bp_n = -1; char w2[300] = "";
+            dsl_log("reg: BepInEx ready: the waiting Apply runs");
+            { const DSLUi *u = dsl_ui_kit(); if (u && u->notice_close) u->notice_close(); }   /* the "Downloading" box */
+            if (apply_ids(ids, n, bp_env[0] ? bp_env : NULL, w2, sizeof w2)) {
+                const DSLUi *u = dsl_ui_kit(); char t[500]; snprintf(t, sizeof t, "The mods could not be applied: %s", w2);
+                if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+            }
+        } else if (r < 0) {
+            bp_n = -1; const DSLUi *u = dsl_ui_kit(); char t[500]; if (u && u->notice_close) u->notice_close(); snprintf(t, sizeof t, "BepInEx could not be installed: %s\nThe mods stay as they were.", why);
+            if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+        }
+    }
+    if (tip_first_run && dsl_soft_busy() && f % 30 == 0)
+        loading_tip("Preparing mods (first start): BepInEx prepares its files for this game version. This takes about 2 minutes, once.");
+    Obj mf = mainflow();
+    if (f % 60 == 0 && mf && off_scene >= 0 && AT(mf, off_scene, int32_t) == 1 && !dsl_soft_wanted()) dsl_bie_mark_ready();
+}
+
 void dsl_frame_hook(void) {
     commit_pending();
+    bie_frame();
     world_frame();
     k_frame();
     test_frame();
@@ -498,5 +574,6 @@ void dsl_reg_after_init(void) {
     worlds_load();
     const char *old = json_str(worlds_doc, "modset");
     if (!old || strcmp(old, run_key)) worlds_save(NULL, NULL);
-    dsl_log("reg: running gameplay set %s (%d installed mod(s))", run_key, nmi);
+    int nb = 0; for (int i = 0; i < nmi; i++) nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1;
+    dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d)", run_key, nmi, nb, dsl_bie_state());
 }

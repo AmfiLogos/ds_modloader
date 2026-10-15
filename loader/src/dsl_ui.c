@@ -800,11 +800,12 @@ static Obj notice_view(void) {
     if (frames - nview_last < 30 && nview_last >= 0) return NULL;
     nview_last = frames; v = find_obj(K.Notice, 1); hset(&h_nview, v); return v;
 }
-static struct { int serial; dsl_ui_cb ok, cancel; void *ud; uintptr_t h_ok, h_cancel; } NB;
+static struct { int serial; dsl_ui_cb ok, cancel; void *ud; uintptr_t h_ok, h_cancel; char text[1024]; } NB;
 static void k_notice(const char *text, const char *ok_label, const char *cancel_label, dsl_ui_cb ok, dsl_ui_cb cancel, void *ud) {
     nview_last = -1000; Obj v = notice_view();
     if (!v || !m_nv_select || !m_nv_confirm || f_nv_text < 0) { dsl_log("ui: notice: no CommonNoticeView in this scene: \"%s\" not shown", text ? text : ""); return; }
     NB.serial = (NB.serial + 1) & 0x0FFFFFFF; NB.ok = ok; NB.cancel = cancel; NB.ud = ud;
+    snprintf(NB.text, sizeof NB.text, "%s", text ? text : "");
     Obj a = mk_action(TOKEN(NB.serial, P_OK)), c = cancel_label ? mk_action(TOKEN(NB.serial, P_CANCEL)) : NULL;
     hset(&NB.h_ok, a); hset(&NB.h_cancel, c);
     if (cancel_label) CALL(m_nv_select, void, Obj, Obj, Obj, Obj, bool)(v, str(text), a, c, false, m_nv_select);
@@ -817,6 +818,15 @@ static void k_notice(const char *text, const char *ok_label, const char *cancel_
     go_active(v, 1);
     raise_view(v, 32040);
     dsl_log("ui: notice %d shown (%s): %s", NB.serial, cancel_label ? "two buttons" : "one button", text ? text : "");
+}
+
+static void k_notice_close(void) {
+    Obj v = notice_view(); if (!v || !NB.text[0] || !on_tree(v)) return;
+    char cur[1024] = ""; utf8_of(tmp_get(AT(v, f_nv_text, Obj)), cur, sizeof cur);
+    if (strcmp(cur, NB.text)) return;                                   /* another box is up now (the game's own): leave it */
+    NB.text[0] = 0; NB.ok = NB.cancel = NULL; NB.ud = NULL; NB.serial = (NB.serial + 1) & 0x0FFFFFFF;   /* a late click on it does nothing */
+    go_active(v, 0);
+    dsl_log("ui: notice closed by its owner");
 }
 
 /* ------------------------------------------------------------------ place / active / enabled / destroy / clipboard */
@@ -874,7 +884,7 @@ static DSLUi KIT = {
     .size = sizeof(DSLUi), .panel = k_panel, .text = k_text, .set_text = k_set_text, .button = k_button, .toggle = k_toggle,
     .toggle_get = k_toggle_get, .toggle_set = k_toggle_set, .value_row = k_value_row, .value_get = k_value_get, .value_set = k_value_set,
     .field = k_field, .field_get = k_field_get, .field_set = k_field_set, .scroll = k_scroll, .scroll_height = k_scroll_height,
-    .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .place = k_place, .set_active = k_set_active,
+    .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .notice_close = k_notice_close, .place = k_place, .set_active = k_set_active,
     .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set
 };
 
