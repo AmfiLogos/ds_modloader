@@ -24,7 +24,10 @@ def lease(lane, pid=None):
         MAP.update({p[0]: 'M', p[1]: 'N'})
         old = lrig.pair_port
         lrig.pair_port = lambda x: realrig.PAIR_PORTS[p] if x in ('M', 'N') else old(x)   # fix_mp_port keeps M/N on the leased port
- print(f'[pair_soak] leased {p}: {p[0]} -> M, {p[1]} -> N, port {realrig.PAIR_PORTS[p]}', flush=True)
+        def keep(x, p=p):                                  # lrig.start / send mark OUR pair's lease as used
+            realrig._with_leases(lambda d: d.get(p, {}).update(used=__import__('time').time()))
+        lrig.touch = keep
+        print(f'[pair_soak] leased {p}: {p[0]} -> M, {p[1]} -> N, port {realrig.PAIR_PORTS[p]}', flush=True)
     return p
 shim.lease = lease
 shim.release = realrig.release
@@ -32,7 +35,7 @@ for n in ('send', 'start', 'stop', 'wait_for', 'idir', 'read_pid', 'sockpath', '
     f = getattr(lrig, n, None)
     if f:
         setattr(shim, n, (lambda f: lambda x, *a, **k: f(MAP.get(x, x), *a, **k))(f))
-shim.touch = lambda x: None
+shim.touch = lambda x: lrig.touch(x)
 sys.modules['rig'] = shim
 src = os.path.expanduser('~/ds_multiplayer/rig/soak_test.py')
 sys.argv = [src] + sys.argv[1:]

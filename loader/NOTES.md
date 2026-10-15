@@ -135,3 +135,18 @@ To refresh the MP snapshot: re-copy `~/ds_multiplayer/src` (+ `win/math/{math_ma
   code: it does not touch the engine's region or any hook site.
 - The launcher (step 1) still injects `dsrig.dylib` from the multiplayer release entry; switching `launch.rs` /
   the index to `dsload.dylib` + modules is the next step.
+
+## Night 2026-10-15 (loader lane)
+
+### Future-build guard (task 2) - done, host-tested
+- Pinned build = the launcher's build for this world when given (`DSML_BUILD`, or `"build"` in the `DSML_SESSION`
+  file; the launcher does not send it yet, see MORNING_QUESTIONS) AND one of the builds in `src/dsl_builds.h`.
+- Different or unknown build: no module is opened, no hook and no code patch is written, the world check is not
+  installed, the game runs unmodded. Three places say why: `dsload.log` ("GAME BUILD CHECK FAILED (<reason>)"),
+  stderr ("dsload: ..."), `<log dir>/dsload_status.json` (`active`, `reason` = `unknown_build` / `not_pinned_build` /
+  `mapped_image_differs`, `uuid`, `found_build`, `pinned_build`, `loader_builds`, `message`) for the launcher, plus
+  one macOS notice "Dungeon Settlers: mods are off" in a normal start (not with `-batchmode` or `DSL_NO_ALERT`).
+  On the pinned build the same file says `"active":true,"reason":"ok"`.
+- Second layer: the engine itself refuses `hook` / `patch` while `dsl_build_id` is NULL (a module that tries later
+  gets a refusal line, nothing is written).
+- Host test: 31/31 (T6: env pin differs, session pin differs, pin equal; T5: unknown build says why).
