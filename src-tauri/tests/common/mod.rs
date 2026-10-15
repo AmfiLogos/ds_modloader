@@ -15,7 +15,8 @@ pub struct Ipc {
 
 pub fn mock(root: PathBuf) -> Ipc {
     let app = mock_builder()
-        .manage(UnitBuilderState::new(root))
+        // a units file under the scratch root: tests never touch the player's shared library
+        .manage(UnitBuilderState::with_units_path(root.clone(), root.join("builder").join("units.json")))
         .invoke_handler(tauri::generate_handler![
             builder_catalog, builder_new_unit, builder_compute, builder_validate,
             builder_set_item, builder_set_stack_level, builder_decode_link, builder_encode_link,

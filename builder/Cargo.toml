@@ -19,4 +19,10 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 indexmap = { version = "2", features = ["serde"] }
 flate2 = "1"
 tauri = { version = "2", optional = true }
+# short wiki links (/t/<id>, /build/<id>): one GET, no redirects followed (same client as dsml-core)
+ureq = "3"
+
+[target.'cfg(unix)'.dependencies]
+# the real home folder (getpwuid) for the shared units library
+libc = "0.2"
 

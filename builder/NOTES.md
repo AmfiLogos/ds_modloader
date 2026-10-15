@@ -55,7 +55,18 @@ stably here (C qsort order unspecified).
 
 ## My units file
 
-`<launcher root>/builder/units.json`, atomic write (temp + rename), previous file kept as `units.json.bak`.
+The SHARED "My Units" library, the same file the game mod reads (ds_mp `src/myunits.h`; in game: Bring Units >
+My Units). `store::library_path`, same rule as the mod:
+- env `DSMP_UNITS_LIB` (the file) first;
+- Mac: `~/Library/Application Support/CanOpener/Dungeon Settlers/Mods/units/library.json` (the real home from
+  getpwuid, not a CFFIXED_USER_HOME);
+- Windows: `%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\Mods\units\library.json`;
+- other systems: `<launcher root>/builder/units.json`.
+
+Parent folders are made on save. Atomic write (temp + rename), previous file kept as `library.json.bak`.
+Migration: on first open, when the library does not exist and the old `<launcher root>/builder/units.json` does,
+it is COPIED over (the old file stays). Cross-check fixture for the C reader: `cargo run -p ds-unit-builder
+--example myunits_fixture` writes `~/ds_mp_myunits/ext/myunits/fixtures/launcher_library.json` + `launcher_links.json`.
 
 ```json
 { "format": "ds-launcher-units", "version": 1, "game_build": "25846389",
@@ -98,7 +109,8 @@ commands through the mock IPC), headless UI: `src-tauri/tests/ui_smoke.py` again
 The wiring steps were:
 1. `src-tauri/Cargo.toml`: `ds-unit-builder = { path = "../builder", features = ["tauri"] }`; remove the
    `[workspace]` table from builder/Cargo.toml and add `"builder"` to the root workspace members.
-2. `.manage(ds_unit_builder::tauri_cmds::UnitBuilderState::new(root))` with root = the launcher folder.
+2. `.manage(ds_unit_builder::tauri_cmds::UnitBuilderState::new(root))` with root = the launcher folder (exports
+   go under it; the units file is the shared library above; tests use `UnitBuilderState::with_units_path`).
 3. Add to `generate_handler!`: `builder_catalog, builder_new_unit, builder_compute, builder_validate,
    builder_set_item, builder_set_stack_level, builder_decode_link, builder_encode_link, units_list, units_save,
    units_rename, units_duplicate, units_delete, units_import_link, teams_create, teams_update, teams_delete,
@@ -116,4 +128,10 @@ node gen/gen_unit_tables.js > data/unit_tables.json     # export tables (game ta
 nice -n 19 cargo test --release -j 4
 ```
 The link fingerprint changes with the data: old links then say "made with other wiki data". Units in
-units.json keep working (stored by key).
+the library keep working (stored by key).
+
+## Short links
+
+`https://dungeonsettlers.wiki[/<lang>]/t/<id>` and `/build/<id>` (`shortlink.rs`): one GET to dungeonsettlers.wiki,
+redirects not followed, 5 s; the 302 Location (or the HTML meta refresh) must be a dungeonsettlers.wiki /builder
+link, then `codec::decode_link` (pure). Used by `builder_decode_link` and `units_import_link`.

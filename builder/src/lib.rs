@@ -4,6 +4,7 @@
 //! - `compute`: the stat sheet, number for number the wiki builder's
 //! - `validate`: the builder's legality rules (validate())
 //! - `codec`: wiki share links, both ways
+//! - `shortlink`: short wiki links (/t/<id>, /build/<id>) resolved with one GET
 //! - `store`: "my units" on disk
 //! - `export`: PvP / Foreign Expedition handoff (team link + unit closures as ext/pvp pvp_build.c writes them)
 pub mod codec;
@@ -12,6 +13,7 @@ pub mod data;
 pub mod export;
 pub mod handoff;
 pub mod model;
+pub mod shortlink;
 pub mod store;
 pub mod validate;
 

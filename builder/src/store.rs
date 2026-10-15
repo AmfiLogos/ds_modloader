@@ -91,6 +91,68 @@ impl std::fmt::Display for StoreError {
     }
 }
 
+/// the env variable that names the library file (tests, rig copies); the game mod reads the same (myunits.h)
+pub const LIB_ENV: &str = "DSMP_UNITS_LIB";
+
+/// the real home folder of the user (Mac: the passwd entry, so a CFFIXED_USER_HOME override is not used)
+#[cfg(unix)]
+fn real_home() -> Option<PathBuf> {
+    // SAFETY: getpwuid returns a pointer into static storage or NULL; we copy the string out at once
+    unsafe {
+        let pw = libc::getpwuid(libc::getuid());
+        if !pw.is_null() && !(*pw).pw_dir.is_null() {
+            let dir = std::ffi::CStr::from_ptr((*pw).pw_dir).to_string_lossy().into_owned();
+            if !dir.is_empty() {
+                return Some(PathBuf::from(dir));
+            }
+        }
+    }
+    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from)
+}
+
+/// The shared "My Units" library, the file the game mod reads too (ds_mp src/myunits.h, same rule):
+/// env DSMP_UNITS_LIB first; Mac: ~/Library/Application Support/CanOpener/Dungeon Settlers/Mods/units/library.json;
+/// Windows: %USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\Mods\units\library.json.
+/// None on other systems (the caller falls back to its own folder).
+pub fn library_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os(LIB_ENV).filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(p));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        return real_home().map(|h| h.join("Library/Application Support/CanOpener/Dungeon Settlers/Mods/units/library.json"));
+    }
+    #[cfg(windows)]
+    {
+        return std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()).map(|h| {
+            PathBuf::from(h).join("AppData").join("LocalLow").join("CanOpener").join("Dungeon Settlers").join("Mods").join("units").join("library.json")
+        });
+    }
+    #[allow(unreachable_code)]
+    {
+        #[cfg(unix)]
+        let _ = real_home;
+        None
+    }
+}
+
+/// First open of the shared library: when `new` does not exist and the launcher's old units file `old` does, COPY
+/// it over (the old file is kept). Returns true when a copy was made.
+pub fn migrate(old: &Path, new: &Path) -> Result<bool, StoreError> {
+    if new.exists() || !old.is_file() || old == new {
+        return Ok(false);
+    }
+    let io = |e: std::io::Error| StoreError::Io(e.to_string());
+    if let Some(dir) = new.parent() {
+        fs::create_dir_all(dir).map_err(io)?;
+    }
+    // through a temp file + rename, so the game never sees half a file
+    let tmp = new.with_extension("json.tmp");
+    fs::copy(old, &tmp).map_err(io)?;
+    fs::rename(&tmp, new).map_err(io)?;
+    Ok(true)
+}
+
 pub struct Store {
     pub path: PathBuf,
     pub file: UnitsFile,
@@ -299,5 +361,51 @@ mod tests {
         s3.save().unwrap();
         assert!(path.with_extension("json.bak").exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migrate_copies_once_and_keeps_the_old_file() {
+        let dir = std::env::temp_dir().join(format!("dsub_migr_{}", new_id()));
+        let old = dir.join("root/builder/units.json");
+        let new = dir.join("lib/Mods/units/library.json");
+        // nothing to migrate
+        assert!(!migrate(&old, &new).unwrap());
+        let mut s = Store::open(&old).unwrap();
+        let mut b = Build::default_build();
+        b.name = Some("Old".into());
+        s.put(None, b).unwrap();
+        s.save().unwrap();
+        let bytes = fs::read(&old).unwrap();
+        assert!(migrate(&old, &new).unwrap());
+        assert_eq!(fs::read(&new).unwrap(), bytes, "byte copy");
+        assert!(old.exists(), "old file kept");
+        // a second time does not overwrite the library
+        let mut s2 = Store::open(&new).unwrap();
+        s2.rename(&s2.file.units[0].id.clone(), "New").unwrap();
+        s2.save().unwrap();
+        assert!(!migrate(&old, &new).unwrap());
+        assert_eq!(Store::open(&new).unwrap().file.units[0].name, "New");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn library_path_rule() {
+        // env first (only this test touches the variable)
+        let saved = std::env::var_os(LIB_ENV);
+        std::env::set_var(LIB_ENV, "/x/y/lib.json");
+        assert_eq!(library_path(), Some(PathBuf::from("/x/y/lib.json")));
+        std::env::remove_var(LIB_ENV);
+        let restore = || {
+            if let Some(v) = &saved {
+                std::env::set_var(LIB_ENV, v);
+            }
+        };
+        #[cfg(target_os = "macos")]
+        {
+            let p = library_path().unwrap();
+            assert!(p.ends_with("Library/Application Support/CanOpener/Dungeon Settlers/Mods/units/library.json"), "{}", p.display());
+            assert!(p.starts_with(real_home().unwrap()));
+        }
+        restore();
     }
 }

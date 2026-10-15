@@ -838,8 +838,15 @@ async function shareLink(text, what) {
   await dialog({ title: what, text: "Copy this link (Cmd+C).", area: true, value: text, readOnly: true, noCancel: true, ok: "Close" });
   return false;
 }
+const WIKI_LINK = /team=|#b=|dungeonsettlers\.wiki/;
+// the clipboard text when it holds a wiki link, else "". The launcher's own command first (one click, no
+// "Paste" bubble from the web view), then the web clipboard.
 async function readClipboard() {
-  try { const t = await navigator.clipboard.readText(); return /team=|#b=|dungeonsettlers/.test(t) ? t : ""; } catch (e) { return ""; }
+  let t = "";
+  try { t = await inv("clipboard_text"); } catch (e) { t = ""; }
+  if (!t) { try { t = await navigator.clipboard.readText(); } catch (e) { t = ""; } }
+  t = (t || "").trim();
+  return WIKI_LINK.test(t) ? t : "";
 }
 
 async function copyLink() {
@@ -848,11 +855,17 @@ async function copyLink() {
     if (await shareLink(l.solo || l.team, "Wiki link")) msg("Wiki link copied. It opens this unit in the wiki builder.");
   } catch (e) { msg(errText(e), true); }
 }
+// one click: a wiki link on the clipboard is imported at once; the text box shows only when there is none
 async function pasteLink(intoBuilder) {
-  const text = await dialog({ title: "Paste wiki link", text: "Paste a wiki builder link (one unit or a team).", area: true, value: await readClipboard(), ok: "Open" });
-  if (text == null || !text.trim()) return;
+  const say = intoBuilder ? msg : muMsg;
+  let text = await readClipboard();
+  if (!text) {
+    text = await dialog({ title: "Paste wiki link", text: "Copy a link on the wiki builder first. Or paste a wiki builder link here (one unit or a team).", area: true, value: "", ok: "Open" });
+    if (text == null || !text.trim()) return;
+    text = text.trim();
+  }
   let dec;
-  try { dec = await inv("builder_decode_link", { text: text.trim() }); } catch (e) { (intoBuilder ? msg : muMsg)(errText(e), true); return; }
+  try { dec = await inv("builder_decode_link", { text }); } catch (e) { say(errText(e), true); return; }
   const notes = [];
   if (dec.warn) notes.push("This link was made with other wiki data. Check the units.");
   if (dec.gone && dec.gone.length) notes.push("Removed from the game: " + dec.gone.join(", ") + ".");
@@ -861,15 +874,13 @@ async function pasteLink(intoBuilder) {
     msg(["Unit opened from the link."].concat(notes).join(" "), notes.length > 0);
     return;
   }
-  const names = dec.units.map((u) => u.name || "Unit").join(", ");
-  const ok = await dialog({ title: "Add to My units", text: "This link holds " + dec.units.length + " unit" + (dec.units.length > 1 ? "s" : "") + ": " + names + ". " + notes.join(" "), ok: "Add to My units" });
-  if (ok == null) return;
   try {
-    const added = await inv("units_import_link", { text: text.trim() });
+    const added = await inv("units_import_link", { text });
     await loadUnits();
     showView("units");
-    muMsg(added.length + " unit" + (added.length > 1 ? "s" : "") + " added to My units.");
-  } catch (e) { (intoBuilder ? msg : muMsg)(errText(e), true); }
+    const names = added.map((u) => u.name).join(", ");
+    muMsg([added.length + " unit" + (added.length > 1 ? "s" : "") + " added to My units: " + names + "."].concat(notes).join(" "), notes.length > 0);
+  } catch (e) { say(errText(e), true); }
 }
 
 async function saveUnit() {
@@ -884,12 +895,12 @@ async function saveUnit() {
     return u;
   } catch (e) { msg(errText(e), true); return null; }
 }
-const BRING_HELP = "Team link copied. In the game: PvP or Foreign Expedition, Bring Units, Paste Wiki Link.";
+const BRING_HELP = "Your saved units are in the game: PvP or Foreign Expedition, Bring Units, My Units. No link needed.";
 async function bring(ids, name, say) {
   try {
     const ex = await inv("units_export", { unitIds: ids, name: name || null });
-    const copied = await shareLink(ex.link, "Team link");
-    say((copied ? BRING_HELP : "") + (ex.notes && ex.notes.length ? " " + ex.notes.join(" ") : ""), false);
+    await copyText(ex.link);
+    say(BRING_HELP + (ex.notes && ex.notes.length ? " " + ex.notes.join(" ") : ""), false);
   } catch (e) { say(errText(e), true); }
 }
 
@@ -952,7 +963,7 @@ function renderUnits() {
       try { await inv("units_duplicate", { id: u.id }); await loadUnits(); } catch (e) { muMsg(errText(e), true); }
     }));
     acts.appendChild(btn("secondary", "Delete", async () => {
-      const ok = await dialog({ title: "Delete " + u.name + "?", text: "The unit leaves My units and its teams. The file keeps one backup (units.json.bak).", ok: "Delete" });
+      const ok = await dialog({ title: "Delete " + u.name + "?", text: "The unit leaves My units and its teams. The file keeps one backup (library.json.bak).", ok: "Delete" });
       if (ok == null) return;
       try {
         await inv("units_delete", { id: u.id });

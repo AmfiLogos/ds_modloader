@@ -14,16 +14,28 @@ use tauri::State;
 
 pub struct UnitBuilderState {
     pub root: PathBuf,
+    units: PathBuf,
     store: Mutex<Option<Store>>,
 }
 
 impl UnitBuilderState {
-    /// `root` = the launcher folder (dsml_core::Paths root); the units file is `<root>/builder/units.json`
+    /// `root` = the launcher folder (dsml_core::Paths root). The units file is the SHARED "My Units" library the
+    /// game reads too (`store::library_path`: env DSMP_UNITS_LIB, else the game's data folder); on a system without
+    /// one it stays `<root>/builder/units.json`. The first open copies an old `<root>/builder/units.json` over.
     pub fn new(root: PathBuf) -> Self {
-        UnitBuilderState { root, store: Mutex::new(None) }
+        let units = crate::store::library_path().unwrap_or_else(|| Self::old_units_path(&root));
+        UnitBuilderState { root, units, store: Mutex::new(None) }
+    }
+    /// a fixed units file (tests)
+    pub fn with_units_path(root: PathBuf, units: PathBuf) -> Self {
+        UnitBuilderState { root, units, store: Mutex::new(None) }
+    }
+    /// where the launcher kept "my units" before the shared library
+    pub fn old_units_path(root: &std::path::Path) -> PathBuf {
+        root.join("builder").join("units.json")
     }
     pub fn units_path(&self) -> PathBuf {
-        self.root.join("builder").join("units.json")
+        self.units.clone()
     }
     pub fn exports_dir(&self) -> PathBuf {
         self.root.join("builder").join("exports")
@@ -31,7 +43,8 @@ impl UnitBuilderState {
     fn with<T>(&self, f: impl FnOnce(&mut Store) -> Result<T, String>) -> Result<T, String> {
         let mut g = self.store.lock().map_err(|_| "The units file is busy. Try again.".to_string())?;
         if g.is_none() {
-            *g = Some(Store::open(&self.units_path()).map_err(|e| e.to_string())?);
+            crate::store::migrate(&Self::old_units_path(&self.root), &self.units).map_err(|e| e.to_string())?;
+            *g = Some(Store::open(&self.units).map_err(|e| e.to_string())?);
         }
         f(g.as_mut().unwrap())
     }
@@ -182,10 +195,17 @@ pub fn builder_set_stack_level(mut build: Build, skill: String, level: usize) ->
     build
 }
 
-/// any builder link (team, one unit, full #b= link) or bare code -> its units
+/// any link / code / short link -> its units, off the main thread (a short link costs one GET, 5 s at most)
+async fn decode_any(text: String) -> Result<Decoded, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::shortlink::decode_any(&text))
+        .await
+        .map_err(|_| "Could not read the link. Try again.".to_string())?
+}
+
+/// any builder link (team, one unit, full #b= link, short wiki link) or bare code -> its units
 #[tauri::command]
-pub fn builder_decode_link(text: String) -> Result<Decoded, String> {
-    codec::decode_link(&text).map_err(|e| e.to_string())
+pub async fn builder_decode_link(text: String) -> Result<Decoded, String> {
+    decode_any(text).await
 }
 
 #[derive(Serialize)]
@@ -231,8 +251,8 @@ pub fn units_delete(state: State<UnitBuilderState>, id: String) -> Result<(), St
 }
 /// add the units of a builder link to "my units"
 #[tauri::command]
-pub fn units_import_link(state: State<UnitBuilderState>, text: String) -> Result<Vec<Unit>, String> {
-    let d = codec::decode_link(&text).map_err(|e| e.to_string())?;
+pub async fn units_import_link(state: State<'_, UnitBuilderState>, text: String) -> Result<Vec<Unit>, String> {
+    let d = decode_any(text).await?;
     let builds = d
         .units
         .into_iter()

@@ -214,17 +214,26 @@ fn remove_copy(which: Which, build: String) -> Result<Status, String> {
     status(which)
 }
 
+/// the clipboard text ("" when it holds no text): "Paste wiki link" imports in one click
+#[tauri::command]
+fn clipboard_text(app: tauri::AppHandle) -> String {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard().read_text().unwrap_or_default()
+}
+
 fn main() {
     use ds_unit_builder::tauri_cmds::*;
     tauri::Builder::default()
-        // Unit Builder: "my units" live in <launcher root>/builder/units.json
+        .plugin(tauri_plugin_clipboard_manager::init())
+        // Unit Builder: "my units" = the shared library the game reads (Mods/units/library.json in the game's data
+        // folder, env DSMP_UNITS_LIB first); an old <launcher root>/builder/units.json is copied over on first open
         .manage(UnitBuilderState::new(paths().root))
         .invoke_handler(tauri::generate_handler![status, refresh_index, set_mod, save_group, apply_group,
                                                  set_custom_difficulties, set_new_world_difficulty, set_match_rule, play, remove_copy,
                                                  builder_catalog, builder_new_unit, builder_compute, builder_validate,
                                                  builder_set_item, builder_set_stack_level, builder_decode_link, builder_encode_link,
                                                  units_list, units_save, units_rename, units_duplicate, units_delete, units_import_link,
-                                                 teams_create, teams_update, teams_delete, units_export])
+                                                 teams_create, teams_update, teams_delete, units_export, clipboard_text])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");
 }

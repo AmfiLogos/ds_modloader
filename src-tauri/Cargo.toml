@@ -13,6 +13,9 @@ serde_json = "1"
 anyhow = "1"
 dsml-core = { path = "../core" }
 ds-unit-builder = { path = "../builder", features = ["tauri"] }
+# "Paste wiki link": read the clipboard in one click (WKWebView's navigator.clipboard.readText asks again with a
+# native "Paste" bubble). Used from the app command clipboard_text only, so no capability file is needed.
+tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]
 # mock runtime: the builder commands are tested through the real IPC handler (tests/builder_cmds.rs, examples/ui_bridge.rs)

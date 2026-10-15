@@ -117,11 +117,9 @@ with sync_playwright() as p:
     page.click("#ub-new")
     page.wait_for_function("() => UB.state().S.name !== 'Smoke Elf'")
     page.click("#ub-paste")
-    page.wait_for_selector("#ub-dialog[open]")
-    check(page.input_value("#ub-dlg-area") == link, "paste box is pre-filled from the clipboard")
-    page.screenshot(path=f"{shots}/paste_dialog.png")
-    page.click("#ub-dlg-ok")
+    # one click: the wiki link on the clipboard opens at once, no dialog
     page.wait_for_function("() => UB.state().S.name === 'Smoke Elf'")
+    check(not page.is_visible("#ub-dialog[open]"), "paste opens the clipboard link without a dialog")
     back = json.loads(page.evaluate("() => JSON.stringify(UB.state().S)"))
     orig = json.loads(built)
     keys = ["race", "bg", "inds", "lvl", "tal", "learned", "insc", "insctrees", "souls", "eq", "name", "portrait", "offer", "roll"]
@@ -134,9 +132,9 @@ with sync_playwright() as p:
     page.wait_for_function("() => !!UB.state().unitId")
     check("Saved" in page.inner_text("#ub-msg"), "saved to My units")
     page.click("#ub-bring")
-    page.wait_for_function("() => /Team link copied|Paste Wiki Link|refus|cannot|not/i.test(document.getElementById('ub-msg').textContent)")
+    page.wait_for_function("() => /Bring Units|refus|cannot/i.test(document.getElementById('ub-msg').textContent)")
     team = page.evaluate("() => navigator.clipboard.readText()")
-    check("?team=" in team, f"bring copies the team link: {page.inner_text('#ub-msg')}")
+    check("?team=" in team and "Bring Units, My Units" in page.inner_text("#ub-msg"), f"bring says where the units are and copies the team link: {page.inner_text('#ub-msg')}")
     page.screenshot(path=f"{shots}/builder_full.png")
 
     page.click(".tab[data-view=units]")
