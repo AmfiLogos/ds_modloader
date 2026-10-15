@@ -3,7 +3,11 @@
 Client-side would mean: the guest joins the host's world, replays the host's orders, and both copies have the
 same fingerprint every tick.
 
-  weaponslot_pair.py <PAIR> [--ticks 3000]
+  weaponslot_pair.py <PAIR> [--ticks 3000] [--minutes 10]
+
+With --minutes: the game runs that long (wall clock) and the HOST casts each of its units' weapon skill (the
+mod's weapon slot, quick slot 0) on the nearest enemy every --cast-every seconds (UseSkillTargetRequested through
+the input hook = the real capture path). The guest's copy of the cast is read back (skill cooldown on the guest).
 
 Needs: a pair leased with `rig.py lease` (its port), and the two copies made by
 `PAIR=<PAIR> cargo test -p dsml-core --test e2e_mac make_pair_copies -- --ignored`:
@@ -32,7 +36,10 @@ rig.DYLIB = os.path.join(snap, 'dsrig.dylib')
 import mp2_test as m  # noqa: E402  (its A/B helpers now map to this pair, in test_env/pair)
 from demo import make_demo_save  # noqa: E402
 
-TICKS = int(sys.argv[sys.argv.index('--ticks') + 1]) if '--ticks' in sys.argv else 3000
+arg = lambda n, d: type(d)(sys.argv[sys.argv.index(n) + 1]) if n in sys.argv else d
+TICKS = arg('--ticks', 3000)
+MINUTES = arg('--minutes', 0.0)
+CAST_EVERY = arg('--cast-every', 8.0)
 H, G = pair[0], pair[1]
 log = m.log
 
@@ -42,6 +49,16 @@ def quickslots(path):
     d = json.load(open(path, encoding='utf-8-sig'))
     qs = d.get('PlayerUnitsSaveData', {}).get('QuickSlots', {})
     return sorted({len(v.get('QuickSlots', [])) for v in qs.values()}) if isinstance(qs, dict) else qs
+
+
+def cooldowns(x, guid):
+    r = m.c(x, cmd='ord_read', guid=guid)
+    return r.get('cooldowns', {}), r.get('quick', [])
+
+
+def cast(guid, skill, target):
+    """host casts a skill on a target the way the option menu does (Tier A order, captured and sent to the guest)"""
+    return m.inject('A', 'UseSkillTargetRequested', i32_16=m.st('A').get('map', 0), guid_20=guid, guid_36=target, str_56=skill)
 
 
 def main():
@@ -101,17 +118,55 @@ def main():
         d2 = lambda a, b: (a['cell'][0] - b['cell'][0]) ** 2 + (a['cell'][1] - b['cell'][1]) ** 2
         plan = [(x, u, min(enemies, key=lambda e: d2(u, e))['cell'], u['cell']) for x in 'AB' for u in mine[x]]
         phase, last, stuck, popups = 0, 0, [0, time.time()], 0
+        weapon = {}
+        for u in mine['A']:
+            cd, q = cooldowns('A', u['guid'])
+            weapon[u['guid']] = q[0] if q and q[0] else None
+            log(f'host unit {u["name"][:12]} quick slots {q}')
+        res['host_weapon_skills'] = weapon
+        casts = {'sent': 0, 'inject_failed': 0, 'no_target': 0, 'host_cooldown_seen': 0, 'guest_cooldown_seen': 0, 'samples': []}
+        t_wall, last_cast = time.time(), 0
         while True:
             sa = m.st('A')
             done = sa['tick'] - t_start
-            if phase == 0 or (phase == 1 and done > TICKS * 0.35) or (phase == 2 and done > TICKS * 0.55) or (phase == 3 and done > TICKS * 0.75):
+            if MINUTES:
+                el = time.time() - t_wall
+                if el >= MINUTES * 60:
+                    break
+                if el - phase * 90 >= 0:                               # move out / back every 90 s, forever
+                    live = [e for e in m.units('A') if e['faction'] == 3 and not e['dead'] and 'cell' in e and not near_portal(e['cell'])]
+                    for x, u, far, home in plan:
+                        tgt = (min(live, key=lambda e: d2(u, e))['cell'] if live else far) if phase % 2 == 0 else home
+                        log(f'phase {phase}: {x} orders {u["name"][:10]} -> {tgt}: {"sent" if m.order_move(x, u["guid"], tgt) else "INJECT FAILED"}')
+                    phase += 1
+                if time.time() - last_cast >= CAST_EVERY:
+                    last_cast = time.time()
+                    us_now = m.units('A')
+                    live = [e for e in us_now if e['faction'] == 3 and not e['dead'] and 'cell' in e]
+                    pos = {x_['guid']: x_ for x_ in us_now}
+                    for g, sk in weapon.items():
+                        if not sk or g not in pos or pos[g]['dead']:
+                            continue
+                        if not live:
+                            casts['no_target'] += 1; continue
+                        tgt = min(live, key=lambda e: d2(pos[g], e))
+                        r = cast(g, sk, tgt['guid'])
+                        casts['sent' if r.get('ok') else 'inject_failed'] += 1
+                        time.sleep(2)
+                        ha, hb = cooldowns('A', g)[0].get(sk), cooldowns('B', g)[0].get(sk)
+                        casts['host_cooldown_seen'] += ha is not None and ha > 0
+                        casts['guest_cooldown_seen'] += hb is not None and hb > 0
+                        if len(casts['samples']) < 12:
+                            casts['samples'].append({'tick': m.st('A')['tick'], 'skill': sk, 'rc': r, 'cd_host': ha, 'cd_guest': hb})
+                res['casts'] = casts
+            elif phase == 0 or (phase == 1 and done > TICKS * 0.35) or (phase == 2 and done > TICKS * 0.55) or (phase == 3 and done > TICKS * 0.75):
                 for x, u, far, home in plan:
                     tgt = far if phase in (0, 2) else home
                     log(f'phase {phase}: {x} orders {u["name"][:10]} -> {tgt}: {"sent" if m.order_move(x, u["guid"], tgt) else "INJECT FAILED"}')
                 phase += 1
             if time.time() - last > 30:
                 log(f'host tick {sa["tick"]} | guest tick {m.st("B")["tick"]} | desync host {sa.get("mp", {}).get("desyncs")}'); last = time.time()
-            if done >= TICKS:
+            if not MINUTES and done >= TICKS:
                 break
             if m.handle_portal():
                 stuck[:] = [m.st('A')['tick'], time.time()]; continue
@@ -133,7 +188,8 @@ def main():
         la, lb = m.units('A'), m.units('B')
         key = lambda us_: sorted((u['guid'], u.get('cell'), u['hp'], u['dead'], u['task']) for u in us_)
         res.update({
-            'fp_common_ticks': n, 'fp_first_diff_tick': first, 'fp_equal': n > TICKS * 0.9 and first is None,
+            'fp_common_ticks': n, 'fp_first_diff_tick': first, 'fp_equal': n > (m.st('A')['tick'] - t_start) * 0.9 and first is None,
+            'ticks_run': m.st('A')['tick'] - t_start, 'wall_minutes': round((time.time() - t_wall) / 60, 1),
             'orders_applied': (ma.get('orders'), mb.get('orders')), 'desyncs': (ma.get('desyncs'), mb.get('desyncs')),
             'units_equal_at_paused_tick': same is not None and key(la) == key(lb), 'paused_tick': same,
             'enemy_hp_start_end': (hp0.get('f3'), m.summary(la).get('f3')),
