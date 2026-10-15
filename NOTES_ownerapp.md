@@ -31,5 +31,5 @@ then install the app (old one to ~/Applications/old_versions/ with a date-time s
 3d83e997...): listed ON, copy made from the real Steam install (read only), hidden boot to the title screen, socket
 answered, owner's prefs / UserSetting.json / real GameAssembly unchanged.
 Found: the multiplayer control socket is `<profile>/ctl.sock`; a path over 104 bytes is cut (`ctl.soc`) and nothing
-answers. The owner's path is 84 bytes (fine). A player with a long user name could pass the limit: only the test /
+answers. The owner's path is 85 bytes (fine). A player with a long user name could pass the limit: only the test /
 control socket is affected, not play (needs a check in the dylib before a public release).
