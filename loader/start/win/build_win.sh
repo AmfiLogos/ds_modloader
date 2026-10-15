@@ -15,7 +15,9 @@ olds=($OBJ/*.o(N)); (( ${#olds} )) && mv -f $olds $O/old/
 
 python3 gen_def.py $GAME/baselib.dll $O/baselib_exports.def
 CF=(-O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/src -I$L/sdk -I$MH/include)
-for f in $L/src/{dsl_main,dsl_il2cpp,dsl_json,dsl_world,dsl_soft}.c; do nice -n 19 $TC $CF -include compat/dsl_compat_win.h -c $f -o $OBJ/${f:t:r}.o; done
+# the core = every src/*.c except the arm64 engine (dsl_engine_win.c replaces it) + the Mods window (loader/ui, lane L2)
+CORE=($L/src/*.c(N) $L/ui/*.c(N)); CORE=(${CORE:#*/dsl_engine.c})
+for f in $CORE; do nice -n 19 $TC $CF -include compat/dsl_compat_win.h -c $f -o $OBJ/${f:t:r}.o; done
 for f in dsl_start_win.c dsl_engine_win.c dsl_os_win.c dsl_soft_win.c; do nice -n 19 $TC $CF -c $f -o $OBJ/${f:t:r}.o; done
 for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c; do nice -n 19 $TC -O2 -w -I$MH/include -c $f -o $OBJ/mh_${f:t:r}.o; done
 nice -n 19 $TC -shared -o $O/baselib.dll.tmp $OBJ/*.o $O/baselib_exports.def -static -static-libgcc -lbcrypt -Wl,-Bstatic -lpthread
@@ -38,3 +40,10 @@ stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done
 for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
 echo "kit $K: $(ls $K/files/mods | tr '\n' ' ')"
+
+# the friend zip: one folder "Dungeon Settlers Modded" inside
+Z="$O/Dungeon Settlers Modded - Windows.zip"; [[ -f "$Z" ]] && mv "$Z" "$O/old/$(date +%Y%m%d-%H%M%S) ${Z:t}"
+ST=$O/zipstage; [[ -d $ST ]] && mv $ST $O/old/zipstage-$(date +%Y%m%d-%H%M%S)
+mkdir -p $ST && cp -R $K "$ST/Dungeon Settlers Modded"
+(cd $ST && zip -qrX "$Z" "Dungeon Settlers Modded")
+echo "zip $Z ($(du -h "$Z" | cut -f1))"
