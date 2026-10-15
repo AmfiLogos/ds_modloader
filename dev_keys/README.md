@@ -1,9 +1,5 @@
-# DEV ONLY - test signing keys
+# Shared signing key pair
 
-`dev.key` (secret) and `dev.pub` (public) sign TEST indexes for the launcher's tests and local runs.
-They are public in this repo, so anyone can sign with them.
-
-Before the first public release:
-1. The owner makes the real key pair offline: `dsml-tool keygen <secret> <public>` (secret stays off any repo,
-   plus one encrypted backup), and a second pair for rotation.
-2. `TRUSTED_KEYS` in `src-tauri/src/main.rs` lists ONLY the two real public keys. Remove `dev.pub` from it.
+`dev.key` (secret) and `dev.pub` (public) sign the launcher's mod lists (tests, local runs and the bundled list).
+They are public in this repo, so anyone can sign a list with them. Owner decision 2026-10-15: that is fine, the mod
+list is open for anybody to modify. `TRUSTED_KEYS` in `src-tauri/src/main.rs` lists `dev.pub`.

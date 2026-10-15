@@ -14,13 +14,11 @@ Goal: one app the owner opens from ~/Applications and tests on his own Mac, with
 - `core/tests/e2e_mac.rs` `owner_app_smoke`: the installed app, no window, fresh launcher folder -> listed ON ->
   copy -> hidden boot -> socket answers -> owner's prefs / settings / real GameAssembly unchanged.
 
-## MUST before any friend gets the launcher
-- The bundled list is signed with `dev_keys/dev.key`, which is PUBLIC in this repo: anyone can sign a list this app
-  trusts. The owner makes the real key pair offline (`dsml-tool keygen`, secret never in a repo) and `TRUSTED_KEYS`
-  in `src-tauri/src/main.rs` lists only the real keys (dev_keys/README.md). Then re-sign the seed with the real key.
+## Still open
 - The index URL is still a placeholder (`fetch.rs`): "Check for updates" falls back to the bundled list.
-- The seed also carries the DEV-ONLY no-Steam patch (`dev_only`, hidden from players) for the hidden tests. Drop it
-  from a public seed.
+- The seed also carries the DEV-ONLY no-Steam patch (`dev_only`, hidden from players) for the hidden tests.
+- Signing key: owner decision 2026-10-15, the mod list is open for anyone to change; the shared key in `dev_keys/`
+  stays. No real key pair is planned.
 
 ## Rebuild with a new multiplayer release
 `tools/make_seed.sh && cd src-tauri && CARGO_BUILD_JOBS=4 nice -n 19 cargo tauri build --config tauri.owner.conf.json`,

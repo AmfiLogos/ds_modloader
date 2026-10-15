@@ -19,7 +19,7 @@ Plan: `~/ds_multiplayer/research/plan_launcher.md`. Owner decisions: `~/ds_multi
   OutGame.json `DifficultyUnlockSaveData.IsDownfallUnlocked`, custom difficulties such as Hell as mods). `dsml-tool`: keygen / sign / verify / file entry / patches (stock vs modded -> byte patches) for the publisher.
 - `src-tauri/`: Tauri 2 shell (commands: status, refresh_index, set_enabled, play, remove_copy).
 - `ui/`: plain HTML/CSS/JS, game palette, Cinzel + Lora (OFL, `ui/fonts/OFL-*.txt`).
-- `dev_keys/`: DEV ONLY test key pair (see its README).
+- `dev_keys/`: the shared signing key pair (public on purpose, see its README).
 
 Tests:
 - `cargo test -p dsml-core` : unit tests + local-server download tests.
@@ -36,7 +36,7 @@ Tests:
   leased rig pair (copies from `make_pair_copies`). Result in `test_env/pair/result.json`.
 
 Owner test build (bundled mod list, no published index yet): `tools/make_seed.sh` (released multiplayer build from
-`~/ds_multiplayer/rig/lan_latest`, signed with the DEV key) then `cd src-tauri && cargo tauri build --config
+`~/ds_multiplayer/rig/lan_latest`, signed with the shared key in `dev_keys/`) then `cd src-tauri && cargo tauri build --config
 tauri.owner.conf.json`. See `NOTES_ownerapp.md`.
 
 Env: `DSML_ROOT` (launcher folder, default `~/Library/Application Support/DSModLauncher`), `DSML_INDEX_URL`

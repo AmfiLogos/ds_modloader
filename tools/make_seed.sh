@@ -3,7 +3,7 @@
 #   tools/make_seed.sh [release folder]     default ~/ds_multiplayer/rig/lan_latest
 # Mods: multiplayer (the released dsrig.dylib + det_ranges.tsv, version 0.<release number>.0, ON for new worlds at
 # the first run) and the DEV-ONLY no-Steam patch the hidden tests use (never shown to players).
-# Signed with dev_keys/dev.key: owner's own test only. Index seq = release number (v10 -> 10).
+# Signed with the shared key dev_keys/dev.key. Index seq = release number (v10 -> 10).
 set -euo pipefail
 here=${0:A:h:h}
 rel=${1:-$HOME/ds_multiplayer/rig/lan_latest}
@@ -31,7 +31,7 @@ def entry(name):
     b = open(f"{d}/{name}", "rb").read()
     return {"name": name, "sha256": hashlib.sha256(b).hexdigest(), "size": len(b),
             "url": f"https://bundled.invalid/multiplayer/{ver}/{name}"}
-idx = {"schema": 1, "seq": int(n), "issued": "owner test build (bundled, dev key)",
+idx = {"schema": 1, "seq": int(n), "issued": "bundled with the launcher",
   "games": {build: {"mac-arm64": {"gameassembly_sha256": ga}}},
   "mods": [
     {"id": "multiplayer", "name": "Multiplayer", "version": ver, "kind": "code", "scope": "gameplay",
