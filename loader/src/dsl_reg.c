@@ -10,6 +10,7 @@
 // Everything here runs on the main thread (dsl_frame_hook from the kit's EventSystem.Update tick, or host calls made
 // by modules from their own main-thread code).
 #include "dsl_internal.h"
+#include "dsl_os.h"
 #include "dsl_menu.h"
 #include "dsl_bie.h"
 #include <dirent.h>
@@ -100,10 +101,17 @@ static void mods_scan(void) {
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
         const char *why = NULL; int st = dsl_mod_state(id, &why);
-        if (!strcmp(x->kind, "bepinex")) {                               /* BepInEx plugins run when their folder is in this start */
-            char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);
+        if (!strcmp(x->kind, "bepinex")) {                               /* BepInEx plugin: run by the OS start part */
+#ifdef _WIN32
+            const char *dd = getenv("DOORSTOP_DISABLE");                 /* start/win/bie_win.c (lane L3) */
+            int runs = on && !(dd && *dd);
+            const char *br = getenv("DSL_BIE_REASON");
+            st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : "BepInEx did not start (see starter.log)";
+#else
+            char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);   /* Mac: start/mac/dsl_bie_mac.c, its folder in this start */
             st = dsl_bie_running_dir(pd) ? 1 : 0;
             why = dsl_bie_state() < 0 ? "BepInEx is not available in this start" : "BepInEx plugin: not running in this start";
+#endif
         }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
         x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "not loaded (see dsload.log)"));
@@ -115,16 +123,35 @@ int dsl_mods_count(void) { mods_scan(); return nmi; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
 static const DSLModInfo *mod_by_id(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return &MI[i]; return NULL; }
 
-/* running gameplay key: sorted ids of the gameplay modules that run in this process */
+/* running gameplay key: sorted ids of the gameplay modules that run in this process. The multiplayer mod itself is
+   not in it (its HELLO already checks build + protocol), so a world's key and the join check are the same with or
+   without it, and a player without the loader (old friend kit) can still join a host that runs only multiplayer
+   (cross-platform finding, ds_launcher NOTES_winlauncher.md). Ids only: the same key on Mac and Windows. */
 static char run_key[512];
 static int cmpstr(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
 static void key_of(const char *const *ids, int n, char *out, size_t cap) {
     const char *v[MAXM]; int k = 0;
-    for (int i = 0; i < n && k < MAXM; i++) { const DSLModInfo *m = mod_by_id(ids[i]); if (!m || !strcmp(m->scope, "gameplay")) v[k++] = ids[i]; }
+    for (int i = 0; i < n && k < MAXM; i++) {
+        if (!strcmp(ids[i], "multiplayer")) continue;
+        const DSLModInfo *m = mod_by_id(ids[i]); if (!m || !strcmp(m->scope, "gameplay")) v[k++] = ids[i];
+    }
     qsort(v, (size_t)k, sizeof *v, cmpstr);
     out[0] = 0;
     for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
     if (!k) snprintf(out, cap, "vanilla");
+}
+/* a stored key in today's form: sorted, without "multiplayer" (left out since l3-win addb649; older worlds.json files
+   have it), "vanilla" when empty. Keeps worlds registered before that change working. */
+static void key_norm(const char *in, char *out, size_t cap) {
+    char b[512]; snprintf(b, sizeof b, "%s", in ? in : ""); const char *v[MAXM]; int k = 0;
+    for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && k < MAXM; t = strtok_r(NULL, "+", &sv))
+        if (*t && strcmp(t, "multiplayer") && strcmp(t, "vanilla")) v[k++] = t;
+    qsort(v, (size_t)k, sizeof *v, cmpstr);
+    out[0] = 0; for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
+    if (!k) snprintf(out, cap, "vanilla");
+}
+int dsl_key_same(const char *a, const char *b) {
+    char x[512], y[512]; key_norm(a, x, sizeof x); key_norm(b, y, sizeof y); return !strcmp(x, y);
 }
 static void running_key(void) {
     const char *v[MAXM]; int k = 0;
@@ -177,8 +204,25 @@ static void worlds_load(void) {
 static const char *world_key(const char *guid) {
     worlds_load();
     JNode *w = json_get(worlds_doc, "worlds");
-    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR) return c->str;
+    static char nk[512];
+    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR) { key_norm(c->str, nk, sizeof nk); return nk; }
     return NULL;
+}
+/* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save */
+static void set_lines(char *out, size_t cap, char ms[65]) {
+    static char ln[MAXM][2048]; const char *lp[MAXM]; int nl = 0; char hs[1800], e1[2100];
+    for (int i = 0; i < nmi && nl < MAXM; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
+        extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
+        dsl_mod_hashes(MI[i].id, hs, sizeof hs);
+        snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;
+    }
+    qsort(lp, (size_t)nl, sizeof *lp, cmpstr);
+    static char joined[MAXM * 2048]; joined[0] = 0; out[0] = 0;
+    for (int i = 0; i < nl; i++) {
+        jesc(e1, sizeof e1, lp[i]); size_t k = strlen(out); snprintf(out + k, cap - k, "%s\"%s\"", i ? "," : "", e1);
+        if (i) strlcat(joined, "\n", sizeof joined); strlcat(joined, lp[i], sizeof joined);
+    }
+    ms[0] = 0; if (nl) dsl_os_sha256_buf(joined, strlen(joined), ms);
 }
 static void worlds_save(const char *add_guid, const char *add_key) {
     worlds_load();
@@ -188,11 +232,16 @@ static void worlds_save(const char *add_guid, const char *add_key) {
     PUT("{");
     int first = 1;
     if (st && st->t == JN_OBJ) for (JNode *c = st->child; c; c = c->next) {     /* keep every other member as it is */
-        if (!c->key || !strcmp(c->key, "worlds") || !strcmp(c->key, "modset")) continue;
+        if (!c->key || !strcmp(c->key, "worlds") || !strcmp(c->key, "modset") || !strcmp(c->key, "modset_lines")) continue;
         jesc(e1, sizeof e1, c->key); PUT("%s\"%s\":", first ? "" : ",", e1); first = 0;
         jdump(c, &b, &n, &cap);
     }
-    jesc(e2, sizeof e2, run_key); PUT("%s\"modset\":\"%s\",\"worlds\":{", first ? "" : ",", e2);
+    /* top-level "modset" = what the multiplayer HELLO sends: "" when no gameplay mod (its "none"), else the key */
+    /* "modset_lines": <id>@<version>:<sha256s of every platform's files> of each running gameplay mod (multiplayer
+       left out), sorted; "modset" = sha256 of those lines ('\n'-joined), "" = no gameplay mod. That is what the
+       multiplayer HELLO sends and compares: the same on Mac and Windows for the same mods, names in a refusal. */
+    { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
+      PUT("%s\"modset_lines\":[%s],\"modset\":\"%s\",\"worlds\":{", first ? "" : ",", lj, ms); first = 0; }
     int k = 0; JNode *w = json_get(st, "worlds");
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) {
         if (!c->key || c->t != JN_STR || (add_guid && !strcasecmp(c->key, add_guid))) continue;
@@ -428,8 +477,12 @@ void dsl_world_mismatch(const char *save_name, const char *guid, const char *key
 static void k_ok(void *ud, DSLObj w) {
     (void)ud; (void)w;
     const char *ids[MAXM]; int n = 0; char b[512]; snprintf(b, sizeof b, "%s", k_key);
-    if (strcmp(b, "vanilla")) for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && n < MAXM; t = strtok_r(NULL, "+", &sv)) ids[n++] = t;
-    for (int i = 0; i < nmi && n < MAXM; i++) if (MI[i].enabled && !strcmp(MI[i].scope, "client")) ids[n++] = MI[i].id;   /* keep client mods */
+    if (strcmp(b, "vanilla")) for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && n < MAXM; t = strtok_r(NULL, "+", &sv)) if (strcmp(t, "multiplayer")) ids[n++] = t;
+    for (int i = 0; i < nmi && n < MAXM; i++)                           /* keep client mods and multiplayer (not in the key) */
+        if (MI[i].enabled && (!strcmp(MI[i].scope, "client") || !strcmp(MI[i].id, "multiplayer"))) {
+            int dup = 0; for (int j = 0; j < n; j++) dup |= !strcmp(ids[j], MI[i].id);
+            if (!dup) ids[n++] = MI[i].id;
+        }
     char env[700]; snprintf(env, sizeof env, "DSL_SOFT_LOAD=%s\n", k_save);
     char why[300] = "";
     dsl_log("reg: world %s: load it with its mods (%s)", k_guid, k_key);
@@ -573,7 +626,9 @@ void dsl_reg_after_init(void) {
     else setenv("DSML_MODSET", run_key, 1);                             /* dsl_world.c compares with it */
     worlds_load();
     const char *old = json_str(worlds_doc, "modset");
-    if (!old || strcmp(old, run_key)) worlds_save(NULL, NULL);
+    { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
+      /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
+      if (!(given && *given) && (!old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
     int nb = 0; for (int i = 0; i < nmi; i++) nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1;
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d)", run_key, nmi, nb, dsl_bie_state());
 }

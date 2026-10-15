@@ -43,6 +43,11 @@ int dsl_os_sha256_file(const char *path, char out[65]) {
     for (int i = 0; i < 32; i++) snprintf(out + 2 * i, 3, "%02x", d[i]);
     return 0;
 }
+int dsl_os_sha256_buf(const void *data, size_t n, char out[65]) {
+    unsigned char d[32]; CC_SHA256(data, (CC_LONG)n, d);
+    for (int i = 0; i < 32; i++) snprintf(out + 2 * i, 3, "%02x", d[i]);
+    return 0;
+}
 void *dsl_os_dlopen(const char *path) { return dlopen(path, RTLD_NOW | RTLD_LOCAL); }
 void *dsl_os_dlsym(void *h, const char *name) { return dlsym(h, name); }
 const char *dsl_os_dlerror(void) { return dlerror(); }

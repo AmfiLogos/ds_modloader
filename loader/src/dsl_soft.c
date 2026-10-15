@@ -303,7 +303,14 @@ static void a_tick(void) {
         static double last_note;
         if (t - last_note > 5) { last_note = t; SLOG("A: waiting: B ready %d, autosave done %d, loading screen up %d", exists(p), a_save_done, fade_done ? fade_done(fade, NULL) : -1); }
         if (!exists(p) || !a_save_done) return;
-        if (t - a_t0 < 0.4 || !fade_done || !fade_done(fade, NULL)) return;   /* A's own loading screen must be up */
+        static double ready_seen;
+        if (!ready_seen) ready_seen = t;
+        int up = fade_done && fade_done(fade, NULL);
+        /* A's own loading screen must be up. At the title only: when it never reports done (Windows -batchmode test
+           copy, live ScreenFadeEffectView), the swap goes on 3 s after B is ready instead of failing at the timeout */
+        if (t - a_t0 < 0.4 || (!up && !(a_scene == 1 && t - ready_seen > 3))) return;
+        if (!up) SLOG("A: loading screen not reported up 3 s after B was ready (title): swap anyway");
+        ready_seen = 0;
         SLOG("A: B ready");
         if (!no_activate) dsl_sos_yield();                                 /* activation is given, not taken */
         path_of(p, sizeof p, "go"); touch_file(p, NULL);

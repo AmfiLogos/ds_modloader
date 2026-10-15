@@ -24,7 +24,7 @@ def main():
         t.check('module got API 3', 'rows-demo: loadrow_add 0, loadlist_filter 0, menu_add_tab 0, ui yes' in L, [l for l in L.splitlines() if 'rows-demo' in l][-2:])
         t.check('tab registered', "reg: tab 'Demo' (demo, order 90) added by rows-demo" in L)
         t.check('session busy set', 'reg: session busy SET by rows-demo' in L)
-        t.check('running set ignores the client mod', 'reg: running gameplay set multiplayer' in L)
+        t.check('running set ignores the client mod', 'reg: running gameplay set vanilla' in L)
         t.r.send(t.X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
         t.check('filter hides the world (toggle off)', t.wait_log('(1 hidden by filters), 1 text source(s), 1 filter(s)', 20), [l for l in t.dlog().splitlines() if 'rows:' in l][-2:])
         time.sleep(1); t.shot('r1_hidden')
