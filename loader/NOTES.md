@@ -198,3 +198,44 @@ No run of this lane used the shared build/dsrig.dylib (our copies load the multi
 Lead decision 10:45: the 08:54 run (all 4 modules = the brief's set plus hell-difficulty, after the fog fix) covers
 task 4; no rerun. The MP snapshot was then resynced to src 09:35 (taken while src_merge.lock was held; host tests
 31/31, no pair run on it). Next pair run of this lane should resync src first if a merge was in progress.
+
+## dsl_ui widget kit (lane L1 / agent l1uikit, 2026-10-15) - `src/dsl_ui.c`
+Implements every `DSLUi` function of `sdk/dsl_sdk.h` API 3 + `dsl_ui_install()`, `dsl_ui_kit()`, `dsl_ui_title_add()` and the
+frame tick (hook `UnityEngine.EventSystems.EventSystem.Update`, once per `Time.frameCount`, then `dsl_frame_hook()`; a weak
+empty default is in dsl_ui.c so the loader links before dsl_reg.c defines it). Look ported from mpmenu.c / ui_tip.c.
+- Names only: every game function by il2cpp name (+ parameter type names where overloads share name and argc), every field
+  by name. No game RVA. Fixed offsets are il2cpp runtime layouts only (object header, array, string, delegate fields).
+- Clicks without hooks: buttons / toggles / value arrows are clones of `SubUI_TitleMenuButton` with `Init(crafted Action)`;
+  the notice is `CommonNoticeView.Show_Select / Show_Confirm` with crafted Actions. A crafted Action only queues; the
+  module callback runs in the frame tick. Field submit = Enter while the field had focus (polled). Tooltip hover polled
+  (`Input.mousePosition` vs the screen rect).
+- Tooltip = the game's `TooltipUI.ShowTooltipAtScreenPosition` with a stock key, then the shown `Tooltip_ETC`'s texts are
+  replaced (no hook: MP owns `Tooltip_ETC.Show`). While ours shows, the pooled window has `CanvasGroup.blocksRaycasts`
+  off (else the stock screen clamp pushed it over a low title button and it took the click; found in run 2), restored on hide.
+  `TooltipContext` is 0xB8 bytes in this build (MP used a 0xC0 buffer; passed by reference, both work).
+- Templates (button, image, text) are cloned from `TitleMenuView._creditButton` the first time the title is seen, kept under
+  a hidden DontDestroyOnLoad holder; the text field from the load list prefab (`UIFactory._prefabs.GetUIPrefab(5)._saveNameInputField`,
+  no popup flash). Widgets need the title to have been seen once (always true: the game starts there).
+- `parent == NULL` = the kit's own screen layer: overlay canvas, sorting 30900 (under MP panels 31000+), scaler copied from
+  the game UI (ScaleWithScreenSize 1920x1080). The notice view is raised to 32040, the tooltip canvas to 32050 when shown.
+- Title buttons: clone of the stock Credits button, label size 22 (as MP's clones), always the LAST children of the stock
+  column, sorted by `order`; shown only while the stock buttons show (MP's pages hide the stock column, ours follow).
+  Re-created when the title view is new. Placement: below Quit, below MP's "Multiplayer" (MP inserts after Load).
+- Test-only exports (used by the uikit-demo module only): `dsl_ui_test_rect / _label / _title / _notice_button / _type /
+  _hover / _tip`.
+
+Test: `python3 test/uikit_test.py [out] [--no-build] [--run=1|2]` on copy L (lease first). Builds with
+`EXTRA_CFLAGS=src/dsl_ui.c` until build.sh lists it. Test module `test/mods_src/uikit-demo` (title button "UI Kit Demo" ->
+one panel with every widget). Input: a fake mouse in `UnityEngine.Input` (GetMouseButton/Down/Up, mousePosition) and
+`BaseInput.mouseScrollDelta` (Unity reads the pointer from the global cursor, which a test must never move), the
+EventSystem told it has focus (StandaloneInputModule drops events without focus), Enter as a real key NSEvent, typing via
+`TMP_InputField.ProcessEvent`. Clipboard to a file (demo hook without MP, MP's DSMP_TEST hook with MP).
+Traps found: (1) without MP the copy's persistentDataPath is `home/Library/Application Support/com.CanOpener.Dungeon-Settlers.mpL`
+whose UserSetting.json was borderless full screen: the window covered the display at 18:59 and the guard killed it (about 1 s
+visible on the owner's screen); the test now seeds that folder with the windowed 960x540 settings and asserts it.
+Result 2026-10-15 19:21 (`~/ds_launcher/loader/test_env/uikit_out/final2/summary.json`): 67/67 pass, 0 guard violations,
+0 "refused" lines in both dsload.logs. Run 1 kit alone, run 2 with multiplayer: MP's "Multiplayer" clone opens its page
+(our button hides), MP "Back" returns, all widgets work, notice OK goes through MP's OnClick_Confirm hook. Frames in
+`run1/drv/cap`, `run2/drv/cap`.
+Open: the toggle's empty box is faint when off (owner to judge the look); in-world use not tested (title only);
+Windows untested (names only, should port).
