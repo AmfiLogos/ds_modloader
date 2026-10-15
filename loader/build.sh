@@ -11,7 +11,7 @@ CF=(-O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0)
 put() { codesign -f -s - "$1.tmp" 2>/dev/null; mv -f "$1.tmp" "$1"; }
 
 nice -n 19 clang -arch arm64 -arch x86_64 $CF ${=EXTRA_CFLAGS} -Isrc -dynamiclib -install_name @rpath/dsload.dylib \
-  -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c
+  -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c src/dsl_world.c
 put build/dsload.dylib; echo "built build/dsload.dylib"
 [[ -n "$LOADER_ONLY" ]] && exit 0
 
@@ -36,6 +36,13 @@ nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/gcd-cdr.
 put $G/gcd-cdr.dylib
 cp modules/gcd-cdr/mod.json $G/; cp modules/gcd-cdr/rva/*.tsv $G/rva/
 echo "built $G"
+
+# hell-difficulty (code half; the table half is applied to the copy, see modules/hell-difficulty/hell.c)
+E=build/mods/hell-difficulty; mkdir -p $E/rva
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/hell-difficulty.dylib -o $E/hell-difficulty.dylib.tmp modules/hell-difficulty/hell.c
+put $E/hell-difficulty.dylib
+cp modules/hell-difficulty/mod.json $E/; cp modules/hell-difficulty/rva/*.tsv $E/rva/
+echo "built $E"
 
 # floor-logger (API 1, unchanged binary)
 F=build/mods/floor-logger; mkdir -p $F

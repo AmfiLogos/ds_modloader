@@ -13,7 +13,7 @@ $CC -O0 -dynamiclib -install_name @rpath/GameAssembly.dylib -o "$FW/GameAssembly
 UUID=$(otool -l "$FW/GameAssembly.dylib" | awk '/uuid/{print $2; exit}')
 print "    { \"$UUID\", \"test\" }," > "$OUT/gen/test_builds.inc"
 $CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
-  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json}.c || exit 1
+  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c || exit 1
 $CC -O0 -dynamiclib -o "$FW/foreign.dylib" foreign.c || exit 1
 $CC -O0 host.c -o "$OUT/host" "$FW/GameAssembly.dylib" -Wl,-rpath,"$FW" || exit 1
 for f in "$FW"/*.dylib "$OUT/host"; do codesign -f -s - "$f" 2>/dev/null; done
@@ -30,10 +30,12 @@ mod conflicter 3 '{"id":"conflicter","version":"1.0.0","kind":"code","api":2,"ga
 mod needs-missing 3 '{"id":"needs-missing","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["nope"]}'
 mod other-build 3 '{"id":"other-build","version":"1.0.0","kind":"code","api":2,"game_builds":["1"]}'
 mod no-table 3 '{"id":"no-table","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"tables":{"1":{"mac-arm64":"t.tsv"}}}'
+mod patcher 5 '{"id":"patcher","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"client","requires":["early-mod"]}'
+mod failpatch 6 '{"id":"failpatch","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}'
 mod data-mod none '{"id":"data-mod","version":"1.0.0","type":"data","game_build":"test"}'
 mkdir -p "$M/floor-logger"; cp ~/DungeonSettlersMods/mods/floor-logger/floor-logger.dylib "$M/floor-logger/"
 sed 's/"game_build": "25846389"/"game_build": "test"/' ~/DungeonSettlersMods/mods/floor-logger/mod.json > "$M/floor-logger/mod.json"
-print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod"],"provided":["notch-fix"]}' > "$M/profile.json"
+print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch"],"provided":["notch-fix"]}' > "$M/profile.json"
 
 run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
 EXPECT="orig_init=1 orig_safe=2 orig_normal=1 orig_tick=1 orig_update=2"
@@ -55,7 +57,19 @@ check "missing per-build table refused" 'log | grep -q "no-table: no mac-arm64 t
 check "DYLD_INSERT_LIBRARIES: ours removed, foreign kept (in-process and seen by the foreign loader)" '[[ "$r" == *"ENV DYLD_INSERT_LIBRARIES=$FW/foreign.dylib"* ]] && grep -q "saw DYLD_INSERT_LIBRARIES=$FW/foreign.dylib$" "$OUT/foreign.txt"'
 check "stubs written through the RW alias" 'log | grep -q "through a RW alias"'
 check "late page after init" 'log | grep -q "new stubs go to the late page"'
+check "patch_rva: applied, wrong bytes refused, overlap with a hook refused" '[[ "$r" == *"PATCH target=2"* ]] && log | grep -q "\[patcher\] patches: wrong=-1 ok=0 over_hook=-1" && log | grep -q "bytes are 0000000000000000\|bytes are e0008052"'
+check "failing module: its patch is undone" 'log | grep -q "failpatch: FAILED: dsl_module_early returned 9; 1 hook(s) removed"'
+check "modset file: gameplay vs client scope, no session" 'grep -q "\"client\":\[{\"id\":\"patcher\"" "$LOGD/dsload_modset.json" && grep -q "\"check\":\"no session\"" "$LOGD/dsload_modset.json" && grep -q "\"id\":\"early-mod\",\"version\":\"1.2.0\",\"files\":{\"early-mod.dylib\":\"[0-9a-f]\{64\}\"" "$LOGD/dsload_modset.json"'
+check "world check off without a session" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: off"'
 check "codepatch guard cleared" '[[ ! -e "$LOGD/dsload_state/_codepatch.pending" ]]'
+
+print "== T1b mods per world: session file from the launcher"
+EH=$(shasum -a 256 "$M/early-mod/early-mod.dylib" | cut -c1-64)
+print -r -- "{\"world\":null,\"modset\":\"aaa\",\"rule\":\"mods\",\"worlds\":{\"11111111-1111-1111-1111-111111111111\":\"aaa\",\"22222222-2222-2222-2222-222222222222\":\"bbb\"},\"modset_lines\":[\"early-mod@1.2.0:$EH\",\"floor-logger@1.0.0:00\",\"ghost@1.0.0:\"]}" > "$OUT/session.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session.json" DSML_MODSET=aaa)
+check "same mod set loads, other mod set refused with the launcher message" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1 text=This world uses other mods. Start it from the launcher."* ]] && log | grep -q "world check: REFUSED save2 (world 22222222-2222-2222-2222-222222222222): the world.s mod set bbb, this copy aaa"'
+check "modset compared with the launcher lines (floor-logger sha differs, early-mod matches)" 'grep -q "\"check\":\"differs\"" "$LOGD/dsload_modset.json" && log | grep -q "mod set: floor-logger@1.0.0 file sha256" && ! log | grep -q "mod set: early-mod"'
+check "game still runs" '[[ "$r" == *"$EXPECT"* ]]'
 
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")
@@ -82,7 +96,7 @@ check "next start: crasher OFF, floor-logger loads, game runs" '[[ "$r" == *"ori
 
 print "== T5 unknown build: loader inactive"
 print "" > "$OUT/gen/test_builds.inc"
-$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
+$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "nothing hooked, game runs" '[[ "$r" == *"orig_safe=2"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked'
 

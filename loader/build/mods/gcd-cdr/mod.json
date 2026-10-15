@@ -1,8 +1,30 @@
-{ "id": "gcd-cdr", "name": "Global cooldown uses cooldown reduction", "version": "2.0.0", "author": "AmfiLogos",
-  "kind": "code", "api": 2, "sim": true,
-  "game_builds": ["25846389"],
-  "platforms": { "mac-arm64": { "entry": "gcd-cdr.dylib" } },
-  "tables": { "25846389": { "mac-arm64": "rva/25846389_mac.tsv" } },
-  "requires": ["loader>=2.0.0"],
-  "conflicts": ["gcd-cdr-patch"],
-  "description": "Global cooldown is divided by (1 + cooldown reduction / 100), like skill cooldowns. Runtime hook; the old byte patch (~/ds_skill_truth/patch_gcd_cdr.py) as a code module." }
+{
+ "id": "gcd-cdr",
+ "name": "Global cooldown uses cooldown reduction",
+ "version": "2.0.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "api": 2,
+ "sim": true,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "gcd-cdr.dylib"
+  }
+ },
+ "tables": {
+  "25846389": {
+   "mac-arm64": "rva/25846389_mac.tsv"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "conflicts": [
+  "gcd-cdr-patch"
+ ],
+ "description": "Global cooldown is divided by (1 + cooldown reduction / 100), like skill cooldowns. Runtime hook; the old byte patch (~/ds_skill_truth/patch_gcd_cdr.py) as a code module.",
+ "scope": "gameplay"
+}

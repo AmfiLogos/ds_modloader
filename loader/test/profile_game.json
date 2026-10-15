@@ -1,1 +1,1 @@
-{ "enabled": ["multiplayer", "gcd-cdr", "floor-logger"], "order": ["multiplayer", "gcd-cdr", "floor-logger"], "provided": ["notch-fix"] }
+{ "enabled": ["multiplayer", "gcd-cdr", "hell-difficulty", "floor-logger"], "order": ["multiplayer", "gcd-cdr", "hell-difficulty", "floor-logger"], "provided": ["notch-fix", "hell-difficulty-data"] }

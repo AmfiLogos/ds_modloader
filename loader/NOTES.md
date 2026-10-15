@@ -48,11 +48,41 @@ Log: `<log dir>/dsload.log` (previous run: `dsload.prev.log`).
 - Another hook engine in the same process (old `dsrig.dylib` / `dsmods.dylib`, Doorstop) is logged as a warning.
   Hooks on the SAME function by two engines are refused by ours, not chained. Chaining with Harmony/Dobby is not done.
 
+## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
+- **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).
+  The loader has no global mod list: it loads exactly that profile.
+- **Scope.** mod.json `"scope": "gameplay" | "client"`. The default is gameplay, the same as the launcher's `model.rs`.
+  After the modules start, the loader writes `<log dir>/dsload_modset.json` with the gameplay and client modules
+  that really run (id, version, sha256 of each file in `platforms.mac-arm64.files`, else of the dylib) plus the
+  `provided` (data / patch) ids. Modules read the same JSON with `host->gameplay_mods()`, for example for the HELLO
+  join check. It is compared with the launcher's `modset_lines` from `DSML_SESSION` (recipe `core/src/join.rs`
+  `modset_lines`: `<id>@<version>:<sorted file sha256s>[:<patch hash>]`). A difference is logged. It does not stop the game.
+- **World check** (`src/dsl_world.c`, contract with the launcherbuild lane). It is on only when `DSML_SESSION` is set.
+  It hooks `CampaignLoadingEventHandler.LoadCampaign(string)` 0xD6C900 by name. Load, Continue (QuickLoadWithNotice),
+  rig loads and MP loads all go through it (checked by BL scan). It reads the guid with the game's
+  `TryGetSaveHeader`. If `worlds[guid]` differs from `DSML_MODSET`, the load is refused: the coroutine's state is
+  set to finished and the game's `CancelIronModeLoad(notice, log)` is called with the notice "This world uses other
+  mods. Start it from the launcher." An unknown guid is allowed. A module exporting `dsl_world_check_skip()` that
+  returns 1 lets the load through. The multiplayer module returns 1 on a guest (`mp_server_port() == 0`), because
+  the HELLO check covers that case.
+- **Engine: in-place code patches.** `host->patch_rva(self, rva, old, new, n, name)`. It checks the expected bytes,
+  never overlaps a hook or another module's patch (hooks also refuse a patched site), and the original bytes come
+  back when the module fails. This is how byte-patch mods go through the one engine.
+- **Hell difficulty = module `hell-difficulty` 2.0.0** (`modules/hell-difficulty/`). This is its code half:
+  - the 20 instruction patches of `apply_hell.py` (table `rva/25846389_mac_patches.tsv`, generated from the owner's script);
+  - the recruit staff strip, ported from the cave to a C hook on `RecruitHelper.ParseItems`. It filters only when
+    called from `DetermineInitialEquipments`+0xA4 and when CombatDifficulty == 5.
+
+  Its table half (difficulty rows, texts, catalog.bin) is data: `apply_hell.py --install --tables-only --out-dir`
+  makes it, the launcher puts it into the copy, and the module `requires` `hell-difficulty-data`.
+  The mod.json has `"difficulty": {"value": 5}` for the launcher's difficulty list.
+
 ## Modules built here (`./build.sh` -> `build/`)
 | Module | Source | API | What |
 |---|---|---|---|
 | multiplayer 0.10.0 | `modules/multiplayer/mp_module.c` + `vendor/mp` (snapshot of `~/ds_multiplayer/src` + `win/math`, 2026-10-14 19:14, `vendor/mp/SNAPSHOT_TAKEN.txt`) | 2 | Every MP source compiled unchanged EXCEPT `rig_main.c` and `rig_hook.c`, which `mp_module.c` replaces: `rig_hook(rva,...)` -> `host->hook_rva`, `rig_init` -> `dsl_module_load` (no `unsetenv`), `on_image` -> `dsl_module_early`. `det_ranges.tsv` ships next to the dylib. |
 | gcd-cdr 2.0.0 | `modules/gcd-cdr/` | 2 | The owner's GCD byte patch rewritten as a runtime hook for build 25846389: hooks `SkillComponent.SetGlobalCooldown()` by name, divides `_globalCooldownValue` by (1 + stat 28 / 100), applies it with the game's own `SetGlobalCooldown(float)`. Generic `GetComponent<StatusReader>` + its MethodInfo slot + the runtime-metadata init function come from the per-build table `rva/25846389_mac.tsv` (from dump.cs + disassembly of `CooldownCondition` MoveNext 0x8A4FE4). `sim: true`. |
+| hell-difficulty 2.0.0 | `modules/hell-difficulty/` | 2 | Code half of Hell (see above). `sim: true`, scope gameplay. |
 | floor-logger 1.0.0 | `~/DungeonSettlersMods/mods/floor-logger` binary, copied unchanged | 1 | Proves API 1 compatibility. |
 
 To refresh the MP snapshot: re-copy `~/ds_multiplayer/src` (+ `win/math/{math_mac.c,*.h,build/libdsmath_arm64.a}`,

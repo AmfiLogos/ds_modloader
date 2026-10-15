@@ -18,6 +18,10 @@
 // module, or starting with a branch / PC-relative instruction (another loader's or a static patch), is refused.
 // Hooks may be installed in any phase; after il2cpp_init they go to a separate stub page.
 //
+// mod.json "scope": "gameplay" (default: every multiplayer player needs it) or "client" (only this player).
+// A module may export `int dsl_world_check_skip(void)`: 1 = the world check (mods per world) lets the current load
+// through (multiplayer guest loading the host's world).
+//
 // Log: <log dir>/dsload.log (DSL_LOG_DIR, else ~/Library/Application Support/CanOpener/Dungeon Settlers).
 #pragma once
 #include <stdint.h>
@@ -60,6 +64,12 @@ typedef struct DSLHost {
     const char *(*module_dir)(DSLPlugin *self);    /* folder of the module (its mod.json) */
     const char *(*ga_path)(void);                   /* GameAssembly.dylib path, NULL before it is mapped */
     int (*module_loaded)(const char *id);           /* 1 = that module is active in this process */
+    /* in-place code patch: `old` must match the current bytes; n <= 16, multiple of 4. Never overlaps a hook or
+       another module's patch. Undone when the module fails. 0 = ok. */
+    int (*patch_rva)(DSLPlugin *self, uintptr_t rva, const void *old, const void *neu, size_t n, const char *name);
+    /* JSON of the running mod set (dsload_modset.json): {"gameplay":[{"id","version","files":{name:sha256}}],"client":[..],
+       "session_modset", "check", ...}. Copies into buf (if any), returns the full length. Valid after dsl_plugin_init. */
+    size_t (*gameplay_mods)(char *buf, size_t n);
 } DSLHost;
 
 #define DSL_PLUGIN() __attribute__((visibility("default"))) const uint32_t dsl_plugin_api_version = DSL_API_VERSION

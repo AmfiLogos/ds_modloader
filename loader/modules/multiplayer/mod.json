@@ -1,7 +1,23 @@
-{ "id": "multiplayer", "name": "Multiplayer", "version": "0.10.0", "author": "AmfiLogos",
-  "kind": "code", "api": 2, "sim": true,
-  "game_builds": ["25846389"],
-  "platforms": { "mac-arm64": { "entry": "multiplayer.dylib" } },
-  "requires": ["loader>=2.0.0"],
-  "conflicts": [],
-  "description": "Lockstep multiplayer (dsrig) as a dsload module. Needs DSRIG_DIR (the launcher's profile folder)." }
+{
+ "id": "multiplayer",
+ "name": "Multiplayer",
+ "version": "0.10.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "api": 2,
+ "sim": true,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "multiplayer.dylib"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "conflicts": [],
+ "description": "Lockstep multiplayer (dsrig) as a dsload module. Needs DSRIG_DIR (the launcher's profile folder).",
+ "scope": "gameplay"
+}

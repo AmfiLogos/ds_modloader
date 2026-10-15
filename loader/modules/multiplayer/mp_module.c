@@ -108,3 +108,9 @@ DSL_EXPORT int dsl_module_early(const DSLHost *host, DSLPlugin *self) {
     host->log(self, "multiplayer started (control socket %s)", sp);
     return 0;
 }
+
+/* World check (dsload, mods per world): a guest loading the host's world is checked by the join (HELLO) instead. */
+DSL_EXPORT int dsl_world_check_skip(void) {
+    mp_session *s = mp_game_session();
+    return s && mp_server_port(s) == 0;           /* the host listens (and also has its own client); a guest does not */
+}

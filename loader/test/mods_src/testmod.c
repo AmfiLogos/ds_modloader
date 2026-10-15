@@ -2,6 +2,7 @@
 #include "dsl_sdk.h"
 #include <dlfcn.h>
 #include <stdint.h>
+#include <string.h>
 DSL_PLUGIN();
 static const DSLHost *H; static DSLPlugin *ME;
 static void (*o_update)(void *, const void *), (*o_tick)(void *, const void *);
@@ -31,6 +32,25 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
     h->log(me, "clash hook=%d", a);
     return a ? 5 : 0;
 }
+#elif MODE == 5    /* patcher: patch_rva ok, wrong bytes refused, overlap with a hook refused */
+DSL_EXPORT int dsl_module_early(const DSLHost *h, DSLPlugin *me) {
+    uintptr_t t = (uintptr_t)dlsym(RTLD_DEFAULT, "Patch_Target") - h->ga_base;
+    uint32_t old = 0x52800020, neu = 0x52800040, wrong = 0x52800060;               /* mov w0,#1 -> mov w0,#2 */
+    int a = h->patch_rva(me, t + 8, &wrong, &neu, 4, "wrong bytes");
+    int b = h->patch_rva(me, t, &old, &neu, 4, "mov w0 1->2");
+    void *u = dlsym(RTLD_DEFAULT, "MainFlow_Update");
+    uint8_t cur[4]; memcpy(cur, u, 4);
+    int c = h->patch_rva(me, (uintptr_t)u - h->ga_base, cur, cur, 4, "over a hook");
+    h->log(me, "patches: wrong=%d ok=%d over_hook=%d", a, b, c);
+    return b;
+}
+#elif MODE == 6    /* patch then fail: the loader must put the bytes back */
+DSL_EXPORT int dsl_module_early(const DSLHost *h, DSLPlugin *me) {
+    uintptr_t t = (uintptr_t)dlsym(RTLD_DEFAULT, "Patch_Target") - h->ga_base;
+    uint32_t old = 0x528000e0, neu = 0x52800100;                                   /* second mov w0,#7 -> #8 */
+    int r = h->patch_rva(me, t + 8, &old, &neu, 4, "temp"); h->log(me, "temp patch=%d, now failing", r); return 9;
+}
+DSL_EXPORT int dsl_world_check_skip(void) { return 0; }
 #else              /* plain: loads, no hooks */
 DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) { h->log(me, "plain module %s up (table x=%p)", h->plugin_id(me), h->table(me, "x")); return 0; }
 #endif

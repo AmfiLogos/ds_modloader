@@ -91,6 +91,17 @@ static int write_stub(uintptr_t stub, const void *src, size_t n) {
 static int all_zero(uintptr_t a, size_t n) { for (size_t i = 0; i < n; i++) if (((volatile uint8_t*)a)[i]) return 0; return 1; }
 static Hook *find_site(uintptr_t site) { for (int i = 0; i < nh; i++) if (H[i].site == site) return &H[i]; return NULL; }
 
+/* In-place code patches (expected bytes -> new bytes), e.g. a custom difficulty's compare changes. Same registry
+   rules as hooks: a patch never overlaps an active hook site or another module's patch. */
+#define MAXPT 256
+typedef struct { uintptr_t addr; uint32_t n; uint8_t old[16], neu[16]; int owner; int active; char name[48]; } Patch;
+static Patch PT[MAXPT];
+static int npt;
+static const Patch *patch_over(uintptr_t a, size_t n) {
+    for (int i = 0; i < npt; i++) if (PT[i].active && a < PT[i].addr + PT[i].n && PT[i].addr < a + n) return &PT[i];
+    return NULL;
+}
+
 static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who) {
     uintptr_t site = (uintptr_t)target;
     if (!region || !site || !repl) { dsl_log("%s: hook refused (null target/replacement or engine inactive)", who); return -1; }
@@ -106,6 +117,8 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
         dsl_log("%s: hook %#lx re-armed", who, (unsigned long)rva);
         return 0;
     }
+    const Patch *pp = patch_over(site, 4);
+    if (pp) { dsl_log("%s: hook refused: %#lx is inside a code patch of %s (%s)", who, (unsigned long)rva, dsl_owner_name(pp->owner), pp->name); return -1; }
     uint32_t insn = *(volatile uint32_t*)site;
     if ((insn & 0xFC000000) == 0x14000000) {
         uintptr_t to = site + (uintptr_t)((intptr_t)((int32_t)(insn << 6) >> 6) * 4);
@@ -164,14 +177,46 @@ int dsl_unhook_owner(int owner) {
     int n = 0;
     pthread_mutex_lock(&lock);
     for (int i = 0; i < nh; i++) if (H[i].active && H[i].owner == owner) { *(void* volatile*)H[i].slot = NULL; H[i].active = 0; n++; }
+    for (int i = 0; i < npt; i++) if (PT[i].active && PT[i].owner == owner) {        /* put the original bytes back */
+        if (!memcmp((void*)PT[i].addr, PT[i].neu, PT[i].n) && !write_ga(PT[i].addr, PT[i].old, PT[i].n)) { PT[i].active = 0; n++; }
+    }
     pthread_mutex_unlock(&lock);
     return n;
+}
+
+int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t n, const char *who) {
+    uintptr_t a = (uintptr_t)target;
+    if (!region || !a || !old || !neu || n == 0 || n > 16 || (a & 3) || (n & 3)) { dsl_log("%s: patch refused (bad arguments or engine inactive)", who); return -1; }
+    if (a < dsl_ga_base + dsl_text_lo || a + n > dsl_ga_base + dsl_text_hi) { dsl_log("%s: patch refused: %p is not code inside GameAssembly", who, target); return -1; }
+    uintptr_t rva = a - dsl_ga_base;
+    pthread_mutex_lock(&lock);
+    int r = -1;
+    const Patch *o = patch_over(a, n);
+    Hook *h = NULL;
+    for (int i = 0; i < nh; i++) if (H[i].active && H[i].site < a + n && a < H[i].site + 4) h = &H[i];
+    if (o) dsl_log("%s: patch %#lx refused: overlaps a patch of %s (%s)", who, (unsigned long)rva, dsl_owner_name(o->owner), o->name);
+    else if (h) dsl_log("%s: patch %#lx refused: overlaps a hook of %s (%s)", who, (unsigned long)rva, dsl_owner_name(h->owner), h->name);
+    else if (npt >= MAXPT) dsl_log("%s: patch refused: table full", who);
+    else if (memcmp((void*)a, old, n)) {
+        char have[40] = ""; for (size_t i = 0; i < n; i++) snprintf(have + 2 * i, 3, "%02x", ((uint8_t*)a)[i]);
+        dsl_log("%s: patch %#lx refused: bytes are %s, not the expected ones (other build, static patch or another loader)", who, (unsigned long)rva, have);
+    } else if (write_ga(a, neu, n)) dsl_log("%s: patch %#lx failed: write", who, (unsigned long)rva);
+    else {
+        Patch *p = &PT[npt++]; memset(p, 0, sizeof *p);
+        p->addr = a; p->n = (uint32_t)n; memcpy(p->old, old, n); memcpy(p->neu, neu, n); p->owner = owner; p->active = 1;
+        snprintf(p->name, sizeof p->name, "%s", who);
+        r = 0;
+    }
+    pthread_mutex_unlock(&lock);
+    if (!r) dsl_log("%s: patched %#lx (%zu bytes) for %s", who, (unsigned long)rva, n, dsl_owner_name(owner));
+    return r;
 }
 
 int dsl_hook_count(int owner) {
     int n = 0;
     pthread_mutex_lock(&lock);
     for (int i = 0; i < nh; i++) if (H[i].active && (owner == -2 || H[i].owner == owner)) n++;
+    for (int i = 0; i < npt; i++) if (PT[i].active && (owner == -2 || PT[i].owner == owner)) n++;
     pthread_mutex_unlock(&lock);
     return n;
 }

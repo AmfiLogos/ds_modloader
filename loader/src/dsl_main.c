@@ -48,7 +48,7 @@ typedef struct { char name[64]; uintptr_t rva; } TabEnt;
 struct DSLPlugin {
     char id[64], version[32], dir[1100], file[1200], sig[64];
     int idx, state;                       /* 0 listed, 1 active, 2 failed, 3 skipped */
-    int api, order_key, ordered;
+    int api, order_key, ordered, gameplay;
     void *h;
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
@@ -248,6 +248,17 @@ static void *h_table(DSLPlugin *self, const char *name) {
 }
 static const char *h_module_dir(DSLPlugin *self) { return self ? self->dir : ""; }
 static const char *h_ga_path(void) { return dsl_ga_base ? ga_path_s : NULL; }
+static int h_patch_rva(DSLPlugin *self, uintptr_t rva, const void *old, const void *neu, size_t n, const char *name) {
+    if (!self || self->state != 1 || !dsl_ga_base) return -1;
+    char who[160]; snprintf(who, sizeof who, "%s %s", self->id, name ? name : "");
+    return dsl_patch(self->idx, (void*)(dsl_ga_base + rva), old, neu, n, who);
+}
+static char *modset_json;                       /* built after the modules started (write_modset) */
+static size_t h_gameplay_mods(char *buf, size_t n) {
+    size_t need = modset_json ? strlen(modset_json) : 2;
+    if (buf && n) snprintf(buf, n, "%s", modset_json ? modset_json : "{}");
+    return need;
+}
 static int h_module_loaded(const char *id) {
     for (int i = 0; i < np; i++) if (!strcmp(P[i].id, id)) return P[i].state == 1;
     return 0;
@@ -363,6 +374,8 @@ static void scan_mods(const char *build) {
         snprintf(p->id, sizeof p->id, "%s", id); snprintf(p->dir, sizeof p->dir, "%s", dir);
         snprintf(p->version, sizeof p->version, "%s", json_str(m, "version") ? json_str(m, "version") : "?");
         p->mf = m; p->idx = np; p->state = 0;
+        const char *scope = json_str(m, "scope");
+        p->gameplay = !(scope && !strcmp(scope, "client"));          /* default: gameplay (launcher model.rs) */
         JNode *api = json_get(m, "api"); p->api = api && api->t == JN_NUM ? (int)api->num : 1;
         int pos = list_pos(order, id); if (pos < 0) pos = list_pos(enabled, id);
         p->order_key = pos < 0 ? 1000 + np : pos;
@@ -510,6 +523,73 @@ static void run_init(void) {
     dsl_log("modules: %d loaded of %d opened; %d hook(s) active in the process", ok, n, dsl_hook_count(-2));
 }
 
+/* dsload_modset.json: what really runs, for the multiplayer join check (scope gameplay = every player needs it).
+   Each code module: id, version, sha256 of its folder's files named in mod.json (else its dylib). Compared with the
+   launcher's session lines (<id>@<version>:<sha>,...): a difference is logged, never fatal. */
+typedef struct { char *p; size_t n, cap; } SB;
+static void sb(SB *b, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void sb(SB *b, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt); int k = vsnprintf(NULL, 0, fmt, ap); va_end(ap);
+    if (b->n + (size_t)k + 1 > b->cap) { b->cap = (b->n + (size_t)k + 1) * 2; b->p = realloc(b->p, b->cap); }
+    va_start(ap, fmt); vsnprintf(b->p + b->n, (size_t)k + 1, fmt, ap); va_end(ap); b->n += (size_t)k;
+}
+static void write_modset(void) {
+    char *stxt = NULL; const char *sp = getenv("DSML_SESSION");
+    if (sp) stxt = read_file(sp, 8 << 20);
+    JNode *sess = stxt ? json_parse(stxt) : NULL; free(stxt);
+    JNode *lines = json_get(sess, "modset_lines");
+    SB b = {0};
+    sb(&b, "{\"build\":\"%s\",\"loader\":\"%s\",\"session_modset\":\"%s\",\"gameplay\":[", dsl_build_id ? dsl_build_id : "",
+       DSL_LOADER_VERSION, getenv("DSML_MODSET") ? getenv("DSML_MODSET") : (json_str(sess, "modset") ? json_str(sess, "modset") : ""));
+    int first = 1, diffs = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass == 1) { sb(&b, "],\"client\":["); first = 1; }
+        for (int i = 0; i < norder; i++) {
+            struct DSLPlugin *p = ORDER[i];
+            if (p->state != 1 || p->gameplay != (pass == 0)) continue;
+            sb(&b, "%s{\"id\":\"%s\",\"version\":\"%s\",\"files\":{", first ? "" : ",", p->id, p->version); first = 0;
+            JNode *files = json_get(json_get(json_get(p->mf, "platforms"), "mac-arm64"), "files");
+            char shas[16][65]; int ns = 0;
+            if (files && files->t == JN_OBJ && files->child) {
+                for (JNode *f = files->child; f && ns < 16; f = f->next) {
+                    char fp[1400]; snprintf(fp, sizeof fp, "%s/%s", p->dir, f->key);
+                    if (sha256_file(fp, shas[ns])) continue;
+                    sb(&b, "%s\"%s\":\"%s\"", ns ? "," : "", f->key, shas[ns]); ns++;
+                }
+            } else if (!sha256_file(p->file, shas[0])) { const char *bn = strrchr(p->file, '/'); sb(&b, "\"%s\":\"%s\"", bn ? bn + 1 : p->file, shas[0]); ns = 1; }
+            sb(&b, "}}");
+            if (pass == 0 && lines && lines->t == JN_ARR) {           /* compare with the launcher's line for this mod */
+                char key[128]; snprintf(key, sizeof key, "%s@%s", p->id, p->version);
+                JNode *hit = NULL;
+                for (JNode *l = lines->child; l; l = l->next) if (l->t == JN_STR && !strncmp(l->str, key, strlen(key)) && (l->str[strlen(key)] == ':' || !l->str[strlen(key)])) hit = l;
+                if (!hit) { diffs++; dsl_log("mod set: %s runs here but is not in the launcher's gameplay list", key); }
+                else for (int k = 0; k < ns; k++) if (!strcasestr(hit->str, shas[k])) { diffs++; dsl_log("mod set: %s file sha256 %s is not in the launcher's line '%s'", key, shas[k], hit->str); }
+            }
+        }
+    }
+    if (lines && lines->t == JN_ARR) for (JNode *l = lines->child; l; l = l->next) {
+        if (l->t != JN_STR) continue;
+        char id[64]; size_t k = 0; while (l->str[k] && l->str[k] != '@' && k < 63) { id[k] = l->str[k]; k++; } id[k] = 0;
+        struct DSLPlugin *o = find_mod(id);
+        if (o && o->state != 1) { diffs++; dsl_log("mod set: the launcher lists %s but it is not running (%s)", l->str, o->state == 2 ? "failed" : "skipped"); }
+    }
+    sb(&b, "],\"provided\":[");
+    for (int i = 0; i < nprovided; i++) sb(&b, "%s\"%s\"", i ? "," : "", provided[i]);
+    sb(&b, "],\"check\":\"%s\",\"differences\":%d,\"world_refusals\":0}", !sess ? "no session" : (lines ? (diffs ? "differs" : "ok") : "no modset_lines"), diffs);
+    json_free(sess);
+    modset_json = b.p;
+    char path[1200]; snprintf(path, sizeof path, "%s/dsload_modset.json", logdir);
+    write_file(path, modset_json);
+    dsl_log("mod set written to %s (check: %s, %d difference(s))", path, !sp ? "no session" : (diffs ? "differs" : "ok"), diffs);
+}
+
+void dsl_world_install(void **modules, int n);
+static void world_install(void) {
+    void *hs[MAXP]; int k = 0;
+    for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) hs[k++] = ORDER[i]->h;
+    dsl_world_install(hs, k);
+}
+
 static int (*orig_init)(const char *);
 static int (*orig_init_utf16)(const void *);
 static void on_il2cpp_ready(const char *via) {
@@ -519,6 +599,8 @@ static void on_il2cpp_ready(const char *via) {
     dsl_log("il2cpp_init%s returned: runtime code patching works", via);
     if (dsl_il2cpp_bind()) dsl_log("il2cpp exports missing: name lookups will fail");
     run_init();
+    write_modset();
+    world_install();
     dsl_engine_set_late();
 }
 static int my_il2cpp_init(const char *domain) { int r = orig_init(domain); on_il2cpp_ready(""); return r; }
@@ -545,6 +627,7 @@ static void on_image(const struct mach_header *mh, intptr_t slide) {
             (unsigned long long)dsl_text_lo, (unsigned long long)dsl_text_hi, (unsigned long long)dsl_image_end);
     int any = 0, want_init = 0;
     for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) { any = 1; if (ORDER[i]->init) want_init = 1; }
+    if (getenv("DSML_SESSION")) want_init = any = 1;                 /* the world check runs after il2cpp_init */
     if (!any) return;
     if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return; }
     if (dsl_engine_init()) return;
@@ -563,7 +646,7 @@ static void on_image(const struct mach_header *mh, intptr_t slide) {
         if (r) { fail(p, "dsl_module_early", r); continue; }
         dsl_log("%s: early start done (%d hook(s))", p->id, dsl_hook_count(p->idx));
     }
-    if (!want_init) { guard_leave("_codepatch"); run_init(); dsl_engine_set_late(); }
+    if (!want_init) { guard_leave("_codepatch"); run_init(); write_modset(); dsl_engine_set_late(); }
 }
 
 /* DYLD_INSERT_LIBRARIES: drop our own entry so children (crash reporter, helpers) do not load us; keep every
@@ -642,10 +725,11 @@ __attribute__((constructor)) static void dsl_init(void) {
         .il2cpp_fn = dsl_il2cpp_fn, .find_class = dsl_find_class, .find_method = dsl_find_method,
         .method_address = dsl_method_address, .find_method_address = dsl_find_method_address, .field_offset = dsl_field_offset,
         .hook = h_hook, .hook_method = h_hook_method, .unhook = h_unhook,
-        .hook_rva = h_hook_rva, .table = h_table, .module_dir = h_module_dir, .ga_path = h_ga_path, .module_loaded = h_module_loaded };
+        .hook_rva = h_hook_rva, .table = h_table, .module_dir = h_module_dir, .ga_path = h_ga_path, .module_loaded = h_module_loaded,
+        .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods };
     scan_mods(dsl_build_id);
     note_other_loaders();
-    if (!norder) { dsl_log("no module to load"); return; }
+    if (!norder && !getenv("DSML_SESSION")) { dsl_log("no module to load"); return; }
     open_modules();
     _dyld_register_func_for_add_image(on_image);
 }

@@ -22,7 +22,8 @@ void dsl_engine_set_late(void);          /* game code may run on other threads: 
 int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who);
 int dsl_unhook(int owner, void *target, const char *who);
 int dsl_unhook_owner(int owner);
-int dsl_hook_count(int owner);           /* active hooks of an owner (-2 = all) */
+int dsl_hook_count(int owner);           /* active hooks + code patches of an owner (-2 = all) */
+int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t n, const char *who);
 extern int dsl_codepatch_ok;
 
 /* il2cpp name lookups (dsl_il2cpp.c) */

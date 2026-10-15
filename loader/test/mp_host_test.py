@@ -14,6 +14,13 @@ SOAK = int(os.environ.get('SOAK_S', '600'))
 out = os.path.join(lrig.LROOT, 'test_env', 'smoke_out', time.strftime('%Y%m%d-%H%M%S')); os.makedirs(out, exist_ok=True)
 os.environ['LRIG_EXTRA_INSERT'] = os.path.join(lrig.LROOT, 'test_env', 'foreign.dylib')
 os.environ['FOREIGN_OUT'] = os.path.join(lrig.idir(X), 'foreign.txt')
+SESSION = os.path.join(lrig.idir(X), 'dsml_session.json')
+GUID = 'f816ebc6-195c-432c-9fff-754b75ee3738'                         # CampaignGuid of the demo save
+HELL = os.environ.get('HELL', '1') == '1'
+def session(world_modset):
+    json.dump({'world': GUID, 'modset': 'mine', 'rule': 'mods', 'offer': None, 'offer_error': None, 'client_mods': [],
+               'worlds': {GUID: world_modset}, 'modset_lines': []}, open(SESSION + '.tmp', 'w')); os.replace(SESSION + '.tmp', SESSION)
+os.environ['DSML_SESSION'] = SESSION; os.environ['DSML_MODSET'] = 'mine'
 res = {}
 def log(*a): print(time.strftime('%H:%M:%S'), *a, flush=True)
 def c(**k): return lrig.send(X, k, timeout=120)
@@ -54,12 +61,30 @@ try:
     import rig as _rig; _rig.SAVE = lrig.SAVE                        # demo.py reads rig.SAVE (owner backup, read only)
     from demo import make_demo_save
     src = os.path.join(work, 'demo_buffed.json'); log('x10 demo save:', make_demo_save(src))
-    log('load', c(cmd='load_save', file=src, det=1))
+    if HELL:                                                          # play the demo world on Hell (CombatDifficulty 5)
+        d = json.load(open(src))
+        d['CampaignSaveHeader']['CombatDifficulty'] = 5
+        d['CampaignSettingSaveData']['CampaignStartSettingSaveData']['CombatDifficulty'] = 5
+        json.dump(d, open(src + '.tmp', 'w')); os.replace(src + '.tmp', src)
+    # mods per world: the launcher says this world was played with another mod set -> refused
+    session('other-modset')
+    log('load (world registered with another mod set)', c(cmd='load_save', file=src, det=1))
+    time.sleep(20)
+    s = st(); shot = os.path.join(out, 'refused.png'); c(cmd='screenshot', path=shot, w=960, h=540)
+    dl = open(os.path.join(lrig.idir(X), 'dsload.log')).read()
+    check('world with another mod set refused, game stays on the title', s.get('scene') == 1 and 'world check: REFUSED' in dl and lrig.alive(lrig.read_pid(X)),
+          f"scene {s.get('scene')} busy {s.get('busy')}; popup screenshot {shot}")
+    session('mine')
+    log('load (same mod set)', c(cmd='load_save', file=src, det=1))
     t0 = time.time()
     while not st().get('det', {}).get('locked'):
         if time.time() - t0 > 600: raise RuntimeError('det never locked')
         time.sleep(2)
     s = st(); log('locked at tick', s['tick'], 'mp', s.get('mp'))
+    dl = open(os.path.join(lrig.idir(X), 'dsload.log')).read()
+    check('same mod set: world loads', 'uses this mod set: allowed' in dl and s.get('scene') == 2)
+    if HELL:
+        check('Hell module: 20 code patches applied, world on CombatDifficulty 5 loaded', '[hell-difficulty] Hell difficulty ready: 20 code patches' in dl and s.get('scene') == 2)
     check('host session up, lockstep locked', s.get('det', {}).get('locked') and s.get('mp'), json.dumps(s.get('mp')))
     t1 = time.time()
     while st().get('mp', {}).get('busy_mask', 1) and time.time() - t1 < 300: time.sleep(2)

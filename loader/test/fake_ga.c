@@ -16,11 +16,33 @@ void DBS_Tick(uint8_t *self, const void *mi) { fake_orig_tick++; }
 void MainFlow_Update(void *self, const void *mi) { fake_orig_update++; }
 void Foreign_Target(void *self, const void *mi) { fake_orig_foreign++; }
 
+/* patch target: mov w0, #1 ; ret ; mov w0, #7 ; ret */
+__attribute__((naked)) int Patch_Target(void) { __asm__("mov w0, #1\n ret\n mov w0, #7\n ret"); }
+
+/* mods-per-world: a fake CampaignLoadingEventHandler + il2cpp strings (len @0x10, utf-16 @0x14) */
+typedef struct { void *k, *m; int32_t len; uint16_t c[64]; } FStr;
+void *il2cpp_string_new(const char *s) { FStr *f = calloc(1, sizeof *f); while (s[f->len] && f->len < 64) { f->c[f->len] = (uint8_t)s[f->len]; f->len++; } return f; }
+typedef struct { void *k, *m; int32_t state; } FIter;
+int fake_cancel_calls; char fake_cancel_text[128];
+void *CLEH_LoadCampaign(void *self, FStr *name, const void *mi) { FIter *it = calloc(1, sizeof *it); return it; }
+int CLEH_TryGetSaveHeader(void *self, FStr *name, uint8_t *hdr, void **set, const void *mi) {
+    if (!name || name->len < 5) return 0;
+    for (int i = 0; i < 16; i++) hdr[i] = (uint8_t)(name->c[4] == '1' ? 0x11 : 0x22);   /* save1 -> 11111111-1111-..., save2 -> 22222222-... */
+    return 1;
+}
+void CLEH_CancelIronModeLoad(void *self, FStr *notice, FStr *log, const void *mi) {
+    fake_cancel_calls++; int i; for (i = 0; i < notice->len && i < 127; i++) fake_cancel_text[i] = (char)notice->c[i]; fake_cancel_text[i] = 0;
+}
+static FakeMethod cleh_methods[] = { { (void*)CLEH_LoadCampaign, "LoadCampaign", 1 }, { (void*)CLEH_TryGetSaveHeader, "TryGetSaveHeader", 3 },
+                                     { (void*)CLEH_CancelIronModeLoad, "CancelIronModeLoad", 2 } };
+int fake_load(const char *name) { FIter *it = CLEH_LoadCampaign(NULL, il2cpp_string_new(name), NULL); return it ? it->state : 99; }
+
 static FakeMethod dbs_methods[] = {
     { (void*)DBS_OnEnterSafeFloor, "OnEnterSafeFloor", 0 }, { (void*)DBS_OnEnterNonSafeFloor, "OnEnterNonSafeFloor", 0 },
     { (void*)DBS_Tick, "Tick", 0 }, { (void*)Foreign_Target, "ForeignTarget", 0 } };
 static FakeField dbs_fields[] = { { "_floorEnteredMin", 0x80 }, { "_isInSafeFloor", 0x85 } };
-static FakeClass classes[] = { { "Refactor.Runtime", "DungeonBehaviorSimulator", dbs_methods, 4, dbs_fields, 2 } };
+static FakeClass classes[] = { { "Refactor.Runtime", "DungeonBehaviorSimulator", dbs_methods, 4, dbs_fields, 2 },
+                               { "Refactor.Main.Event", "CampaignLoadingEventHandler", cleh_methods, 3, NULL, 0 } };
 static int fake_domain, fake_image;
 static void *fake_assemblies[1] = { &fake_image };
 
