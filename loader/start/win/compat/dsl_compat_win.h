@@ -20,3 +20,7 @@ static inline char *dsl_strcasestr(const char *h, const char *n) {
     return k ? NULL : (char *)h;
 }
 #define strcasestr dsl_strcasestr
+/* POSIX rename replaces an existing target; the Windows CRT's fails (status / handoff / modset files went stale) */
+__declspec(dllimport) int __stdcall MoveFileExA(const char *from, const char *to, unsigned long flags);
+static inline int dsl_rename(const char *from, const char *to) { return MoveFileExA(from, to, 0x1 | 0x2) ? 0 : -1; }  /* REPLACE_EXISTING | COPY_ALLOWED */
+#define rename dsl_rename

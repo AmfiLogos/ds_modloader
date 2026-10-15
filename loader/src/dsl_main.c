@@ -618,7 +618,9 @@ int dsl_core_log_open(const char *logdir_default, const char *self) {
     mkdirs(statedir);
     char lp[1200], pp[1200];
     snprintf(lp, sizeof lp, "%s/dsload.log", logdir); snprintf(pp, sizeof pp, "%s/dsload.prev.log", logdir);
-    remove(pp); rename(lp, pp);
+    remove(pp);
+    if (rename(lp, pp) && !access(lp, 0))                /* Windows: a running game (soft restart A) still has it open */
+        snprintf(lp, sizeof lp, "%s/dsload.%d.log", logdir, (int)getpid());
     lf = fopen(lp, "w");
     file_sig(self_path, loader_sig, sizeof loader_sig);
     dsl_log("dsload %s (module API %d, %s) pid %d: %s", DSL_LOADER_VERSION, DSL_API_VERSION, DSL_PLATFORM, (int)getpid(), self_path);

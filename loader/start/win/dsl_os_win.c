@@ -1,5 +1,5 @@
 // Windows OS part of the loader core (src/dsl_os.h): module DLLs, sha256 (BCrypt), GameAssembly exports, notices.
-// Soft restart (src/dsl_soft.c is macOS-only: Cocoa windows, posix_spawn) is not ported yet: refused with a reason.
+// The soft restart's OS part is dsl_soft_win.c.
 #include "dsl_internal.h"
 #include "dsl_os.h"
 #include <windows.h>
@@ -64,14 +64,4 @@ void dsl_os_notice(const char *title, const char *msg) {
 void *dsl_ga_sym(const char *name) {
     HMODULE ga = dsl_ga_base ? (HMODULE)dsl_ga_base : GetModuleHandleA("GameAssembly.dll");
     return ga && name ? (void *)GetProcAddress(ga, name) : NULL;
-}
-
-/* ---- soft restart: not on Windows yet */
-void dsl_soft_snapshot(const char *logdir) { (void)logdir; }
-void dsl_soft_install(void) {}
-int dsl_soft_wanted(void) { return 0; }
-int dsl_soft_apply(const char *profile, const char *env_lines) {
-    (void)profile; (void)env_lines;
-    dsl_log("soft restart: not available on Windows yet (refused)");
-    return -1;
 }

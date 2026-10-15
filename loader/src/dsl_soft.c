@@ -15,30 +15,21 @@
 // DSL_SOFT_STAGE=x,y (every window of A and B is kept at that origin, e.g. far off every display), DSL_SOFT_NOACTIVATE=1
 // (no activation, no yield), DSL_SOFT_CAPTURE=<dir> (the game's own frame as PNG ~10 per second while a restart runs).
 // Every step goes to dsload.log with the time since the process started; window state per frame to softrestart_frames.log.
+// OS-neutral since the core/OS split: windows, process start and the main-thread timer are in dsl_soft_os.h
+// (start/mac/dsl_soft_mac.c, start/win/dsl_soft_win.c); everything here uses the game by il2cpp names.
 #include "dsl_internal.h"
-#include <objc/runtime.h>
-#include <objc/message.h>
-#include <CoreGraphics/CoreGraphics.h>
-#include <CoreFoundation/CoreFoundation.h>
-#include <crt_externs.h>
-#include <mach-o/dyld.h>
-#include <spawn.h>
-#include <signal.h>
+#include "dsl_soft_os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/sysctl.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <sys/wait.h>
 
-extern char **environ;
 typedef void *Obj;
 #define AT(o, off, T) (*(T *)((char *)(o) + (off)))
-#define MSG(ret, ...) ((ret (*)(__VA_ARGS__))objc_msgSend)
-#define SEL_(s) sel_registerName(s)
 
 /* ------------------------------------------------------------------ time, log */
 static double t_start;                               /* process start (kernel), seconds */
@@ -47,10 +38,6 @@ static double since(void) { return now_s() - t_start; }
 #define SLOG(fmt, ...) dsl_log("soft +%.3fs: " fmt, since(), ##__VA_ARGS__)
 static char sdir[1200];                              /* <log dir>/softrestart */
 static FILE *ff;                                     /* per-frame window log */
-
-/* ------------------------------------------------------------------ launch snapshot (taken before dsload edits the env) */
-static char **env0; static char exe0[1024], cwd0[1024];
-static char **argv0; static int argc0;
 
 /* ------------------------------------------------------------------ role */
 static int role_b;                                   /* this process is B (DSL_SOFT_HANDOFF) */
@@ -167,115 +154,11 @@ static char *slurp(const char *p) {
     char *b = malloc((size_t)n + 1); size_t r = fread(b, 1, (size_t)n, f); fclose(f); b[r] = 0; return b;
 }
 
-/* ------------------------------------------------------------------ windows (objc runtime only) */
-typedef id (*init4_t)(id, SEL, CGRect, unsigned long, unsigned long, BOOL);
-typedef id (*init5_t)(id, SEL, CGRect, unsigned long, unsigned long, BOOL, id);
-static init4_t o_init4; static init5_t o_init5;
-static IMP o_alpha, o_mkkey, o_mkmain, o_cankey, o_canmain, o_act1, o_act0, o_ract, o_fs, o_setframe, o_setorigin, o_constrain;
-#define LEVEL_HIDDEN (-2147483000L)
-static void stage_window(id w);
-static void hide_window(id w) {
-    if (!w) return;
-    ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 0.0);
-    MSG(void, id, SEL, BOOL)(w, SEL_("setIgnoresMouseEvents:"), YES);
-    MSG(void, id, SEL, BOOL)(w, SEL_("setHasShadow:"), NO);
-    MSG(void, id, SEL, long)(w, SEL_("setLevel:"), LEVEL_HIDDEN);
-    /* Transient | IgnoresCycle | Stationary: not in Mission Control / Cmd-` while hidden */
-    MSG(void, id, SEL, unsigned long)(w, SEL_("setCollectionBehavior:"), (1u << 3) | (1u << 6) | (1u << 4));
-}
-static void show_window(id w) {
-    MSG(void, id, SEL, unsigned long)(w, SEL_("setCollectionBehavior:"), 0);
-    MSG(void, id, SEL, long)(w, SEL_("setLevel:"), 0L);
-    MSG(void, id, SEL, BOOL)(w, SEL_("setIgnoresMouseEvents:"), NO);
-    MSG(void, id, SEL, BOOL)(w, SEL_("setHasShadow:"), YES);
-    ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 1.0);
-}
-static id my_init4(id self, SEL s, CGRect r, unsigned long st, unsigned long b, BOOL d) {
-    id w = o_init4(self, s, r, st, b, d); if (hidden) hide_window(w); if (stage_on) stage_window(w); return w;
-}
-static id my_init5(id self, SEL s, CGRect r, unsigned long st, unsigned long b, BOOL d, id sc) {
-    id w = o_init5(self, s, r, st, b, d, sc); if (hidden) hide_window(w); if (stage_on) stage_window(w); return w;
-}
-static void my_alpha(id self, SEL s, double a) { ((void (*)(id, SEL, double))o_alpha)(self, s, hidden ? 0.0 : a); }
-static void my_mkkey(id self, SEL s) { if (!hidden) ((void (*)(id, SEL))o_mkkey)(self, s); }
-static void my_mkmain(id self, SEL s) { if (!hidden) ((void (*)(id, SEL))o_mkmain)(self, s); }
-static BOOL my_cankey(id self, SEL s) { return hidden ? NO : ((BOOL (*)(id, SEL))o_cankey)(self, s); }
-static BOOL my_canmain(id self, SEL s) { return hidden ? NO : ((BOOL (*)(id, SEL))o_canmain)(self, s); }
-static void my_act1(id self, SEL s, BOOL a) { if (!hidden && !no_activate) ((void (*)(id, SEL, BOOL))o_act1)(self, s, a); }
-static void my_act0(id self, SEL s) { if (!hidden && !no_activate) ((void (*)(id, SEL))o_act0)(self, s); }
-static BOOL my_ract(id self, SEL s, unsigned long o) { return (!hidden && !no_activate) ? ((BOOL (*)(id, SEL, unsigned long))o_ract)(self, s, o) : NO; }
-static void my_fs(id self, SEL s, id a) { if (!hidden) ((void (*)(id, SEL, id))o_fs)(self, s, a); }
-/* test stage: every window keeps its size but sits at (stage_x, stage_y), far off every display */
-static void my_setframe(id self, SEL s, CGRect r, BOOL d) { if (stage_on) { r.origin.x = stage_x; r.origin.y = stage_y; } ((void (*)(id, SEL, CGRect, BOOL))o_setframe)(self, s, r, d); }
-static void my_setorigin(id self, SEL s, CGPoint p) { if (stage_on) { p.x = stage_x; p.y = stage_y; } ((void (*)(id, SEL, CGPoint))o_setorigin)(self, s, p); }
-static CGRect my_constrain(id self, SEL s, CGRect r, id sc) { return stage_on ? r : ((CGRect (*)(id, SEL, CGRect, id))o_constrain)(self, s, r, sc); }
-static void stage_window(id w) {
-    CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
-    f.origin.x = stage_x; f.origin.y = stage_y;
-    ((void (*)(id, SEL, CGRect, BOOL))o_setframe)(w, SEL_("setFrame:display:"), f, NO);
-}
-static void swap_m(const char *cls, const char *sel, IMP imp, IMP *orig, int cls_method) {
-    Class c = objc_getClass(cls); if (!c) { dsl_log("soft: class %s missing", cls); return; }
-    Method m = cls_method ? class_getClassMethod(c, SEL_(sel)) : class_getInstanceMethod(c, SEL_(sel));
-    if (!m) { dsl_log("soft: %s %s missing", cls, sel); return; }
-    IMP o = method_setImplementation(m, imp); if (orig) *orig = o;
-}
-static id app(void) { return MSG(id, Class, SEL)(objc_getClass("NSApplication"), SEL_("sharedApplication")); }
-static id windows(unsigned long *n) {
-    id a = app(); if (!a) { *n = 0; return NULL; }
-    id ws = MSG(id, id, SEL)(a, SEL_("windows")); *n = ws ? MSG(unsigned long, id, SEL)(ws, SEL_("count")) : 0; return ws;
-}
-static id win_at(id ws, unsigned long i) { return MSG(id, id, SEL, unsigned long)(ws, SEL_("objectAtIndex:"), i); }
-/* the game window = the largest window of the app */
-static id game_window(void) {
-    unsigned long n; id ws = windows(&n), best = NULL; double ba = 0;
-    for (unsigned long i = 0; i < n; i++) {
-        id w = win_at(ws, i); CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
-        if (f.size.width * f.size.height > ba) { ba = f.size.width * f.size.height; best = w; }
-    }
-    return best;
-}
-static void set_policy(long p) { id a = app(); if (a) MSG(BOOL, id, SEL, long)(a, SEL_("setActivationPolicy:"), p); }   /* 0 Regular, 1 Accessory */
-static long get_policy(void) { id a = app(); return a ? MSG(long, id, SEL)(a, SEL_("activationPolicy")) : -1; }
-
-/* NSApplication init in B: Accessory before the app finishes launching (no Dock icon, no menu bar) */
-static IMP o_finish;
-static void my_finish(id self, SEL s) {
-    if (hidden) { MSG(BOOL, id, SEL, long)(self, SEL_("setActivationPolicy:"), 1L); SLOG("B: activation policy Accessory before finishLaunching"); }
-    ((void (*)(id, SEL))o_finish)(self, s);
-}
-
-static void install_window_swizzles(void) {
-    swap_m("NSWindow", "initWithContentRect:styleMask:backing:defer:", (IMP)my_init4, (IMP *)&o_init4, 0);
-    swap_m("NSWindow", "initWithContentRect:styleMask:backing:defer:screen:", (IMP)my_init5, (IMP *)&o_init5, 0);
-    swap_m("NSWindow", "setAlphaValue:", (IMP)my_alpha, &o_alpha, 0);
-    swap_m("NSWindow", "makeKeyWindow", (IMP)my_mkkey, &o_mkkey, 0);
-    swap_m("NSWindow", "makeMainWindow", (IMP)my_mkmain, &o_mkmain, 0);
-    swap_m("NSWindow", "canBecomeKeyWindow", (IMP)my_cankey, &o_cankey, 0);
-    swap_m("NSWindow", "canBecomeMainWindow", (IMP)my_canmain, &o_canmain, 0);
-    swap_m("NSWindow", "toggleFullScreen:", (IMP)my_fs, &o_fs, 0);
-    swap_m("NSWindow", "setFrame:display:", (IMP)my_setframe, &o_setframe, 0);
-    swap_m("NSWindow", "setFrameOrigin:", (IMP)my_setorigin, &o_setorigin, 0);
-    swap_m("NSWindow", "constrainFrameRect:toScreen:", (IMP)my_constrain, &o_constrain, 0);
-    swap_m("NSApplication", "activateIgnoringOtherApps:", (IMP)my_act1, &o_act1, 0);
-    swap_m("NSApplication", "activate", (IMP)my_act0, &o_act0, 0);
-    swap_m("NSRunningApplication", "activateWithOptions:", (IMP)my_ract, &o_ract, 0);
-    swap_m("NSApplication", "finishLaunching", (IMP)my_finish, &o_finish, 0);
-}
-
 /* ------------------------------------------------------------------ per-frame window log + capture */
 static void frame_log(const char *who) {
     if (!ff) return;
-    unsigned long n; id ws = windows(&n);
-    fprintf(ff, "%.3f %s scene %d busy %d hidden %d policy %ld", since(), who, scene(), mf ? busy() : -1, hidden, get_policy());
-    for (unsigned long i = 0; i < n; i++) {
-        id w = win_at(ws, i); CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
-        fprintf(ff, " | win %ld alpha %.2f vis %d level %ld key %d occl %lu %.0f,%.0f %.0fx%.0f",
-                MSG(long, id, SEL)(w, SEL_("windowNumber")), MSG(double, id, SEL)(w, SEL_("alphaValue")),
-                (int)MSG(BOOL, id, SEL)(w, SEL_("isVisible")), MSG(long, id, SEL)(w, SEL_("level")),
-                (int)MSG(BOOL, id, SEL)(w, SEL_("isKeyWindow")), MSG(unsigned long, id, SEL)(w, SEL_("occlusionState")),
-                f.origin.x, f.origin.y, f.size.width, f.size.height);
-    }
+    fprintf(ff, "%.3f %s scene %d busy %d hidden %d", since(), who, scene(), mf ? busy() : -1, hidden);
+    dsl_sos_frame_log(ff);
     fputc('\n', ff); fflush(ff);
 }
 static void capture(const char *who) {
@@ -291,13 +174,13 @@ static void capture(const char *who) {
 
 /* ------------------------------------------------------------------ A side */
 enum { A_IDLE, A_WAIT_READY, A_WAIT_SHOWN, A_QUITTING, A_FAILED };
-static int a_state = A_IDLE; static double a_t0, a_tstate; static pid_t b_pid;
+static int a_state = A_IDLE; static double a_t0, a_tstate;
 static char a_profile[1200], a_save[512], a_env[2048]; static int a_speed = -1, a_scene;
 static double save_wait_from; static time_t save_newer_than;
 
 static void a_fail(const char *why) {
     SLOG("A: soft restart FAILED: %s; the old mods stay", why);
-    if (b_pid > 0) { kill(b_pid, SIGKILL); SLOG("A: B pid %d killed", b_pid); }
+    dsl_sos_child_kill();
     if (fade && fade_in) fade_in(fade, NULL);
     if (a_speed > 0) set_speed(a_speed);
     char p[1300]; path_of(p, sizeof p, "failed"); touch_file(p, why);
@@ -322,49 +205,25 @@ static int newest_save(time_t t, char *name, size_t n) {
     closedir(dir); return ok;
 }
 
-static int spawn_b(void) {
-    /* environment = the one this process started with, with DSL_PROFILE and DSL_SOFT_HANDOFF replaced */
-    int n = 0; while (env0 && env0[n]) n++;
-    char **env = calloc((size_t)n + 4, sizeof *env); int k = 0;
-    for (int i = 0; i < n; i++) if (strncmp(env0[i], "DSL_PROFILE=", 12) && strncmp(env0[i], "DSL_SOFT_HANDOFF=", 17)) env[k++] = env0[i];
-    char e1[1300], e2[1300]; snprintf(e1, sizeof e1, "DSL_PROFILE=%s", a_profile); snprintf(e2, sizeof e2, "DSL_SOFT_HANDOFF=%s", handoff_path);
-    env[k++] = e1; env[k++] = e2;
-    /* caller's overrides "K=V" lines (e.g. DSML_MODSET of the new set) replace the same keys */
-    char *ov = strdup(a_env), *sv = NULL; char **extra = calloc(64, sizeof *extra); int ne = 0;
-    for (char *l = strtok_r(ov, "\n", &sv); l && ne < 63; l = strtok_r(NULL, "\n", &sv)) {
-        char *eq = strchr(l, '='); if (!eq || eq == l) continue;
-        size_t kl = (size_t)(eq - l) + 1;
-        for (int i = 0; i < k; i++) if (!strncmp(env[i], l, kl)) { env[i] = env[--k]; i--; }
-        extra[ne++] = l;
-    }
-    env = realloc(env, ((size_t)k + (size_t)ne + 1) * sizeof *env);
-    for (int i = 0; i < ne; i++) env[k++] = extra[i];
-    env[k] = NULL;
-    posix_spawnattr_t at; posix_spawnattr_init(&at);
-    posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSID);
-    char old[1024] = ""; if (!getcwd(old, sizeof old)) old[0] = 0;
-    if (cwd0[0] && chdir(cwd0)) {}
-    int r = posix_spawn(&b_pid, exe0, NULL, &at, argv0, env);
-    if (old[0] && chdir(old)) {}
-    posix_spawnattr_destroy(&at); free(env); free(extra); free(ov);
-    if (r) { SLOG("A: posix_spawn %s failed (%d)", exe0, r); b_pid = 0; return -1; }
-    SLOG("A: B started, pid %d (%s, profile %s)", b_pid, exe0, a_profile);
-    return 0;
-}
-
 static int a_save_done;
+static void jesc(char *out, size_t n, const char *s) {    /* JSON string body (Windows paths carry backslashes) */
+    size_t k = 0;
+    for (; s && *s && k + 3 < n; s++) { if (*s == '"' || *s == '\\') out[k++] = '\\'; out[k++] = *s; }
+    out[k] = 0;
+}
 static void write_handoff(void) {
+    char jp[2400], js[1100]; jesc(jp, sizeof jp, a_profile); jesc(js, sizeof js, a_save);
     float cx = 0, cy = 0, cz = 0; int hc = camera(&cx, &cy, &cz);
     float tx = 0, ty = 0, tz = 0; int ht = cam_target(&tx, &ty, &tz);
-    id w = game_window(); CGRect f = w ? MSG(CGRect, id, SEL)(w, SEL_("frame")) : CGRectZero;
+    double f[4] = { 0, 0, 0, 0 }; dsl_sos_game_frame(f);
     char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", handoff_path);
     FILE *o = fopen(tmp, "w"); if (!o) return;
     fprintf(o, "{\"v\":1,\"from_pid\":%d,\"profile\":\"%s\",\"scene\":%d,\"save\":\"%s\",\"save_pending\":%d,\"speed\":%d,"
                "\"frame\":[%.1f,%.1f,%.1f,%.1f],\"camera\":[%.3f,%.3f,%.3f],\"has_camera\":%d,\"camera_target\":[%.3f,%.3f,%.3f],\"has_target\":%d,\"apply_at\":%.3f}\n",
-            getpid(), a_profile, a_scene, a_save, !a_save_done, a_speed, f.origin.x, f.origin.y, f.size.width, f.size.height, cx, cy, cz, hc, tx, ty, tz, ht, t_start + a_t0);
+            (int)getpid(), jp, a_scene, js, !a_save_done, a_speed, f[0], f[1], f[2], f[3], cx, cy, cz, hc, tx, ty, tz, ht, t_start + a_t0);
     fclose(o); rename(tmp, handoff_path);
     SLOG("A: handoff written: scene %d save '%s' speed %d frame %.0f,%.0f %.0fx%.0f camera %.2f,%.2f size %.2f, target %.2f,%.2f size %.2f",
-         a_scene, a_save, a_speed, f.origin.x, f.origin.y, f.size.width, f.size.height, cx, cy, cz, tx, ty, tz);
+         a_scene, a_save, a_speed, f[0], f[1], f[2], f[3], cx, cy, cz, tx, ty, tz);
 }
 
 int dsl_soft_wanted(void) { return role_b; }
@@ -376,7 +235,7 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
     if ((sc != 1 && sc != 2) || busy()) { dsl_log("soft: refused, scene %d busy %d", sc, busy()); return -1; }
     snprintf(a_profile, sizeof a_profile, "%s", profile ? profile : "");
     snprintf(a_env, sizeof a_env, "%s", env_lines ? env_lines : "");
-    a_scene = sc; a_save[0] = 0; a_t0 = since(); a_tstate = a_t0; b_pid = 0;
+    a_scene = sc; a_save[0] = 0; a_t0 = since(); a_tstate = a_t0;
     char p[1300];
     for (const char *x = "ready\0go\0shown\0failed\0"; *x; x += strlen(x) + 1) { path_of(p, sizeof p, x); unlink(p); }
     if (getenv("DSL_SOFT_CAPTURE")) cap_on = 1;
@@ -390,7 +249,8 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
     } else { a_speed = -1; a_save_done = 1; }
     fade_out(fade, NULL, 1, NULL);                                        /* the game's loading screen */
     write_handoff();                                                      /* B starts now; the save name follows */
-    if (spawn_b()) { a_fail("could not start B"); return -1; }
+    if (dsl_sos_spawn(a_profile, handoff_path, a_env)) { a_fail("could not start B"); return -1; }
+    SLOG("A: B started, pid %ld", dsl_sos_child_pid());
     a_state = A_WAIT_READY;
     return 0;
 }
@@ -400,7 +260,7 @@ static void a_tick(void) {
     double t = since();
     if (a_state == A_IDLE || a_state == A_FAILED || a_state == A_QUITTING) return;
     capture("A");
-    if (b_pid > 0) { int st; if (waitpid(b_pid, &st, WNOHANG) == b_pid) { b_pid = 0; a_fail("B exited before the swap"); return; } }
+    if (dsl_sos_child_exited()) { a_fail("B exited before the swap"); return; }
     double lim = getenv("DSL_SOFT_TIMEOUT") ? atof(getenv("DSL_SOFT_TIMEOUT")) : 90;
     if (t - a_t0 > lim) { a_fail("timeout"); return; }
     if (!a_save_done) {
@@ -409,23 +269,27 @@ static void a_tick(void) {
         } else if (t - save_wait_from > 30) { a_fail("autosave not written"); return; }
     }
     if (a_state == A_WAIT_READY) {
-        path_of(p, sizeof p, "ready"); if (!exists(p) || !a_save_done) return;
-        if (t - a_t0 < 0.4 || !fade_done || !fade_done(fade, NULL)) return;   /* A's own loading screen must be up */
+        path_of(p, sizeof p, "ready");
+        static double last_note;
+        if (t - last_note > 5) { last_note = t; SLOG("A: waiting: B ready %d, autosave done %d, loading screen up %d", exists(p), a_save_done, fade_done ? fade_done(fade, NULL) : -1); }
+        if (!exists(p) || !a_save_done) return;
+        static double ready_seen;
+        if (!ready_seen) ready_seen = t;
+        int up = fade_done && fade_done(fade, NULL);
+        /* A's own loading screen must be up. At the title only: when it never reports done (seen in -batchmode on
+           Windows), the swap goes on 3 s after B is ready instead of failing at the timeout */
+        if (t - a_t0 < 0.4 || (!up && !(a_scene == 1 && t - ready_seen > 3))) return;
+        if (!up) SLOG("A: loading screen not reported up after 3 s at the title: swap anyway");
+        ready_seen = 0;
         SLOG("A: B ready");
-        if (!no_activate) {                                               /* macOS 14+: activation is given, not taken */
-            id ra = MSG(id, Class, SEL, int)(objc_getClass("NSRunningApplication"), SEL_("runningApplicationWithProcessIdentifier:"), b_pid);
-            id a = app();
-            if (ra && a && class_respondsToSelector(object_getClass(a), SEL_("yieldActivationToApplication:")))
-                MSG(void, id, SEL, id)(a, SEL_("yieldActivationToApplication:"), ra);
-        }
+        if (!no_activate) dsl_sos_yield();                                 /* activation is given, not taken */
         path_of(p, sizeof p, "go"); touch_file(p, NULL);
         a_state = A_WAIT_SHOWN; return;
     }
     if (a_state == A_WAIT_SHOWN) {
         path_of(p, sizeof p, "shown"); if (!exists(p)) return;
         SLOG("A: B shown: A orders its windows out and quits (%.3f s after apply)", t - a_t0);
-        unsigned long n; id ws = windows(&n);
-        for (unsigned long i = 0; i < n; i++) MSG(void, id, SEL, id)(win_at(ws, i), SEL_("orderOut:"), nil);
+        dsl_sos_order_out();
         frame_log("A");
         a_state = A_QUITTING; cap_on = 0;
         if (app_quit) app_quit(NULL); else exit(0);
@@ -446,7 +310,7 @@ static void b_tick(void) {
         b_state = B_DONE; if (app_quit && mf) app_quit(NULL); else exit(0); return;
     }
     if (!dsl_ready || !mf) return;
-    if (kill((pid_t)(json_get(hand, "from_pid") ? json_get(hand, "from_pid")->num : 0), 0) && b_state < B_SHOWN) {
+    if (!dsl_sos_pid_alive((long)(json_get(hand, "from_pid") ? json_get(hand, "from_pid")->num : 0)) && b_state < B_SHOWN) {
         SLOG("B: A is gone before the swap: B quits"); if (app_quit) app_quit(NULL); else exit(0); b_state = B_DONE; return;
     }
     int sc = scene();
@@ -492,21 +356,9 @@ static void b_tick(void) {
     }
     if (b_state == B_WAIT_GO) {
         path_of(p, sizeof p, "go"); if (!exists(p)) return;
-        id w = game_window();
-        if (w && a_has_frame && !stage_on) {
-            CGRect f = CGRectMake(a_frame[0], a_frame[1], a_frame[2], a_frame[3]);
-            ((void (*)(id, SEL, CGRect, BOOL))o_setframe)(w, SEL_("setFrame:display:"), f, YES);
-        }
         hidden = 0;
-        if (!no_activate) set_policy(0);
         fast_end();
-        if (w) { show_window(w); MSG(void, id, SEL, id)(w, SEL_("orderFrontRegardless"), nil); }
-        if (!no_activate) {
-            id a = app();
-            if (a && class_respondsToSelector(object_getClass(a), SEL_("activate"))) ((void (*)(id, SEL))o_act0)(a, SEL_("activate"));
-            else if (a) ((void (*)(id, SEL, BOOL))o_act1)(a, SEL_("activateIgnoringOtherApps:"), YES);
-            if (w) MSG(void, id, SEL, id)(w, SEL_("makeKeyAndOrderFront:"), nil);
-        }
+        dsl_sos_show(a_has_frame ? a_frame : NULL, !no_activate);
         frame_log("B");
         path_of(p, sizeof p, "shown"); touch_file(p, NULL);
         double at = json_get(hand, "apply_at") ? json_get(hand, "apply_at")->num : 0;
@@ -526,19 +378,8 @@ static void b_tick(void) {
 
 /* ------------------------------------------------------------------ main-thread tick (between Unity frames) */
 static double ff_until;
-static void tick(CFRunLoopTimerRef tm, void *info) {
-    (void)tm; (void)info;
-    if (stage_on) {                                                      /* test stage: a window off the stage is never seen */
-        unsigned long n; id ws = windows(&n);
-        for (unsigned long i = 0; i < n; i++) {
-            id w = win_at(ws, i); CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
-            if ((f.origin.x != stage_x || f.origin.y != stage_y) && MSG(double, id, SEL)(w, SEL_("alphaValue")) > 0) {
-                ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 0.0); stage_window(w);
-                if (!hidden) ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 1.0);
-                dsl_log("soft test: window off the stage (%.0f,%.0f): alpha 0, moved back", f.origin.x, f.origin.y);
-            }
-        }
-    }
+static void tick(void) {
+    if (stage_on) dsl_sos_stage_check();                                 /* test stage: a window off the stage is never seen */
     if (role_b) b_tick(); else a_tick();
     double t = since();
     if (ff && (hidden || a_state != A_IDLE || t < ff_until || (role_b && b_state != B_DONE))) frame_log(role_b ? "B" : "A");
@@ -566,23 +407,10 @@ static void tick(CFRunLoopTimerRef tm, void *info) {
 }
 
 /* ------------------------------------------------------------------ install */
-static double proc_start(void) {
-    struct kinfo_proc kp; size_t n = sizeof kp; int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
-    if (sysctl(mib, 4, &kp, &n, NULL, 0) == 0) return kp.kp_proc.p_starttime.tv_sec + kp.kp_proc.p_starttime.tv_usec / 1e6;
-    return now_s();
-}
-
 /* constructor time, BEFORE dsload edits DYLD_INSERT_LIBRARIES */
 void dsl_soft_snapshot(const char *logdir) {
-    t_start = proc_start();
-    int n = 0; while (environ[n]) n++;
-    env0 = calloc((size_t)n + 1, sizeof *env0);
-    for (int i = 0; i < n; i++) env0[i] = strdup(environ[i]);
-    uint32_t sz = sizeof exe0; if (_NSGetExecutablePath(exe0, &sz)) exe0[0] = 0;
-    if (!getcwd(cwd0, sizeof cwd0)) cwd0[0] = 0;
-    argc0 = *_NSGetArgc(); char **av = *_NSGetArgv();
-    argv0 = calloc((size_t)argc0 + 1, sizeof *argv0);
-    for (int i = 0; i < argc0; i++) argv0[i] = strdup(av[i]);
+    t_start = dsl_sos_proc_start();
+    dsl_sos_snapshot();
     snprintf(sdir, sizeof sdir, "%s/softrestart", logdir); mkdir(sdir, 0755);
     snprintf(handoff_path, sizeof handoff_path, "%s/handoff.json", sdir);
     const char *h = getenv("DSL_SOFT_HANDOFF");
@@ -601,16 +429,15 @@ void dsl_soft_snapshot(const char *logdir) {
             JNode *f = json_get(hand, "frame"); int k = 0;
             if (f && f->t == JN_ARR) for (JNode *c = f->child; c && k < 4; c = c->next) a_frame[k++] = c->num;
             a_has_frame = (k == 4 && a_frame[2] > 0);
-            unsetenv("DSL_SOFT_HANDOFF");                                   /* B's own later restarts start fresh */
+            dsl_sos_unsetenv("DSL_SOFT_HANDOFF");                           /* B's own later restarts start fresh */
         }
     }
-    if (role_b || stage_on) install_window_swizzles();
-    char fp[1300]; snprintf(fp, sizeof fp, "%s/softrestart_frames_%s_%d.log", sdir, role_b ? "B" : "A", getpid());
+    dsl_sos_windows_install(role_b, stage_on, stage_x, stage_y);
+    char fp[1300]; snprintf(fp, sizeof fp, "%s/softrestart_frames_%s_%d.log", sdir, role_b ? "B" : "A", (int)getpid());
     if (role_b || test_mode) ff = fopen(fp, "w");
     dsl_log("soft: role %s%s%s%s, process started %.3f s ago", role_b ? "B (handoff " : "A", role_b ? handoff_path : "", role_b ? ")" : "",
             stage_on ? ", test stage" : "", since());
-    CFRunLoopTimerRef tm = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.1, 1.0 / 60, 0, 0, tick, NULL);
-    CFRunLoopAddTimer(CFRunLoopGetMain(), tm, kCFRunLoopCommonModes);
+    dsl_sos_timer(tick);
 }
 
 /* after il2cpp_init: names -> addresses; hooks on MainFlow.Awake and ScreenFadeEffectView.Awake (object capture only) */

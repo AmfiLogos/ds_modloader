@@ -111,6 +111,7 @@ static void start(HMODULE ga) {
     for (char *p = path; *p; p++) if (*p == '\\') *p = '/';
     const char *rd = getenv("DSRIG_DIR");
     if (dsl_core_log_open(rd, self)) return;
+    dsl_soft_snapshot(dsl_core_logdir());                                        /* soft restart: role A or B, tick */
     const char *build = ga_build(ga, &lo, &hi, &end, id, sizeof id);
     dsl_log("GameAssembly %s: %s", path, id);
     char mods[MAX_PATH + 16] = "";
