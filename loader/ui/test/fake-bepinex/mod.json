@@ -1,0 +1,2 @@
+{ "id": "test-bepinex", "name": "Example BepInEx plugin (test)", "version": "1.0.0", "kind": "bepinex", "scope": "client",
+  "description": "Test only: a mod.json with kind bepinex, to show the BepInEx mark." }
