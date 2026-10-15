@@ -73,7 +73,8 @@ typedef struct DSLHost {
     /* soft restart (plan_modloader.md section 2): start the game again with another profile behind the game's own
        loading screen, return to the same place (title, or the same world after its own autosave), then swap windows.
        env_lines: "KEY=value\n" lines that replace those keys for the new process (e.g. DSML_MODSET; for a set that needs
-       another play copy: DSL_SOFT_EXE=<that copy's game executable> and its DYLD_INSERT_LIBRARIES), or NULL.
+       another play copy: DSL_SOFT_EXE=<that copy's game executable> and its DYLD_INSERT_LIBRARIES; from the title,
+       DSL_SOFT_LOAD=<save name> = the new process loads that save), or NULL.
        Main thread, title or single-player world only. 0 = started; the result is in dsload.log. Check `size` first. */
     int (*soft_restart)(const char *profile, const char *env_lines);
 } DSLHost;

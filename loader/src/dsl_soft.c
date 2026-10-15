@@ -388,11 +388,19 @@ int dsl_soft_restart(const char *profile, const char *env_lines) {
     snprintf(a_profile, sizeof a_profile, "%s", profile ? profile : "");
     snprintf(a_env, sizeof a_env, "%s", env_lines ? env_lines : "");
     a_scene = sc; a_save[0] = 0; a_t0 = since(); a_tstate = a_t0; b_pid = 0;
+    const char *ld = env_lines ? strstr(env_lines, "DSL_SOFT_LOAD=") : NULL;   /* restart straight into a given save */
+    if (ld && (ld == env_lines || ld[-1] == '\n')) {
+        ld += 14; size_t n = strcspn(ld, "\n"); if (n >= sizeof a_save) n = sizeof a_save - 1;
+        memcpy(a_save, ld, n); a_save[n] = 0;
+    }
+    if (a_save[0] && sc != 1) { dsl_log("soft: refused, DSL_SOFT_LOAD only from the title"); a_save[0] = 0; return -1; }
     char p[1300];
     for (const char *x = "ready\0go\0shown\0failed\0"; *x; x += strlen(x) + 1) { path_of(p, sizeof p, x); unlink(p); }
     if (getenv("DSL_SOFT_CAPTURE")) cap_on = 1;
     SLOG("A: APPLY profile %s (scene %d)", a_profile, sc);
-    if (sc == 2) {
+    if (a_save[0]) {                                                      /* given save: B loads it, A saves nothing */
+        a_scene = 2; a_speed = -1; a_save_done = 1; SLOG("A: B will load the save %s", a_save);
+    } else if (sc == 2) {
         a_speed = game_speed();
         set_speed(0);                                                     /* the save = what the player sees now */
         Obj e = obj_new(k_autosave); ctor_autosave(e, NULL); queue(e);    /* the game's own autosave */
@@ -445,7 +453,7 @@ static void a_tick(void) {
 
 /* ------------------------------------------------------------------ B side */
 enum { B_BOOT, B_LOADING, B_SETTLE, B_FADING, B_WAIT_GO, B_SHOWN, B_DONE };
-static int b_state = B_BOOT; static double b_tstate; static int b_frames_ok;
+static int b_state = B_BOOT; static double b_tstate; static int b_frames_ok, b_load_speed = -1;
 static void b_tick(void) {
     char p[1300]; double t = since();
     if (b_state == B_DONE) return;
@@ -480,8 +488,8 @@ static void b_tick(void) {
     if (b_state == B_LOADING) {
         if (sc != 2 || busy() || (fade_loading && fade_loading(fade, NULL))) { b_frames_ok = 0; return; }
         if (++b_frames_ok < 10) return;
-        set_speed(0);
-        SLOG("B: world loaded, paused until the swap (speed was %d)", game_speed());
+        b_load_speed = game_speed(); set_speed(0);
+        SLOG("B: world loaded, paused until the swap (speed was %d)", b_load_speed);
         b_state = B_SETTLE; b_tstate = t; return;
     }
     if (b_state == B_SETTLE) {
@@ -525,6 +533,7 @@ static void b_tick(void) {
         if (t - b_tstate < 0.05) return;                                  /* one frame on screen with the loading screen */
         if (fade && fade_in) fade_in(fade, NULL);
         int sp = json_get(hand, "speed") ? (int)json_get(hand, "speed")->num : -1;
+        if (sc == 2 && sp <= 0) sp = b_load_speed;                        /* given save: the speed the game loaded it with */
         if (sc == 2 && sp > 0) set_speed(sp);
         SLOG("B: fade in, speed %d", sp);
         b_state = B_DONE; b_tstate = t;
