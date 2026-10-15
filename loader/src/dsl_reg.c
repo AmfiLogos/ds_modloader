@@ -93,6 +93,8 @@ static void mods_scan(void) {
         x->description = xstrdup(json_str(m, "description"));
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
+        const char *kd = json_str(m, "kind"); if (!kd) kd = json_str(m, "type");
+        x->kind = xstrdup(kd ? kd : "code");
         int on = 1;
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
@@ -229,7 +231,9 @@ int dsl_world_label(const char *guid, char *out, size_t cap) {
 }
 static char world_ids_buf[512];
 int dsl_world_mods(const char *guid, const char **ids, int max) {
-    const char *k = guid ? world_key(guid) : NULL; if (!k || !strcmp(k, "vanilla")) return 0;
+    const char *k = guid ? world_key(guid) : NULL;
+    if (!k) k = run_key;                                              /* unknown world = the mods that run now (lead 2026-10-15) */
+    if (!strcmp(k, "vanilla")) return 0;
     snprintf(world_ids_buf, sizeof world_ids_buf, "%s", k); int n = 0;
     for (char *sv = NULL, *t = strtok_r(world_ids_buf, "+", &sv); t && n < max; t = strtok_r(NULL, "+", &sv)) ids[n++] = t;
     return n;
@@ -255,6 +259,7 @@ static int world_guid(char *out);
 static char session_why[MAXP_REG][200];
 const char *dsl_busy_reason(void) {
     for (int i = 0; i < MAXP_REG; i++) if (session_why[i][0]) return session_why[i];
+    if (dsl_soft_busy()) return "the game is restarting with new mods";      /* A during a restart, B until swap + fade in are done */
     return NULL;
 }
 static void session_busy_set(DSLPlugin *self, const char *reason) {
@@ -473,6 +478,7 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "apply")) { char why[300] = ""; if (dsl_apply_mods(ids, n, why, sizeof why)) dsl_log("reg test: apply refused: %s", why); }
     else if (c && !strcmp(c, "mods")) on_title_mods(NULL);
     else if (c && !strcmp(c, "shot")) dsl_log("reg test: shot %s: %s", json_str(j, "path"), dsl_soft_shot(json_str(j, "path")) ? "FAILED" : "ok");
+    else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }
     else if (c && !strcmp(c, "world_set")) dsl_world_set_mods(json_str(j, "guid"), ids, n);
     json_free(j);
 }

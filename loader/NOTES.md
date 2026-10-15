@@ -316,3 +316,37 @@ Result 2026-10-15 19:21 (`~/ds_launcher/loader/test_env/uikit_out/final2/summary
 `run1/drv/cap`, `run2/drv/cap`.
 Open: the toggle's empty box is faint when off (owner to judge the look); in-world use not tested (title only);
 Windows untested (names only, should port).
+
+## L1 loader core (branch l1-core, 2026-10-15) - MASTER_PLAN 5.2 L1
+
+### What is built
+- SDK API 3 (`sdk/dsl_sdk.h`, fixed 18:40, told l2modswin + l3win): soft_restart, set_session_busy / session_busy,
+  menu_add_tab / menu_open, title_add_button, loadrow_add / loadlist_filter / loadlist_refresh, `ui` (DSLUi kit), data_dir;
+  `dsl_*` inline wrappers check `host->size` (API 1-2 modules load unchanged: host tests 31/31).
+- `src/dsl_menu.h` = L1/L2 contract (tabs, kit, installed mods, groups, Apply, world mods; L2's `dsl_win_*` are weak).
+- `src/dsl_ui.c` kit (helper agent, 67/67 on copy L), `src/dsl_reg.c` (registries, Apply = `<data>/Mods/pending.json` +
+  soft restart, B copies it to active.json once on screen; groups.json; worlds.json; flow K), `src/dsl_rows.c` (Load list
+  rows + filters + New Campaign line, by POLLING the open SaveLoadView: multiplayer owns the three row hooks until it uses
+  this API; the engine allows one owner per site). The filter only re-shows rows it hid itself.
+- Mods per world: key = sorted gameplay ids joined by "+" ("vanilla"). A world gets the running key the first time it is
+  open; Apply inside a world gives that world the new key (else the restart's own reload would be refused).
+- Flow K: `dsl_world.c` refuses, then "This world uses: <names>. Load it with them?" [Load] = soft restart with the world's
+  set + `DSL_SOFT_LOAD=<save>` (now allowed from a world too: the stock Load also discards unsaved play).
+- Pinned build: `mp_pin.txt` (or `MP_PIN=`) = one ds_multiplayer commit, exported with `git archive` to build/pin/<sha>;
+  source list read from that tree's `src/build.sh`; det_ranges.tsv from `~/ds_multiplayer/build` (game-derived, never in
+  git). `custom/build_module.sh` of the pinned tree is run when it exists (M4). vendor/mp untracked, moved to loader/old/.
+- App: no forced "modmenu" module (the Mods window is in the loader); default active.json = multiplayer; the app test
+  never quarantines a copy. app/test/run.sh 0 failures (first copy 7.4 s).
+
+### Proof (copy S, lease AB, windows on a stage far off every display, guard: 0 violations in every run)
+| Test | Result |
+|---|---|
+| `test/l1_test.py` (run5, MP from pinned main 7d58cb5, 150 hooks, none refused) | 15/15: title "Mods"; Load list "Mods: ... Change"; flow K 15.0 s request -> on screen, B runs gcd-cdr+multiplayer, pending -> active.json; flow J in a world 14.6 s, world re-registered, active.json multiplayer |
+| `test/l1_rows_test.py` (rows3, test module rows-demo) | 8/8: module API 3 calls, tab, filter hides / toggle shows, row text, Apply refused while busy |
+| `test/run_tests.sh` host | 31/31 |
+Frames: `~/ds_launcher/loader/test_env/l1_out/{run5,rows3}/*.png`.
+
+### Open
+- No Mods window yet (L2): the title button and "Change" log only. Multiplayer does not call set_session_busy yet (M2/M4).
+- Steam with two game processes during a restart: still not tested (softrestart notes). Full-screen Space swap not handled.
+- loader/build/*.dylib are tracked in this public repo from before; I did not commit new binaries.

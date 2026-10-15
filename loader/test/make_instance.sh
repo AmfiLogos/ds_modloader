@@ -67,4 +67,6 @@ plutil -replace LSUIElement -bool YES $PL
 # Info.plist changed -> re-seal ad-hoc (no hardened runtime: DYLD_INSERT_LIBRARIES allowed, no library validation)
 codesign -f -s - "$APP/Contents/MacOS/Dungeon Settlers" 2>&1 | tail -1
 mkdir -p $I/home $I/data/Saves
+# never a copy that can take focus or show in the Dock (lead 2026-10-15): check after signing
+[[ $(plutil -extract LSBackgroundOnly raw $PL) == true && $(plutil -extract LSUIElement raw $PL) == true ]] || { echo "copy $X lacks the hidden-app flags" >&2; exit 1; }
 echo "instance $X ready: $APP"

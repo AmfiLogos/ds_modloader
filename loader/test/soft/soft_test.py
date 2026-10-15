@@ -46,7 +46,16 @@ def guard():
         stop_guard.wait(1.0)
 
 
+def require_hidden_copy(app):
+    """refuse a test copy that could take focus or show in the Dock (lead rule 2026-10-15)"""
+    import plistlib
+    pl = plistlib.load(open(os.path.join(app, 'Contents', 'Info.plist'), 'rb'))
+    if not (pl.get('LSBackgroundOnly') and pl.get('LSUIElement')):
+        raise SystemExit(f'refused: {app} lacks LSBackgroundOnly/LSUIElement (rebuild it with make_instance.sh)')
+
+
 def start_a(profile):
+    require_hidden_copy(os.path.join(I, 'DungeonSettlers.app'))
     r.prepare_data(X)
     os.makedirs(os.path.join(I, 'data', 'Saves'), exist_ok=True)
     shutil.copy2(SAVE_SEED, os.path.join(I, 'data', 'Saves', os.path.basename(SAVE_SEED)))
