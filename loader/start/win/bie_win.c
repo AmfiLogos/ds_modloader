@@ -272,3 +272,7 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
 
 /* environment of a game process we start: Doorstop's own variables never pass on; DOORSTOP_DISABLE per the set */
 int bie_env_keep(const wchar_t *line) { return _wcsnicmp(line, L"DOORSTOP_", 9) != 0; }
+
+/* for dsl_bie_win.c (the core's BepInEx calls) */
+int bie_installed(const char *game) { return installed(game); }
+int bie_install_now(const char *root, const char *game, char *why, size_t wn) { return install(root, game, why, wn); }
