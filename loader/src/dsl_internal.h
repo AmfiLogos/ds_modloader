@@ -47,3 +47,9 @@ JNode *json_parse(const char *text);
 void json_free(JNode *n);
 JNode *json_get(const JNode *obj, const char *key);
 const char *json_str(const JNode *obj, const char *key);  /* NULL if missing / not a string */
+
+/* soft restart (dsl_soft.c) */
+void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is edited */
+void dsl_soft_install(void);                 /* after il2cpp_init */
+int dsl_soft_wanted(void);                   /* 1 = this process is B of a soft restart */
+int dsl_soft_apply(const char *profile, const char *env_lines);   /* host->soft_restart */
