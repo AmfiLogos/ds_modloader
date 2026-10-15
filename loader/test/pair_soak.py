@@ -38,6 +38,15 @@ for n in ('send', 'start', 'stop', 'wait_for', 'idir', 'read_pid', 'sockpath', '
     if f:
         setattr(shim, n, (lambda f: lambda x, *a, **k: f(MAP.get(x, x), *a, **k))(f))
 shim.touch = lambda x: lrig.touch(x)
+# Run 1 (06:29) hung 22 min in wait_for('title Y'): the guest (mp.json role client) joins by itself and was never seen
+# idle on the title screen. Treat "already past the title" (scene 2) as reached for the title waits.
+_wf = shim.wait_for
+def wait_for(x, pred, what, *a, **k):
+    if what.startswith('title'):
+        p0 = pred
+        pred = lambda s: p0(s) or s.get('scene') == 2
+    return _wf(x, pred, what, *a, **k)
+shim.wait_for = wait_for
 sys.modules['rig'] = shim
 src = os.path.expanduser('~/ds_multiplayer/rig/soak_test.py')
 sys.argv = [src] + sys.argv[1:]

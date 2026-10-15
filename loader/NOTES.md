@@ -180,3 +180,15 @@ global cooldown started by a real skill cast (none happened in these runs). Logs
   the game stayed on the title screen (scene 1, no crash). Session changed to aaa: same save "allowed" and loaded.
 - [U] The notice text on screen is not verified: batchmode, and the rig screenshot shows only the camera, not the UI.
   `CancelIronModeLoad` takes a TEXT KEY; our plain sentence may show as-is or not resolve. Check in a window run.
+
+### Pair test (task 4) - `test/pair_soak.py` = the MP team's soak_test.py on our copies M (host) + N (guest)
+MP snapshot refreshed to lan_v10 src at 06:16 (+ mp_fog.c 06:16 fix; `vendor/mp/SNAPSHOT_TAKEN.txt`), equal to src
+at 07:40. The driver waits for "title Y" and the auto-joining guest is past the title before it is polled
+(run 1 hung there 22 min), so the shim also accepts scene 2.
+| Run | Profile | Result |
+|---|---|---|
+| 06:29 (1) | multiplayer, gcd-cdr, hell-difficulty, floor-logger | joined, 40 full checks equal, 0 desyncs in 20 min; driver hung (no orders): not counted |
+| 07:30 (3), 07:41 (4) | same 4 modules | HOST CRASH at the join-point reload (SIGBUS in mp_fog.c `rebuild` <- `decide` <- `h_eov_set_visible`, LoadCampaign.WorldAndVisionRequested). Reported to corenext. |
+| 07:46 (5) | multiplayer only | PASS 3/3: 10.0 min, 0 desyncs, 0 partials, 21 full-state checks equal, orders 37 + 37 (`test_env/build/core_test/soak_20261015-074636`) |
+Open: whether gcd-cdr / hell-difficulty / floor-logger change the odds of the fog crash, or it is the MP fog bug alone
+(the stack is only MP code + game code; run 1 with the 4 modules got past the same reload).
