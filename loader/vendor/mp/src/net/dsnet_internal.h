@@ -7,7 +7,9 @@
 
 /* ---- packet types (first byte of every frame) ---- */
 enum {
-    P_HELLO = 1,      /* c->s  u16 proto, u8 want_host, u32 mod_version, u32 round_mode, uid[16], u8 build_len, build[], name[] */
+    P_HELLO = 1,      /* c->s  u16 proto, u8 want_host, u32 mod_version, u32 round_mode, uid[16], u8 build_len, build[],
+                               u8 match_rule, u8 modset_len, modset[] (hex, 0 = none), u16 lines_len, lines[] ('\n'-joined
+                               launcher modset_lines), name[] (proto 2) */
     P_WELCOME,        /* s->c  u8 player, u8 is_host, u8 needs_state, u32 timer, u32 sent_cmds, u32 fp_interval, u8 allow_speedup, u8 pause_mode, u8 gear_mode, u8 units_per_player */
     P_CMD,            /* c->s  u8 type, u8 scope, u16 len, payload */
     P_SCMD,           /* s->c  u32 seq, u8 type, u32 tick, u8 player, u8 scope, u16 len, payload */
@@ -98,4 +100,8 @@ extern char     dsnet_build_id[32];
 extern uint32_t dsnet_mod_version;
 extern uint8_t  dsnet_uid[16];
 extern int      dsnet_uid_set;
+extern int      dsnet_match_rule;
+extern char     dsnet_modset[65], dsnet_mod_lines[DSNET_MODLINES_MAX], dsnet_reject_detail[400];
+extern int      dsnet_reject_host_rule, dsnet_reject_has_host;
+extern char     dsnet_reject_host_lines[DSNET_MODLINES_MAX];
 void   dsnet_logf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

@@ -7,7 +7,7 @@
 /* ---------------------------------------------------------------- model (no game code) */
 enum { MPM_PAUSE_NONE = 0, MPM_PAUSE_ANYONE = 1, MPM_PAUSE_ALL_VOTE = 2 };          /* = enum dsnet_pause_mode */
 enum { MPM_GEAR_SHARED_OWN = 0, MPM_GEAR_SHARED_ANY = 1, MPM_GEAR_OWN_STORAGE = 2 };
-typedef struct mpm_settings { int pause_mode, speedup, gear, units, admin, events, population; } mpm_settings;   /* events: dsnet_event_choice */   /* units per player: 1, 2, 3, 4, 6 */
+typedef struct mpm_settings { int pause_mode, speedup, gear, units, admin, events, population, fog; } mpm_settings;   /* fog: shared fog of war 0/1 (default 0) */   /* events: dsnet_event_choice */   /* units per player: 1, 2, 3, 4, 6 */
 #define MPM_DEFAULT_PORT 47777   /* direct TCP port the host listens on (beside Steam) */
 
 enum mpm_state {
@@ -50,6 +50,7 @@ enum mpm_button {
     MPB_HIST_PREV, MPB_HIST_NEXT,                                           /* newer / older page */
     MPB_POP_PREV, MPB_POP_NEXT,                                             /* rule "Population" (lan_v8) */
     MPB_LEAVE_CONFIRM, MPB_LEAVE_CANCEL,                                    /* host Leave confirm box: End for everyone / Cancel (lan_v10) */
+    MPB_FOG_PREV, MPB_FOG_NEXT,                                             /* rule "Shared fog of war" (core next 2026-10-15) */
     MPB_COUNT
 };
 /* what the game side sees each frame */
@@ -126,7 +127,7 @@ void mpm_lobby_title(const mpm_model *m, char *out, size_t cap);   /* "Multiplay
 /* "Pause: anyone · Speed-up: on · Gear: own units · Units: 3 · Admin: off" (host page Rules box) */
 void mpm_settings_summary(const mpm_settings *s, char *out, size_t cap);
 /* Rules panel rows (0 Pause, 1 Speed-up, 2 Gear, 3 Units per player, 4 Admin mode): label and long value */
-#define MPM_RULE_ROWS 7
+#define MPM_RULE_ROWS 8
 #define MPM_RULE_POP 4                                   /* the Population row: its description line sits under it */
 const char *mpm_population_desc(int mode);
 const char *mpm_rule_tip(int row);                         /* hover tooltip of a Rules row (owner lan_v8) */

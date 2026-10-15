@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSNET_PROTO        1
+#define DSNET_PROTO        2   /* 2: HELLO carries the gameplay mod set + match rule (core next, 2026-10-15) */
 #define DSNET_MAX_PLAYERS  32
 #define DSNET_MAX_OWNED    6                    /* largest "units per player" rule (1, 2, 3, 4, 6; default 3) */
 #define DSNET_PARTY_MAX    DSNET_MAX_OWNED      /* a player's expedition party: at most the units-per-player rule */
@@ -23,7 +23,7 @@
 #define DSNET_COLORS        8                   /* player colours (= ui_player_color palette size) */
 #define DSNET_OWNER_RESERVED (-2)               /* owner_of: owned by a player who is not here now */
 #define DSNET_MAX_HOLDS    8
-#define DSNET_SAVE_OVERHEAD 112291 /* MAX; only used table entries are stored, see dsnet_save_overhead */                /* dsnet state put in front of every save */
+#define DSNET_SAVE_OVERHEAD 112292 /* MAX; only used table entries are stored, see dsnet_save_overhead */                /* dsnet state put in front of every save */
 
 enum dsnet_cmd_type {
     DSNET_GAME_ORDER   = 1,   /* opaque payload, executed by the game */
@@ -63,7 +63,7 @@ enum dsnet_cmd_type {
                                  his reserved units (no reassigning, no equipping). Ends when he rejoins. */
     DSNET_RULES        = 18,  /* host only (lobby and in play): payload u8 pause_mode, u8 allow_speedup, u8 gear_mode,
                                  u8 units_per_player (1, 2, 3, 4 or 6), [u8 event_choice (enum dsnet_event_choice)],
-                                 [u8 population (enum dsnet_population)]; a shorter payload keeps the current ones. The server checks it, applies its own part at once
+                                 [u8 population (enum dsnet_population)], [u8 shared_fog (0/1)]; a shorter payload keeps the current ones. The server checks it, applies its own part at once
                                  (pause / speed vote filters, auto pause) and stamps it; every peer applies it at that
                                  step. Votes, holds and owners stay; owners above a lowered unit limit keep their units
                                  but cannot claim more. Part of the session state (saves, late joiners). */
@@ -107,6 +107,8 @@ typedef struct dsnet_cfg {
     int units_per_player;       /* 1, 2, 3, 4 or 6 (0 = DSNET_UNITS_DEFAULT): owned units per player and party size */
     int event_choice;           /* story event choices: enum dsnet_event_choice (default OWNER) */
     int population;             /* enum dsnet_population (default SHARED) */
+    int shared_fog;             /* 1 = vanilla fog (what any unit revealed is shown to all); 0 (default) = each player sees
+                                   only what his own units reveal. Display only (mp_fog.c): the sim's fog state stays shared */
     int allow_pause;            /* legacy: 0 forces pause_mode NONE (the server drops PAUSE_VOTE, never auto pauses; joiners and
                                    desynced players catch up while the others keep playing */
     /* join checks: build id + mod version default to dsnet_set_identity; the float rounding mode
@@ -125,12 +127,28 @@ void dsnet_set_log(void (*fn)(const char *line));
  * The client's float rounding mode is read with fegetround() on the thread that connects:
  * call connect from the game thread. */
 void dsnet_set_identity(const char *build_id, uint32_t mod_version);
+/* Gameplay mod set + match rule sent in every HELLO (from the launcher's session file, DSML_SESSION; mp_config.c
+ * mp_session_mods). modset = the launcher's gameplay mod-set hash (64 hex, core/src/join.rs modset_hash), "" = not
+ * started by the launcher = no gameplay mods (counts as the hash of no mods). rule: DSNET_MATCH_MODS / _VANILLA.
+ * lines = the launcher's modset_lines joined by '\n' (`<id>@<version>:<sorted file sha256s>[:<patch hash>]`, sorted;
+ * "" = none; max DSNET_MODLINES_MAX - 1 bytes). The server takes the host's own HELLO as the reference:
+ * MODS match = a joiner's set must equal the host's; VANILLA = nobody (host included) may run a gameplay mod.
+ * A refusal is DSNET_REJ_MODSET. It carries the words (dsnet_reject_text(DSNET_REJ_MODSET)) AND the host's rule + lines
+ * (dsnet_reject_host_mods), so the guest can name missing / extra mods against its own lines (dsnet_my_mod_lines). */
+enum { DSNET_MATCH_MODS = 0, DSNET_MATCH_VANILLA = 1 };
+#define DSNET_MODLINES_MAX 4096
+void dsnet_set_modset(int rule, const char *modset, const char *lines);
+const char *dsnet_my_mod_lines(void);
+/* after a DSNET_REJ_MODSET refusal (process-wide, the newest one): host rule, host lines ('\n'-joined). 0 = filled, -1 none */
+int dsnet_reject_host_mods(int *host_rule, char *lines, size_t n);
+#define DSNET_MODSET_NONE "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"   /* sha256("") = no gameplay mod */
 /* Stable player id (16 bytes): created once and kept in the app data folder, or derived from the Steam id.
  * Sent in every HELLO from then on; NULL = a random id per connection (tests). Two connections with the
  * same id are refused (DSNET_REJ_DUP_ID). */
 void dsnet_set_player_uid(const uint8_t uid[16]);
 enum dsnet_reject { DSNET_REJ_PROTO = 1, DSNET_REJ_BUILD, DSNET_REJ_MOD, DSNET_REJ_ROUNDING, DSNET_REJ_FULL, DSNET_REJ_DUP_ID,
-                   DSNET_REJ_OTHER_WORLD   /* local (lan_v10 F17): the host now hosts another world than the one asked for */ };
+                   DSNET_REJ_OTHER_WORLD,  /* local (lan_v10 F17): the host now hosts another world than the one asked for */
+                   DSNET_REJ_MODSET        /* the gameplay mods differ from the host's, or the match is vanilla only */ };
 /* The world the host runs (campaign id, 16 bytes, + its name), sent by the host's client whenever it changes and given to
  * every joiner in the WELCOME. dsnet_host_world: 0 = known (filled), -1 = the host had no world loaded yet. */
 int dsnet_set_world(dsnet_client *c, const uint8_t id[16], const char *name);   /* host only */
@@ -159,7 +177,9 @@ typedef struct dsnet_server_stats {
     uint32_t timer, sent_cmds, players, held_steps;
     float time_per_tick_ms;
     int max_behind_seen;
+    uint32_t log_base;          /* first command still kept in the server's log (older ones trimmed, see log_trim) */
 } dsnet_server_stats;
+extern uint32_t dsnet_log_trim_min;   /* trim the server log in chunks of at least this many entries (default 4096; tests) */
 void dsnet_server_get_stats(dsnet_server *s, dsnet_server_stats *out);
 
 /* ---- client side ---- */
@@ -260,7 +280,7 @@ enum dsnet_event_choice { DSNET_EVENT_OWNER = 0, DSNET_EVENT_HOST = 1, DSNET_EVE
  * MULTIPLIED: cap x connected players, one pool for all. Overflow is allowed: nobody is removed after a rule change or a
  * leave; only no new hire above the cap. Check inside the replayed recruit order, so every peer decides the same. */
 enum dsnet_population { DSNET_POP_SHARED = 0, DSNET_POP_PER_PLAYER = 1, DSNET_POP_SPLIT = 2, DSNET_POP_MULTIPLIED = 3 };
-typedef struct dsnet_rules { int pause_mode, allow_speedup, gear_mode, units_per_player, event_choice, population; } dsnet_rules;
+typedef struct dsnet_rules { int pause_mode, allow_speedup, gear_mode, units_per_player, event_choice, population, shared_fog; } dsnet_rules;
 /* The cap for one player: mode, the clan's base cap, connected players, this player's rank among them (0 = lowest slot).
  * *pool = 1: compare with the clan's total; 0: with the player's own units. Pure, deterministic. */
 int dsnet_population_cap(int mode, int base_cap, int nplayers, int rank, int *pool);

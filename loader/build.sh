@@ -17,7 +17,7 @@ put build/dsload.dylib; echo "built build/dsload.dylib"
 
 # multiplayer
 V=vendor/mp; M=build/mods/multiplayer; mkdir -p $M
-srcs=($V/src/{rig_sock,rig_cmd,rig_win,rig_det}.c $V/src/{mp_core,mp_config,mp_game}.c
+srcs=($V/src/{rig_sock,rig_cmd,rig_win,rig_det}.c $V/src/{mp_core,mp_config,mp_game,mp_fog}.c
       $V/src/net/dsnet_link.c $V/src/net/dsnet_server.c $V/src/net/dsnet_client.c $V/src/net/steam/dsnet_steam.c
       $V/src/{ord_core,ord_game,ord_mp}.c $V/src/ord_test/ord_smoke.c
       $V/src/{ui_game,ui_model,ui_tip,ui_teams,ui_teams_model,mpmenu,mpmenu_model}.c $V/src/{trn_logic,trn_game,trn_mp}.c

@@ -10,7 +10,7 @@ void mp_config_defaults(mp_config *c) {
     c->allow_speedup = 1; c->allow_pause = 1;
     c->pause_mode = DSNET_PAUSE_ANYONE; c->gear_mode = 0;
     c->min_players = 1;
-    c->auto_resync = 1; c->resync_delay_ms = 300; c->auto_resume = 1; c->partial_resync = 1; c->full_check_steps = 7200;
+    c->auto_resync = 1; c->resync_delay_ms = 300; c->auto_resume = 1; c->partial_resync = 1; c->full_check_steps = 10800;
     c->connect_timeout_ms = 5000;
     snprintf(c->name, sizeof c->name, "player");
 }
@@ -81,6 +81,7 @@ int mp_config_parse(const char *j, mp_config *c) {
     if (get_num(j, "auto_resume", &d)) c->auto_resume = d != 0;
     if (get_num(j, "connect_timeout_ms", &d)) c->connect_timeout_ms = (int)d;
     if (get_num(j, "need_save", &d)) c->need_save = d != 0;
+    if (get_num(j, "shared_fog", &d)) c->shared_fog = d != 0;
     if (!c->host && (!c->host_addr[0] || !c->port)) return -2;   /* a client needs host + port */
     return 0;
 }
@@ -91,4 +92,30 @@ int mp_config_load(const char *path, mp_config *c) {
     char b[8192]; size_t n = fread(b, 1, sizeof b - 1, f); fclose(f);
     b[n] = 0;
     return mp_config_parse(b, c);
+}
+
+/* The launcher's session file (env DSML_SESSION; ~/ds_launcher core/src/flow.rs Session): the started world's gameplay
+ * mod-set hash ("modset"), the host rule ("rule": "mods" | "vanilla") and "modset_lines" (`<id>@<version>:<shas>...`),
+ * copied whole, '\n'-joined, into mods. No variable / no file / unreadable: rule mods, modset "" (= no gameplay mods). 0 = read. */
+int mp_session_mods(int *vanilla, char modset[65], char *mods, size_t n) {
+    *vanilla = 0; modset[0] = 0; if (n) mods[0] = 0;
+    const char *sp = getenv("DSML_SESSION");
+    FILE *f = sp && *sp ? fopen(sp, "rb") : NULL;
+    if (!f) return -1;
+    char *b = malloc(1 << 20); size_t got = fread(b, 1, (1 << 20) - 1, f); fclose(f); b[got] = 0;
+    char rule[16] = "";
+    get_str(b, "modset", modset, 65);                    /* the first "modset" is the top-level one (field order) */
+    get_str(b, "rule", rule, sizeof rule);
+    *vanilla = !strcmp(rule, "vanilla");
+    const char *v = find(b, "modset_lines");
+    size_t o = 0;
+    if (v && *v == '[') for (v++; *v && *v != ']'; v++) {
+        if (*v != '"') continue;
+        const char *e = ++v;
+        while (*e && *e != '"') e += *e == '\\' && e[1] ? 2 : 1;      /* the whole line (no escapes in hex / ids) */
+        if (n && o + (size_t)(e - v) + 2 < n) o += (size_t)snprintf(mods + o, n - o, "%s%.*s", o ? "\n" : "", (int)(e - v), v);
+        v = *e ? e : e - 1;
+    }
+    free(b);
+    return 0;
 }

@@ -14,6 +14,7 @@
 #include "trn.h"
 void ui_teams_install(void);
 #include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -75,6 +76,8 @@ DSL_EXPORT int dsl_module_load(const DSLHost *host, DSLPlugin *self) {
     if (!host->game_build || strcmp(host->game_build, RIG_BUILD)) { host->log(self, "game build %s is not %s", host->game_build ? host->game_build : "?", RIG_BUILD); return 2; }
     snprintf(rig_dir, sizeof rig_dir, "%s", d);
     char lp[1100]; snprintf(lp, sizeof lp, "%s/rig.log", rig_dir);
+    struct stat lst;                            /* appended across starts: past 32 MB the old one becomes rig.log.1 */
+    if (!stat(lp, &lst) && lst.st_size > (32 << 20)) { char lp1[1110]; snprintf(lp1, sizeof lp1, "%s.1", lp); rename(lp, lp1); }
     lf = fopen(lp, "a");
     rig_log("---- rig start pid %d as dsload module %s (batchmode arg: %s, hide windows: %s)", getpid(), host->plugin_id(self),
             getenv("DSRIG_BATCH") ? "yes" : "no", getenv("DSRIG_HIDEWIN") ? "yes" : "no");

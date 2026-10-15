@@ -26,6 +26,8 @@ typedef struct sconn {
     int ticks_behind; uint32_t behind_at;
     float frame_ms;
     char name[32];
+    int rule; char modset[65], mods[200];         /* from the HELLO (proto 2); mods = "id@version, ..." for the words */
+    char lines[DSNET_MODLINES_MAX];               /* the launcher's modset_lines, '\n'-joined */
     dsnet_blob_rx rx;
 } sconn;
 
@@ -47,9 +49,10 @@ struct dsnet_server {
     double last_list, last_ping;
     char build_id[32];
     int round_mode;
-    /* command log: serialized P_SCMD frames, index = seq */
+    /* command log: serialized P_SCMD frames; log_off[seq - log_base]. log_n = next seq (absolute). Entries before
+       log_base were dropped (log_trim): once started, a joiner only ever needs the log after the newest join-point save */
     uint8_t *log; size_t log_bytes, log_cap;
-    size_t *log_off; uint32_t log_n, log_cap_n;
+    size_t *log_off; uint32_t log_n, log_cap_n, log_base, jp_seq;
     /* latest join-point save */
     uint8_t *save; uint32_t save_len, save_tick, save_seq_after, blob_id;
 };
@@ -62,8 +65,27 @@ static void send_all_live(dsnet_server *s, const uint8_t *b, uint32_t n, int exc
         if (live(s->conn[i]) && s->conn[i]->id != except_id) dsnet_link_send(&s->conn[i]->link, b, n);
 }
 
+/* Drop the entries nobody can need again (review 2026-10-14: the log grew without limit). Before the start a joiner
+   replays the whole log, so nothing goes. After it, every late joiner / resync gets a NEW join-point save and the log
+   after its seq_after (send_save_to runs only when a save arrives): keep from the pending join point, else from the
+   newest save's seq_after, else nothing. Compacts in chunks of >= dsnet_log_trim_min entries. */
+uint32_t dsnet_log_trim_min = 4096;
+static void log_trim(dsnet_server *s) {
+    if (!s->started) return;
+    uint32_t floor = s->jp_pending ? s->jp_seq : s->save ? s->save_seq_after : s->log_n;
+    if (floor > s->log_n) floor = s->log_n;
+    if (floor < s->log_base + dsnet_log_trim_min) return;
+    uint32_t drop = floor - s->log_base, keep = s->log_n - floor;
+    size_t cut = keep ? s->log_off[drop] : s->log_bytes;
+    memmove(s->log, s->log + cut, s->log_bytes - cut);
+    s->log_bytes -= cut;
+    for (uint32_t i = 0; i < keep; i++) s->log_off[i] = s->log_off[drop + i] - cut;
+    s->log_base = floor;
+    dsnet_logf("server: command log: %u old entries dropped, %u kept (%zu bytes)", drop, keep, s->log_bytes);
+}
 static void log_append(dsnet_server *s, const uint8_t *b, uint32_t n) {
-    if (s->log_n == s->log_cap_n) {
+    log_trim(s);
+    if (s->log_n - s->log_base == s->log_cap_n) {
         s->log_cap_n = s->log_cap_n ? s->log_cap_n * 2 : 1024;
         s->log_off = realloc(s->log_off, s->log_cap_n * sizeof *s->log_off);
     }
@@ -71,14 +93,15 @@ static void log_append(dsnet_server *s, const uint8_t *b, uint32_t n) {
         while (s->log_bytes + n + 4 > s->log_cap) s->log_cap = s->log_cap ? s->log_cap * 2 : 65536;
         s->log = realloc(s->log, s->log_cap);
     }
-    s->log_off[s->log_n++] = s->log_bytes;
+    s->log_off[s->log_n++ - s->log_base] = s->log_bytes;
     put32(s->log + s->log_bytes, n);
     memcpy(s->log + s->log_bytes + 4, b, n);
     s->log_bytes += n + 4;
 }
 static void send_log_from(dsnet_server *s, sconn *c, uint32_t seq) {
+    if (seq < s->log_base) { dsnet_logf("server: BUG: log wanted from seq %u, dropped before %u", seq, s->log_base); seq = s->log_base; }
     for (uint32_t i = seq; i < s->log_n; i++) {
-        const uint8_t *e = s->log + s->log_off[i];
+        const uint8_t *e = s->log + s->log_off[i - s->log_base];
         dsnet_link_send(&c->link, e + 4, get32(e));
     }
 }
@@ -102,7 +125,7 @@ static sconn *host_conn(dsnet_server *s) {
 static void request_join_point(dsnet_server *s) {
     if (s->jp_pending) return;
     if (!host_conn(s)) { dsnet_logf("server: join point wanted but no host"); return; }
-    s->jp_pending = 1;
+    s->jp_pending = 1; s->jp_seq = s->log_n;
     issue(s, DSNET_JOIN_POINT, DSNET_NO_PLAYER, 0, NULL, 0);
     dsnet_logf("server: join point at timer %u", s->timer);
 }
@@ -153,31 +176,76 @@ static void drop_conn(dsnet_server *s, int i) {
 
 static int auto_pause(dsnet_server *s) { return s->cfg.pause_mode != DSNET_PAUSE_NONE && !s->cfg.no_auto_pause; }
 
+/* HELLO mod fields after the build id: u8 rule, u8 len, modset, u16 len, lines. Returns the name's offset, 0 = malformed.
+   c->mods gets "id@version, ..." (each line up to its first ':') for the refusal words. */
+static uint32_t hello_mods(sconn *c, const uint8_t *p, uint32_t n, uint32_t o) {
+    if (o + 2 > n) return 0;
+    c->rule = p[o] == DSNET_MATCH_VANILLA; uint32_t ml = p[o + 1]; o += 2;
+    if (ml > 64 || o + ml + 2 > n) return 0;
+    snprintf(c->modset, sizeof c->modset, "%.*s", (int)ml, (const char *)p + o); o += ml;
+    uint32_t dl = get16(p + o); o += 2;
+    if (o + dl > n || dl >= DSNET_MODLINES_MAX) return 0;
+    snprintf(c->lines, sizeof c->lines, "%.*s", (int)dl, (const char *)p + o);
+    size_t k = 0; c->mods[0] = 0;
+    for (const char *l = c->lines; *l; ) {
+        const char *e = l; while (*e && *e != '\n' && *e != ':') e++;
+        if (k + (size_t)(e - l) + 3 < sizeof c->mods) k += (size_t)snprintf(c->mods + k, sizeof c->mods - k, "%s%.*s", k ? ", " : "", (int)(e - l), l);
+        while (*e && *e != '\n') e++;
+        l = *e ? e + 1 : e;
+    }
+    return o + dl;
+}
+static const char *eff_modset(const sconn *c) { return c->modset[0] ? c->modset : DSNET_MODSET_NONE; }
+static const char *mods_or_none(const sconn *c) { return strcmp(eff_modset(c), DSNET_MODSET_NONE) ? (c->mods[0] ? c->mods : "unnamed mods") : "none"; }
+/* The host's HELLO is the reference (launcher rule, PLAN.md 2026-10-14 ~20:00: Vanilla check / Allow mods).
+   0 = may join, else the refusal words (in why). The host itself is never refused. */
+static int modset_refused(dsnet_server *s, const sconn *c, char *why, size_t n) {
+    const sconn *h = host_conn(s);
+    if (!h) return 0;
+    int vanilla_c = !strcmp(eff_modset(c), DSNET_MODSET_NONE), vanilla_h = !strcmp(eff_modset(h), DSNET_MODSET_NONE);
+    if (h->rule == DSNET_MATCH_VANILLA) {
+        if (!vanilla_h) { snprintf(why, n, "the host's match is vanilla only, but the host runs gameplay mods (%s)", mods_or_none(h)); return 1; }
+        if (!vanilla_c) { snprintf(why, n, "this match is vanilla only: turn off your gameplay mods (%s) in the launcher", mods_or_none(c)); return 1; }
+        return 0;
+    }
+    if (strcmp(eff_modset(c), eff_modset(h))) {
+        snprintf(why, n, "your gameplay mods are different from the host's (host: %s; you: %s). Join from the launcher to get the host's mods",
+                 mods_or_none(h), mods_or_none(c));
+        return 1;
+    }
+    return 0;
+}
 static void on_hello(dsnet_server *s, sconn *c, const uint8_t *p, uint32_t n) {
     if (c->id >= 0) return;
-    /* join checks (rwmt ServerJoiningState): protocol, game build, mod version, float rounding mode */
+    /* join checks (rwmt ServerJoiningState): protocol, game build, mod version, float rounding mode, gameplay mods */
     int rej = 0, bl = n >= 29 ? p[28] : 0;
-    if (n < 29 + (uint32_t)bl || get16(p + 1) != DSNET_PROTO) rej = DSNET_REJ_PROTO;
+    uint32_t name_at = n >= 29 + (uint32_t)bl ? hello_mods(c, p, n, 29 + bl) : 0;
+    char mwhy[400] = "";
+    if (n < 29 + (uint32_t)bl || get16(p + 1) != DSNET_PROTO || !name_at) rej = DSNET_REJ_PROTO;
     else if (bl != (int)strlen(s->build_id) || memcmp(p + 29, s->build_id, bl)) rej = DSNET_REJ_BUILD;
     else if (get32(p + 4) != s->cfg.mod_version) rej = DSNET_REJ_MOD;
     else if ((int)get32(p + 8) != s->round_mode) rej = DSNET_REJ_ROUNDING;
     else for (int i = 0; i < MAX_CONNS; i++)
         if (s->conn[i] && s->conn[i]->id >= 0 && !memcmp(s->conn[i]->uid, p + 12, 16)) rej = DSNET_REJ_DUP_ID;
-    if (rej) {
-        uint8_t r[2] = { P_REJECT, rej };
-        dsnet_link_send(&c->link, r, 2);
+    int want_host = c->local && p[3] && !host_conn(s);
+    if (!rej && !want_host && modset_refused(s, c, mwhy, sizeof mwhy)) rej = DSNET_REJ_MODSET;
+    if (rej) {                                     /* u8 reason, u16 words, words, [MODSET: u8 host rule, u16 len, host lines] */
+        static uint8_t r[8 + sizeof mwhy + DSNET_MODLINES_MAX]; size_t wl = strlen(mwhy), k = 0;
+        r[k++] = P_REJECT; r[k++] = (uint8_t)rej; put16(r + k, (uint16_t)wl); k += 2; memcpy(r + k, mwhy, wl); k += wl;
+        const sconn *h = host_conn(s);
+        if (rej == DSNET_REJ_MODSET && h) { size_t hl = strlen(h->lines); r[k++] = (uint8_t)h->rule; put16(r + k, (uint16_t)hl); k += 2; memcpy(r + k, h->lines, hl); k += hl; }
+        dsnet_link_send(&c->link, r, (uint32_t)k);
         c->closing = 1;
-        dsnet_logf("server: rejected a client, reason %d", rej);
+        dsnet_logf("server: rejected a client, reason %d%s%s", rej, wl ? ": " : "", mwhy);
         return;
     }
-    int want_host = c->local && p[3] && !host_conn(s);
     int used[DSNET_MAX_PLAYERS] = { 0 };
     for (int i = 0; i < MAX_CONNS; i++) if (s->conn[i] && s->conn[i]->id >= 0) used[s->conn[i]->id] = 1;
     int id = -1;
     for (int i = want_host ? 0 : 1; i < DSNET_MAX_PLAYERS; i++) if (!used[i]) { id = i; break; }
     if (id < 0) { uint8_t r[2] = { P_REJECT, DSNET_REJ_FULL }; dsnet_link_send(&c->link, r, 2); c->closing = 1; return; }
     c->id = id; c->is_host = want_host;
-    snprintf(c->name, sizeof c->name, "%.*s", (int)(n - 29 - bl), (const char *)p + 29 + bl);
+    snprintf(c->name, sizeof c->name, "%.*s", (int)(n - name_at), (const char *)p + name_at);
     memcpy(c->uid, p + 12, 16);
     int late = s->started;
     uint8_t b[80], *q = b;
@@ -185,6 +253,7 @@ static void on_hello(dsnet_server *s, sconn *c, const uint8_t *p, uint32_t n) {
     q = put32(q, s->timer); q = put32(q, 0); q = put32(q, s->cfg.fp_interval);
     q = put8(q, s->cfg.allow_speedup != 0); q = put8(q, s->cfg.pause_mode); q = put8(q, s->cfg.gear_mode); q = put8(q, s->cfg.units_per_player); q = put8(q, s->cfg.event_choice); q = put8(q, s->cfg.population);
     q = put8(q, (uint8_t)s->has_world); memcpy(q, s->world, 48); q += 48;
+    q = put8(q, s->cfg.shared_fog != 0);
     dsnet_link_send(&c->link, b, q - b);
     c->ticks_behind = 0; c->behind_at = s->timer;
     if (!late) {                       /* before the start: replay the whole log (all at timer 0) */
@@ -219,9 +288,11 @@ static void on_frame(dsnet_server *s, sconn *c, const uint8_t *p, uint32_t n) {
             r.pause_mode = p[5]; r.allow_speedup = p[6]; r.gear_mode = p[7]; r.units_per_player = p[8];
             r.event_choice = get16(p + 3) >= 5 ? p[9] : s->cfg.event_choice;
             r.population = get16(p + 3) >= 6 ? p[10] : s->cfg.population;
+            r.shared_fog = get16(p + 3) >= 7 ? p[11] : s->cfg.shared_fog;
             if (!dsnet_rules_valid(&r)) return;
             s->cfg.pause_mode = r.pause_mode; s->cfg.allow_pause = r.pause_mode != DSNET_PAUSE_NONE; s->cfg.allow_speedup = r.allow_speedup;
             s->cfg.gear_mode = r.gear_mode; s->cfg.units_per_player = r.units_per_player; s->cfg.event_choice = r.event_choice; s->cfg.population = r.population;
+            s->cfg.shared_fog = r.shared_fog;
             dsnet_logf("server: rules pause %d speed-up %d gear %d units %d", r.pause_mode, r.allow_speedup, r.gear_mode, r.units_per_player);
         }
         if (c->status == ST_LOADING) return;
@@ -534,7 +605,7 @@ static void *server_main(void *arg) {
         pthread_mutex_lock(&s->mu);
         int np2 = 0;
         for (int i = 0; i < MAX_CONNS; i++) if (s->conn[i] && s->conn[i]->id >= 0) np2++;
-        s->stats = (dsnet_server_stats){ s->timer, s->log_n, np2, s->held, s->tpt, s->max_behind_seen };
+        s->stats = (dsnet_server_stats){ s->timer, s->log_n, np2, s->held, s->tpt, s->max_behind_seen, s->log_base };
         pthread_mutex_unlock(&s->mu);
     }
     /* stopping: tell every player the host ended the session (P_BYE), flushed for at most 300 ms */
@@ -558,7 +629,8 @@ dsnet_server *dsnet_server_start(const dsnet_cfg *cfg) {
     if (!s->cfg.allow_pause || s->cfg.pause_mode < 0 || s->cfg.pause_mode > DSNET_PAUSE_ALL_VOTE) s->cfg.pause_mode = DSNET_PAUSE_NONE;
     if (s->cfg.event_choice < 0 || s->cfg.event_choice > DSNET_EVENT_MAJORITY) s->cfg.event_choice = DSNET_EVENT_OWNER;
     if (s->cfg.population < 0 || s->cfg.population > DSNET_POP_MULTIPLIED) s->cfg.population = DSNET_POP_SHARED;
-    { dsnet_rules r = { s->cfg.pause_mode, s->cfg.allow_speedup != 0, s->cfg.gear_mode, s->cfg.units_per_player, s->cfg.event_choice, s->cfg.population };
+    s->cfg.shared_fog = s->cfg.shared_fog == 1;
+    { dsnet_rules r = { s->cfg.pause_mode, s->cfg.allow_speedup != 0, s->cfg.gear_mode, s->cfg.units_per_player, s->cfg.event_choice, s->cfg.population, s->cfg.shared_fog };
       if (!dsnet_rules_valid(&r)) s->cfg.units_per_player = DSNET_UNITS_DEFAULT; }
     if (s->cfg.min_players <= 0) s->cfg.min_players = 1;
     if (s->cfg.max_behind <= 0) s->cfg.max_behind = 90;

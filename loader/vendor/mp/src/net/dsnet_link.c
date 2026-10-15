@@ -28,6 +28,23 @@ char     dsnet_build_id[32];
 uint32_t dsnet_mod_version;
 uint8_t  dsnet_uid[16];
 int      dsnet_uid_set;
+int      dsnet_match_rule;
+char     dsnet_modset[65], dsnet_mod_lines[DSNET_MODLINES_MAX];
+char     dsnet_reject_detail[400];        /* the server's words with the last DSNET_REJ_MODSET */
+int      dsnet_reject_host_rule, dsnet_reject_has_host;
+char     dsnet_reject_host_lines[DSNET_MODLINES_MAX];
+void dsnet_set_modset(int rule, const char *modset, const char *lines) {
+    dsnet_match_rule = rule == DSNET_MATCH_VANILLA;
+    snprintf(dsnet_modset, sizeof dsnet_modset, "%s", modset && *modset ? modset : "");
+    snprintf(dsnet_mod_lines, sizeof dsnet_mod_lines, "%s", lines ? lines : "");
+}
+const char *dsnet_my_mod_lines(void) { return dsnet_mod_lines; }
+int dsnet_reject_host_mods(int *host_rule, char *lines, size_t n) {
+    if (!dsnet_reject_has_host) return -1;
+    if (host_rule) *host_rule = dsnet_reject_host_rule;
+    if (lines && n) snprintf(lines, n, "%s", dsnet_reject_host_lines);
+    return 0;
+}
 void dsnet_set_player_uid(const uint8_t uid[16]) {
     dsnet_uid_set = uid != NULL;
     if (uid) memcpy(dsnet_uid, uid, 16);

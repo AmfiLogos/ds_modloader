@@ -38,6 +38,7 @@
 #define VA_R_INIT        0x50E7710  /* Random.InitState */
 #define VA_R_GETST       0x50E77B0  /* Random.get_state_Injected */
 #define VA_R_SETST       0x50E7864  /* Random.set_state_Injected */
+#define VA_R_SETSTATE    0x50E7800  /* Random.set_state (the managed wrapper game code calls; rs_set uses _Injected) */
 #define VA_NEWGUID       0x425803C  /* System.Guid.NewGuid */
 #define VA_SRAND_CTOR    0x4276180  /* System.Random..ctor() */
 #define VA_SRAND_CTOR_I  0x42763E4  /* System.Random..ctor(int) */
@@ -63,6 +64,9 @@ static uint64_t jit_state = 0x9E3779B97F4A7C15ULL;
 static uint32_t seq;                   /* trace record counter within a tick */
 static int64_t cycles, last_cycle_tick = -1, tick_errors, exc_recovered;
 static FILE *fpf, *trf, *dtf;
+static uint64_t fpf_bytes, trf_bytes;      /* written since the file was opened (rotation: fp.log 64 MB, trace.bin 256 MB) */
+#define FP_ROTATE_BYTES    (64ull << 20)
+#define TRACE_ROTATE_BYTES (256ull << 20)
 static int64_t detail_from = -1, detail_to = -1;
 static uint64_t frame_ticks[10];           /* histogram: frames that ran 0..8, 9+ world ticks (locked) */
 static char fp_path[1200], tr_path[1200];
@@ -77,20 +81,26 @@ static float (*o_rangef)(float, float, void *);
 static int (*o_rangei)(int, int, void *);
 static int (*o_rri)(int, int, void *);
 static float (*o_value)(void *);
+static void (*o_init)(int, void *);
+static void (*o_setstate)(RState, void *);
 static Guid (*o_newguid)(void *);
 static void (*o_srand)(Obj, void *);
 static void (*o_startpath)(Obj, bool, void *);
 
 static inline void rs_get(RState *s) { F(VA_R_GETST, void (*)(RState *, void *))(s, NULL); }
 static inline void rs_set(RState *s) { F(VA_R_SETST, void (*)(RState *, void *))(s, NULL); }
+/* the rig's own InitState calls go to the original: the hook below is for game code only */
+static inline void r_init(int s) { if (o_init) o_init(s, NULL); else F(VA_R_INIT, void (*)(int, void *))(s, NULL); }
 
 /* ---------------------------------------------------------------- caller classification */
 typedef struct { uint32_t lo, hi; uint8_t k; } Range;
 static Range *ranges; static int nranges;
 static void load_ranges(void) {
     if (ranges) return;
-    char p[1200]; snprintf(p, sizeof p, "%s/../../build/det_ranges.tsv", rig_dir);
-    FILE *f = fopen(p, "r");
+    char p[1200]; FILE *f = NULL;
+    const char *env = getenv("DSRIG_RANGES");                    /* tests: another ranges file */
+    if (env && *env) { snprintf(p, sizeof p, "%s", env); f = fopen(p, "r"); if (!f) rig_log("det: DSRIG_RANGES %s missing", p); }
+    if (!f) { snprintf(p, sizeof p, "%s/../../build/det_ranges.tsv", rig_dir); f = fopen(p, "r"); }
     if (!f) {                                         /* MP app: the file ships next to dsrig.dylib (Frameworks) */
         Dl_info di;
         if (dladdr((void *)load_ranges, &di) && di.dli_fname) {
@@ -107,7 +117,7 @@ static void load_ranges(void) {
         ranges[nranges++] = (Range){ lo, hi, (uint8_t)k };
     }
     fclose(f);
-    rig_log("det: %d caller ranges loaded", nranges);
+    rig_log("det: %d caller ranges loaded from %s", nranges, p);
 }
 static int cls(uint32_t rva) {
     int a = 0, b = nranges - 1;
@@ -136,10 +146,12 @@ static inline uint32_t rva_of(uintptr_t a) { return (a >= ds_base && a < ds_base
 enum { K_RANGEF = 1, K_RANGEI, K_RANGEINT, K_VALUE, K_GUID, K_SRAND, K_PATH, K_ORDER, K_MOVETHING, K_SPAWNTHING, K_WORLDPOS, K_CENTEROCC, K_SETTARGET, K_ADDHOSTILE, K_REMOVEHOSTILE, K_SRAND_DRAW, K_TARGETDATA, K_DECIDE_TARGET, K_FIND_NEW, K_SPECIFIC, K_CLOSEST_ENEMY, K_DECIDE_SKILL, K_CTX_CONVERT, K_CTX_SETTARGET };
 enum { FL_VIEW = 1, FL_OUT = 2 };
 typedef struct { int64_t tick; uint16_t kind, flags; uint32_t seq; uint32_t c[3]; uint32_t val; } TRec;   /* 32 B */
+static void rotate_trace(void);
 static void trace(int kind, int flags, const uint32_t c[3], uint32_t val) {
     if (!trf) return;
     TRec r = { in_sim ? tick() : -1, (uint16_t)kind, (uint16_t)flags, seq++, { c[0], c[1], c[2] }, val };
     fwrite(&r, sizeof r, 1, trf);
+    if ((trf_bytes += sizeof r) >= TRACE_ROTATE_BYTES) rotate_trace();
 }
 static inline uint32_t fbits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 
@@ -147,13 +159,19 @@ static inline uint32_t fbits(float f) { uint32_t u; memcpy(&u, &f, 4); return u;
 /* Routing rule (main thread, det on): a call goes to the SIM source when its caller is not view code
    and either a sim cycle is running or the game is still loading (det on, not locked yet: load-time
    gameplay draws such as RandomEventContainer.InitializeStartTick). Everything else uses the
-   ordinary Unity stream / the view counters. */
+   ordinary Unity stream / the view counters.
+   Seeded blocks: game code that does get_state -> InitState(seed) -> draws -> set_state (CampaignRandomService.
+   ExecuteAtSequence, EstablishUnitGenerator.CreateCandidateFromPreset / CreateRuleBasedCandidate, URP) wants the draws
+   from ITS seed. While such a block is open (seeded > 0), a sim-routed draw uses the current Unity state, no swap
+   (before: during the det load it was swapped to sim_state, so "same seed = same result" broke). View-routed draws inside
+   a sim cycle still go to the view stream, so a view-only draw can never shift the seeded sequence. */
+static int seeded;                     /* open game InitState ... set_state blocks (main thread) */
 static inline int sim_route(const uint32_t c[3]) { return (in_sim || !locked) && !is_view(c); }
 #define RNG_HOOK_BODY(KIND, CALL, VALBITS) \
     if (!det_on || !pthread_main_np()) return CALL; \
     uint32_t c[3]; CALLERS(c); \
     int simr = sim_route(c); __typeof__(CALL) r; \
-    if (simr == in_sim) { r = CALL; } \
+    if (simr == in_sim || (simr && seeded)) { r = CALL; } \
     else if (simr) { RState t; rs_get(&t); rs_set(&sim_state); r = CALL; rs_get(&sim_state); rs_set(&t); } \
     else { RState t; rs_get(&t); rs_set(&view_saved); r = CALL; rs_get(&view_saved); rs_set(&t); } \
     if (in_sim) { if (simr) draws_sim++; else draws_view_in_sim++; } \
@@ -162,6 +180,14 @@ static inline int sim_route(const uint32_t c[3]) { return (in_sim || !locked) &&
 #define IBITS(r) ((uint32_t)(r))
 static float h_rangef(float a, float b, void *mi) { RNG_HOOK_BODY(K_RANGEF, o_rangef(a, b, mi), fbits) }
 static int h_rangei(int a, int b, void *mi) { RNG_HOOK_BODY(K_RANGEI, o_rangei(a, b, mi), IBITS) }
+static void h_init(int s, void *mi) {                 /* game InitState opens a seeded block */
+    o_init(s, mi);
+    if (det_on && pthread_main_np() && rva_of((uintptr_t)__builtin_return_address(0)) != 0xFFFFFFFFu) seeded++;
+}
+static void h_setstate(RState v, void *mi) {          /* the game's restoring set_state closes it */
+    o_setstate(v, mi);
+    if (seeded > 0 && pthread_main_np() && rva_of((uintptr_t)__builtin_return_address(0)) != 0xFFFFFFFFu) seeded--;
+}
 static int h_rri(int a, int b, void *mi) { RNG_HOOK_BODY(K_RANGEINT, o_rri(a, b, mi), IBITS) }
 static float h_value(void *mi) { RNG_HOOK_BODY(K_VALUE, o_value(mi), fbits) }
 
@@ -374,6 +400,24 @@ static void h_ctx_settarget(Obj self, Obj target, void *mi) {
 /* System.HashCode seeds itself with random bytes per process. EntityTargetSelector.InCloseOrder breaks
    distance ties with HashCode.Combine(Guid, Guid), so equidistant targets were picked differently on
    each peer. A fixed seed makes HashCode identical everywhere (only hash-table layout depends on it). */
+/* System.Numerics.Hashing.HashHelpers.RandomSeed (three copies, one per assembly; static+0x0, int): the mscorlib cctor
+   sets it from new Random().Next(), the other two from a Guid hash, so every ValueTuple hash differed per process
+   (ValueTuple.CombineHashCodes). Pinned to a constant right after each cctor (hooks below), so it never changes under a
+   live hash table; at det on it is checked again and pinned if a cctor ran unhooked (logged). */
+#define HASHHELPERS_SEED 0x1B873593
+static const uint64_t ti_hashhelpers[3] = { 0x664E390, 0x664E398, 0x664E3A0 };
+static int hh_hooked;
+static int hashhelpers_pin(void) {                    /* returns how many were changed */
+    int changed = 0;
+    for (int i = 0; i < 3; i++) {
+        Obj k = md(ti_hashhelpers[i]); Obj sf = k ? AT(k, 0xB8, Obj) : NULL;
+        if (sf && AT(sf, 0x0, int32_t) != HASHHELPERS_SEED) { AT(sf, 0x0, int32_t) = HASHHELPERS_SEED; changed++; }
+    }
+    return changed;
+}
+#define HH_CCTOR(N) static void (*o_hh_cctor##N)(void *); \
+    static void h_hh_cctor##N(void *mi) { o_hh_cctor##N(mi); hashhelpers_pin(); }
+HH_CCTOR(0) HH_CCTOR(1) HH_CCTOR(2)
 static uint32_t (*o_hc_seed)(void *);
 static uint32_t h_hc_seed(void *mi) { (void)mi; (void)o_hc_seed; return 0x9E3779B9u; }
 static uint32_t hashcode_seed_fix(void) {        /* also force the static itself (the cctor may have run already) */
@@ -412,6 +456,16 @@ void rig_det_install(void) {
     bad |= rig_hook(VA_NEWGUID, (void *)h_newguid, (void **)&o_newguid, "Guid.NewGuid");
     bad |= rig_hook(VA_SRAND_CTOR, (void *)h_srand, (void **)&o_srand, "System.Random..ctor()");
     bad |= rig_hook(VA_AP_STARTPATH, (void *)h_startpath, (void **)&o_startpath, "AstarPath.StartPath");
+    bad |= rig_hook(VA_R_INIT, (void *)h_init, (void **)&o_init, "Random.InitState");
+    bad |= rig_hook(VA_R_SETSTATE, (void *)h_setstate, (void **)&o_setstate, "Random.set_state");
+    {   /* HashHelpers cctors (mscorlib, System, System.Core copies) */
+        int hb = 0;
+        hb |= rig_hook(0x4187188, (void *)h_hh_cctor0, (void **)&o_hh_cctor0, "HashHelpers..cctor (mscorlib)");
+        hb |= rig_hook(0x12B11BC, (void *)h_hh_cctor1, (void **)&o_hh_cctor1, "HashHelpers..cctor (2)");
+        hb |= rig_hook(0x46E0BA8, (void *)h_hh_cctor2, (void **)&o_hh_cctor2, "HashHelpers..cctor (3)");
+        hh_hooked = !hb;
+        if (hb) rig_log("det: a HashHelpers cctor hook failed: RandomSeed is pinned at det on instead");
+    }
     if (!getenv("DSRIG_DIAG")) { if (bad) rig_log("det: some hooks failed; locked mode is NOT safe"); return; }
     /* desync-hunting hooks (DSRIG_DIAG=1 only: they cost 21 of the 80 hook stubs) */
     bad |= rig_hook(0xC83BC4, (void *)h_movething, (void **)&o_movething, "EntityDataContainer.MoveThing");
@@ -540,9 +594,14 @@ static void sim_cycle_body(void) {
     if (fpf) {
         uint64_t h[4]; int nu, np;
         rig_world_hash(sim_state, h, &nu, &np);
-        fprintf(fpf, "%lld %016llx %016llx %016llx %016llx %d %d %llu %llu\n", (long long)t1,
+        int w = fprintf(fpf, "%lld %016llx %016llx %016llx %016llx %d %d %llu %llu\n", (long long)t1,
                 (unsigned long long)h[0], (unsigned long long)h[1], (unsigned long long)h[2], (unsigned long long)h[3],
                 nu, np, (unsigned long long)guid_sim_n, (unsigned long long)sr_sim_n);
+        if (w > 0 && (fpf_bytes += (uint64_t)w) >= FP_ROTATE_BYTES) {   /* long session: keep one old part (fp.log.1) */
+            char old[1300]; snprintf(old, sizeof old, "%s.1", fp_path);
+            fclose(fpf); rename(fp_path, old); fpf = fopen(fp_path, "w"); fpf_bytes = 0;
+            rig_log("det: fp.log passed 64 MB at tick %lld: moved to fp.log.1", (long long)t1);
+        }
     }
 }
 
@@ -553,7 +612,12 @@ int rig_det_frame(void *mainflow) {
         rs_get(&sim_state); rs_set(&view_saved);
         rig_log("det: sim cycle did not return (exception?) before tick %lld", (long long)tick());
     }
-    if (det_on) hashcode_seed_fix();      /* the HashCode cctor may run at any frame and re-randomise it */
+    if (det_on) {
+        hashcode_seed_fix();               /* the HashCode cctor may run at any frame and re-randomise it */
+        int hc = hashhelpers_pin();
+        if (hc && hh_hooked) rig_log("det: HashHelpers.RandomSeed was not pinned (%d): a cctor ran unhooked?", hc);
+    }
+    if (seeded) { rig_log("det: %d Random.InitState block(s) left open at frame end (no set_state): closed", seeded); seeded = 0; }
     if (hold && !runnable()) load_left = 1;
     if (hold && !locked && load_left && runnable()) {   /* load finished: lock before the first tick */
         char *r = rig_det_exec("lock", "{}"); rig_log("det: auto-lock after load: %s", r); free(r);
@@ -669,9 +733,16 @@ void rig_det_write_detail(const char *why) {         /* per-entity dump of the c
 RState rig_det_sim_state(void) { return sim_state; }
 
 static void open_logs(void) {
-    if (!fpf) { snprintf(fp_path, sizeof fp_path, "%s/fp.log", rig_dir); fpf = fopen(fp_path, "w"); }
+    if (!fpf) { snprintf(fp_path, sizeof fp_path, "%s/fp.log", rig_dir); fpf = fopen(fp_path, "w"); fpf_bytes = 0; }
     if (!trf && getenv("DSRIG_LIVE") && !getenv("DSRIG_TRACE")) return;   /* live play: no trace file (it grows ~MBs/min) */
-    if (!trf) { snprintf(tr_path, sizeof tr_path, "%s/trace.bin", rig_dir); trf = fopen(tr_path, "wb"); if (trf) setvbuf(trf, NULL, _IOFBF, 1 << 20); }
+    if (!trf) { snprintf(tr_path, sizeof tr_path, "%s/trace.bin", rig_dir); trf = fopen(tr_path, "wb"); trf_bytes = 0; if (trf) setvbuf(trf, NULL, _IOFBF, 1 << 20); }
+}
+static void rotate_trace(void) {                      /* trace.bin past 256 MB: keep one old part (trace.bin.1) */
+    char old[1300]; snprintf(old, sizeof old, "%s.1", tr_path);
+    fclose(trf); rename(tr_path, old);
+    trf = fopen(tr_path, "wb"); trf_bytes = 0;
+    if (trf) setvbuf(trf, NULL, _IOFBF, 1 << 20);
+    rig_log("det: trace.bin passed 256 MB: moved to trace.bin.1");
 }
 
 void rig_snap_ring_clear(void);
@@ -684,11 +755,13 @@ void rig_det_on_load(void) {
     if (fpf) { fclose(fpf); fpf = NULL; }
     open_logs();
     RState cur; rs_get(&cur);                                       /* sim stream from the session seed; */
-    F(VA_R_INIT, void (*)(int, void *))((int)seed, NULL);           /* load-time gameplay draws use it too */
+    r_init((int)seed);                                              /* load-time gameplay draws use it too */
     rs_get(&sim_state); rs_set(&cur);
     guid_sim_n = sr_sim_n = 0;
     uint32_t hs = hashcode_seed_fix();
-    rig_log("det: on (load), seed %u, HashCode.s_seed was %08x", seed, hs);
+    seeded = 0;
+    int hc = hashhelpers_pin();
+    rig_log("det: on (load), seed %u, HashCode.s_seed was %08x, HashHelpers.RandomSeed pinned now: %d", seed, hs, hc);
 }
 
 /* ---------------------------------------------------------------- commands */
@@ -1151,7 +1224,7 @@ char *rig_det_exec(const char *cmd, const char *line) {
         if (!det_on || jnum(line, "seed", &v)) {                    /* manual lock without a det load: seed now */
             det_on = 1; load_ranges(); open_logs();
             RState cur; rs_get(&cur);
-            F(VA_R_INIT, void (*)(int, void *))((int)seed, NULL);
+            r_init((int)seed);
             rs_get(&sim_state); rs_set(&cur);
             guid_sim_n = sr_sim_n = 0;
         }

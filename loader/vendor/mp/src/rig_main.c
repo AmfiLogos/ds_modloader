@@ -13,6 +13,7 @@ void ui_teams_install(void);
 #include <mach-o/loader.h>
 #include <dlfcn.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -107,6 +108,8 @@ __attribute__((constructor)) static void rig_init(void) {
     if (!d || !*d) return;
     snprintf(rig_dir, sizeof rig_dir, "%s", d);
     char lp[1100]; snprintf(lp, sizeof lp, "%s/rig.log", rig_dir);
+    struct stat lst;                            /* appended across starts: past 32 MB the old one becomes rig.log.1 */
+    if (!stat(lp, &lst) && lst.st_size > (32 << 20)) { char lp1[1110]; snprintf(lp1, sizeof lp1, "%s.1", lp); rename(lp, lp1); }
     lf = fopen(lp, "a");
     rig_log("---- rig start pid %d (batchmode arg: %s, hide windows: %s)", getpid(),
             getenv("DSRIG_BATCH") ? "yes" : "no", getenv("DSRIG_HIDEWIN") ? "yes" : "no");

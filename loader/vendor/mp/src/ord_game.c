@@ -412,8 +412,12 @@ static int owner_or_unit(const ord_msg *m, ord_guid *owner) {
     }
 }
 
+static int ord_trace(void) {               /* DSRIG_ORD_TRACE=1: one log line per captured / applied order (tests) */
+    static int t = -1; if (t < 0) t = getenv("DSRIG_ORD_TRACE") != NULL; return t;
+}
 static void send(ord_msg *m) {
     ord_wbuf w = { 0 };
+    if (ord_trace()) rig_log("ord trace: capture kind %d %s nsel %d", m->kind, m->ev ? m->ev->name : "-", m->ctx.nsel);
     if (ord_msg_write(&genv, &w, m) || w.n > 60000 - 20) {
         rig_log("ord: order kind %d (%s) not serializable (%zu bytes): dropped", m->kind, m->ev ? m->ev->name : "-", w.n);
         free(w.p); return;
@@ -1182,7 +1186,10 @@ int ord_apply(int player, const uint8_t *payload, size_t len) {
     executing = 1; exec_frame = rig_frames;
     int rc = ord_msg_read(&genv, payload, len, m);
     if (rc) rig_log("ord: bad order payload (%d, %zu bytes)", rc, len);
-    else rc = apply_msg(m, player);
+    else {
+        if (ord_trace()) rig_log("ord trace: apply player %d kind %d %s nsel %d", player, m->kind, m->ev ? m->ev->name : "-", m->ctx.nsel);
+        rc = apply_msg(m, player);
+    }
     executing = 0;
     release_all();
     if (rc) st.apply_failed++; else st.applied++;

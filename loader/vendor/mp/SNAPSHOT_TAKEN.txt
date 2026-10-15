@@ -1,1 +1,2 @@
-Wed Oct 14 19:14:33 WEST 2026
+Thu Oct 15 06:16:36 WEST 2026
+mp_fog.c re-copied Thu Oct 15 06:26:27 WEST 2026 (06:16 fix)

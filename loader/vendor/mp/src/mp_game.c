@@ -242,6 +242,59 @@ static void h_delete(Obj ld, Obj name, void *mi) {
     }
     o_delete(ld, name, mi);
 }
+
+/* ---------------------------------------------------------------- faster mp loads (core_next lane_join, 2026-10-15)
+   CampaignLoadingEventHandler.LoadCampaign (d__73 MoveNext 0xD7209C) ends with FinalizeCampaignLoad ->
+   "LoadCampaign.FinalizeCompleted" -> WaitUntilGameStabilizes -> "LoadCampaign.Stabilized". That wait (d__103, constants
+   at 0x57041B0: stable 0 / need 1.5 s / frame < 0.033 s / timeout 3.5 s) only counts unscaled frame time: it waits until
+   1.5 s of frames each under 33 ms, else 3.5 s. No sim tick runs in it (the world is locked and mp_ready is false while
+   the EventQueue coroutine runs), and its frame count already differs per machine, so ending it at once changes
+   nothing a peer can see. The world is the same; only the view gets its first heavy frames without the delay.
+   Only during an mp load (join point, guest load, resync, host reload): sync_file_pending. DSRIG_JOIN_FAST=0 = stock.
+   The map-loading poll (while MapLoadingChecker.IsLoading: WaitForDefaultTicks = WaitForSecondsRealtime(3 x tick))
+   polls every frame instead during an mp load. */
+#define VA_LOAD_CHECKPOINT 0xD6F9FC  /* void CampaignLoadingEventHandler.LogLoadCheckpoint(string step, string extra, bool census) */
+#define VA_STABILIZE_NEXT  0xD772A0  /* bool <WaitUntilGameStabilizes>d__103.MoveNext() (+0x10 state, +0x18 current) */
+#define VA_DEFTICKS_NEXT   0xD7709C  /* bool <WaitForDefaultTicks>d__102.MoveNext() (+0x10 state, +0x18 current) */
+static int join_fast = -1;           /* -1 not read yet */
+static unsigned stab_skips, poll_frames;
+static double load_t0;               /* first checkpoint of the current mp load (ms) */
+static int fast_on(void) {
+    if (join_fast < 0) { const char *e = getenv("DSRIG_JOIN_FAST"); join_fast = !(e && e[0] == '0'); }
+    return join_fast && sync_file_pending;
+}
+static void (*o_checkpoint)(Obj, Obj, Obj, bool, void *);
+static void h_checkpoint(Obj self, Obj step, Obj extra, bool census, void *mi) {
+    if (sync_file_pending && step) {
+        char s[96]; int32_t n = AT(step, 0x10, int32_t); const uint16_t *c = (const uint16_t *)((char *)step + 0x14);
+        int k = 0; for (int i = 0; i < n && k < (int)sizeof s - 1; i++) s[k++] = c[i] < 128 ? (char)c[i] : '?';
+        s[k] = 0;
+        double now = mono_ms();
+        if (!strcmp(s, "LoadCampaign.StartLoading") || !load_t0) load_t0 = now;
+        rig_log("mp: load step %s (+%.0f ms)", s, now - load_t0);
+    }
+    o_checkpoint(self, step, extra, census, mi);
+}
+static bool (*o_stabilize)(Obj, void *);
+static bool h_stabilize(Obj it, void *mi) {
+    if (fast_on()) {
+        AT(it, 0x10, int32_t) = -1;                          /* as at its own timeout: done */
+        stab_skips++;
+        rig_log("mp: load: stabilize wait skipped (mp load)");
+        return false;
+    }
+    return o_stabilize(it, mi);
+}
+static bool (*o_defticks)(Obj, void *);
+static bool h_defticks(Obj it, void *mi) {
+    if (fast_on() && AT(it, 0x10, int32_t) == 0) {         /* first step: yield null (one frame) instead of the timer; */
+        AT(it, 0x10, int32_t) = 1;                           /* the original's state 1 then ends it */
+        AT(it, 0x18, Obj) = NULL;
+        poll_frames++;
+        return true;
+    }
+    return o_defticks(it, mi);
+}
 /* Second guard: the last join-point save stays in memory until its load is done; if the load still lands on the
    title without a campaign (file gone, preflight failed), it is written again and re-queued (2 tries). */
 static uint8_t *retry_json, *retry_det; static size_t retry_n, retry_dl;
@@ -341,8 +394,13 @@ static void g_fp_step(void *u, uint32_t step) { (void)u; rig_snap_ring_put(step)
 static uint64_t g_deep(void *u) { (void)u; return rig_deep_hash(); }
 /* full-state check: the game's own save (CampaignSaveLoader.Save, guests allowed through mp_saving, iron-mode cleanup
    skipped), written as Saves/mp_fullcheck.json, read back, deleted (save list refreshed). One FNV hash per top-level
-   section ("  \"Key\": ...", 2-space indent) and per second-level key (4 spaces), as "name hash" lines. Not compared:
-   CampaignSaveHeader (it holds the save's own time). */
+   section ("  \"Key\": ...", 2-space indent) and per second-level key (4 spaces), as "name hash" lines. Not compared
+   (local to each player, not simulation): CampaignSaveHeader (the save's own time) and in CampaignSettingSaveData the
+   GameSpeed, CameraSettingSaveData and CampaignUISettingSaveData (soak 2026-10-14: the camera differed at once). */
+static int full_local(const char *top, const char *sub) {
+    if (!strcmp(top, "CampaignSaveHeader")) return 1;
+    return !strcmp(top, "CampaignSettingSaveData") && (!strcmp(sub, "GameSpeed") || !strcmp(sub, "CameraSettingSaveData") || !strcmp(sub, "CampaignUISettingSaveData"));
+}
 #define FULL_NAME "mp_fullcheck"
 static int g_full(void *u, uint8_t **data, size_t *len) {
     (void)u;
@@ -352,24 +410,37 @@ static int g_full(void *u, uint8_t **data, size_t *len) {
     if (!f) { rig_log("mp: full-state check: save failed"); return -1; }
     fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
     char *j = malloc((size_t)n + 1); size_t got = fread(j, 1, (size_t)n, f); fclose(f); j[got] = 0;
-    unlink(p);
+    if (getenv("DSRIG_FULL_KEEP")) {                  /* tests: keep each check's save to diff the two peers' files */
+        char d[1300], q[1500]; snprintf(d, sizeof d, "%s/data/fullcheck", rig_dir); mkdir(d, 0755);
+        snprintf(q, sizeof q, "%s/%u.json", d, S ? mp_cur_step(S) : 0); rename(p, q);
+    } else unlink(p);
     Obj ld = mf ? AT(mf, 0x180, Obj) : NULL; if (ld) F(VA_TRYREFRESH, void (*)(Obj, void *))(ld, NULL);
     Buf o = {0};
-    char top[96] = "", sub[160] = ""; uint64_t ht = 0, hs = 0; int in_top = 0, in_sub = 0;
-    #define FLUSH_SUB() do { if (in_sub && strcmp(top, "CampaignSaveHeader")) bput(&o, "%s/%s %016llx\n", top, sub, (unsigned long long)hs); in_sub = 0; } while (0)
+    char top[96] = "", sub[160] = ""; uint64_t ht = 0, hs = 0; int in_top = 0, in_sub = 0, local = 0, view_skip = 0;
+    #define FLUSH_SUB() do { if (in_sub && !local) bput(&o, "%s/%s %016llx\n", top, sub, (unsigned long long)hs); in_sub = 0; local = 0; } while (0)
     #define FLUSH_TOP() do { FLUSH_SUB(); if (in_top && strcmp(top, "CampaignSaveHeader")) bput(&o, "%s %016llx\n", top, (unsigned long long)ht); in_top = 0; } while (0)
     for (char *ln = j, *nx; ln && *ln; ln = nx) {
         nx = strchr(ln, '\n'); size_t L = nx ? (size_t)(nx - ln) : strlen(ln); if (nx) nx++;
+        if (L && ln[L - 1] == '\r') L--;               /* Windows writes CRLF: hash the same bytes as the Mac (gate 2026-10-14:
+                                                          every section differed on Mac host + Windows guest) */
         if (L > 3 && ln[0] == ' ' && ln[1] == ' ' && ln[2] == '"') {                    /* top-level key */
             FLUSH_TOP();
             const char *e = memchr(ln + 3, '"', L - 3); size_t kl = e ? (size_t)(e - ln - 3) : 0; if (kl > 90) kl = 90;
-            memcpy(top, ln + 3, kl); top[kl] = 0; ht = 0xCBF29CE484222325ULL; in_top = 1;
+            memcpy(top, ln + 3, kl); top[kl] = 0; ht = 0xCBF29CE484222325ULL; in_top = 1; view_skip = 0;
         } else if (in_top && L > 5 && !memcmp(ln, "    \"", 5)) {                     /* second-level key */
             FLUSH_SUB();
             const char *e = memchr(ln + 5, '"', L - 5); size_t kl = e ? (size_t)(e - ln - 5) : 0; if (kl > 150) kl = 150;
-            memcpy(sub, ln + 5, kl); sub[kl] = 0; hs = 0xCBF29CE484222325ULL; in_sub = 1;
+            memcpy(sub, ln + 5, kl); sub[kl] = 0; hs = 0xCBF29CE484222325ULL; in_sub = 1; local = full_local(top, sub);
         }
-        if (in_top) ht = fnv(ht, ln, L);
+        /* a map's BuildingVariations / BuildingVariationSavedFlags (8-space keys under RawMapContainerSaveData/Maps/<map>):
+           the sprite variant each building tile shows, picked by the VIEW (EntityObjectsContainer.ResolveSavedSpriteVariation)
+           when the tile's object is built on screen, so it depends on where each player's camera has been. Display only:
+           not compared (soak 2026-10-15, DSRIG_FULL_KEEP: the only field that differed, 7 of 87 checks; fingerprints and
+           deep hash equal). Owner 2026-10-14: view / fog state need not be synced. */
+        if (!strcmp(top, "RawMapContainerSaveData") && L > 9 && !memcmp(ln, "        \"", 9))
+            view_skip = !memcmp(ln + 9, "BuildingVariation", 17);
+        if (view_skip) continue;
+        if (in_top && !local) ht = fnv(ht, ln, L);
         if (in_sub) hs = fnv(hs, ln, L);
     }
     FLUSH_TOP();
@@ -618,6 +689,10 @@ static void install_hooks(void) {
         rig_log("mp: SAVE HOOKS FAILED: a guest could write the mp world, an iron-mode host could lose its saves");
     if (rig_hook(VA_STEAM_GETNEXT, (void *)h_getnext, (void **)&o_getnext, "Steamworks ManualDispatch_GetNextCallback"))
         rig_log("mp: Steam invite hook failed: accepted invites only work through +connect_lobby");
+    if (rig_hook(VA_LOAD_CHECKPOINT, (void *)h_checkpoint, (void **)&o_checkpoint, "CampaignLoadingEventHandler.LogLoadCheckpoint") ||
+        rig_hook(VA_STABILIZE_NEXT, (void *)h_stabilize, (void **)&o_stabilize, "WaitUntilGameStabilizes.MoveNext") ||
+        rig_hook(VA_DEFTICKS_NEXT, (void *)h_defticks, (void **)&o_defticks, "WaitForDefaultTicks.MoveNext"))
+        rig_log("mp: load-speed hooks failed: mp loads keep the stock waits");
 }
 
 /* Hooks always go in: with no session they pass through. mp.json (optional) starts a session at the
@@ -854,7 +929,7 @@ void mp_game_poll(void) {
         if (!st.loading && !st.needs_state) { rig_log("mp: back on the title: leaving the session"); mp_steam_leave(); }
     }
     if (sync_file_pending && rig_det_mp_ready() && !host_reload) {
-        sync_file_pending = 0; sync_file_delete("load done");
+        sync_file_pending = 0; sync_file_delete("load done"); load_t0 = 0;
         free(retry_json); free(retry_det); retry_json = retry_det = NULL; pending_since = 0;
     }
     /* load stuck? On the title (the campaign was closed, then the preflight failed) or still in the old campaign
@@ -1090,6 +1165,7 @@ void mp_game_status(Buf *b) {
     bstr(b, report_path);
     bput(b, ",\"guest_world\":%s,\"saves_blocked\":%llu,\"sync_files_deleted\":%llu,\"sync_file_pending\":%s,\"cache_refreshes\":%llu,\"game_deletes_blocked\":%llu,\"load_retries\":%d",
          guest_world ? "true" : "false", (unsigned long long)saves_blocked, (unsigned long long)sync_files_deleted, sync_file_pending ? "true" : "false", (unsigned long long)cache_refreshes, (unsigned long long)game_deletes_blocked, load_retries);
+    bput(b, ",\"load_stab_skips\":%u,\"load_poll_frames\":%u,\"join_fast\":%d", stab_skips, poll_frames, join_fast);
     dsnet_client *dc = mp_client(S);
     {   /* owner tables (cross-play check: same on every peer) and why a desync was flagged (bit 1 game, 2 owners) */
         uint64_t hu = 0, hi = 0; int nu = 0, ni = 0;

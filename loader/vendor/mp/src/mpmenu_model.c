@@ -7,9 +7,9 @@
 /* short labels (ux #17): at the stock button size 22 (design #8) the host page buttons fit on one line at 960 and 1512 */
 void mpm_settings_summary(const mpm_settings *s, char *out, size_t cap) {
     static const char *ev[] = { "owner", "host", "first", "majority" }, *po[] = { "shared", "per player", "split", "multiplied" };
-    snprintf(out, cap, "Pause: %s \xC2\xB7 Speed-up: %s \xC2\xB7 Gear: %s \xC2\xB7 Units: %d \xC2\xB7 Population: %s \xC2\xB7 Events: %s \xC2\xB7 Admin: %s", mpm_pause_text(s->pause_mode),
+    snprintf(out, cap, "Pause: %s \xC2\xB7 Speed-up: %s \xC2\xB7 Gear: %s \xC2\xB7 Units: %d \xC2\xB7 Population: %s \xC2\xB7 Events: %s \xC2\xB7 Admin: %s \xC2\xB7 Shared fog: %s", mpm_pause_text(s->pause_mode),
              s->speedup ? "on" : "off", mpm_gear_text(s->gear), s->units, po[s->population >= 0 && s->population < 4 ? s->population : 0],
-             ev[s->events >= 0 && s->events < 4 ? s->events : 0], s->admin ? "on" : "off");
+             ev[s->events >= 0 && s->events < 4 ? s->events : 0], s->admin ? "on" : "off", s->fog ? "on" : "off");
 }
 const char *mpm_population_desc(int mode) {           /* owner's wording (lead 2026-10-13) */
     return mode == 1 ? "Each player can recruit up to the clan limit for himself"
@@ -24,15 +24,16 @@ const char *mpm_rule_tip(int row) {                     /* tooltip bodies (resea
         "The most units each player can control at the same time (1, 2, 3, 4 or 6). The host can change it during play.",
         "How the clan's population limit is shared. Shared: one limit for everyone, first come. Per player: each player has the full limit. Split equally: the limit is divided between players. Multiplied: limit times players, shared. A hire needs room here and under Units per Player.",
         "Who answers an event. Owner of the unit: the player who controls the unit in the event. Host only. First to answer. Majority vote: the host breaks a tie.",
-        "On: the host can order every unit and release the units of absent players. Off: the host is a normal player for other players' units." };
+        "On: the host can order every unit and release the units of absent players. Off: the host is a normal player for other players' units.",
+        "Off: each player sees only what their own units see; places explored by others stay dark until a reload. On: everyone sees what any unit has revealed. The world is the same for everyone either way." };
     return row >= 0 && row < MPM_RULE_ROWS ? t[row] : "";
 }
 const char *mpm_rule_tip_title(int row) {
-    static const char *t[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per Player", "Population", "Event Choices", "Admin Mode" };
+    static const char *t[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per Player", "Population", "Event Choices", "Admin Mode", "Shared Fog of War" };
     return row >= 0 && row < MPM_RULE_ROWS ? t[row] : "";
 }
 const char *mpm_rule_label(int row) {
-    static const char *l[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per player", "Population", "Event choices", "Admin mode" };
+    static const char *l[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per player", "Population", "Event choices", "Admin mode", "Shared fog" };
     return row >= 0 && row < MPM_RULE_ROWS ? l[row] : "";
 }
 void mpm_rule_value(const mpm_settings *s, int row, char *out, size_t cap) {
@@ -44,6 +45,7 @@ void mpm_rule_value(const mpm_settings *s, int row, char *out, size_t cap) {
     case 4: snprintf(out, cap, "%s", s->population == 1 ? "Per player" : s->population == 2 ? "Split equally" : s->population == 3 ? "Multiplied" : "Shared"); break;
     case 5: snprintf(out, cap, "%s", s->events == 1 ? "Host only" : s->events == 2 ? "First to answer" : s->events == 3 ? "Majority vote" : "Owner of the unit"); break;
     case 6: snprintf(out, cap, "%s", s->admin ? "On" : "Off"); break;
+    case 7: snprintf(out, cap, "%s", s->fog ? "On" : "Off"); break;
     default: out[0] = 0;
     }
 }
@@ -116,6 +118,7 @@ static int rule_arrow(mpm_model *m, int c) {
     case MPB_EVENTS_NEXT: m->set.events = (m->set.events + 1) % 4; return 1;
     case MPB_POP_PREV: m->set.population = (m->set.population + 3) % 4; return 1;
     case MPB_POP_NEXT: m->set.population = (m->set.population + 1) % 4; return 1;
+    case MPB_FOG_PREV: case MPB_FOG_NEXT: m->set.fog = !m->set.fog; return 1;
     }
     return 0;
 }

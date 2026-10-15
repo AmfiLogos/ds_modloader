@@ -42,7 +42,7 @@ typedef struct mp_config {
     int  auto_resync;           /* 1 = ask the host for its save when flagged desynced (default 1) */
     int  resync_delay_ms;       /* wait this long after the desync flag before asking (default 300) */
     int  full_check_steps;      /* lan_v10: every N steps both peers serialize the world the way the save does and compare
-                                   per section (0 = off; default 7200 = 2 min at 1x). A difference = desync + full reload */
+                                   per section (0 = off; default 10800 = 3 min at 1x; ~130 ms on each peer). A difference = desync + full reload */
     int  partial_resync;        /* lan_v10: 1 = first try to patch only what differs, in place (about 1 s, no reload),
                                    the full save only if that fails or the difference is too large (default 1) */
     int  auto_resume;           /* 1 = after an auto pause (join / desync), re-send this player's own run vote
@@ -50,6 +50,7 @@ typedef struct mp_config {
     int  connect_timeout_ms;    /* wait for the WELCOME (default 5000) */
     char expect_world[40];      /* client (lan_v10 F17): the campaign id ("xxxxxxxx-xxxx-...") this join is meant for, "" = any.
                                    A host running another world -> refused (DSNET_REJ_OTHER_WORLD), nothing loaded */
+    int  shared_fog;            /* host: 1 = vanilla fog for all, 0 (default) = each player sees what his own units see (mp_fog.c) */
     int  need_save;             /* client: has no campaign loaded (menu / Steam join): ask the host for its save
                                    right after the WELCOME, even at step 0 (default 0; mp.json pairs load the same save) */
 } mp_config;
@@ -57,9 +58,12 @@ typedef struct mp_config {
 void mp_config_defaults(mp_config *c);
 /* Read instances/X/mp.json: {"role":"host"|"client","host":"1.2.3.4","port":7777,"name":"The owner",
  * "allow_speedup":true,"allow_pause":true, optional "min_players","tick_ms","fp_interval",
- * "auto_resync","resync_delay_ms","auto_resume","connect_timeout_ms","need_save"}. 0 ok, -1 file, -2 bad/missing role. */
+ * "auto_resync","resync_delay_ms","auto_resume","connect_timeout_ms","need_save","shared_fog"}. 0 ok, -1 file, -2 bad/missing role. */
 int  mp_config_load(const char *path, mp_config *out);
 int  mp_config_parse(const char *json, mp_config *out);
+/* Gameplay mods + match rule from the launcher's session file (DSML_SESSION), for the HELLO (dsnet_set_modset):
+ * mods = modset_lines '\n'-joined (give DSNET_MODLINES_MAX bytes). */
+int  mp_session_mods(int *vanilla, char modset[65], char *mods, size_t n);
 
 typedef struct mp_game_api {
     void *user;

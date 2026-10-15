@@ -1,0 +1,8 @@
+# teams_test: pure logic of the Teams screen (ui_teams_model.c). make -f Makefile.teams test
+CC = clang
+CFLAGS = -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -I..
+teams_test: teams_test.c ../ui_teams_model.c ../ui_teams_model.h ../ui_model.c
+	nice -n 19 $(CC) $(CFLAGS) -o $@ teams_test.c ../ui_teams_model.c ../ui_model.c
+test: teams_test
+	nice -n 19 ./teams_test
+.PHONY: test

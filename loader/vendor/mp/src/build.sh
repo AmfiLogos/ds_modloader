@@ -11,7 +11,7 @@ set -e; cd "${0:A:h}"; mkdir -p ../build
 nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0 -O2 -Wall -Wno-unused-function -D_DARWIN_C_SOURCE -dynamiclib -framework AppKit -framework CoreGraphics -framework CoreFoundation \
   -install_name @rpath/dsrig.dylib -o ../build/dsrig.dylib.tmp \
   rig_main.c rig_hook.c rig_sock.c rig_cmd.c rig_win.c rig_det.c \
-  mp_core.c mp_config.c mp_game.c \
+  mp_core.c mp_config.c mp_game.c mp_fog.c \
   net/dsnet_link.c net/dsnet_server.c net/dsnet_client.c net/steam/dsnet_steam.c \
   ord_core.c ord_game.c ord_mp.c ord_test/ord_smoke.c \
   ui_game.c ui_model.c ui_tip.c ui_teams.c ui_teams_model.c mpmenu.c mpmenu_model.c \

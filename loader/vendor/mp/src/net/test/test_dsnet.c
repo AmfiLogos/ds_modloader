@@ -641,6 +641,36 @@ static void test_late_join3(void) {
            ok ? "PASS" : "FAIL", (now_ms() - t0) / 1000);
 }
 
+/* ---- 6c. the server's command log is trimmed after the start; two later joins still get everything they need ---- */
+static void test_log_trim(void) {
+    int ok = 1; double t0 = now_ms();
+    uint32_t old_min = dsnet_log_trim_min; dsnet_log_trim_min = 16;
+    dsnet_cfg cfg = test_cfg(2);
+    dsnet_server *srv; peer *ps[4];
+    if (setup_cfg(&srv, ps, 2, 900, NULL, NULL, &cfg)) { printf("  FAIL setup\n"); failures++; dsnet_log_trim_min = old_min; return; }
+    for (int i = 0; i < 2; i++) { ps[i]->orders_every = 1; peer_go(ps[i]); }
+    while (ps[0]->timer < 150) sleep_ms(5);
+    ps[2] = peer_new("late1", dsnet_client_connect_tcp("127.0.0.1", dsnet_server_port(srv), "late1"), 900);
+    CHECK(dsnet_wait_welcome(ps[2]->c, 2000) == 0, "no welcome 1");
+    ps[2]->orders_every = 1; peer_go(ps[2]);
+    while (ps[0]->timer < 400) sleep_ms(5);
+    ps[3] = peer_new("late2", dsnet_client_connect_tcp("127.0.0.1", dsnet_server_port(srv), "late2"), 900);
+    CHECK(dsnet_wait_welcome(ps[3]->c, 2000) == 0, "no welcome 2");
+    ps[3]->orders_every = 1; peer_go(ps[3]);
+    CHECK(wait_done(ps, 4, 30000) == 0, "timeout");
+    dsnet_server_stats st; dsnet_server_get_stats(srv, &st);
+    CHECK(st.log_base > 0 && st.log_base < st.sent_cmds, "log not trimmed (base %u of %u)", st.log_base, st.sent_cmds);
+    int common;
+    for (int i = 1; i < 4; i++) {
+        CHECK(!dsnet_is_desynced(ps[i]->c, NULL, NULL) && !ps[i]->desync_seen_at, "%s desynced", ps[i]->name);
+        CHECK(compare(ps[0], ps[i], &common) && common > 300, "%s diverged (%d common)", ps[i]->name, common);
+    }
+    stop_all(ps, 4, srv);
+    dsnet_log_trim_min = old_min;
+    printf("%s log_trim: 2 late joins, server log kept from seq %u of %u, all equal (%.1fs)\n",
+           ok ? "PASS" : "FAIL", st.log_base, st.sent_cmds, (now_ms() - t0) / 1000);
+}
+
 /* ---- 6. late joiner gets a 64 MB save ---- */
 static void test_late_join(void) {
     int ok = 1; double t0 = now_ms();
@@ -726,6 +756,45 @@ static void test_handshake(void) {
     dsnet_set_identity("", 0);
     dsnet_server_stop(srv);
     printf("%s join_checks: %s (%.1fs)\n", ok ? "PASS" : "FAIL", res, (now_ms() - t0) / 1000);
+}
+
+/* ---- 7b. HELLO gameplay mod set + match rule (launcher session): the host's HELLO is the reference ---- */
+static void test_modset(void) {
+    int ok = 1; double t0 = now_ms();
+    const char *M1 = "1111111111111111111111111111111111111111111111111111111111111111";
+    const char *M2 = "2222222222222222222222222222222222222222222222222222222222222222";
+    struct { int hrule; const char *hset, *hmods; const char *jset, *jmods; int want; const char *words; } cases[] = {
+        { DSNET_MATCH_MODS,    M1, "hell-difficulty@2.0.0", M1, "hell-difficulty@2.0.0", 0, NULL },
+        { DSNET_MATCH_MODS,    M1, "hell-difficulty@2.0.0", "", "", DSNET_REJ_MODSET, "host: hell-difficulty@2.0.0; you: none" },
+        { DSNET_MATCH_MODS,    M1, "hell-difficulty@2.0.0:aa:bb\nzz-mod@1.2.0:cc", M2, "cheaper-recruits@1.0.0:dd", DSNET_REJ_MODSET, "(host: hell-difficulty@2.0.0, zz-mod@1.2.0; you: cheaper-recruits@1.0.0)" },
+        { DSNET_MATCH_MODS,    "", "", DSNET_MODSET_NONE, "", 0, NULL },            /* no launcher == the hash of no mods */
+        { DSNET_MATCH_VANILLA, "", "", "", "", 0, NULL },
+        { DSNET_MATCH_VANILLA, "", "", M1, "hell-difficulty@2.0.0", DSNET_REJ_MODSET, "vanilla only: turn off your gameplay mods (hell-difficulty@2.0.0)" },
+        { DSNET_MATCH_VANILLA, M1, "hell-difficulty@2.0.0", "", "", DSNET_REJ_MODSET, "the host runs gameplay mods" },
+    };
+    int n = (int)(sizeof cases / sizeof *cases), in = 0, out = 0;
+    for (int i = 0; i < n; i++) {
+        dsnet_cfg cfg = test_cfg(1);
+        dsnet_server *srv = dsnet_server_start(&cfg);
+        dsnet_set_modset(cases[i].hrule, cases[i].hset, cases[i].hmods);
+        dsnet_client *h = dsnet_client_connect_local(srv, "host");
+        CHECK(dsnet_wait_welcome(h, 2000) == 0, "case %d: host not in", i);
+        dsnet_set_modset(DSNET_MATCH_MODS, cases[i].jset, cases[i].jmods);   /* a joiner's rule is not used */
+        dsnet_client *c = dsnet_client_connect_tcp("127.0.0.1", dsnet_server_port(srv), "j");
+        int r = dsnet_wait_welcome(c, 2000), why = dsnet_reject_reason(c);
+        if (cases[i].want) {
+            const char *w = dsnet_reject_text(why);
+            CHECK(r == -2 && why == cases[i].want && strstr(w, cases[i].words), "case %d: rc %d reason %d words '%s'", i, r, why, w);
+            int hr = -1; char hl[DSNET_MODLINES_MAX] = "";
+            CHECK(dsnet_reject_host_mods(&hr, hl, sizeof hl) == 0 && hr == cases[i].hrule && !strcmp(hl, cases[i].hmods), "case %d: host mods %d '%s'", i, hr, hl);
+            out++;
+        } else { CHECK(r == 0 && why == 0, "case %d: rc %d reason %d", i, r, why); in++; }
+        dsnet_client_close(c); dsnet_client_close(h);
+        dsnet_server_stop(srv);
+    }
+    dsnet_set_modset(DSNET_MATCH_MODS, "", "");
+    printf("%s modset: %d joins let in, %d refused with the host's / joiner's mod lists in the words (%.1fs)\n",
+           ok ? "PASS" : "FAIL", in, out, (now_ms() - t0) / 1000);
 }
 
 /* ---- 8. lobby: allow_speedup = 0 caps the speed at 1x ---- */
@@ -1700,8 +1769,8 @@ static void test_rules(void) {
     guid(b, 0xA5); b[16] = 1; script_add(c1, 170, DSNET_OWNERSHIP, b, 17);    /* limit 6 again: accepted */
     peer_go(h); peer_go(c1); peer_go(c2);
     int step = 0; peer *c3 = NULL;
-    dsnet_rules ra = { DSNET_PAUSE_NONE, 0, DSNET_GEAR_SHARED_ANY, 2, DSNET_EVENT_FIRST, DSNET_POP_SPLIT }, rb = { DSNET_PAUSE_ANYONE, 1, DSNET_GEAR_SHARED_OWN, 6, DSNET_EVENT_MAJORITY, DSNET_POP_MULTIPLIED },
-                bad = { 1, 1, 0, 5, 0, 0 };
+    dsnet_rules ra = { DSNET_PAUSE_NONE, 0, DSNET_GEAR_SHARED_ANY, 2, DSNET_EVENT_FIRST, DSNET_POP_SPLIT, 0 }, rb = { DSNET_PAUSE_ANYONE, 1, DSNET_GEAR_SHARED_OWN, 6, DSNET_EVENT_MAJORITY, DSNET_POP_MULTIPLIED, 1 },
+                bad = { 1, 1, 0, 5, 0, 0, 0 };
     int bad_rc = 0, guest_rc = 0;
     while (!(h->done && c1->done && c2->done && c3 && c3->done)) {
         uint32_t t = h->timer;
@@ -1724,8 +1793,8 @@ static void test_rules(void) {
     peer *ps4[4] = { h, c1, c2, c3 };
     for (int i = 0; i < 4; i++) {
         peer *q = ps4[i]; dsnet_rules r; dsnet_rules_get(q->c, &r);
-        CHECK(r.pause_mode == rb.pause_mode && r.allow_speedup == 1 && r.gear_mode == rb.gear_mode && r.units_per_player == 6 && r.event_choice == DSNET_EVENT_MAJORITY && r.population == DSNET_POP_MULTIPLIED,
-              "%s: rules %d/%d/%d/%d at the end", q->name, r.pause_mode, r.allow_speedup, r.gear_mode, r.units_per_player);
+        CHECK(r.pause_mode == rb.pause_mode && r.allow_speedup == 1 && r.gear_mode == rb.gear_mode && r.units_per_player == 6 && r.event_choice == DSNET_EVENT_MAJORITY && r.population == DSNET_POP_MULTIPLIED
+              && r.shared_fog == 1, "%s: rules %d/%d/%d/%d fog %d at the end", q->name, r.pause_mode, r.allow_speedup, r.gear_mode, r.units_per_player, r.shared_fog);
         CHECK(dsnet_owned_count(q->c, 1) == 4 && dsnet_owner_of(q->c, g4) == -1 && dsnet_owner_of(q->c, g5) == 1,
               "%s: c1 owns %d (4th free %d, A5 %d)", q->name, dsnet_owned_count(q->c, 1), dsnet_owner_of(q->c, g4), dsnet_owner_of(q->c, g5));
         if (q != c3) CHECK(dsnet_claim_refusals(q->c, 1) == 2, "%s: refusals %u (want 2)", q->name, dsnet_claim_refusals(q->c, 1));
@@ -1837,7 +1906,9 @@ int main(int argc, char **argv) {
     RUN("marks", test_marks());
     RUN("late3", test_late_join3());
     RUN("late", test_late_join());
+    RUN("logtrim", test_log_trim());
     RUN("handshake", test_handshake());
+    RUN("modset", test_modset());
     RUN("connect", test_connect());
     RUN("rules", test_rules());
     RUN("lend", test_lend());

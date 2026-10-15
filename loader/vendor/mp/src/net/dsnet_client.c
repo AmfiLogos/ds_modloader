@@ -42,7 +42,7 @@ typedef struct simstate {
     tag item[DSNET_MAX_ITEMS]; int nitem;        /* item -> owner (gear OWN_STORAGE) */
     uint8_t ready[DSNET_MAX_PLAYERS], party_n[DSNET_MAX_PLAYERS];
     uint8_t party[DSNET_MAX_PLAYERS][DSNET_PARTY_MAX][16];
-    uint8_t rules[6];                            /* pause_mode, allow_speedup, gear_mode, units_per_player, event_choice, population */
+    uint8_t rules[7];                            /* pause_mode, allow_speedup, gear_mode, units_per_player, event_choice, population, shared_fog */
     tag ctrl[DSNET_MAX_UNITS]; int nctrl;        /* lent units: unit -> controller (known[] index), DSNET_LEND */
     uint32_t lend_seq;                           /* lend events (local, not saved): count + the last one */
     struct { uint8_t unit[16]; int owner, from, to, why; } lend_last;
@@ -181,6 +181,15 @@ static void on_frame(dsnet_client *c, const uint8_t *p, uint32_t n) {
         break;
     case P_REJECT:
         if (n >= 2) c->rejected = p[1];
+        dsnet_reject_detail[0] = 0; dsnet_reject_has_host = 0;
+        if (n >= 4 && 4 + (uint32_t)get16(p + 2) <= n) {           /* u16 words, words, [u8 host rule, u16 len, host lines] */
+            uint32_t wl = get16(p + 2), o = 4 + wl;
+            snprintf(dsnet_reject_detail, sizeof dsnet_reject_detail, "%.*s", (int)wl, (const char *)p + 4);
+            if (o + 3 <= n && o + 3 + (uint32_t)get16(p + o + 1) <= n) {
+                dsnet_reject_host_rule = p[o]; dsnet_reject_has_host = 1;
+                snprintf(dsnet_reject_host_lines, sizeof dsnet_reject_host_lines, "%.*s", (int)get16(p + o + 1), (const char *)p + o + 3);
+            }
+        }
         dsnet_logf("client: rejected by server, reason %d", c->rejected);
         pthread_cond_broadcast(&c->cv);
         break;
@@ -195,6 +204,7 @@ static void on_frame(dsnet_client *c, const uint8_t *p, uint32_t n) {
         c->sim.rules[3] = n >= 20 && p[19] ? p[19] : DSNET_UNITS_DEFAULT;
         c->sim.rules[4] = n >= 21 && p[20] <= DSNET_EVENT_MAJORITY ? p[20] : DSNET_EVENT_OWNER;
         c->sim.rules[5] = n >= 22 && p[21] <= DSNET_POP_MULTIPLIED ? p[21] : DSNET_POP_SHARED;
+        c->sim.rules[6] = n >= 72 && p[71] == 1;                       /* shared fog (proto 2) */
         if (n >= 71 && p[22]) { c->has_world = 1; memcpy(c->world_id, p + 23, 16); memcpy(c->world_name, p + 39, 32); c->world_name[31] = 0; }
         c->welcomed = 1;
         pthread_cond_broadcast(&c->cv);
@@ -319,14 +329,16 @@ static dsnet_client *client_new(int fd, const char *name, int want_host) {
     pthread_mutex_init(&c->mu, NULL);
     pthread_cond_init(&c->cv, NULL);
     c->player = -1; c->exec_player = -1; c->fp_interval = 30; c->tpt_ms = 1000.0f / 60;
-    uint8_t b[96], *p = b;
+    uint8_t b[128 + DSNET_MODLINES_MAX], *p = b;
     size_t nl = name ? strlen(name) : 0; if (nl > 31) nl = 31;
-    size_t bl = strlen(dsnet_build_id);
+    size_t bl = strlen(dsnet_build_id), ml = strlen(dsnet_modset), dl = strlen(dsnet_mod_lines);
     p = put8(p, P_HELLO); p = put16(p, DSNET_PROTO); p = put8(p, want_host);
     p = put32(p, dsnet_mod_version); p = put32(p, (uint32_t)fegetround());
     if (dsnet_uid_set) memcpy(p, dsnet_uid, 16); else arc4random_buf(p, 16);
     p += 16;
     p = put8(p, bl); memcpy(p, dsnet_build_id, bl); p += bl;
+    p = put8(p, dsnet_match_rule); p = put8(p, ml); memcpy(p, dsnet_modset, ml); p += ml;
+    p = put16(p, (uint16_t)dl); memcpy(p, dsnet_mod_lines, dl); p += dl;
     memcpy(p, name, nl); p += nl;
     dsnet_link_send(&c->link, b, p - b);
     c->last_rx = dsnet_now_ms();
@@ -494,6 +506,7 @@ const char *dsnet_reject_text(int why) {
     case DSNET_REJ_FULL: return "the game is full";
     case DSNET_REJ_DUP_ID: return "you are already in this game (same Steam account or same copy of the game)";
     case DSNET_REJ_OTHER_WORLD: return "the host is playing another world now";
+    case DSNET_REJ_MODSET: return dsnet_reject_detail[0] ? dsnet_reject_detail : "your gameplay mods are different from the host's: start the game from the launcher with the host's mods";
     default: return "";
     }
 }
@@ -523,7 +536,7 @@ static size_t sim_serialize(const simstate *s, uint8_t *out) {
     p = put32(p, s->pause_counter);
     memcpy(p, s->name, sizeof s->name); p += sizeof s->name;
     *p++ = s->admin;
-    memcpy(p, s->rules, 6); p += 6;
+    memcpy(p, s->rules, 7); p += 7;
     *p++ = s->nknown;
     for (int i = 0; i < s->nknown; i++) { memcpy(p, s->known[i].uid, 16); memcpy(p + 16, s->known[i].name, 32); p[48] = s->known[i].slot; p[49] = s->known[i].temp; p[50] = s->known[i].color; p += 51; }
     *p++ = s->nhold;
@@ -539,7 +552,7 @@ static size_t sim_serialize(const simstate *s, uint8_t *out) {
     for (int i = 0; i < s->nctrl; i++) { memcpy(p, s->ctrl[i].guid, 16); p += 16; *p++ = s->ctrl[i].owner; }
     return (size_t)(p - out);
 }
-#define SIM_FIXED (4 + 4 + 3 * DSNET_MAX_PLAYERS + 5 * DSNET_MAX_PLAYERS + 4 + 32 * DSNET_MAX_PLAYERS + 1 + 6)
+#define SIM_FIXED (4 + 4 + 3 * DSNET_MAX_PLAYERS + 5 * DSNET_MAX_PLAYERS + 4 + 32 * DSNET_MAX_PLAYERS + 1 + 7)
 #define SIM_BYTES (SIM_FIXED + 1 + DSNET_MAX_KNOWN * 51 + 1 + DSNET_MAX_HOLDS * 17 + 2 + DSNET_MAX_UNITS * 17 + 2 + DSNET_MAX_ITEMS * 17 \
                    + 2 * DSNET_MAX_PLAYERS + DSNET_MAX_PLAYERS * DSNET_PARTY_MAX * 16 + 2 + DSNET_MAX_UNITS * 17)   /* maximum */
 _Static_assert(SIM_BYTES == DSNET_SAVE_OVERHEAD, "update DSNET_SAVE_OVERHEAD");
@@ -558,7 +571,8 @@ static long sim_deserialize(simstate *s, const uint8_t *p0, size_t n) {
     memcpy(s->name, p, sizeof s->name); p += sizeof s->name;
     for (int i = 0; i < DSNET_MAX_PLAYERS; i++) s->name[i][31] = 0;
     s->admin = *p++;
-    memcpy(s->rules, p, 6); p += 6;
+    memcpy(s->rules, p, 7); p += 7;
+    if (s->rules[6] > 1) s->rules[6] = 0;
     if (s->rules[4] > DSNET_EVENT_MAJORITY) s->rules[4] = DSNET_EVENT_OWNER;
     if (s->rules[5] > DSNET_POP_MULTIPLIED) s->rules[5] = DSNET_POP_SHARED;
     if (!s->rules[3]) s->rules[3] = DSNET_UNITS_DEFAULT;
@@ -850,6 +864,7 @@ static void sim_apply(simstate *s, const dsnet_cmd *cmd) {
             memcpy(s->rules, cmd->payload, 4);
             if (cmd->len >= 5 && cmd->payload[4] <= DSNET_EVENT_MAJORITY) s->rules[4] = cmd->payload[4];
             if (cmd->len >= 6 && cmd->payload[5] <= DSNET_POP_MULTIPLIED) s->rules[5] = cmd->payload[5];
+            if (cmd->len >= 7 && cmd->payload[6] <= 1) s->rules[6] = cmd->payload[6];
         }
         break;
     case DSNET_ITEM_OWNER:
@@ -1228,18 +1243,19 @@ int dsnet_pause_mode(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->s
 void dsnet_rules_get(dsnet_client *c, dsnet_rules *o) {
     pthread_mutex_lock(&c->mu);
     o->pause_mode = c->sim.rules[0]; o->allow_speedup = c->sim.rules[1]; o->gear_mode = c->sim.rules[2]; o->units_per_player = UNITS_RULE(&c->sim);
-    o->event_choice = c->sim.rules[4]; o->population = c->sim.rules[5];
+    o->event_choice = c->sim.rules[4]; o->population = c->sim.rules[5]; o->shared_fog = c->sim.rules[6];
     pthread_mutex_unlock(&c->mu);
 }
 int dsnet_rules_valid(const dsnet_rules *r) {
     if (!r || r->pause_mode < 0 || r->pause_mode > 255 || r->gear_mode < 0 || r->gear_mode > 255 || r->units_per_player < 0 || r->units_per_player > 255) return 0;
     uint8_t b[4] = { (uint8_t)r->pause_mode, r->allow_speedup != 0, (uint8_t)r->gear_mode, (uint8_t)r->units_per_player };
-    return rules_ok(b) && r->event_choice >= 0 && r->event_choice <= DSNET_EVENT_MAJORITY && r->population >= 0 && r->population <= DSNET_POP_MULTIPLIED;
+    return rules_ok(b) && r->event_choice >= 0 && r->event_choice <= DSNET_EVENT_MAJORITY && r->population >= 0 && r->population <= DSNET_POP_MULTIPLIED
+           && (r->shared_fog == 0 || r->shared_fog == 1);
 }
 int dsnet_set_rules(dsnet_client *c, const dsnet_rules *r) {
     if (!dsnet_rules_valid(r)) return -1;
-    uint8_t b[6] = { (uint8_t)r->pause_mode, r->allow_speedup != 0, (uint8_t)r->gear_mode, (uint8_t)r->units_per_player, (uint8_t)r->event_choice, (uint8_t)r->population };
-    return dsnet_submit(c, DSNET_RULES, 0, b, 6);
+    uint8_t b[7] = { (uint8_t)r->pause_mode, r->allow_speedup != 0, (uint8_t)r->gear_mode, (uint8_t)r->units_per_player, (uint8_t)r->event_choice, (uint8_t)r->population, (uint8_t)r->shared_fog };
+    return dsnet_submit(c, DSNET_RULES, 0, b, 7);
 }
 int dsnet_population_cap(int mode, int base_cap, int nplayers, int rank, int *pool) {
     if (base_cap < 0) base_cap = 0;

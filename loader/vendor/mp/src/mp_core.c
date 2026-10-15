@@ -223,6 +223,14 @@ static void full_housekeeping(mp_session *s) {
     uint32_t tick = s->full_mine_tick;
     free(s->full_mine); s->full_mine = NULL; free(s->full_host); s->full_host = NULL;
     if (!nd) { s->st.full_ok++; mlog("full-state check at step %u: equal", tick); return; }
+    uint32_t fb = 0;
+    if (s->desync_seen && dsnet_is_desynced(s->c, &fb, NULL) && fb <= tick) {
+        /* the fingerprint already flagged this step (release gate 2026-10-14, desync_partial pos#4: corruption at a check
+           step): same incident, its resync (partial first) covers it. Forcing a full resync here left force_full set after
+           the partial succeeded, so the NEXT desync skipped the partial resync. */
+        mlog("full-state check at step %u differs (%d) during the desync flagged at step %u: left to that resync", tick, nd, fb);
+        return;
+    }
     s->st.full_fails++;
     snprintf(s->full_diff, sizeof s->full_diff, "step %u: %d difference(s): %s", tick, nd, diff);
     mlog("FULL-STATE CHECK DIFFERS at step %u (fingerprints equal): %s", tick, s->full_diff);
@@ -559,10 +567,18 @@ mp_session *mp_start(const mp_config *cfg, const mp_game_api *api, int *reject) 
     s->handlers[MP_ORDER_MOVE] = order_move_default;
     s->shown_speed = 1;
     dsnet_set_identity(MP_BUILD_ID, MP_MOD_VERSION);
+    {   /* launcher session: gameplay mod set + match rule in the HELLO; the host's server refuses a joiner that differs */
+        int van; char ms[65]; static char mods[DSNET_MODLINES_MAX];
+        int rc = mp_session_mods(&van, ms, mods, sizeof mods);
+        dsnet_set_modset(van ? DSNET_MATCH_VANILLA : DSNET_MATCH_MODS, ms, mods);
+        if (!rc) { int nm = 0; for (const char *q = mods; *q; q++) nm += *q == '\n'; if (mods[0]) nm++;
+                   mlog("launcher session: rule %s, %d gameplay mod(s), set %.12s", van ? "vanilla" : "mods", nm, ms[0] ? ms : "-"); }
+    }
     if (cfg->host) {
         dsnet_cfg d = dsnet_cfg_defaults();
         d.port = cfg->port;
         d.allow_speedup = cfg->allow_speedup; d.allow_pause = cfg->allow_pause; d.pause_mode = cfg->pause_mode; d.gear_mode = cfg->gear_mode;
+        d.shared_fog = cfg->shared_fog;
         if (cfg->min_players > 0) d.min_players = cfg->min_players;
         if (cfg->tick_ms > 0) { d.tick_ms = cfg->tick_ms; d.net_ms = cfg->tick_ms * 2; }
         if (cfg->fp_interval > 0) d.fp_interval = cfg->fp_interval;
