@@ -658,6 +658,7 @@ static void on_il2cpp_ready(const char *via) {
     run_init();
     write_modset();
     world_install();
+    dsl_soft_install();
     dsl_engine_set_late();
 }
 static int my_il2cpp_init(const char *domain) { int r = orig_init(domain); on_il2cpp_ready(""); return r; }
@@ -687,6 +688,8 @@ static void on_image(const struct mach_header *mh, intptr_t slide) {
     int any = 0, want_init = 0;
     for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) { any = 1; if (ORDER[i]->init) want_init = 1; }
     if (getenv("DSML_SESSION")) want_init = any = 1;                 /* the world check runs after il2cpp_init */
+    if (dsl_soft_wanted()) any = 1;                                  /* B of a soft restart, even with no code mod */
+    if (any) want_init = 1;                                          /* soft restart (dsl_soft.c) needs il2cpp names */
     if (!any) return;
     if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return; }
     if (dsl_engine_init()) return;
@@ -755,6 +758,7 @@ __attribute__((constructor)) static void dsl_init(void) {
     lf = fopen(lp, "w");
     file_sig(self_path, loader_sig, sizeof loader_sig);
     dsl_log("dsload %s (module API %d) pid %d: %s", DSL_LOADER_VERSION, DSL_API_VERSION, getpid(), self_path);
+    dsl_soft_snapshot(logdir);
     pass_through_env();
 
     /* main executable -> app; GameAssembly file -> build */
@@ -798,10 +802,10 @@ __attribute__((constructor)) static void dsl_init(void) {
         .method_address = dsl_method_address, .find_method_address = dsl_find_method_address, .field_offset = dsl_field_offset,
         .hook = h_hook, .hook_method = h_hook_method, .unhook = h_unhook,
         .hook_rva = h_hook_rva, .table = h_table, .module_dir = h_module_dir, .ga_path = h_ga_path, .module_loaded = h_module_loaded,
-        .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods };
+        .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods, .soft_restart = dsl_soft_apply };
     scan_mods(dsl_build_id);
     note_other_loaders();
-    if (!norder && !getenv("DSML_SESSION")) { dsl_log("no module to load"); return; }
+    if (!norder && !getenv("DSML_SESSION") && !dsl_soft_wanted()) { dsl_log("no module to load"); return; }
     open_modules();
     _dyld_register_func_for_add_image(on_image);
 }
