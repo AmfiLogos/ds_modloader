@@ -90,12 +90,13 @@ fn hidden_run(app: &Path, profile: &Path, mods: &[dsml_core::model::ModRelease],
         extra_env: env,
         extra_args: ["-batchmode", "-screen-fullscreen", "0", "-screen-width", "960", "-screen-height", "540"]
             .iter().map(|s| s.to_string()).collect(),
-        nice: 5, world, modset: modset.into(), session,
+        nice: 5, world, modset: modset.into(), build: BUILD.into(), session,
     };
     let e = launch::env_for(&spec).unwrap();
     assert!(e["DYLD_INSERT_LIBRARIES"].ends_with("/DungeonSettlers.app/Contents/Frameworks/dsrig.dylib"));
     assert_eq!(e["DSRIG_DIR"], profile.display().to_string());
     assert_eq!(e["DSML_MODSET"], modset);
+    assert_eq!(e["DSML_BUILD"], BUILD);
     assert!(!e.contains_key("DSRIG_LIVE"));
     let mut child = launch::launch(&spec).unwrap();
     let pid = child.id();

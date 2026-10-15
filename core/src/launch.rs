@@ -26,6 +26,9 @@ pub struct LaunchSpec {
     /// DSML_WORLD / DSML_MODSET so a loader can refuse a world loaded with other mods (loader step 2).
     pub world: Option<String>,
     pub modset: String,
+    /// The pinned game build of this copy (Steam build id). Passed as DSML_BUILD: the loader's build guard runs the
+    /// game unmodded when the running build is another one (loader/NOTES.md, future-build guard).
+    pub build: String,
     /// Written to <profile>/dsml_session.json; DSML_SESSION points at it.
     pub session: Option<crate::flow::Session>,
 }
@@ -62,6 +65,7 @@ pub fn env_for(spec: &LaunchSpec) -> Result<BTreeMap<String, String>> {
         env.insert("SteamGameId".into(), APP_ID.into());
     }
     env.insert("DSML_MODSET".into(), spec.modset.clone());
+    env.insert("DSML_BUILD".into(), spec.build.clone());               // empty = not sent (retain below)
     if let Some(w) = &spec.world { env.insert("DSML_WORLD".into(), w.clone()); }
     if let Some(s) = &spec.session {
         env.insert("DSML_SESSION".into(), spec.profile_dir.join("dsml_session.json").to_string_lossy().into_owned());
@@ -116,4 +120,24 @@ pub fn launch(spec: &LaunchSpec) -> Result<Child> {
         });
     }
     cmd.spawn().with_context(|| format!("start {}", exe.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec(build: &str) -> LaunchSpec {
+        LaunchSpec { app: PathBuf::from("/nonexistent/DungeonSettlers.app"), profile_dir: PathBuf::from("/tmp/p"), saves_from: None,
+                     mods: vec![], steam: false, extra_env: BTreeMap::new(), extra_args: vec![], nice: 0, world: None,
+                     modset: "m".into(), build: build.into(), session: None }
+    }
+
+    #[test]
+    fn pinned_build_goes_to_the_game_as_dsml_build() {
+        assert_eq!(env_for(&spec("25846389")).unwrap().get("DSML_BUILD").map(String::as_str), Some("25846389"));
+        assert!(!env_for(&spec("")).unwrap().contains_key("DSML_BUILD"), "no build known: not sent");
+        let mut s = spec("25846389");
+        s.extra_env.insert("DSML_BUILD".into(), String::new());
+        assert!(!env_for(&s).unwrap().contains_key("DSML_BUILD"), "extra_env can still remove it (tests)");
+    }
 }

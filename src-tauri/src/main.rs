@@ -196,7 +196,7 @@ async fn play(which: Which) -> Result<Played, String> {
         let spec = launch::LaunchSpec {
             app: ready.app.clone(), profile_dir: p.profile_dir(PROFILE), saves_from: Some(launch::normal_saves()),
             mods: ready.mods.clone(), steam: true, extra_env: BTreeMap::new(), extra_args: vec![], nice: 0,
-            world: match &which { Which::World(g) => Some(g.clone()), Which::New => None }, modset: ready.modset.clone(),
+            world: match &which { Which::World(g) => Some(g.clone()), Which::New => None }, modset: ready.modset.clone(), build: ready.build.clone(),
             session: Some(flow::session(&ready, &which, this_platform())),
         };
         let child = launch::launch(&spec).map_err(err)?;

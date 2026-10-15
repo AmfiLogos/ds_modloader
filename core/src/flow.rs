@@ -70,6 +70,9 @@ pub fn prepare(paths: &Paths, install: Option<&Install>, state: &State, which: &
 #[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 pub struct Session {
     pub world: Option<String>,
+    /// Pinned game build of the copy (also DSML_BUILD); the loader's build guard reads either.
+    #[serde(default)]
+    pub build: String,
     pub modset: String,
     /// The lines behind `modset` (recipe: join::modset_hash), so the loader can log which mod differs.
     pub modset_lines: Vec<String>,
@@ -92,6 +95,7 @@ pub fn session(ready: &Ready, which: &Which, platform: &str) -> Session {
     };
     Session {
         world: match which { Which::World(g) => Some(g.clone()), Which::New => None },
+        build: ready.build.clone(),
         modset: ready.modset.clone(), modset_lines: crate::join::modset_lines(&ready.mods, &ready.build, platform),
         rule, offer, offer_error,
         client_mods: ready.mods.iter().filter(|m| m.scope == crate::model::Scope::Client).map(crate::join::ModRef::of).collect(),
