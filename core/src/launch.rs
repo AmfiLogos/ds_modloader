@@ -1,11 +1,15 @@
-//! Start the play copy with the code mods (Mac: DYLD_INSERT_LIBRARIES, same as rig/mp_launcher.c).
+//! Start the play copy with the code mods. Mac: DYLD_INSERT_LIBRARIES, same as rig/mp_launcher.c. Windows: the
+//! copy already holds the proxy DLLs (windows.rs); Steam is started first when it is closed (branch steamstart).
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-use crate::model::{ModRelease, MAC_ARM64};
+use crate::model::{this_platform, ModRelease};
 use crate::steam::APP_ID;
 
 #[derive(Debug, Clone)]
@@ -33,13 +37,21 @@ pub struct LaunchSpec {
     pub session: Option<crate::flow::Session>,
 }
 
-/// Normal game save folder (only ever read).
+/// Normal game save folder (only ever read). Windows: %USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers.
 pub fn normal_saves() -> PathBuf {
+    if cfg!(windows) {
+        return PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default()).join(r"AppData\LocalLow\CanOpener\Dungeon Settlers");
+    }
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join("Library/Application Support/CanOpener/Dungeon Settlers")
 }
 
+/// Folder of the game's code files in a copy: Mac Contents/Frameworks, Windows the game folder.
+fn frameworks(app: &Path) -> PathBuf {
+    if cfg!(windows) { app.to_path_buf() } else { app.join("Contents/Frameworks") }
+}
+
 pub fn env_for(spec: &LaunchSpec) -> Result<BTreeMap<String, String>> {
-    let fw = spec.app.join("Contents/Frameworks");
+    let fw = frameworks(&spec.app);
     let fill = |s: &str| s.replace("{profile_dir}", &spec.profile_dir.to_string_lossy())
         .replace("{app}", &spec.app.to_string_lossy())
         .replace("{frameworks}", &fw.to_string_lossy());
@@ -47,7 +59,7 @@ pub fn env_for(spec: &LaunchSpec) -> Result<BTreeMap<String, String>> {
     env.insert("CFFIXED_USER_HOME".into(), spec.profile_dir.join("home").to_string_lossy().into_owned());
     let mut inject = Vec::new();
     for m in &spec.mods {
-        let Some(p) = m.platforms.get(MAC_ARM64) else { continue };
+        let Some(p) = m.platforms.get(this_platform()) else { continue };
         for (k, v) in &p.env {
             if let Some(old) = env.insert(k.clone(), fill(v)) {
                 if old != fill(v) { bail!("{} sets {k} to a different value than another mod", m.name) }
@@ -59,7 +71,8 @@ pub fn env_for(spec: &LaunchSpec) -> Result<BTreeMap<String, String>> {
             inject.push(f.to_string_lossy().into_owned());
         }
     }
-    if !inject.is_empty() { env.insert("DYLD_INSERT_LIBRARIES".into(), inject.join(":")); }
+    // Windows: the proxy DLLs are in the copy already (they load as the game's own DLLs); nothing to inject
+    if !inject.is_empty() && cfg!(unix) { env.insert("DYLD_INSERT_LIBRARIES".into(), inject.join(":")); }
     if spec.steam {
         env.insert("SteamAppId".into(), APP_ID.into());
         env.insert("SteamGameId".into(), APP_ID.into());
@@ -82,15 +95,42 @@ fn copy_first_saves(from: &Path, data: &Path) -> Result<()> {
     for item in ["Saves", "OutGame.json", "UserSetting.json", "UserCampaignLog.json"] {
         let s = from.join(item);
         if !s.exists() { continue }
-        let st = Command::new("/bin/cp").arg("-R").arg(&s).arg(data.join(item)).status()?;
-        if !st.success() { bail!("copy of {} failed", s.display()) }
+        #[cfg(unix)]
+        {
+            let st = Command::new("/bin/cp").arg("-R").arg(&s).arg(data.join(item)).status()?;
+            if !st.success() { bail!("copy of {} failed", s.display()) }
+        }
+        #[cfg(windows)]
+        copy_tree(&s, &data.join(item)).with_context(|| format!("copy of {} failed", s.display()))?;
     }
     std::fs::write(&flag, format!("{}\n", crate::now_secs()))?;
     Ok(())
 }
 
+#[cfg(windows)]
+fn copy_tree(s: &Path, d: &Path) -> Result<()> {
+    if s.is_dir() {
+        std::fs::create_dir_all(d)?;
+        for e in std::fs::read_dir(s)? { let e = e?; copy_tree(&e.path(), &d.join(e.file_name()))?; }
+    } else {
+        std::fs::copy(s, d)?;
+    }
+    Ok(())
+}
+
+/// Windows: Steam closed -> start it in the background and wait for a signed-in user (steam.rs ensure_steam).
+/// The game starts in every case: the multiplayer mod turns the game's own Steam check off, and the result is
+/// written to <profile>/launcher.log.
+#[cfg(windows)]
+fn steam_first(spec: &LaunchSpec) {
+    let r = crate::steam::ensure_steam();
+    let line = format!("{} steam before Play: {r:?}\n", crate::now_secs());
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(spec.profile_dir.join("launcher.log")) { let _ = f.write_all(line.as_bytes()); }
+}
+
 pub fn launch(spec: &LaunchSpec) -> Result<Child> {
-    let exe = spec.app.join(crate::copy_mac::GAME_EXE);
+    let exe = spec.app.join(crate::copy::GAME_EXE);
     if !exe.exists() { bail!("no game in {}", spec.app.display()) }
     let data = spec.profile_dir.join("data");
     std::fs::create_dir_all(&data)?;
@@ -101,6 +141,8 @@ pub fn launch(spec: &LaunchSpec) -> Result<Child> {
         crate::write_atomic(&spec.profile_dir.join("dsml_session.json"), &serde_json::to_vec_pretty(s)?)?;
     }
     let env = env_for(spec)?;
+    #[cfg(windows)]
+    if spec.steam && std::env::var_os("DSML_NO_STEAM_START").is_none() { steam_first(spec); }
     let log = std::fs::OpenOptions::new().create(true).append(true).open(spec.profile_dir.join("stdout.log"))?;
     let mut cmd = Command::new(&exe);
     cmd.arg("-logFile").arg(spec.profile_dir.join("player.log")).args(&spec.extra_args)
@@ -110,8 +152,15 @@ pub fn launch(spec: &LaunchSpec) -> Result<Child> {
         .stdin(Stdio::null()).stdout(log.try_clone()?).stderr(log);
     for (k, v) in &spec.extra_env { if v.is_empty() { cmd.env_remove(k); } }
     let nice = spec.nice;
+    #[cfg(windows)]
+    {
+        // own process group, no console; the game outlives the launcher. nice > 0: below normal priority.
+        let prio = if nice > 0 { 0x0000_4000 } else { 0 };                 // BELOW_NORMAL_PRIORITY_CLASS
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200 | prio);               // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    }
     // own session (the game outlives the launcher); lower priority in the child itself: /usr/bin/nice is
     // SIP-protected and would strip DYLD_INSERT_LIBRARIES
+    #[cfg(unix)]
     unsafe {
         cmd.pre_exec(move || {
             libc::setsid();

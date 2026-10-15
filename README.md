@@ -14,7 +14,7 @@ Plan: `~/ds_multiplayer/research/plan_launcher.md`. Owner decisions: `~/ds_multi
 - `core/` (Rust crate `dsml-core`): Steam detection + build id (`steam.rs`), signed index + checksums
   (`crypto.rs`, `fetch.rs`), pin / update rules (`decide.rs`), Mac side copy per build (`copy_mac.rs`, port of
   `rig/make_mp_app.sh`), launch with the code mods (`launch.rs`, same env as `rig/mp_launcher.c`),
-  Windows stubs (`windows.rs`), mods per world + groups (`worlds.rs`), gameplay/client scope + mod-set hash +
+  Windows side copy (`windows.rs`, full copy + hard-linked play copies, proxy DLL rule; see NOTES_winlauncher.md), mods per world + groups (`worlds.rs`), gameplay/client scope + mod-set hash +
   join plan (`join.rs`), difficulties (`difficulty.rs`: the game's Devastation unlock read from
   OutGame.json `DifficultyUnlockSaveData.IsDownfallUnlocked`, custom difficulties such as Hell as mods). `dsml-tool`: keygen / sign / verify / file entry / patches (stock vs modded -> byte patches) for the publisher.
 - `src-tauri/`: Tauri 2 shell (commands: status, refresh_index, set_enabled, play, remove_copy).
@@ -39,7 +39,11 @@ Owner test build (bundled mod list, no published index yet): `tools/make_seed.sh
 `~/ds_multiplayer/rig/lan_latest`, signed with the DEV key) then `cd src-tauri && cargo tauri build --config
 tauri.owner.conf.json`. See `NOTES_ownerapp.md`.
 
-Env: `DSML_ROOT` (launcher folder, default `~/Library/Application Support/DSModLauncher`), `DSML_INDEX_URL`
+Windows build (cross-compiled on this Mac, NSIS installer): NOTES_winlauncher.md. Tests: `tools/win_smoke.py`,
+`tools/win_install_test.py` (CrossOver bottle DSMP).
+
+Env: `DSML_ROOT` (launcher folder, default `~/Library/Application Support/DSModLauncher`, Windows
+`%LOCALAPPDATA%\DSModLauncher`), `DSML_STEAM_ROOTS` (Steam folders to search, tests), `DSML_INDEX_URL`
 (default: placeholder GitHub URL), `DSML_STOCK_DIRS` (owner's Mac: verified stock asset copies; also read from
 `<root>/stock_dirs.txt`, one folder per line), `DSML_SEED_DIR` (bundled mod list, default `Contents/Resources/seed`),
 `DSML_SMOKE` (tests, no window).

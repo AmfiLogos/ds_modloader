@@ -1,7 +1,7 @@
 // Dungeon Settlers mod launcher: Tauri shell around dsml-core. The UI is plain HTML in ../ui.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use dsml_core::copy_mac::CopyOptions;
+use dsml_core::copy::CopyOptions;
 use dsml_core::decide::{pick, Decision};
 use dsml_core::difficulty::{self, DifficultyOption};
 use dsml_core::model::{this_platform, Index, Scope, State};
@@ -47,21 +47,24 @@ fn data_dir() -> PathBuf { paths().profile_dir(PROFILE).join("data") }
 fn install() -> Option<steam::Install> { steam::find_install(&steam::default_steam_roots()) }
 fn err(e: impl std::fmt::Display) -> String { format!("{e:#}") }
 
-/// Verified stock asset copies: DSML_STOCK_DIRS (':'-separated) and <root>/stock_dirs.txt (one folder per line;
+/// Verified stock asset copies: DSML_STOCK_DIRS (a path list: ':' Mac, ';' Windows) and <root>/stock_dirs.txt (one folder per line;
 /// the owner's Mac, whose live install has mod-changed assets).
 fn copy_opts() -> CopyOptions {
     let mut o = CopyOptions::default();
-    if let Ok(d) = std::env::var("DSML_STOCK_DIRS") { o.extra_stock_dirs = d.split(':').map(PathBuf::from).collect(); }
+    if let Some(d) = std::env::var_os("DSML_STOCK_DIRS") { o.extra_stock_dirs = std::env::split_paths(&d).collect(); }
     if let Ok(t) = std::fs::read_to_string(paths().root.join("stock_dirs.txt")) {
         o.extra_stock_dirs.extend(t.lines().map(str::trim).filter(|l| !l.is_empty()).map(PathBuf::from));
     }
     o
 }
 
-/// The signed mod list shipped in the app (Contents/Resources/seed; DSML_SEED_DIR overrides).
+/// The signed mod list shipped in the app (Mac: Contents/Resources/seed; Windows: seed\ next to the exe, where the
+/// installer puts the bundle resources; DSML_SEED_DIR overrides).
 fn seed_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("DSML_SEED_DIR") { return Some(d.into()) }
-    Some(std::env::current_exe().ok()?.parent()?.parent()?.join("Resources/seed"))
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    if cfg!(windows) { return Some(exe_dir.join("seed")) }
+    Some(exe_dir.parent()?.join("Resources/seed"))
 }
 
 fn install_seed() {
@@ -208,36 +211,42 @@ struct Played { build: String, pid: u32, removable: Vec<String> }
 
 #[tauri::command]
 async fn play(which: Which) -> Result<Played, String> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<Played, String> {
-        let p = paths();
-        let st = p.load_state().map_err(err)?;
-        let idx = fetch::cached_index(&p, TRUSTED_KEYS).map_err(|e| format!("no checked mod list: {e:#}"))?;
-        let inst = install();
-        let ready = flow::prepare(&p, inst.as_ref(), &st, &which, &idx, this_platform(), &copy_opts()).map_err(err)?;
-        p.save_state(&ready.state).map_err(err)?;
-        let spec = launch::LaunchSpec {
-            app: ready.app.clone(), profile_dir: p.profile_dir(PROFILE), saves_from: Some(launch::normal_saves()),
-            mods: ready.mods.clone(), steam: true, extra_env: BTreeMap::new(), extra_args: vec![], nice: 0,
-            world: match &which { Which::World(g) => Some(g.clone()), Which::New => None }, modset: ready.modset.clone(), build: ready.build.clone(),
-            session: Some(flow::session(&ready, &which, this_platform())),
-        };
-        let child = launch::launch(&spec).map_err(err)?;
-        Ok(Played { build: ready.build, pid: child.id(), removable: ready.removable })
-    }).await.map_err(err)?
+    tauri::async_runtime::spawn_blocking(move || play_blocking(which, vec![])).await.map_err(err)?
 }
 
-/// Moves an old copy out of the games folder (to <root>/retired). Only called after the player said yes.
+/// Play: copy ready (made if needed), Steam started if it is closed (Windows), game started. `extra_args`: tests.
+fn play_blocking(which: Which, extra_args: Vec<String>) -> Result<Played, String> {
+    let p = paths();
+    let st = p.load_state().map_err(err)?;
+    let idx = fetch::cached_index(&p, TRUSTED_KEYS).map_err(|e| format!("no checked mod list: {e:#}"))?;
+    let inst = install();
+    let ready = flow::prepare(&p, inst.as_ref(), &st, &which, &idx, this_platform(), &copy_opts()).map_err(err)?;
+    p.save_state(&ready.state).map_err(err)?;
+    let spec = launch::LaunchSpec {
+        app: ready.app.clone(), profile_dir: p.profile_dir(PROFILE), saves_from: Some(launch::normal_saves()),
+        mods: ready.mods.clone(), steam: true, extra_env: BTreeMap::new(), extra_args, nice: 0,
+        world: match &which { Which::World(g) => Some(g.clone()), Which::New => None }, modset: ready.modset.clone(), build: ready.build.clone(),
+        session: Some(flow::session(&ready, &which, this_platform())),
+    };
+    let child = launch::launch(&spec).map_err(err)?;
+    Ok(Played { build: ready.build, pid: child.id(), removable: ready.removable })
+}
+
+/// Removes an old copy (Mac: moved to <root>/retired; Windows: deleted, a full copy is ~700 MB). Only called after
+/// the player said yes.
 #[tauri::command]
 fn remove_copy(which: Which, build: String) -> Result<Status, String> {
     let p = paths();
     let st = p.load_state().map_err(err)?;
     if !dsml_core::decide::removable(&st, &p.copies()).contains(&build) { return Err("this copy is still in use".into()) }
-    p.retire(&p.game_dir(&build), &format!("{build}-copy")).map_err(err)?;
+    p.remove_copy(&build).map_err(err)?;
     status(which)
 }
 
-/// DSML_SMOKE=status|prepare: the launcher's own code path with no window (tests; see core/tests/e2e_mac.rs
-/// owner_app_smoke). status = what the mod list shows for a new world; prepare = Play up to the ready copy, not started.
+/// DSML_SMOKE=status|prepare|play: the launcher's own code path with no window (tests; see core/tests/e2e_mac.rs
+/// owner_app_smoke, tools/win_smoke.sh). status = what the mod list shows for a new world; prepare = Play up to the
+/// ready copy, not started; play = the Play button for a new world, game arguments from DSML_GAME_ARGS (tests:
+/// "-batchmode -nographics").
 fn smoke(what: &str) -> Result<serde_json::Value, String> {
     match what {
         "status" => status(Which::New).and_then(|s| serde_json::to_value(s).map_err(err)),
@@ -250,7 +259,11 @@ fn smoke(what: &str) -> Result<serde_json::Value, String> {
             let session = flow::session(&ready, &Which::New, this_platform());
             Ok(serde_json::json!({ "build": ready.build, "app": ready.app, "modset": ready.modset, "mods": ready.mods, "session": session }))
         }
-        _ => Err(format!("DSML_SMOKE={what}: status or prepare")),
+        "play" => {
+            let args = std::env::var("DSML_GAME_ARGS").unwrap_or_default().split_whitespace().map(String::from).collect();
+            play_blocking(Which::New, args).and_then(|r| serde_json::to_value(r).map_err(err))
+        }
+        _ => Err(format!("DSML_SMOKE={what}: status, prepare or play")),
     }
 }
 

@@ -6,9 +6,7 @@ pub mod decide;
 pub mod difficulty;
 pub mod fetch;
 pub mod join;
-#[cfg(unix)]
 pub mod flow;
-#[cfg(unix)]
 pub mod launch;
 pub mod macho;
 pub mod model;
@@ -16,6 +14,15 @@ pub mod seed;
 pub mod steam;
 pub mod windows;
 pub mod worlds;
+
+/// The side copy of the game for this OS: Mac = `copy_mac` (APFS clone + ad-hoc signature), Windows = `windows`
+/// (full copy + hard-linked play copies). Same functions on both.
+pub mod copy {
+    #[cfg(unix)]
+    pub use crate::copy_mac::*;
+    #[cfg(windows)]
+    pub use crate::windows::*;
+}
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -29,7 +36,8 @@ use model::State;
 /// <root>/games/<build>/play/...          base + mods, ad-hoc signed: what Play starts
 /// <root>/cache/<id>/<version>/<file>     downloaded + verified mod files
 /// <root>/profiles/<name>/                own saves, logs, Unity home
-/// <root>/retired/                        replaced copies (moved here, never deleted by the launcher)
+/// <root>/retired/                        replaced copies (moved here, never deleted by the launcher; Windows:
+///                                        a copy the player removes is deleted, see remove_copy)
 /// ```
 #[derive(Debug, Clone)]
 pub struct Paths {
@@ -39,11 +47,10 @@ pub struct Paths {
 impl Paths {
     pub fn new(root: impl Into<PathBuf>) -> Self { Paths { root: root.into() } }
 
-    /// Mac: ~/Library/Application Support/DSModLauncher. DSML_ROOT overrides (tests).
+    /// Mac: ~/Library/Application Support/DSModLauncher. Windows: %LOCALAPPDATA%\DSModLauncher. DSML_ROOT overrides (tests).
     pub fn default_root() -> PathBuf {
         if let Some(r) = std::env::var_os("DSML_ROOT") { return r.into(); }
         if cfg!(target_os = "windows") {
-            // TODO Windows: %LOCALAPPDATA%\DSModLauncher (test on a Windows machine).
             return PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("DSModLauncher");
         }
         PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join("Library/Application Support/DSModLauncher")
@@ -84,6 +91,18 @@ impl Paths {
         let dst = self.retired().join(format!("{label}-{}", now_secs()));
         std::fs::rename(p, &dst).with_context(|| format!("move {} -> {}", p.display(), dst.display()))?;
         Ok(dst)
+    }
+
+    /// A game copy the player chose to remove. Mac: retired (an APFS clone costs almost no disk). Windows: a full
+    /// copy costs about 700 MB, so it is deleted (the player said yes; the launcher's own folder only).
+    pub fn remove_copy(&self, build: &str) -> Result<()> {
+        let d = self.game_dir(build);
+        if cfg!(windows) {
+            std::fs::remove_dir_all(&d).with_context(|| format!("remove {}", d.display()))?;
+        } else {
+            self.retire(&d, &format!("{build}-copy"))?;
+        }
+        Ok(())
     }
 }
 

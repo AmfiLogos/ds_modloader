@@ -3,7 +3,7 @@ use anyhow::{bail, Result};
 use serde::Serialize;
 use std::path::PathBuf;
 
-use crate::copy_mac::{build_base, build_play, play_app, play_is_current, set_key, CopyOptions};
+use crate::copy::{build_base, build_play, play_app, play_is_current, set_key, CopyOptions};
 use crate::decide::{after_switch, check_set, decide, select, Decision, Plan};
 use crate::worlds::{effective_mods, Which};
 use crate::fetch::ensure_files;

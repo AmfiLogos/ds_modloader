@@ -3,3 +3,4 @@ test_env/
 src-tauri/gen/
 builder/shots/
 src-tauri/seed/
+__pycache__/
