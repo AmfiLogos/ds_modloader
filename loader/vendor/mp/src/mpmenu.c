@@ -399,11 +399,11 @@ static Obj mk_txt(Obj tpl_txt, Obj parent_tr, int cinzel, float size, int align,
  * after LABEL_NAME. The selector arrows are children of their rows (arrow_ids), not column entries. */
 static const int title_ids[] = { MPB_MULTIPLAYER, MPB_HEADER, MPB_LABEL_ADDR, MPB_LABEL_NAME, MPB_INFO,
                                  MPB_FRIEND0, MPB_FRIEND1, MPB_FRIEND2, MPB_FRIEND3, MPB_FRIEND4, MPB_FRIEND5, MPB_SETTINGS,
-                                 MPB_DIVIDER, MPB_HOST, MPB_JOIN_ADDR, MPB_JOIN_FRIEND, MPB_LOAD_SAVE, MPB_NEW_CAMPAIGN, MPB_CONNECT, MPB_CANCEL_JOIN, MPB_BACK };
+                                 MPB_DIVIDER, MPB_HOST, MPB_JOIN_ADDR, MPB_JOIN_FRIEND, MPB_LOAD_SAVE, MPB_NEW_CAMPAIGN, MPB_CONNECT, MPB_WATCH, MPB_CANCEL_JOIN, MPB_BACK };
 /* the Rules panel's buttons (title: SubUI_TitleMenuButton clones registered in h_tb; lobby: in h_lwb) */
 static const int arrow_ids[] = { MPB_PAUSE_PREV, MPB_PAUSE_NEXT, MPB_SPEED_PREV, MPB_SPEED_NEXT, MPB_GEAR_PREV, MPB_GEAR_NEXT,
                                  MPB_UNITS_PREV, MPB_UNITS_NEXT, MPB_POP_PREV, MPB_POP_NEXT, MPB_EVENTS_PREV, MPB_EVENTS_NEXT, MPB_ADMIN_PREV, MPB_ADMIN_NEXT,
-                                 MPB_FOG_PREV, MPB_FOG_NEXT, MPB_RULES_DONE };   /* 2 per rules row, in row order */
+                                 MPB_FOG_PREV, MPB_FOG_NEXT, MPB_SPECT_PREV, MPB_SPECT_NEXT, MPB_RULES_DONE };   /* 2 per rules row, in row order */
 #define NA (int)(sizeof arrow_ids / sizeof arrow_ids[0])
 #define HIST_MAX 12
 typedef struct { char key[128], world[64], how[8], addr[96], host[48], players[240], units[200], portraits[400]; long long day, when; uint64_t steamid; } hist_t;
@@ -431,7 +431,8 @@ static Obj portrait_sprite(const char *name) {
 }
 static float rw_h;
 static const int hist_ids[] = { MPB_HIST0, MPB_HIST1, MPB_HIST2, MPB_HIST3, MPB_HIST4, MPB_HIST5, MPB_HISTX0, MPB_HISTX1, MPB_HISTX2,
-                                MPB_HISTX3, MPB_HISTX4, MPB_HISTX5, MPB_HIST_PREV, MPB_HIST_NEXT };   /* Rules box: cog, "›", summary, frame image */
+                                MPB_HISTX3, MPB_HISTX4, MPB_HISTX5, MPB_HIST_PREV, MPB_HIST_NEXT,
+                                MPB_HISTW0, MPB_HISTW1, MPB_HISTW2, MPB_HISTW3, MPB_HISTW4, MPB_HISTW5 };   /* + Watch per row */   /* Rules box: cog, "›", summary, frame image */
 typedef struct { uintptr_t root, val[MPM_RULE_ROWS], note, desc, row[MPM_RULE_ROWS]; float pw, ph; int tip_row; } rpanel;   /* the Rules panel (approved mockup "Host page B") */
 static rpanel rp_title, rp_lobby;                  /* value texts of the 3 selector rows; the settings row's toggle image */
 static const int esc_ids[] = { MPB_ESC_INVITE, MPB_LEAVE };   /* in game; the lobby has its own window (v2 §2b) */
@@ -476,6 +477,7 @@ static void observe(mpm_obs *o) {
         o->guest_loading = in.state == MP_STEAM_JOINING && in.player >= 0;           /* welcomed, waiting for / loading the save */
     }
     if (o->role == 2) snprintf(o->host_name, sizeof o->host_name, "%s", in.host_name);
+    { mp_session *ss = mp_game_session(); o->spectator = ss && mp_is_spectator(ss); }
     o->steam = in.steam;
     if (o->scene == 1 || o->scene == 2) {                                   /* Escape = Back on the title pages; closes the lobby Rules */
         static bool (*keydown)(int); static int looked;
@@ -599,9 +601,9 @@ static Obj btn_label(Obj b, int esc) { return b ? AT(b, esc ? 0x28 : 0x130, Obj)
  * Narrow (host page) 430 x 520: one column. Wide (lobby, RP_WIDE_W x RP_WIDE_H): Pause..Units left, Population..Admin right,
  * so it fits inside the lobby body under the title and above Start/Leave. */
 #define RP_WIDE_W 830
-#define RP_WIDE_H 330
+#define RP_WIDE_H 376                                            /* 9 rules rows: the right column has 5 */
 static void rp_build(rpanel *p, Obj parent, Obj src, int esc, Obj tpl_img, Obj tpl_txt, float cx, float cy, const char *note, uintptr_t *reg, int wide) {
-    float pw = wide ? RP_WIDE_W : 430, ph = wide ? RP_WIDE_H : 590;     /* narrow: 8 rows (+ Shared fog) */
+    float pw = wide ? RP_WIDE_W : 430, ph = wide ? RP_WIDE_H : 640;     /* narrow: 9 rows (+ Shared fog, Spectators) */
     #define PX(x) ((x) - pw / 2)
     #define PY(y) (ph / 2 - (y))
     #define RCOL(i) (wide && (i) >= MPM_RULE_POP ? 1 : 0)
@@ -743,10 +745,10 @@ static void title_build(Obj v) {
                 Obj B = u_tr(b);
                 Obj l1 = mk_txt(tpl_txt, B, 0, 18, 513, 0, -368 + 14 + 230, 12, 460, 28, C_MAIN);
                 Obj l2 = mk_txt(tpl_txt, B, 0, 13, 513, 0, -368 + 14 + 190, -14, 380, 22, C_SUB);
-                Obj ul = mk_txt(tpl_txt, B, 0, 12, 516, 0, 368 - 40 - 110, 12, 220, 20, C_SUB);
-                Obj un = mk_txt(tpl_txt, B, 0, 13, 516, 0, 368 - 40 - 110, -12, 220, 22, C_MAIN);
+                Obj ul = mk_txt(tpl_txt, B, 0, 12, 516, 0, 368 - 80 - 110, 12, 220, 20, C_SUB);
+                Obj un = mk_txt(tpl_txt, B, 0, 13, 516, 0, 368 - 80 - 110, -12, 220, 22, C_MAIN);
                 for (int k = 0; k < 6; k++) {                               /* each unit: [portrait or initial] Name (lead 2026-10-13) */
-                    float px = 368 - 50 - 15 - 96 * (5 - k) - 66;
+                    float px = 368 - 90 - 15 - 96 * (5 - k) - 66;           /* 40 left of the old place: room for Watch */
                     Obj fr = mk_img(tpl_img, B, -1, C_COPPER, px, -10, 30, 30);
                     if (fr) mk_img(tpl_img, u_tr(fr), -1, (Col){ 0.29f, 0.231f, 0.212f, 1 }, 0, 0, 28, 28);   /* #4a3b36 */
                     Obj it = fr ? mk_txt(tpl_txt, u_tr(fr), 0, 15, 514, 0, 0, 0, 28, 28, C_MAIN) : NULL;
@@ -759,8 +761,10 @@ static void title_build(Obj v) {
                 }
                 u_gc_free(h_rw_l1[i]); h_rw_l1[i] = l1 ? u_gc_new(l1) : 0; u_gc_free(h_rw_l2[i]); h_rw_l2[i] = l2 ? u_gc_new(l2) : 0;
                 u_gc_free(h_rw_ul[i]); h_rw_ul[i] = ul ? u_gc_new(ul) : 0; u_gc_free(h_rw_u[i]); h_rw_u[i] = un ? u_gc_new(un) : 0;
-                Obj x = mk_button(src, B, 0, S_NBTN, C_WHITE, 368 - 22, 0, 28, 28, 16, "x", C_SUB);   /* remove: a small framed "x", own click */
+                Obj x = mk_button(src, B, 0, S_NBTN, C_WHITE, 368 - 22, 15, 26, 26, 15, "x", C_SUB);   /* remove: a small framed "x", own click */
                 if (x) { u_gc_free(h_tb[MPB_HISTX0 + i]); h_tb[MPB_HISTX0 + i] = u_gc_new(x); }
+                Obj w = mk_button(src, B, 0, S_NBTN, C_WHITE, 368 - 40, -16, 62, 26, 14, "Watch", C_MAIN);   /* spectator rejoin (owner 2026-10-14) */
+                if (w) { u_gc_free(h_tb[MPB_HISTW0 + i]); h_tb[MPB_HISTW0 + i] = u_gc_new(w); }
             }
             Obj nt = mk_txt(tpl_txt, R, 0, 12, 513, 0, -380 + 16 + 250, RY(rw_h - 20), 500, 20, C_SUB);
             if (nt) tmp_set(nt, "Click a world to reconnect the same way. x removes it from this list.");
@@ -789,7 +793,7 @@ static void title_sync(const mpm_obs *o) {
     if (sub != stock_hidden) { for (int off = 0x30; off <= 0x60; off += 8) u_active(AT(v, off, Obj), !sub); stock_hidden = sub; }
     for (int i = 0; i < NT; i++) {
         Obj b = tb(title_ids[i]); if (!b) continue;
-        int on = (vis >> title_ids[i]) & 1;
+        int on = title_ids[i] < 64 ? (int)((vis >> title_ids[i]) & 1) : mpm_is_visible(&M, o, title_ids[i]);   /* Watch: id 68 */
         u_active(b, on);
         if (on) { char l[160]; mpm_label(&M, title_ids[i], l, sizeof l); tmp_set(AT(b, 0x130, Obj), l); }
     }
@@ -818,6 +822,7 @@ static void title_sync(const mpm_obs *o) {
             if (k >= nhist || !b) continue;
             shown++;
             hist_t *h = &hist[k]; char t[600], pl[400] = ""; size_t o = 0;
+            u_active(tb(MPB_HISTW0 + i), strcmp(h->how, "host") != 0);        /* a world this copy hosted: no Watch */
             snprintf(t, sizeof t, "%s  <size=72%%><color=#A69085>Day %lld</color></size>", h->world[0] ? h->world : "A world", h->day);
             tmp_set(u_gc_get(h_rw_l1[i]), t);
             char tmp[240]; snprintf(tmp, sizeof tmp, "%s", h->players); char *save = NULL;
@@ -851,6 +856,7 @@ static void title_sync(const mpm_obs *o) {
                                   u_active(u_gc_get(h_rw_pi[i][q]), ps == NULL); }
               } }
         }
+        for (int i = 0; i < 6; i++) if (M.hist_page * 6 + i >= nhist) u_active(tb(MPB_HISTW0 + i), false);
         u_active(tb(MPB_HIST_PREV), M.hist_page > 0); u_active(tb(MPB_HIST_NEXT), (M.hist_page + 1) * 6 < nhist);
         /* the panel's height follows the rows shown */
         float H = 56 + 12 + (shown ? shown : 1) * 72 + 40;
@@ -1087,7 +1093,7 @@ static const int lw_ids[LW_NB] = { MPB_START, MPB_INVITE, MPB_COPY_ADDR, MPB_LEA
 static uintptr_t h_lwr[MPB_COUNT];                       /* the lobby Rules panel's arrows + Done, by button id */
 #define LW_ROWS 4
 enum { T_TITLE, T_HINT, T_GUEST, T_PLAYERS, T_INV, T_RULES, T_INV_ADDR, T_INV_NOTE, T_RULES_NOTE, T_NOTE,
-       T_R0L, T_R1L, T_R2L, T_R3L, T_R4L, T_R5L, T_R6L, T_R7L, T_R0V, T_R1V, T_R2V, T_R3V, T_R4V, T_R5V, T_R6V, T_R7V, T_NT };
+       T_R0L, T_R1L, T_R2L, T_R3L, T_R4L, T_R5L, T_R6L, T_R7L, T_R8L, T_R0V, T_R1V, T_R2V, T_R3V, T_R4V, T_R5V, T_R6V, T_R7V, T_R8V, T_NT };
 _Static_assert(T_R0V - T_R0L == MPM_RULE_ROWS, "one label + one value text per rules row");
 static uintptr_t h_lw_root, h_lw_view, h_lw_area, h_lwb[LW_NB], h_lwt[T_NT];
 static uintptr_t h_lw_rowbg[LW_ROWS], h_lw_dot[LW_ROWS], h_lw_name[LW_ROWS], h_lw_stat[LW_ROWS], h_lw_tagbox[LW_ROWS][2], h_lw_bar[LW_ROWS][3], h_lw_x[LW_ROWS];
@@ -1265,7 +1271,7 @@ static void lw_texts(void) {
     /* rules: host = what he set (sent as DSNET_RULES), guest = dsnet's */
     mpm_settings ss = M.set;
     if (c) { dsnet_rules r; dsnet_rules_get(c, &r); if (!host) { ss.pause_mode = r.pause_mode; ss.speedup = r.allow_speedup; ss.gear = r.gear_mode; ss.units = r.units_per_player; ss.events = r.event_choice; ss.population = r.population; ss.fog = r.shared_fog; }
-             ss.admin = dsnet_admin_mode(c); }
+             ss.admin = dsnet_admin_mode(c); ss.spectators = dsnet_spectators_allowed(c); ss.watching = __builtin_popcount(dsnet_spectator_mask(c)); }
     for (int i = 0; i < MPM_RULE_ROWS; i++) { char v[64]; mpm_rule_value(&ss, i, v, sizeof v); tmp_set(lwt(T_R0L + i), mpm_rule_label(i)); tmp_set(lwt(T_R0V + i), v); }
     tmp_set(lwt(T_RULES_NOTE), host ? "Only the host can change the rules." : "Set by the host.");
     if (loading[0]) snprintf(b, sizeof b, "%s is still loading", loading); else b[0] = 0;
@@ -1359,6 +1365,7 @@ static void prefs_load(void) {
     if (jnum(b, "admin", &v)) M.set.admin = v != 0;
     if (jnum(b, "events", &v) && v >= 0 && v <= 3) M.set.events = (int)v;
     if (jnum(b, "population", &v) && v >= 0 && v <= 3) M.set.population = (int)v;
+    if (jnum(b, "spectators", &v)) M.set.spectators = v != 0;
     if (jnum(b, "fog", &v)) M.set.fog = v != 0;
     if (jnum(b, "chat_fade", &v) && v >= 3 && v <= 120) chat_fade_s = (int)v;
     if (jnum(b, "chat_join_lines", &v)) chat_show_join = v != 0;
@@ -1374,8 +1381,8 @@ static void prefs_load(void) {
 static void prefs_save(void) {
     char p[1200]; app_path(p, sizeof p, "mp_menu.json");
     FILE *f = fopen(p, "w"); if (!f) return;
-    Buf b = {0}; bput(&b, "{\"pause\":%d,\"speedup\":%d,\"gear\":%d,\"units\":%d,\"admin\":%d,\"events\":%d,\"population\":%d,\"fog\":%d,\"chat_fade\":%d,\"chat_join_lines\":%d,\"chat_on\":%d,\"chat_x\":%.0f,\"chat_y\":%.0f,\"name\":",
-        M.set.pause_mode, M.set.speedup, M.set.gear, M.set.units, M.set.admin, M.set.events, M.set.population, M.set.fog, chat_fade_s, chat_show_join, chat_on, chat_x, chat_y); bstr(&b, my_name); bput(&b, "}\n");
+    Buf b = {0}; bput(&b, "{\"pause\":%d,\"speedup\":%d,\"gear\":%d,\"units\":%d,\"admin\":%d,\"events\":%d,\"population\":%d,\"fog\":%d,\"spectators\":%d,\"chat_fade\":%d,\"chat_join_lines\":%d,\"chat_on\":%d,\"chat_x\":%.0f,\"chat_y\":%.0f,\"name\":",
+        M.set.pause_mode, M.set.speedup, M.set.gear, M.set.units, M.set.admin, M.set.events, M.set.population, M.set.fog, M.set.spectators, chat_fade_s, chat_show_join, chat_on, chat_x, chat_y); bstr(&b, my_name); bput(&b, "}\n");
     fputs(b.p, f); fclose(f); free(b.p);
 }
 static int world_get(const char *guid, mpm_settings *out) {
@@ -1383,8 +1390,8 @@ static int world_get(const char *guid, mpm_settings *out) {
     FILE *f = fopen(p, "r"); if (!f) return 0;
     int found = 0;
     while (fgets(line, sizeof line, f)) {
-        char g[64]; int a, b2, c, u = 3, ad = 0, ev = 0, po = 0, fg = 0;    /* units, admin, events, population, fog: 5th-9th fields (older: 3, 0, 0, 0, 0) */
-        if (sscanf(line, "%63s %d %d %d %d %d %d %d %d", g, &a, &b2, &c, &u, &ad, &ev, &po, &fg) >= 4 && !strcmp(g, guid)) { out->pause_mode = a; out->speedup = b2; out->gear = c; out->units = u; out->admin = ad; out->events = ev; out->population = po; out->fog = fg != 0; found = 1; }
+        char g[64]; int a, b2, c, u = 3, ad = 0, ev = 0, po = 0, fg = 0, sp = 1;    /* units, admin, events, population, fog, spectators: 5th-10th fields (older: 3, 0, 0, 0, 0, 1) */
+        if (sscanf(line, "%63s %d %d %d %d %d %d %d %d %d", g, &a, &b2, &c, &u, &ad, &ev, &po, &fg, &sp) >= 4 && !strcmp(g, guid)) { out->pause_mode = a; out->speedup = b2; out->gear = c; out->units = u; out->admin = ad; out->events = ev; out->population = po; out->fog = fg != 0; out->spectators = sp != 0; found = 1; }
     }
     fclose(f); return found;
 }
@@ -1392,7 +1399,7 @@ static void world_put(const char *guid, const mpm_settings *st) {
     char p[1200], tmp[1300], line[256]; app_path(p, sizeof p, "mp_worlds.txt"); snprintf(tmp, sizeof tmp, "%s.tmp", p);
     FILE *in = fopen(p, "r"), *out = fopen(tmp, "w"); if (!out) { if (in) fclose(in); return; }
     while (in && fgets(line, sizeof line, in)) { char g[64]; if (sscanf(line, "%63s", g) == 1 && strcmp(g, guid)) fputs(line, out); }
-    fprintf(out, "%s %d %d %d %d %d %d %d %d\n", guid, st->pause_mode, st->speedup, st->gear, st->units, st->admin, st->events, st->population, st->fog);
+    fprintf(out, "%s %d %d %d %d %d %d %d %d %d\n", guid, st->pause_mode, st->speedup, st->gear, st->units, st->admin, st->events, st->population, st->fog, st->spectators);
     if (in) fclose(in);
     fclose(out); rename(tmp, p);
 }
@@ -1523,7 +1530,7 @@ static void join_by_address(void) {
     Obj f = u_gc_get(h_field);
     if (u_alive(f)) str_utf8((mm_is(f, K_FIELD) ? F(0x4EFAE84, Obj (*)(Obj, void *))(f, NULL) : NULL), txt, sizeof txt);       /* TMP_InputField.text */
     else str_utf8(F(0x518AEA0, Obj (*)(void *))(NULL), txt, sizeof txt);                       /* clipboard */
-    mp_config c; mp_config_defaults(&c); c.host = 0; c.need_save = 1;
+    mp_config c; mp_config_defaults(&c); c.host = 0; c.need_save = 1; c.spectator = M.watch;   /* Connect / Watch */
     char p[1200]; snprintf(p, sizeof p, "%s/mp.json", rig_dir);
     mp_config fj; if (mp_config_load(p, &fj) == 0) snprintf(c.name, sizeof c.name, "%s", fj.name);
     uint16_t port = 0;
@@ -1538,7 +1545,7 @@ static void join_by_address(void) {
     conn_cfg = c; conn_t0 = now_ms_();
     conn = dsnet_connect_start(c.host_addr, port, DSNET_CONNECT_TIMEOUT_MS);
     snprintf(M.connecting, sizeof M.connecting, "%s:%u", c.host_addr, port);
-    rig_log("mpmenu: join by address %s: connecting (limit %d ms)", M.connecting, DSNET_CONNECT_TIMEOUT_MS);
+    rig_log("mpmenu: join by address %s%s: connecting (limit %d ms)", M.connecting, c.spectator ? " to watch" : "", DSNET_CONNECT_TIMEOUT_MS);
 }
 static void join_poll(void) {                                              /* each frame: never waits */
     if (!conn) return;
@@ -1584,8 +1591,10 @@ static void rules_sync(const mpm_obs *o) {
     mp_session *s = mp_game_session(); dsnet_client *c = s ? mp_client(s) : NULL;
     if (!c) return;
     dsnet_rules r; dsnet_rules_get(c, &r);
-    int adm = dsnet_admin_mode(c);
-    if (r.pause_mode == M.set.pause_mode && (r.allow_speedup != 0) == (M.set.speedup != 0) && r.gear_mode == M.set.gear && r.units_per_player == M.set.units && r.event_choice == M.set.events && r.population == M.set.population && r.shared_fog == M.set.fog && adm == M.set.admin) return;
+    int adm = dsnet_admin_mode(c), spa = dsnet_spectators_allowed(c) != 0;
+    if (r.pause_mode == M.set.pause_mode && (r.allow_speedup != 0) == (M.set.speedup != 0) && r.gear_mode == M.set.gear && r.units_per_player == M.set.units && r.event_choice == M.set.events && r.population == M.set.population && r.shared_fog == M.set.fog && adm == M.set.admin
+        && spa == (M.set.spectators != 0)) return;
+    M.set.spectators = spa;                                                 /* the in-game cog (ui lane) or the box */
     M.set.pause_mode = r.pause_mode; M.set.speedup = r.allow_speedup; M.set.gear = r.gear_mode; M.set.units = r.units_per_player; M.set.events = r.event_choice; M.set.population = r.population; M.set.fog = r.shared_fog; M.set.admin = adm;
     char gid[64] = ""; prefs_save(); if (campaign_guid(gid, sizeof gid)) world_put(gid, &M.set);
     rig_log("mpmenu: rules changed in play: pause %d speed-up %d gear %d units %d (world saved)", r.pause_mode, r.allow_speedup, r.gear_mode, r.units_per_player);
@@ -1633,7 +1642,7 @@ static void notice_frame(const mpm_obs *o) {
  * actions; _txtConfirm +0x40 primary right "End for everyone", _txtCancle +0x50 "Cancel"). The ui lane's
  * OnClick_Confirm / OnClick_Cancle hooks hand clicks on a box that is not theirs to mpmenu_notice_click (dlsym). If
  * another box takes the view (its text changes) or it closes another way, it counts as Cancel. */
-enum { BX_NONE, BX_LEAVE, BX_INVITE, BX_NOSAVE, BX_JOINING };             /* which of our boxes is up (one view, one at a time) */
+enum { BX_NONE, BX_LEAVE, BX_INVITE, BX_NOSAVE, BX_JOINING, BX_SPECT_OFF };   /* SPECT_OFF: "Remove the spectators now?" */             /* which of our boxes is up (one view, one at a time) */
 static char lbox_text[400]; static int lbox_up;                             /* lbox_up = BX_* */
 static Obj lbox_view(void) { return find_view_x(&h_cnv, &k_cnv, "Refactor.UI", "CommonNoticeView", true); }
 static int lbox_ours(Obj v) {
@@ -1715,6 +1724,34 @@ static void box_show(int kind, const char *text, const char *yes, const char *no
     rig_log("mpmenu: box %d: %s", kind, text);
 }
 static void box_close(void) { Obj v = lbox_view(); int ours = lbox_ours(v); lbox_up = BX_NONE; if (ours) F(0xF65638, void (*)(Obj, void *))(v, NULL); }
+/* ---------------------------------------------------------------- host rule "Spectators" (owner 2026-10-14)
+ * Outside the sim (dsnet P_SPECT_RULE, mp_set_spectators): on / off at once; off drops every spectator (BYE reason 2).
+ * Off while some watch asks first (the stock box). Saved like the other rules (mp_menu.json, the world's line). */
+static int spect_watching(void) {
+    mp_session *s = mp_game_session(); dsnet_client *c = s ? mp_client(s) : NULL;
+    return c ? __builtin_popcount(dsnet_spectator_mask(c)) : 0;
+}
+static void spect_apply(int allow) {
+    mp_session *s = mp_game_session();
+    int rc = s ? mp_set_spectators(s, allow) : -1;
+    M.set.spectators = allow != 0; rules_sent_frame = frames;
+    char gid[64] = ""; prefs_save(); if (campaign_guid(gid, sizeof gid)) world_put(gid, &M.set);
+    rig_log("mpmenu: spectators %s (rc %d)", allow ? "allowed" : "not allowed", rc);
+}
+__attribute__((visibility("default"))) int mpmenu_spectators_off_ask(void) {
+    int n = spect_watching();
+    if (!n) { spect_apply(0); return 0; }
+    char t[400];
+    if (n == 1) snprintf(t, sizeof t, "<size=150%%>Remove the spectator now?</size>\nThey go back to the title. Nobody can watch until you allow spectators again.");
+    else snprintf(t, sizeof t, "<size=150%%>Remove the %d spectators now?</size>\nThey go back to the title. Nobody can watch until you allow spectators again.", n);
+    box_show(BX_SPECT_OFF, t, "Remove", "Cancel");
+    if (lbox_up != BX_SPECT_OFF) { spect_apply(0); return 0; }            /* no box could be shown: the host asked for it, apply */
+    return 1;
+}
+__attribute__((visibility("default"))) int mpmenu_spectators_set(int allow) {
+    if (allow) { spect_apply(1); return 0; }
+    return mpmenu_spectators_off_ask();
+}
 static void invite_answer(int choice) {
     if (!inv_answer) return;
     int rc = inv_answer(choice);
@@ -1733,10 +1770,12 @@ static void invite_click(int confirm) {
     if (k == BX_INVITE) invite_answer(confirm ? 2 : 0);
     else if (k == BX_NOSAVE) invite_answer(confirm ? 1 : 0);
     else if (k == BX_JOINING) { join_box_on = 0; mp_steam_leave(); rig_log("mpmenu: joining cancelled (box)"); }
+    else if (k == BX_SPECT_OFF) { if (confirm) spect_apply(0); else rig_log("mpmenu: spectators stay (box: Cancel)"); }
 }
 static void invite_frame(const mpm_obs *o) {
     static int looked; if (!looked) { looked = 1; inv_pending = (int (*)(char *, size_t))dlsym(RTLD_DEFAULT, "mp_game_invite_pending"); inv_answer = (int (*)(int))dlsym(RTLD_DEFAULT, "mp_game_invite_answer"); }
     Obj v = lbox_view();
+    if (lbox_up == BX_SPECT_OFF && !lbox_ours(v)) { lbox_up = BX_NONE; rig_log("mpmenu: spectators box gone: they stay"); }   /* closed another way = Cancel */
     if ((lbox_up == BX_INVITE || lbox_up == BX_NOSAVE || lbox_up == BX_JOINING) && !lbox_ours(v)) {   /* closed or taken by another box: Cancel */
         int k = lbox_up; lbox_up = BX_NONE;
         if (k == BX_JOINING) { if (join_box_on && frames % 30 == 0) join_phase_shown = -1; }   /* shown again below */
@@ -1948,6 +1987,10 @@ static void hist_join(int k) {
       expect_world(gid); snprintf(hist_world, sizeof hist_world, "%s", h->world); }
     if (!strcmp(h->how, "steam")) {
         if (!M.steam) { snprintf(M.msg, sizeof M.msg, "This world was joined through Steam: needs the Steam version."); return; }
+        { static void (*next_spect)(int); static int looked;                /* core (dlsym): the next mp_game_join watches */
+          if (!looked) { looked = 1; next_spect = (void (*)(int))dlsym(RTLD_DEFAULT, "mp_game_next_spectator"); }
+          if (M.watch && !next_spect) { snprintf(M.msg, sizeof M.msg, "Watching through Steam is not in this build."); return; }
+          if (next_spect) next_spect(M.watch); }
         friends_refresh();
         for (int i = 0; i < M.nfriends; i++) if (friend_id[i] == h->steamid) {
             int rc = mp_steam_join(friend_lobby[i]);
@@ -1959,6 +2002,7 @@ static void hist_join(int k) {
     mp_config cc; mp_config_defaults(&cc); cc.host = 0; cc.need_save = 1; uint16_t port = 0;
     if (ui_parse_address(h->addr, cc.host_addr, sizeof cc.host_addr, &port, MPM_DEFAULT_PORT)) { snprintf(M.msg, sizeof M.msg, "Bad address in this row: %s", h->addr); return; }
     cc.port = port; snprintf(cc.name, sizeof cc.name, "%s", my_name); default_name(cc.name, sizeof cc.name);
+    cc.spectator = M.watch;                                                 /* the row's Watch button */
     if (conn) dsnet_connect_free(conn);
     conn_cfg = cc; conn_t0 = now_ms_(); snprintf(hist_host, sizeof hist_host, "%s", h->host);
     conn = dsnet_connect_start(cc.host_addr, port, DSNET_CONNECT_TIMEOUT_MS);
@@ -2069,8 +2113,14 @@ static void chat_pull(dsnet_client *c) {
     while (dsnet_chat_poll(c, &m)) {
         char t[300], body[260]; chat_esc(m.text, body, sizeof body);
         const char *col = ui_player_color(m.player);
-        if (m.kind == DSNET_CHAT_TEXT) snprintf(t, sizeof t, "<color=%s>%s:</color> %s", col, m.name[0] ? m.name : "Player", body);
-        else {
+        if (m.kind == DSNET_CHAT_TEXT && m.watching)              /* a spectator's line: grey, "(watching)" */
+            snprintf(t, sizeof t, "<color=%s>%s (watching):</color> %s", UI_SPECTATOR_COLOR, m.name[0] ? m.name : "Spectator", body);
+        else if (m.kind == DSNET_CHAT_TEXT) snprintf(t, sizeof t, "<color=%s>%s:</color> %s", col, m.name[0] ? m.name : "Player", body);
+        else if (m.kind == DSNET_CHAT_WATCHING || m.kind == DSNET_CHAT_STOPPED_WATCHING) {
+            if (!chat_show_join) continue;
+            snprintf(t, sizeof t, "<i><color=#A69085>%s %s</color></i>", m.name[0] ? m.name : "A spectator",
+                     m.kind == DSNET_CHAT_WATCHING ? "is watching" : "stopped watching");
+        } else {
             if (!chat_show_join || (m.kind == DSNET_CHAT_JOINED && m.player == dsnet_player_id(c))) continue;   /* not "you joined" */
             snprintf(t, sizeof t, "<i><color=#A69085>%s %s</color></i>", m.name[0] ? m.name : "A player",
                      m.kind == DSNET_CHAT_LEFT ? "left the game" : m.kind == DSNET_CHAT_RECONNECTED ? "reconnected" : "joined the game");
@@ -2257,7 +2307,9 @@ static void chat_frame(const mpm_obs *o) {
     { char line[200] = ""; int k = 0, more = 0; size_t o = 0;
       for (int p = 0; p < DSNET_MAX_PLAYERS; p++) {
           if (p == me || !dsnet_chat_typing_of(c, p)) continue;
-          const char *nm = dsnet_player_name(c, p); if (!nm) continue;
+          const char *nm = dsnet_player_name(c, p);
+          static char snm[32]; if (!nm && dsnet_spectator_info(c, p, snm, NULL, NULL) == 0) nm = snm;   /* a spectator types too */
+          if (!nm) continue;
           if (k == 3) { more = 1; break; }
           o += (size_t)snprintf(line + o, o < sizeof line ? sizeof line - o : 0, "%s<color=%s>%s</color>", k ? ", " : "", ui_player_color(p), nm); k++;
       }
@@ -2332,6 +2384,7 @@ static void run_actions(int a, const mpm_obs *o) {
         mp_config f; if (mp_config_load(p, &f) == 0) { snprintf(c.name, sizeof c.name, "%s", f.name); c.port = f.port; }
         c.host = 1; c.allow_speedup = M.set.speedup; c.allow_pause = M.set.pause_mode != MPM_PAUSE_NONE;
         c.pause_mode = M.set.pause_mode; c.gear_mode = M.set.gear; c.port = MPM_DEFAULT_PORT;
+        c.allow_spectators = M.set.spectators;
         if (my_name[0]) snprintf(c.name, sizeof c.name, "%s", my_name);
         else if (!in.steam) default_name(c.name, sizeof c.name);
         int rc = in.steam ? mp_steam_host("", &c)                           /* the campaign just loaded; TCP listens too */
@@ -2345,6 +2398,7 @@ static void run_actions(int a, const mpm_obs *o) {
     if ((a & MPA_JOIN_CANCEL) && conn) { dsnet_connect_free(conn); conn = NULL; rig_log("mpmenu: connect cancelled"); }
     if (a & MPA_START_GAME) lobby_hold(0);
     if (a & MPA_RULES) rules_send("lobby");
+    if (a & MPA_SPECTATORS) mpmenu_spectators_set(!M.set.spectators);       /* lobby Rules arrow (off: the box when someone watches) */
     if (a & MPA_ADMIN) {                                                    /* lobby window: host admin mode on / off */
         mp_session *s = mp_game_session(); dsnet_client *c = s ? mp_client(s) : NULL;
         uint8_t b = c && !dsnet_admin_mode(c);
@@ -2432,6 +2486,7 @@ static void tips_frame(const mpm_obs *o) {
     }
     if (o->scene != 1) return;
     /* Recent worlds (3.1) */
+    for (int i = 0; i < 6; i++) TIP(tb(MPB_HISTW0 + i), "Watch", "Watch the game: you see everything and can chat and ping, but you own no units and cannot pause or vote.");   /* before its row's own tip */
     for (int i = 0; i < 6; i++) {
         TIP(tb(MPB_HISTX0 + i), "Remove from List", "Removes this world from Recent Worlds. The world itself and its save are not deleted.");
         TIP(u_gc_get(h_rw_ul[i]), "Your Units", "The units you controlled in this world when you last left. They stay reserved for you until you come back.");
@@ -2454,6 +2509,7 @@ static void tips_frame(const mpm_obs *o) {
     TIP(u_gc_get(h_namefield), "Your Name", "The name other players see: in the player list, above your units and in chat.");
     TIP(u_gc_get(h_field), "Host Address", "The address the host shares from their lobby, for example 192.168.1.20:47777. Outside your home network, the host must open the port on their router.");
     TIP(tb(MPB_CONNECT), "Connect", "Connects to the host and loads their world. It stops trying after 8 seconds without an answer.");
+    TIP(tb(MPB_WATCH), "Watch", "Watch the game: you see everything and can chat and ping, but you own no units and cannot pause or vote.");
     TIP(tb(MPB_CANCEL_JOIN), "Cancel", M.state == MPM_GUEST_JOINING || M.state == MPM_GUEST_LOADING ? "Stops joining and returns to the title. Escape does the same."
                                                                                                     : "Stops connecting. You stay on this page. Escape does the same.");
     TIP(tb(MPB_BACK), "Back", "Returns to the previous menu.");
@@ -2485,7 +2541,7 @@ void mpmenu_frame(void) {
     if (o.failed && o.msg[0] && (M.state == MPM_FAILED || M.state == MPM_IDLE)) mp_steam_ack();   /* the message is in M.msg now */
     if (a & ~MPA_REFRESH) run_actions(a, &o);
     int lobby = M.state == MPM_LOBBY || M.state == MPM_GUEST_LOBBY;
-    if (lobby && o.campaign_ready && !o.esc_open && !(a & MPA_LOBBY_SHOW) && !M.confirm_leave && frames % 30 == 0) {   /* not under the Leave box */
+    if (lobby && o.campaign_ready && !o.esc_open && !(a & MPA_LOBBY_SHOW) && !M.confirm_leave && lbox_up != BX_SPECT_OFF && frames % 30 == 0) {   /* not under the Leave / spectators box */
         /* the lobby stays until Start / Leave, but never over another window: a stock popup (story, level-up...) or the
          * ui lane's own boxes (player disconnected: Keep playing / Wait) */
         static int (*ui_modal)(void); static int looked;
@@ -2501,6 +2557,7 @@ void mpmenu_frame(void) {
         if (ui_modal2 && ui_modal2() && ev) { (mm_is(ev, K_SMV) ? F(0xF2ED1C, void (*)(Obj, void *))(ev, NULL) : (void)0); rig_log("mpmenu: lobby closed for a ui box; it comes back after"); }
     }
     if (M.state == MPM_LOBBY && frames % 30 == 0) direct_refresh();
+    M.set.watching = o.role == 1 ? spect_watching() : 0;                    /* "Allowed · 2 watching" (Rules value) */
     rules_sync(&o);
     if (o.role && o.campaign_ready && !o.loading && frames % 300 == 150) hist_update();   /* Recent worlds: the session now */
     if (!hist_loaded && o.scene == 1) { hist_load(); M.nhist = nhist; }
@@ -2842,6 +2899,10 @@ char *mpmenu_exec(const char *cmd, const char *line) {
     }
     if (!strcmp(cmd, "mpm_tip")) { test_hover[0] = 0; jstr(line, "title", test_hover, sizeof test_hover); return strdup("{\"ok\":true}"); }   /* test: hover the element with this title; none = real mouse */
     if (!strcmp(cmd, "mpm_escape")) { test_escape = 1; return strdup("{\"ok\":true}"); }   /* test: as if Escape was pressed */
+    if (!strcmp(cmd, "mpm_spectators")) {                                   /* test: {allow:0|1} what the in-game cog calls (box when off + watching) */
+        double v = 1; jnum(line, "allow", &v);
+        Buf b = {0}; bput(&b, "{\"ok\":true,\"box\":%d,\"allowed\":%d,\"watching\":%d}", mpmenu_spectators_set(v != 0), M.set.spectators, spect_watching()); return b.p;
+    }
     if (!strcmp(cmd, "mpm_cogtest")) {                                      /* test: the built cog on the big Rules box image */
         Obj bx = u_gc_get(h_title_box); if (bx) img_set(bx, spr(S_COG), C_WHITE);
         Obj cg = u_gc_get(h_title_cog); if (cg) { static void *mt; if (!mt) mt = mth("UnityEngine.UI", "Image", "set_type", 1); if (mt) MCALL(mt, void, Obj, int, const void *)(cg, 0, mt); place(cg, 0, 0, 80, 80); }
@@ -2905,8 +2966,8 @@ char *mpmenu_exec(const char *cmd, const char *line) {
     if (!strcmp(cmd, "mpm_status")) {
         mpm_obs o; observe(&o);
         Buf b = {0};
-        bput(&b, "{\"ok\":true,\"state\":\"%s\",\"settings\":{\"pause\":%d,\"speedup\":%d,\"gear\":%d,\"units\":%d,\"admin\":%d,\"events\":%d,\"population\":%d,\"fog\":%d},\"msg\":", state_name(M.state),
-             M.set.pause_mode, M.set.speedup, M.set.gear, M.set.units, M.set.admin, M.set.events, M.set.population, M.set.fog);
+        bput(&b, "{\"ok\":true,\"state\":\"%s\",\"settings\":{\"pause\":%d,\"speedup\":%d,\"gear\":%d,\"units\":%d,\"admin\":%d,\"events\":%d,\"population\":%d,\"fog\":%d,\"spectators\":%d,\"watching\":%d},\"watch\":%d,\"spectator\":%d,\"msg\":", state_name(M.state),
+             M.set.pause_mode, M.set.speedup, M.set.gear, M.set.units, M.set.admin, M.set.events, M.set.population, M.set.fog, M.set.spectators, M.set.watching, M.watch, M.spect);
         bstr(&b, M.msg);
         { Obj bv = lbox_view(); char bt[400] = "", bc[64] = "", bx[64] = "";   /* lan_v10: Leave box, notice, last centred message */
           int bon = u_alive(bv) && u_on(bv);

@@ -7,7 +7,8 @@
 /* ---------------------------------------------------------------- model (no game code) */
 enum { MPM_PAUSE_NONE = 0, MPM_PAUSE_ANYONE = 1, MPM_PAUSE_ALL_VOTE = 2 };          /* = enum dsnet_pause_mode */
 enum { MPM_GEAR_SHARED_OWN = 0, MPM_GEAR_SHARED_ANY = 1, MPM_GEAR_OWN_STORAGE = 2 };
-typedef struct mpm_settings { int pause_mode, speedup, gear, units, admin, events, population, fog; } mpm_settings;   /* fog: shared fog of war 0/1 (default 0) */   /* events: dsnet_event_choice */   /* units per player: 1, 2, 3, 4, 6 */
+typedef struct mpm_settings { int pause_mode, speedup, gear, units, admin, events, population, fog;
+                              int spectators, watching; } mpm_settings;   /* fog: shared fog of war 0/1 (default 0); spectators: host allows them (1 default); watching: how many watch now (game side, display only) */
 #define MPM_DEFAULT_PORT 47777   /* direct TCP port the host listens on (beside Steam) */
 
 enum mpm_state {
@@ -51,6 +52,10 @@ enum mpm_button {
     MPB_POP_PREV, MPB_POP_NEXT,                                             /* rule "Population" (lan_v8) */
     MPB_LEAVE_CONFIRM, MPB_LEAVE_CANCEL,                                    /* host Leave confirm box: End for everyone / Cancel (lan_v10) */
     MPB_FOG_PREV, MPB_FOG_NEXT,                                             /* rule "Shared fog of war" (core next 2026-10-15) */
+    /* spectators (owner 2026-10-14). Ids >= 64 have no bit in mpm_visible: ask mpm_is_visible */
+    MPB_WATCH,                                                              /* Join page: connect as a spectator */
+    MPB_HISTW0, MPB_HISTW1, MPB_HISTW2, MPB_HISTW3, MPB_HISTW4, MPB_HISTW5, /* Recent worlds rows: Watch */
+    MPB_SPECT_PREV, MPB_SPECT_NEXT,                                         /* rule "Spectators" */
     MPB_COUNT
 };
 /* what the game side sees each frame */
@@ -68,6 +73,7 @@ typedef struct mpm_obs {
     int steam;              /* Steam is running (the MP app); the LAN app has none */
     int escape;             /* title: Escape pressed this frame (= Back) */
     int edited;             /* title: the address or name field text changed since the last frame */
+    int spectator;          /* this copy's session (or the join that runs) watches */
     char host_name[64];     /* guest: the host's name ("" unknown) */
     char msg[160];          /* why the session ended / failed (mp_steam_state), "" none */
 } mpm_obs;
@@ -93,6 +99,7 @@ enum {
     MPA_HIST_DEL       = 1 << 17,  /* remove recent world m->hist_pick */
     MPA_CONFIRM_LEAVE  = 1 << 18,  /* host pressed Leave multiplayer: show the "End the game for everyone?" box (lan_v10, ux_flow F7) */
     MPA_LEAVE_BOX_CLOSE = 1 << 19, /* close that box (Escape, or the session ended under it) */
+    MPA_SPECTATORS     = 1 << 20,  /* host, lobby: flip "Spectators" (off with spectators watching: confirm box first) */
 };
 typedef struct mpm_model {
     int state;
@@ -113,12 +120,15 @@ typedef struct mpm_model {
     char friends[6][48];
     int closed_frames;      /* frames since it closed with no load started */
     int confirm_leave;      /* host: the "End the game for everyone?" box is up */
+    int watch;              /* the join asked from the title (Connect / Watch, a Recent worlds row) is a spectator join */
+    int spect;              /* last obs.spectator (labels) */
 } mpm_model;
 void mpm_init(mpm_model *m);
 /* one frame: `click` = enum mpm_button or MPB_NONE. Returns MPA_* actions to run now. */
 int  mpm_step(mpm_model *m, const mpm_obs *o, int click);
 /* which buttons are shown now (bit per enum mpm_button) */
-uint64_t mpm_visible(const mpm_model *m, const mpm_obs *o);   /* bit per enum mpm_button (more than 32) */
+uint64_t mpm_visible(const mpm_model *m, const mpm_obs *o);   /* bit per enum mpm_button below 64 */
+int      mpm_is_visible(const mpm_model *m, const mpm_obs *o, int button);   /* any button (ids >= 64 too) */
 /* label of a button (settings show their value) */
 void mpm_label(const mpm_model *m, int button, char *out, size_t cap);
 /* lobby body: next step, "\xC2\xB7 the owner (host)" per player, settings line, addresses (host) */
@@ -127,7 +137,7 @@ void mpm_lobby_title(const mpm_model *m, char *out, size_t cap);   /* "Multiplay
 /* "Pause: anyone · Speed-up: on · Gear: own units · Units: 3 · Admin: off" (host page Rules box) */
 void mpm_settings_summary(const mpm_settings *s, char *out, size_t cap);
 /* Rules panel rows (0 Pause, 1 Speed-up, 2 Gear, 3 Units per player, 4 Admin mode): label and long value */
-#define MPM_RULE_ROWS 8
+#define MPM_RULE_ROWS 9                                  /* row 7 "Shared fog", row 8 "Spectators" */
 #define MPM_RULE_POP 4                                   /* the Population row: its description line sits under it */
 const char *mpm_population_desc(int mode);
 const char *mpm_rule_tip(int row);                         /* hover tooltip of a Rules row (owner lan_v8) */
@@ -148,4 +158,8 @@ void  mpmenu_title_init(void *title_menu_view);   /* optional: rebuild the title
 int   mpmenu_title_click(void *button);            /* 1 = our clone (the click hook calls it) */
 int   mpmenu_gear_mode(void);                      /* lobby gear option for the ord / ui lanes; -1 no session */
 int   mpmenu_lobby_open(void);                     /* ui lane: 1 while the lobby (host) or waiting panel (guest) is up */
+/* ui lane (dlsym): host rule "Spectators" in play. off_ask: spectators watching -> the confirm box (1), none -> off now (0).
+ * set: on at once; off = off_ask. Both save the rule (mp_menu.json, the world's line). */
+int   mpmenu_spectators_off_ask(void);
+int   mpmenu_spectators_set(int allow);
 #endif

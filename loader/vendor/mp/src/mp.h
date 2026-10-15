@@ -53,6 +53,9 @@ typedef struct mp_config {
     int  shared_fog;            /* host: 1 = vanilla fog for all, 0 (default) = each player sees what his own units see (mp_fog.c) */
     int  need_save;             /* client: has no campaign loaded (menu / Steam join): ask the host for its save
                                    right after the WELCOME, even at step 0 (default 0; mp.json pairs load the same save) */
+    int  spectator;             /* client: join to watch (owner 2026-10-14): sees everything, owns no units, sends no
+                                   commands (no pause, no votes); chat and map pings only. Default 0 */
+    int  allow_spectators;      /* host: let spectators watch (default 1); changed in play with mp_set_spectators */
 } mp_config;
 
 void mp_config_defaults(mp_config *c);
@@ -146,6 +149,9 @@ int  mp_left_waiting(mp_session *s);                     /* 1 = "Wait" chosen, s
 int  mp_claim(mp_session *s, const uint8_t guid[16]);     /* ownership (max 3); */
 int  mp_release(mp_session *s, const uint8_t guid[16]);
 int  mp_assign(mp_session *s, const uint8_t guid[16], int player);  /* host: give a unit to a player */
+int  mp_is_spectator(mp_session *s);                       /* this copy watches (no orders, no votes) */
+int  mp_set_spectators(mp_session *s, int allow);          /* host: spectators on / off in play (off drops them) */
+int  mp_server_stats(mp_session *s, dsnet_server_stats *out);   /* host: 0 ok (spectator joins served / join points), -1 not the host */
 
 /* Order dispatch table: MOVE is pre-filled (api->order_move); the orders lane adds the others. */
 void mp_set_order_handler(mp_session *s, uint16_t type, mp_order_fn fn);

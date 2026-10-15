@@ -7,9 +7,9 @@
 /* short labels (ux #17): at the stock button size 22 (design #8) the host page buttons fit on one line at 960 and 1512 */
 void mpm_settings_summary(const mpm_settings *s, char *out, size_t cap) {
     static const char *ev[] = { "owner", "host", "first", "majority" }, *po[] = { "shared", "per player", "split", "multiplied" };
-    snprintf(out, cap, "Pause: %s \xC2\xB7 Speed-up: %s \xC2\xB7 Gear: %s \xC2\xB7 Units: %d \xC2\xB7 Population: %s \xC2\xB7 Events: %s \xC2\xB7 Admin: %s \xC2\xB7 Shared fog: %s", mpm_pause_text(s->pause_mode),
+    snprintf(out, cap, "Pause: %s \xC2\xB7 Speed-up: %s \xC2\xB7 Gear: %s \xC2\xB7 Units: %d \xC2\xB7 Population: %s \xC2\xB7 Events: %s \xC2\xB7 Admin: %s \xC2\xB7 Shared fog: %s \xC2\xB7 Spectators: %s", mpm_pause_text(s->pause_mode),
              s->speedup ? "on" : "off", mpm_gear_text(s->gear), s->units, po[s->population >= 0 && s->population < 4 ? s->population : 0],
-             ev[s->events >= 0 && s->events < 4 ? s->events : 0], s->admin ? "on" : "off", s->fog ? "on" : "off");
+             ev[s->events >= 0 && s->events < 4 ? s->events : 0], s->admin ? "on" : "off", s->fog ? "on" : "off", s->spectators ? "on" : "off");
 }
 const char *mpm_population_desc(int mode) {           /* owner's wording (lead 2026-10-13) */
     return mode == 1 ? "Each player can recruit up to the clan limit for himself"
@@ -25,15 +25,16 @@ const char *mpm_rule_tip(int row) {                     /* tooltip bodies (resea
         "How the clan's population limit is shared. Shared: one limit for everyone, first come. Per player: each player has the full limit. Split equally: the limit is divided between players. Multiplied: limit times players, shared. A hire needs room here and under Units per Player.",
         "Who answers an event. Owner of the unit: the player who controls the unit in the event. Host only. First to answer. Majority vote: the host breaks a tie.",
         "On: the host can order every unit and release the units of absent players. Off: the host is a normal player for other players' units.",
-        "Off: each player sees only what their own units see; places explored by others stay dark until a reload. On: everyone sees what any unit has revealed. The world is the same for everyone either way." };
+        "Off: each player sees only what their own units see; places explored by others stay dark until a reload. On: everyone sees what any unit has revealed. The world is the same for everyone either way.",
+        "Allowed: anyone you invite can join to watch (at most 8). They see everything, can chat and ping, own no units, and cannot pause or vote. Not allowed: nobody can watch; turning it off during play removes the spectators." };
     return row >= 0 && row < MPM_RULE_ROWS ? t[row] : "";
 }
 const char *mpm_rule_tip_title(int row) {
-    static const char *t[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per Player", "Population", "Event Choices", "Admin Mode", "Shared Fog of War" };
+    static const char *t[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per Player", "Population", "Event Choices", "Admin Mode", "Shared Fog of War", "Spectators" };
     return row >= 0 && row < MPM_RULE_ROWS ? t[row] : "";
 }
 const char *mpm_rule_label(int row) {
-    static const char *l[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per player", "Population", "Event choices", "Admin mode", "Shared fog" };
+    static const char *l[MPM_RULE_ROWS] = { "Pause", "Speed-up", "Gear", "Units per player", "Population", "Event choices", "Admin mode", "Shared fog", "Spectators" };
     return row >= 0 && row < MPM_RULE_ROWS ? l[row] : "";
 }
 void mpm_rule_value(const mpm_settings *s, int row, char *out, size_t cap) {
@@ -46,6 +47,10 @@ void mpm_rule_value(const mpm_settings *s, int row, char *out, size_t cap) {
     case 5: snprintf(out, cap, "%s", s->events == 1 ? "Host only" : s->events == 2 ? "First to answer" : s->events == 3 ? "Majority vote" : "Owner of the unit"); break;
     case 6: snprintf(out, cap, "%s", s->admin ? "On" : "Off"); break;
     case 7: snprintf(out, cap, "%s", s->fog ? "On" : "Off"); break;
+    case 8:
+        if (s->spectators && s->watching > 0) snprintf(out, cap, "Allowed \xC2\xB7 %d watching", s->watching);
+        else snprintf(out, cap, "%s", s->spectators ? "Allowed" : "Not allowed");
+        break;
     default: out[0] = 0;
     }
 }
@@ -63,7 +68,7 @@ const char *mpm_gear_text(int gear) {
 void mpm_init(mpm_model *m) {
     memset(m, 0, sizeof *m);
     m->state = MPM_IDLE;
-    m->set.pause_mode = MPM_PAUSE_ANYONE; m->set.speedup = 1; m->set.gear = MPM_GEAR_SHARED_OWN; m->set.units = 3;
+    m->set.pause_mode = MPM_PAUSE_ANYONE; m->set.speedup = 1; m->set.gear = MPM_GEAR_SHARED_OWN; m->set.units = 3; m->set.spectators = 1;
 }
 
 static int go(mpm_model *m, int st) { m->state = st; m->confirm_leave = 0; return MPA_REFRESH; }
@@ -90,6 +95,8 @@ static int ended(mpm_model *m, const mpm_obs *o) {
         const char *h = m->host[0] ? m->host : "The host";
         if (m->host[0]) snprintf(m->notice, sizeof m->notice, "<size=150%%>%s left the game</size>\nThe world is saved on %s's computer. To play again, %s hosts it and invites you.", h, h, h);
         else snprintf(m->notice, sizeof m->notice, "<size=150%%>The host left the game</size>\nThe world is saved on the host's computer. To play again, the host hosts it and invites you.");
+    } else if (!strcmp(o->msg, "The host turned spectators off")) {          /* a spectator dropped by the host's rule */
+        snprintf(m->notice, sizeof m->notice, "<size=150%%>%s turned spectators off</size>\nYou can no longer watch this world.", m->host[0] ? m->host : "The host");
     } else if (!strcmp(o->msg, "Connection to the host lost")) {           /* our own link dropped (no host BYE): the host waits */
         if (m->host[0]) snprintf(m->notice, sizeof m->notice, "<size=150%%>Connection to %s lost</size>\n%s is waiting for you: rejoin from Recent worlds.", m->host, m->host);
         else snprintf(m->notice, sizeof m->notice, "<size=150%%>Connection to the host lost</size>\nThe host is waiting for you: rejoin from Recent worlds.");
@@ -119,12 +126,13 @@ static int rule_arrow(mpm_model *m, int c) {
     case MPB_POP_PREV: m->set.population = (m->set.population + 3) % 4; return 1;
     case MPB_POP_NEXT: m->set.population = (m->set.population + 1) % 4; return 1;
     case MPB_FOG_PREV: case MPB_FOG_NEXT: m->set.fog = !m->set.fog; return 1;
+    case MPB_SPECT_PREV: case MPB_SPECT_NEXT: m->set.spectators = !m->set.spectators; return 1;   /* title page: no session yet */
     }
     return 0;
 }
 int mpm_step(mpm_model *m, const mpm_obs *o, int c) {
     int a = 0; cur = o;
-    m->steam = o->steam;
+    m->steam = o->steam; m->spect = o->spectator;
     /* Escape = Back on every title page (the Rules panel closes first) */
     if (o->escape && c == MPB_NONE && o->scene == 1) {
         if (m->state == MPM_TITLE_HOST && m->settings_open) c = MPB_RULES_DONE;
@@ -148,11 +156,12 @@ int mpm_step(mpm_model *m, const mpm_obs *o, int c) {
         if (o->scene != 1) return go(m, MPM_IDLE);
         if (c == MPB_HOST) return go(m, MPM_TITLE_HOST);
         if (c == MPB_JOIN_ADDR) { m->msg[0] = 0; return go(m, MPM_TITLE_JOIN); }
-        if (c >= MPB_HIST0 && c <= MPB_HIST5 && m->hist_page * 6 + (c - MPB_HIST0) < m->nhist) { m->hist_pick = m->hist_page * 6 + (c - MPB_HIST0); m->msg[0] = 0; return MPA_HIST_JOIN | MPA_REFRESH; }
+        if (c >= MPB_HIST0 && c <= MPB_HIST5 && m->hist_page * 6 + (c - MPB_HIST0) < m->nhist) { m->hist_pick = m->hist_page * 6 + (c - MPB_HIST0); m->msg[0] = 0; m->watch = 0; return MPA_HIST_JOIN | MPA_REFRESH; }
+        if (c >= MPB_HISTW0 && c <= MPB_HISTW5 && m->hist_page * 6 + (c - MPB_HISTW0) < m->nhist) { m->hist_pick = m->hist_page * 6 + (c - MPB_HISTW0); m->msg[0] = 0; m->watch = 1; return MPA_HIST_JOIN | MPA_REFRESH; }
         if (c >= MPB_HISTX0 && c <= MPB_HISTX5 && m->hist_page * 6 + (c - MPB_HISTX0) < m->nhist) { m->hist_pick = m->hist_page * 6 + (c - MPB_HISTX0); return MPA_HIST_DEL | MPA_REFRESH; }
         if (c == MPB_HIST_PREV && m->hist_page > 0) { m->hist_page--; return MPA_REFRESH; }
         if (c == MPB_HIST_NEXT && (m->hist_page + 1) * 6 < m->nhist) { m->hist_page++; return MPA_REFRESH; }
-        if (c == MPB_JOIN_FRIEND && o->steam) { m->msg[0] = 0; m->nfriends = 0; return go(m, MPM_TITLE_FRIENDS) | MPA_FRIENDS; }   /* LAN app: greyed, no action */
+        if (c == MPB_JOIN_FRIEND && o->steam) { m->msg[0] = 0; m->nfriends = 0; m->watch = 0; return go(m, MPM_TITLE_FRIENDS) | MPA_FRIENDS; }   /* LAN app: greyed, no action */
         if (c == MPB_CANCEL_JOIN && m->connecting[0]) { m->connecting[0] = 0; m->msg[0] = 0; return MPA_JOIN_CANCEL | MPA_REFRESH; }   /* a Recent worlds reconnect: stay here */
         if (c == MPB_BACK) { a = m->connecting[0] ? MPA_JOIN_CANCEL : 0; m->connecting[0] = 0; m->msg[0] = 0; return go(m, MPM_IDLE) | a; }
         break;
@@ -166,7 +175,8 @@ int mpm_step(mpm_model *m, const mpm_obs *o, int c) {
         if (o->role == 2) { m->msg[0] = m->connecting[0] = 0; return go(m, MPM_GUEST_JOINING); }
         if (o->scene != 1) { a = m->connecting[0] ? MPA_JOIN_CANCEL : 0; m->connecting[0] = 0; return go(m, MPM_IDLE) | a; }
         if (o->edited && !m->connecting[0]) { m->msg[0] = 0; a |= MPA_REFRESH; }   /* an old error goes when the text changes */
-        if (c == MPB_CONNECT && !m->connecting[0]) { m->msg[0] = 0; return MPA_JOIN_ADDR | MPA_REFRESH; }   /* game side sets connecting or msg */
+        if (c == MPB_CONNECT && !m->connecting[0]) { m->msg[0] = 0; m->watch = 0; return MPA_JOIN_ADDR | MPA_REFRESH; }   /* game side sets connecting or msg */
+        if (c == MPB_WATCH && !m->connecting[0]) { m->msg[0] = 0; m->watch = 1; return MPA_JOIN_ADDR | MPA_REFRESH; }       /* the same, as a spectator */
         if (c == MPB_CANCEL_JOIN && m->connecting[0]) { m->connecting[0] = 0; m->msg[0] = 0; return MPA_JOIN_CANCEL | MPA_REFRESH; }
         if (c == MPB_BACK) { a = m->connecting[0] ? MPA_JOIN_CANCEL : 0; m->msg[0] = m->connecting[0] = 0; return go(m, MPM_TITLE_MENU) | a; }
         break;
@@ -205,6 +215,7 @@ int mpm_step(mpm_model *m, const mpm_obs *o, int c) {
         if (c == MPB_LOBBY_SETTINGS) { m->lobby_settings_open = !m->lobby_settings_open; return MPA_REFRESH; }
         if (c == MPB_ADMIN || ((c == MPB_ADMIN_PREV || c == MPB_ADMIN_NEXT) && m->lobby_settings_open)) return MPA_ADMIN | MPA_REFRESH;   /* dsnet admin mode */
         if (c == MPB_RULES_DONE) { m->lobby_settings_open = 0; return MPA_REFRESH; }
+        if (m->lobby_settings_open && (c == MPB_SPECT_PREV || c == MPB_SPECT_NEXT)) return MPA_SPECTATORS | MPA_REFRESH;   /* game side: confirm box / mp_set_spectators */
         if (m->lobby_settings_open && rule_arrow(m, c)) return MPA_RULES | MPA_REFRESH;   /* host changes the rules in the lobby */
         /* host Leave ends everyone's session (ux_flow F7): ask first */
         if (c == MPB_LEAVE && !m->confirm_leave) { m->confirm_leave = 1; return MPA_CONFIRM_LEAVE | MPA_REFRESH; }
@@ -238,7 +249,7 @@ int mpm_step(mpm_model *m, const mpm_obs *o, int c) {
     case MPM_GUEST_JOINING: case MPM_GUEST_LOADING:
         if (c == MPB_CANCEL_JOIN) return go(m, MPM_IDLE) | MPA_LEAVE;
         if (o->failed || o->role == 0) {
-            if (!strcmp(o->msg, "The host left the game") || !strcmp(o->msg, "Connection to the host lost")) return ended(m, o);
+            if (!strcmp(o->msg, "The host left the game") || !strcmp(o->msg, "Connection to the host lost") || !strcmp(o->msg, "The host turned spectators off")) return ended(m, o);
             return join_failed(m);
         }
         if (o->guest_loading && m->state == MPM_GUEST_JOINING) a |= go(m, MPM_GUEST_LOADING);
@@ -248,6 +259,11 @@ int mpm_step(mpm_model *m, const mpm_obs *o, int c) {
     return a;
 }
 
+int mpm_is_visible(const mpm_model *m, const mpm_obs *o, int b) {
+    if (b == MPB_WATCH) return m->state == MPM_TITLE_JOIN && !m->connecting[0];
+    if (b < 0 || b >= 64) return 0;
+    return (int)(mpm_visible(m, o) >> b & 1u);
+}
 uint64_t mpm_visible(const mpm_model *m, const mpm_obs *o) {
 #define B(x) (1ull << (x))
     switch (m->state) {
@@ -302,8 +318,8 @@ void mpm_label(const mpm_model *m, int b, char *out, size_t cap) {
         if (m->state == MPM_TITLE_FRIENDS)
             snprintf(out, cap, "%s", m->msg[0] ? m->msg : m->nfriends ? "Friends hosting a world now:" : "No Steam friend is hosting right now. Ask them to host, or use Join by address.");
         else if (m->state == MPM_GUEST_JOINING || m->state == MPM_GUEST_LOADING)
-            snprintf(out, cap, "<size=75%%>Joining %s's game...%s</size>", m->host[0] ? m->host : "the host", m->state == MPM_GUEST_LOADING ? " loading" : "");
-        else if (m->connecting[0]) snprintf(out, cap, "<size=70%%>Connecting to %s...</size>", m->connecting);
+            snprintf(out, cap, "<size=75%%>Joining %s's game%s...%s</size>", m->host[0] ? m->host : "the host", m->spect ? " as a spectator" : "", m->state == MPM_GUEST_LOADING ? " loading" : "");
+        else if (m->connecting[0]) snprintf(out, cap, "<size=70%%>Connecting to %s%s...</size>", m->connecting, m->watch ? " to watch" : "");
         else if (m->msg[0]) snprintf(out, cap, "<color=#F16071>%s</color>", m->msg);   /* Lora 14 (game side) */
         else if (m->no_field) snprintf(out, cap, "<size=60%%>Copy the host's address (ip:port), then press Connect</size>");
         else out[0] = 0;
@@ -322,6 +338,8 @@ void mpm_label(const mpm_model *m, int b, char *out, size_t cap) {
     case MPB_START: snprintf(out, cap, "Start"); break;
     case MPB_LEAVE: snprintf(out, cap, "Leave multiplayer"); break;
     case MPB_CANCEL_JOIN: snprintf(out, cap, "Cancel"); break;
+    case MPB_WATCH: case MPB_HISTW0: case MPB_HISTW1: case MPB_HISTW2: case MPB_HISTW3: case MPB_HISTW4: case MPB_HISTW5: snprintf(out, cap, "Watch"); break;
+    case MPB_SPECT_PREV: case MPB_SPECT_NEXT: out[0] = 0; break;
     default: snprintf(out, cap, "?"); break;
     }
 }

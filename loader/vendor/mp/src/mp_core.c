@@ -383,7 +383,8 @@ static void housekeeping(mp_session *s) {
             mlog("DESYNC: fingerprint differs at step %u (last good %u) at step %u; sections units %s positions %s rng %s owners %s",
                  bad, good, s->timer, di.mine[1] == di.host[1] ? "ok" : "DIFF", di.mine[2] == di.host[2] ? "ok" : "DIFF",
                  di.mine[3] == di.host[3] ? "ok" : "DIFF", di.mine[4] == di.host[4] ? "ok" : "DIFF");
-            if (s->api.report_part) {                    /* desync report: this guest's part goes to the host (outside the sim) */
+            if (s->api.report_part && !dsnet_is_spectator(s->c)) {   /* desync report: this guest's part goes to the host (outside the sim);
+                                                                       a spectator's desync is his own (the server drops it) */
                 uint8_t *rp = NULL; size_t rn = 0;
                 if (s->api.report_part(s->api.user, &di, &rp, &rn) == 0 && rp) {
                     int rc = dsnet_send_report(s->c, rp, rn);
@@ -547,6 +548,9 @@ int mp_allow_speedup(mp_session *s) { return dsnet_allow_speedup(s->c); }
 int mp_is_applying(mp_session *s) { return s && s->applying; }
 uint32_t mp_cur_step(mp_session *s) { return s->applying ? s->cur : s->timer; }
 dsnet_client *mp_client(mp_session *s) { return s->c; }
+int mp_is_spectator(mp_session *s) { return s && s->c && dsnet_is_spectator(s->c); }
+int mp_set_spectators(mp_session *s, int allow) { return s && s->c ? dsnet_set_spectators(s->c, allow) : -1; }
+int mp_server_stats(mp_session *s, dsnet_server_stats *out) { if (!s || !s->srv) return -1; dsnet_server_get_stats(s->srv, out); return 0; }
 uint16_t mp_server_port(mp_session *s) { return s->srv ? dsnet_server_port(s->srv) : 0; }
 
 void mp_get_stats(mp_session *s, mp_stats *o) {
@@ -583,18 +587,20 @@ mp_session *mp_start(const mp_config *cfg, const mp_game_api *api, int *reject) 
         if (cfg->tick_ms > 0) { d.tick_ms = cfg->tick_ms; d.net_ms = cfg->tick_ms * 2; }
         if (cfg->fp_interval > 0) d.fp_interval = cfg->fp_interval;
         d.build_id = MP_BUILD_ID; d.mod_version = MP_MOD_VERSION;
+        d.allow_spectators = cfg->allow_spectators;
         s->srv = dsnet_server_start(&d);
         if (!s->srv) { mlog("host: cannot listen on port %u", cfg->port); free(s); return NULL; }
         s->c = dsnet_client_connect_local(s->srv, cfg->name);
         mlog("host: listening on port %u", dsnet_server_port(s->srv));
     } else {
-        s->c = dsnet_client_connect_tcp(cfg->host_addr, cfg->port, cfg->name);
+        s->c = dsnet_client_connect_tcp_role(cfg->host_addr, cfg->port, cfg->name, cfg->spectator ? DSNET_ROLE_SPECTATOR : DSNET_ROLE_PLAYER);
         if (!s->c) { mlog("client: cannot connect to %s:%u", cfg->host_addr, cfg->port); free(s); return NULL; }
     }
     if (!s->c) { mp_stop(s); return NULL; }
     dsnet_set_load_cb(s->c, on_load, s);
     dsnet_set_patch_cb(s->c, on_patch, s);
-    dsnet_set_partial_resync(s->c, cfg->partial_resync && cfg->auto_resync && api->patch);
+    dsnet_set_partial_resync(s->c, cfg->partial_resync && cfg->auto_resync && api->patch && !cfg->spectator);   /* a spectator
+                                                         resyncs from the server's cached save: no work for the host */
     int w = dsnet_wait_welcome(s->c, cfg->connect_timeout_ms > 0 ? cfg->connect_timeout_ms : 5000);
     if (w) {
         int why = dsnet_reject_reason(s->c);
@@ -625,7 +631,8 @@ mp_session *mp_start(const mp_config *cfg, const mp_game_api *api, int *reject) 
         mlog("no campaign here: asking the host for its save (rc %d)", rc);
     }
     s->timer = dsnet_timer(s->c);
-    mlog("%s: player %d, allow_speedup %d, allow_pause %d, %s", cfg->host ? "host" : "client", dsnet_player_id(s->c),
+    if (dsnet_is_spectator(s->c)) { s->cfg.auto_resume = 0; s->cfg.partial_resync = 0; }   /* sends no votes; resyncs from the cached save */
+    mlog("%s: player %d, allow_speedup %d, allow_pause %d, %s", cfg->host ? "host" : dsnet_is_spectator(s->c) ? "spectator" : "client", dsnet_player_id(s->c),
          dsnet_allow_speedup(s->c), dsnet_allow_pause(s->c), dsnet_needs_state(s->c) ? "waiting for the host's save" : "starting at step 0");
     return s;
 }

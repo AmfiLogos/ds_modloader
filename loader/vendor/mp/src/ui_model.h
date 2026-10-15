@@ -27,6 +27,10 @@ extern int (*ui_color_override)(int player);
 #define UI_PALETTE_N 8
 const char *ui_palette_color(int idx);         /* palette entry idx (mod UI_PALETTE_N) */
 const char *ui_palette_name(int idx);          /* "yellow", "blue" ... (settings row) */
+/* Spectators (outside the sim, owner 2026-10-14): their slots get one neutral grey (the 8 colours stay for players). Set by
+   ui_game.c from dsnet_spectator_mask each frame. */
+extern uint32_t ui_spectators;
+#define UI_SPECTATOR_COLOR "#a39e99"
 #define UI_OWN_ACCENT "#d9be8f"                /* the stock "selected" accent: your own ping (your things keep the stock look) */
 /* " <color=#RRGGBB>[Name]</color>" for a unit tag (shortcut bar, world name); "" if unclaimed */
 void ui_owner_tag(const ui_players *p, int owner, char *out, size_t cap);
@@ -244,6 +248,9 @@ typedef struct ui_settings {
     int pings, ping_sound, ping_chat;   /* show other players' pings / their sound / "Ben pinged a spot." chat lines (on) */
     int views, offscreen;               /* friends' views as corner brackets (on); a mark at the edge toward friends who look elsewhere (off) */
     int outline;                        /* unit outline: UI_OUTLINE_* (default off) */
+    /* spectator mini overview (owner 2026-10-14 ~19:55, board SpectatorHUDAMini): local to this screen */
+    int mini, mini_size;                /* shown while following (on); UI_MINI_SMALL / MEDIUM (default) / LARGE */
+    int mini_pos_set, mini_x, mini_y;   /* dragged: top-left in layer units from the canvas top centre, else bottom right */
     int ncol;                           /* this viewer's colours for other players, by stable uid (32 hex) */
     char col_uid[UI_MAX_COLOR_OVR][33]; int col_idx[UI_MAX_COLOR_OVR];
 } ui_settings;
@@ -254,6 +261,18 @@ int  ui_settings_color_get(const ui_settings *s, const char *uid_hex);
 void ui_settings_color_set(ui_settings *s, const char *uid_hex, int idx);
 #define UI_SEE_THROUGH_MIN 30           /* lan_v10 (owner 01:40): other players' units are never fully opaque */
 void ui_settings_default(ui_settings *s);
+/* spectator mini overview geometry (pure): the world rectangle the mini camera shows (the whole map, 2 cells around,
+   the window's aspect kept), world <-> mini pixels (from the map area's top-left, y down) */
+enum { UI_MINI_SMALL = 0, UI_MINI_MEDIUM = 1, UI_MINI_LARGE = 2 };
+typedef struct ui_mini_view { float cx, cy, hw, hh; } ui_mini_view;   /* centre, half width, half height (world) */
+float ui_mini_width(int size);                                  /* map area width: 260 / 340 / 440 */
+float ui_mini_height(int size);                                 /* map area height: width * 240 / 340 */
+const char *ui_mini_size_text(int size);                        /* "Small" / "Medium" / "Large" */
+void ui_mini_frame(int minx, int maxx, int miny, int maxy, float aspect, ui_mini_view *v);
+void ui_mini_w2m(const ui_mini_view *v, float w, float h, float wx, float wy, float *mx, float *my);
+void ui_mini_m2w(const ui_mini_view *v, float w, float h, float mx, float my, float *wx, float *wy);
+/* a world rectangle (centre, half sizes) as a mini rectangle clipped to the map area; 0 = nothing left */
+int ui_mini_rect(const ui_mini_view *v, float w, float h, float cx, float cy, float hw, float hh, float out[4]);
 void ui_settings_parse(const char *json, ui_settings *s);       /* missing / bad keys keep their value */
 int  ui_settings_format(const ui_settings *s, char *out, size_t cap);
 int  ui_see_through_next(int v);                                /* 30 -> 50 -> 70 -> 90 -> 30 */

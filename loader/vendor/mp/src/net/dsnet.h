@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSNET_PROTO        2   /* 2: HELLO carries the gameplay mod set + match rule (core next, 2026-10-15) */
+#define DSNET_PROTO        3   /* 2: HELLO carries the gameplay mod set + match rule (core next); 3: + the role (player / spectator) */
 #define DSNET_MAX_PLAYERS  32
 #define DSNET_MAX_OWNED    6                    /* largest "units per player" rule (1, 2, 3, 4, 6; default 3) */
 #define DSNET_PARTY_MAX    DSNET_MAX_OWNED      /* a player's expedition party: at most the units-per-player rule */
@@ -115,7 +115,16 @@ typedef struct dsnet_cfg {
      * is read with fegetround() on the thread that calls dsnet_server_start */
     const char *build_id;
     uint32_t mod_version;
+    /* Spectators (owner 2026-10-14): watch only. Outside the simulation: no PLAYER_JOIN / LEAVE, never in present_mask,
+       every command they send is dropped, they never hold or slow the timer, never cause an auto pause. */
+    int allow_spectators;       /* 0 = refuse spectators (DSNET_REJ_NO_SPECTATORS); dsnet_cfg_defaults: 1 */
+    int max_spectators;         /* 0 = DSNET_SPECTATORS_MAX (owner: 8) */
+    uint32_t spectator_replay_max;   /* a joining spectator gets the latest join-point save + the log after it when the save is at
+                                        most this many steps old (0 = DSNET_SPECTATOR_REPLAY_MAX); else a new join point
+                                        (players reload once, still no pause) */
 } dsnet_cfg;
+#define DSNET_SPECTATORS_MAX       8
+#define DSNET_SPECTATOR_REPLAY_MAX (60u * 60 * 30)   /* 30 min at 1x */
 
 typedef struct dsnet_server dsnet_server;
 typedef struct dsnet_client dsnet_client;
@@ -148,7 +157,9 @@ int dsnet_reject_host_mods(int *host_rule, char *lines, size_t n);
 void dsnet_set_player_uid(const uint8_t uid[16]);
 enum dsnet_reject { DSNET_REJ_PROTO = 1, DSNET_REJ_BUILD, DSNET_REJ_MOD, DSNET_REJ_ROUNDING, DSNET_REJ_FULL, DSNET_REJ_DUP_ID,
                    DSNET_REJ_OTHER_WORLD,  /* local (lan_v10 F17): the host now hosts another world than the one asked for */
-                   DSNET_REJ_MODSET        /* the gameplay mods differ from the host's, or the match is vanilla only */ };
+                   DSNET_REJ_MODSET,       /* the gameplay mods differ from the host's, or the match is vanilla only */
+                   DSNET_REJ_NO_SPECTATORS, /* the host does not allow spectators */
+                   DSNET_REJ_SPECTATORS_FULL /* max_spectators are already watching */ };
 /* The world the host runs (campaign id, 16 bytes, + its name), sent by the host's client whenever it changes and given to
  * every joiner in the WELCOME. dsnet_host_world: 0 = known (filled), -1 = the host had no world loaded yet. */
 int dsnet_set_world(dsnet_client *c, const uint8_t id[16], const char *name);   /* host only */
@@ -174,10 +185,11 @@ dsnet_server *dsnet_server_start(const dsnet_cfg *cfg);   /* NULL = defaults */
 uint16_t      dsnet_server_port(dsnet_server *s);
 void          dsnet_server_stop(dsnet_server *s);
 typedef struct dsnet_server_stats {
-    uint32_t timer, sent_cmds, players, held_steps;
+    uint32_t timer, sent_cmds, players, held_steps;   /* players: without spectators */
     float time_per_tick_ms;
     int max_behind_seen;
     uint32_t log_base;          /* first command still kept in the server's log (older ones trimmed, see log_trim) */
+    uint32_t spectators, spectator_saves, spectator_join_points;   /* now / joins served from the cached save / that needed a join point */
 } dsnet_server_stats;
 extern uint32_t dsnet_log_trim_min;   /* trim the server log in chunks of at least this many entries (default 4096; tests) */
 void dsnet_server_get_stats(dsnet_server *s, dsnet_server_stats *out);
@@ -195,6 +207,9 @@ dsnet_client *dsnet_client_connect_local(dsnet_server *s, const char *name);
  * connector for the same host + port was adopted (below), its socket is used and nothing blocks. */
 #define DSNET_CONNECT_TIMEOUT_MS 8000
 dsnet_client *dsnet_client_connect_tcp(const char *host, uint16_t port, const char *name);
+/* Same with a role: DSNET_ROLE_SPECTATOR joins to watch (sees everything, owns nothing, sends no commands). */
+enum { DSNET_ROLE_PLAYER = 0, DSNET_ROLE_SPECTATOR = 1 };
+dsnet_client *dsnet_client_connect_tcp_role(const char *host, uint16_t port, const char *name, int role);
 /* Non-blocking connect for a menu: the name lookup and the TCP connect run on a helper thread, limited to
  * timeout_ms. The game thread calls dsnet_connect_poll each frame; it never waits.
  *   0 still trying, 1 connected, then dsnet_connect_adopt + dsnet_client_connect_tcp(same host, port) uses that socket
@@ -317,7 +332,10 @@ int      dsnet_lend_last(dsnet_client *c, uint8_t unit[16], int *owner, int *fro
  * from the session's join / leave commands. dsnet_chat_poll returns the next one (1) or 0; a ring of 128 per client. */
 #define DSNET_CHAT_MAX 200
 enum dsnet_chat_kind { DSNET_CHAT_TEXT = 0, DSNET_CHAT_JOINED = 1, DSNET_CHAT_LEFT = 2, DSNET_CHAT_RECONNECTED = 3 };
-typedef struct dsnet_chat_msg { int player, kind; char name[32]; char text[DSNET_CHAT_MAX + 1]; } dsnet_chat_msg;
+/* WATCHING / STOPPED_WATCHING: a spectator came / went (from the server's spectator list, outside the sim).
+ * watching = 1: the line comes from a spectator ("Ana (watching): ..."). */
+enum { DSNET_CHAT_WATCHING = 4, DSNET_CHAT_STOPPED_WATCHING = 5 };
+typedef struct dsnet_chat_msg { int player, kind, watching; char name[32]; char text[DSNET_CHAT_MAX + 1]; } dsnet_chat_msg;
 int dsnet_chat_send(dsnet_client *c, const char *text);           /* 0 sent, -1 empty / not connected (text cut at 200 bytes) */
 int dsnet_chat_poll(dsnet_client *c, dsnet_chat_msg *out);
 /* "<Name> is typing..." (owner 2026-10-14): call dsnet_chat_typing(c, 1) on each key press while typing (sent at most once a
@@ -350,6 +368,7 @@ int      dsnet_needs_state(dsnet_client *c);         /* waiting for a save (late
 int      dsnet_is_disconnected(dsnet_client *c);     /* the connection to the server is gone */
 int      dsnet_host_left(dsnet_client *c);           /* 1 if the server said BYE (the host ended the session) */
 void     dsnet_test_cut(dsnet_client *c);            /* test: drop our own link with no BYE (a lost connection) */
+void     dsnet_test_spectator_sends(dsnet_client *c); /* test: a spectator's commands leave this client (the server must drop them) */
 /* Silence limit for both sides (default 5000 ms, env DSNET_RX_TIMEOUT_MS, 0 = off). Heartbeats come from the
  * network threads, so a game thread frozen by a map load or a big save does not count as silence. */
 void     dsnet_set_rx_timeout_ms(int ms);
@@ -378,6 +397,20 @@ int      dsnet_pause_mode(dsnet_client *c);
 /* Who caused the current vote pause: the first pause voter (in command order) among the votes that
  * hold it; for an auto pause, the joining / desynced player. -1 if not paused by votes (story only). */
 int      dsnet_pause_by(dsnet_client *c);
+
+/* ---- spectators (outside the sim: none of this is in saves, hashes or the command log) ---- */
+int      dsnet_is_spectator(dsnet_client *c);         /* this client joined to watch (from the WELCOME) */
+uint32_t dsnet_spectator_mask(dsnet_client *c);       /* bit per spectator slot (server list, ~5 Hz) */
+/* name (32 bytes) + connection of a spectator slot (state: enum dsnet_net_state); 0 ok, -1 not a spectator */
+int      dsnet_spectator_info(dsnet_client *c, int slot, char name[32], int *ping_ms, int *state);
+int      dsnet_spectators_allowed(dsnet_client *c);   /* the host's rule now */
+int      dsnet_spectators_max(dsnet_client *c);
+/* Host only: allow / refuse spectators during play. Off: every spectator gets P_BYE reason DSNET_BYE_SPECTATORS_OFF and
+ * is dropped. 0 sent, -1 not the host. */
+int      dsnet_set_spectators(dsnet_client *c, int allow);
+/* Why the server said BYE (dsnet_host_left = 1): */
+enum { DSNET_BYE_HOST_ENDED = 1, DSNET_BYE_SPECTATORS_OFF = 2 };
+int      dsnet_bye_reason(dsnet_client *c);
 
 /* ---- lan_v10: section hashes, partial resync, desync report ----
  * Section hashes ride with the host's fingerprint: dsnet_report_fingerprint_ex sends (game hash, sec[3]); a guest keeps

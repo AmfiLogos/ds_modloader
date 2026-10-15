@@ -139,6 +139,7 @@ static Obj find_view(uintptr_t *h, const char *ns, const char *name) {   /* Obje
 static mp_session *sess(void) { return mp_game_session ? mp_game_session() : NULL; }
 static dsnet_client *cli(void) { mp_session *s = sess(); return s ? mp_client(s) : NULL; }
 static int me(void) { dsnet_client *c = cli(); return c ? dsnet_player_id(c) : -1; }
+static int spect(void) { mp_session *s = sess(); return s && mp_is_spectator(s); }   /* watches: Teams read only, no proposal */
 static uintptr_t h_help;
 static void notice(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void notice(const char *fmt, ...) {
@@ -290,6 +291,10 @@ static int propose_order(mp_session *s, int player, const uint8_t guid[16], cons
     tm_pevent e = tm_prop_propose(&prop, player, r, present_now());
     if (e) { prop_np = k; memcpy(prop_party, a + 5, (size_t)k * 16); }
     if (e == TM_PE_STARTED) { prop_t0 = now_s(); prop_timeout_sent = 0; prop_event[0] = 0; prop_folded = 0; pstage = player == me() ? ST_SUMMARY : ST_SUPPLIES_PENDING; close_teams = 1; }
+    if (e == TM_PE_STARTED && spect()) {                     /* a spectator approves nothing: no supplies, no summary panel */
+        pstage = ST_NONE; close_teams = 0;
+        char pn_[40]; pname(player, pn_); char m[160]; snprintf(m, sizeof m, "%s proposes an expedition to %s", pn_, region_name(r)); center_msg(m);
+    }
     rig_log("teams: proposal from player %d, region %d (%s): %s", player, r, region_name(r),
             e == TM_PE_STARTED ? "started" : e == TM_PE_UPDATED ? "region updated" : "ignored (another proposal is open)");
     return 0;
@@ -972,7 +977,7 @@ static void layout(void) {
         if (por[i].card && !por[i].used) { u_destroy(u_go(u_gc_get(por[i].card))); u_gc_free(por[i].card); u_gc_free(por[i].mark); por[i].card = por[i].mark = 0; }
     Obj o;
     if ((o = u_gc_get(h_title))) {
-        tmp_set(o, "Teams");
+        tmp_set(o, spect() ? "Teams (watching)" : "Teams");
         int np_ = 0, nr_ = 0;                                 /* "Ready n / m" in the title band (approved mockup Teams A) */
         for (int p = 0; p < TM_MAX_PLAYERS; p++) if (st.present >> p & 1u) { np_++; nr_ += st.ready >> p & 1u; }
         (void)nr_; (void)np_;                                 /* no "Ready n / m": Teams has no Ready (owner lan_v8) */
@@ -1316,6 +1321,7 @@ static int click_at(V2 m, int button) {
     if (hit(hud, m, cam_for(hud))) { if (button == 0) close_screen(); return 1; }   /* right = drag (hud_input) */
     if (hit(u_gc_get(h_close), m, cam)) { close_screen(); return 1; }
     if (button == 0 && hit(u_gc_get(h_info), m, cam)) return 1;   /* the info icon: hover shows "How Teams Work" */
+    if (spect()) { if (button == 0) notice("You are watching: spectators cannot change teams"); return 1; }   /* read only */
     model_refresh();
     if (button == 0 && lend_click(m, cam)) return 1;          /* lending chips / menu (also in a dungeon) */
     model_refresh();
@@ -1781,6 +1787,7 @@ static void (*o_accept)(Obj, int, Obj, void *);
 static void accept_core(Obj view, int region, const uint8_t (*pn)[16], int np);
 static void hk_accept(Obj view, int region, Obj units, void *mi) {
     if (!sess()) { o_accept(view, region, units, mi); return; }   /* single player: stock */
+    if (spect()) { notice("You are watching: only players plan expeditions"); if (u_alive(view)) F(0xEE3384, void (*)(Obj, void *))(view, NULL); return; }
     if (stock_mode == 2) { if (u_alive(view)) F(0xEE3384, void (*)(Obj, void *))(view, NULL); if (pstage == ST_SUPPLIES) pstage = ST_SUMMARY; return; }
     model_refresh();
     if (st.in_dungeon) { o_accept(view, region, units, mi); return; }

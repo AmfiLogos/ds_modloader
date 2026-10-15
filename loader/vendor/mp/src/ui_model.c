@@ -27,7 +27,9 @@ const char *ui_palette_name(int i) { return color_names[(unsigned)i % UI_PALETTE
    choice for that player (ui_color_override) comes first; it is local to this screen. */
 int (*ui_color_resolver)(int player);
 int (*ui_color_override)(int player);
+uint32_t ui_spectators;
 const char *ui_player_color(int player) {
+    if (player >= 0 && player < UI_MAX_PLAYERS && (ui_spectators >> player & 1u)) return UI_SPECTATOR_COLOR;
     int c = ui_color_override && player >= 0 ? ui_color_override(player) : -1;
     if (c < 0) c = ui_color_resolver && player >= 0 ? ui_color_resolver(player) : -1;
     return colors[(unsigned)(c >= 0 ? c : player) % UI_PALETTE_N];
@@ -477,6 +479,7 @@ void ui_settings_default(ui_settings *s) {
     memset(s, 0, sizeof *s);
     s->see_through = UI_SEE_THROUGH_MIN; s->names = UI_NAMES_OTHERS; s->tooltips = 1;
     s->pings = 1; s->ping_sound = 1; s->ping_chat = 1; s->views = 1; s->offscreen = 0; s->outline = UI_OUTLINE_OFF;
+    s->mini = 1; s->mini_size = UI_MINI_MEDIUM;
 }
 static int jint(const char *j, const char *key, int *out) {
     char k[48]; snprintf(k, sizeof k, "\"%s\"", key);
@@ -507,6 +510,11 @@ void ui_settings_parse(const char *j, ui_settings *s) {
     if (jint(j, "views", &v)) s->views = v != 0;
     if (jint(j, "offscreen", &v)) s->offscreen = v != 0;
     if (jint(j, "outline", &v) && v >= UI_OUTLINE_OFF && v <= UI_OUTLINE_BOTH) s->outline = v;
+    if (jint(j, "mini", &v)) s->mini = v != 0;
+    if (jint(j, "mini_size", &v) && v >= UI_MINI_SMALL && v <= UI_MINI_LARGE) s->mini_size = v;
+    if (jint(j, "mini_pos_set", &v)) s->mini_pos_set = v != 0;
+    if (jint(j, "mini_x", &v) && v > -5000 && v < 5000) s->mini_x = v;
+    if (jint(j, "mini_y", &v) && v > -5000 && v <= 0) s->mini_y = v;
     /* "colors":"<uid 32 hex>:<idx>,..." */
     const char *c = strstr(j, "\"colors\"");
     if (c && (c = strchr(c + 8, ':')) && (c = strchr(c, '"'))) {
@@ -523,9 +531,11 @@ void ui_settings_parse(const char *j, ui_settings *s) {
 }
 int ui_settings_format(const ui_settings *s, char *out, size_t cap) {
     int n = snprintf(out, cap, "{\"see_through\":%d,\"names\":%d,\"list_open\":%d,\"pos_set\":%d,\"pos_x\":%d,\"pos_y\":%d,\"tooltips\":%d,\"compact\":%d,"
-                     "\"pings\":%d,\"ping_sound\":%d,\"ping_chat\":%d,\"views\":%d,\"offscreen\":%d,\"outline\":%d,\"colors\":\"",
+                     "\"pings\":%d,\"ping_sound\":%d,\"ping_chat\":%d,\"views\":%d,\"offscreen\":%d,\"outline\":%d,"
+                     "\"mini\":%d,\"mini_size\":%d,\"mini_pos_set\":%d,\"mini_x\":%d,\"mini_y\":%d,\"colors\":\"",
                      s->see_through, s->names, s->list_open, s->pos_set, s->pos_x, s->pos_y, s->tooltips, s->compact,
-                     s->pings, s->ping_sound, s->ping_chat, s->views, s->offscreen, s->outline);
+                     s->pings, s->ping_sound, s->ping_chat, s->views, s->offscreen, s->outline,
+                     s->mini, s->mini_size, s->mini_pos_set, s->mini_x, s->mini_y);
     for (int i = 0; i < s->ncol && n > 0 && (size_t)n < cap; i++) n += snprintf(out + n, cap - (size_t)n, "%s%s:%d", i ? "," : "", s->col_uid[i], s->col_idx[i]);
     if (n > 0 && (size_t)n < cap) n += snprintf(out + n, cap - (size_t)n, "\"}\n");
     return n;
@@ -548,6 +558,36 @@ void ui_settings_color_set(ui_settings *s, const char *u, int idx) {
         k = s->ncol++; snprintf(s->col_uid[k], 33, "%s", u);
     }
     s->col_idx[k] = idx % UI_PALETTE_N;
+}
+/* ---------------------------------------------------------------- spectator mini overview */
+float ui_mini_width(int size) { return size == UI_MINI_SMALL ? 260.0f : size == UI_MINI_LARGE ? 440.0f : 340.0f; }
+float ui_mini_height(int size) { return ui_mini_width(size) * 240.0f / 340.0f; }
+const char *ui_mini_size_text(int size) { return size == UI_MINI_SMALL ? "Small" : size == UI_MINI_LARGE ? "Large" : "Medium"; }
+void ui_mini_frame(int minx, int maxx, int miny, int maxy, float aspect, ui_mini_view *v) {
+    if (maxx < minx) { int t = minx; minx = maxx; maxx = t; }
+    if (maxy < miny) { int t = miny; miny = maxy; maxy = t; }
+    if (!(aspect > 0.1f && aspect < 10.0f)) aspect = 340.0f / 240.0f;
+    v->cx = 0.5f * (float)(minx + maxx + 1); v->cy = 0.5f * (float)(miny + maxy + 1);   /* cells: [min, max + 1) */
+    float hw = 0.5f * (float)(maxx + 1 - minx) + 2, hh = 0.5f * (float)(maxy + 1 - miny) + 2;
+    if (hw < 4) hw = 4; if (hh < 4) hh = 4;
+    if (hw / hh > aspect) hh = hw / aspect; else hw = hh * aspect;   /* the whole map fits, nothing stretched */
+    v->hw = hw; v->hh = hh;
+}
+void ui_mini_w2m(const ui_mini_view *v, float w, float h, float wx, float wy, float *mx, float *my) {
+    *mx = (wx - (v->cx - v->hw)) / (2 * v->hw) * w;
+    *my = ((v->cy + v->hh) - wy) / (2 * v->hh) * h;
+}
+void ui_mini_m2w(const ui_mini_view *v, float w, float h, float mx, float my, float *wx, float *wy) {
+    *wx = v->cx - v->hw + mx / (w > 0 ? w : 1) * 2 * v->hw;
+    *wy = v->cy + v->hh - my / (h > 0 ? h : 1) * 2 * v->hh;
+}
+int ui_mini_rect(const ui_mini_view *v, float w, float h, float cx, float cy, float hw, float hh, float out[4]) {
+    float x0, y0, x1, y1;
+    ui_mini_w2m(v, w, h, cx - hw, cy + hh, &x0, &y0); ui_mini_w2m(v, w, h, cx + hw, cy - hh, &x1, &y1);
+    if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 > w) x1 = w; if (y1 > h) y1 = h;
+    if (x1 - x0 < 1 || y1 - y0 < 1) return 0;
+    out[0] = x0; out[1] = y0; out[2] = x1 - x0; out[3] = y1 - y0;
+    return 1;
 }
 const char *ui_outline_text(int m) { return m == UI_OUTLINE_OWN ? "Your units" : m == UI_OUTLINE_FRIENDS ? "Friends' units" : m == UI_OUTLINE_BOTH ? "Both" : "Off"; }
 int ui_see_through_next(int v) { return v < 50 ? 50 : v < 70 ? 70 : v < 90 ? 90 : UI_SEE_THROUGH_MIN; }

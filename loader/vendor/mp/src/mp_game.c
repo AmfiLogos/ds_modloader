@@ -69,6 +69,7 @@ static int pass_through(void) { return !S || showing || mp_is_applying(S) || rig
 static bool h_setspeed(Obj gs, int speed, int ps, void *mi) {
     gs_seen = gs;
     if (pass_through()) return o_setspeed(gs, speed, ps, mi);
+    if (mp_is_spectator(S)) { rig_log("mp: spectator: SetSpeed ignored (no votes)"); return false; }   /* hotkeys too: nothing changes */
     rig_log("mp: local SetSpeed(%s, %s) -> vote", mp_speed_name(speed, 0), ps == PS_ABSOLUTE ? "absolute pause" : "toggle");
     if (speed == 0) {
         if (ps == PS_ABSOLUTE) mp_vote_pause(S, 1);
@@ -831,6 +832,7 @@ int mp_game_left_waiting(void) { return S && cfg.host ? mp_left_waiting(S) : 0; 
 __attribute__((visibility("default"))) int mp_gear_check(const uint8_t unit[16]) {
     if (!S) return 1;
     dsnet_client *c = mp_client(S);
+    if (dsnet_is_spectator(c)) return 0;                     /* a spectator changes nothing */
     return dsnet_may_equip(c, dsnet_player_id(c), unit) ? 1 : 0;
 }
 
@@ -838,6 +840,7 @@ __attribute__((visibility("default"))) int mp_gear_check(const uint8_t unit[16])
 __attribute__((visibility("default"))) void mp_gear_refusal_text(const uint8_t unit[16], char *out, size_t n) {
     if (!S) { snprintf(out, n, "You cannot equip this unit"); return; }
     dsnet_client *c = mp_client(S);
+    if (dsnet_is_spectator(c)) { snprintf(out, n, "You are watching: spectators cannot change gear"); return; }
     uint8_t uid[16]; char name[32] = "";
     int o = dsnet_owner_info(c, unit, uid, name);
     if (o == DSNET_OWNER_RESERVED) snprintf(out, n, "This unit is reserved for %s: only its owner can change its gear", name[0] ? name : "a player who left");
@@ -853,7 +856,7 @@ int mp_game_host(const mp_config *c) {
     if (start_now(&cfg)) { start_failed = 1; return -2; }
     ended = 0;
     if (steam_ready()) {
-        steam_host = dsnet_steam_host_start(mp_server_port(S), MP_BUILD_ID, MP_MOD_VERSION, 8);
+        steam_host = dsnet_steam_host_start(mp_server_port(S), MP_BUILD_ID, MP_MOD_VERSION, 8 + DSNET_SPECTATORS_MAX);   /* + spectators */
         rig_log("mp: Steam lobby %s", steam_host ? "being created" : "failed");
     }
     return 0;
@@ -864,6 +867,9 @@ int mp_game_host(const mp_config *c) {
    "" or NULL = any. A host running another world refuses it: mp_game_last_reject() == DSNET_REJ_OTHER_WORLD, and
    mp_game_other_world() gives the world the host runs instead. */
 static char expect_next[40];
+/* mpmenu (dlsym): the next join (address, Recent worlds row, Steam) is to watch (spectator) or to play */
+static int spect_next;
+__attribute__((visibility("default"))) void mp_game_next_spectator(int on) { spect_next = on != 0; }
 __attribute__((visibility("default"))) void mp_game_expect_world(const char *campaign_id) { snprintf(expect_next, sizeof expect_next, "%s", campaign_id ? campaign_id : ""); }
 __attribute__((visibility("default"))) const char *mp_game_other_world(void) { return mp_last_other_world(); }
 int mp_game_join(const mp_config *c) {
@@ -871,6 +877,7 @@ int mp_game_join(const mp_config *c) {
     cfg = *c; cfg.host = 0; cfg_ok = 1; start_failed = 0;
     if (expect_next[0]) { snprintf(cfg.expect_world, sizeof cfg.expect_world, "%s", expect_next); expect_next[0] = 0; }
     cfg.need_save = 1;                                       /* a lobby joiner is on the title screen: no campaign */
+    if (spect_next) { cfg.spectator = 1; spect_next = 0; }
     if (!strncmp(cfg.host_addr, "steam:", 6)) {
         if (!steam_ready()) return -3;
         uint64_t lobby = strtoull(cfg.host_addr + 6, NULL, 10);
@@ -971,7 +978,8 @@ void mp_game_poll(void) {
                                    dsnet_is_disconnected(mp_client(S)))) {   /* host gone (Steam link or TCP) */
         /* ux_flow_v10 #2: only a BYE from the server means the host ended it; else our own link dropped and the
            host is waiting for us (auto pause + "Wait / Keep playing" on his side) */
-        end_session(dsnet_host_left(mp_client(S)) ? "The host left the game" : "Connection to the host lost");
+        end_session(dsnet_bye_reason(mp_client(S)) == DSNET_BYE_SPECTATORS_OFF ? "The host turned spectators off"
+                    : dsnet_host_left(mp_client(S)) ? "The host left the game" : "Connection to the host lost");
         quit_pending = 1;
     }
     /* host gone: back to the title as soon as the game is not mid-load (a load in progress is finished first) */
@@ -1176,7 +1184,14 @@ void mp_game_status(Buf *b) {
     uint32_t pm = dsnet_present_mask(dc);
     bput(b, ",\"present\":%u,\"story_pause_mask\":%u,\"busy_mask\":%u,\"votes\":[", pm, dsnet_story_pause_mask(dc), dsnet_busy_mask(dc));
     for (int i = 0, k = 0; i < 32; i++) if (pm & (1u << i)) { int sp = 0, pa = 0; dsnet_vote_of(dc, i, &sp, &pa); bput(b, "%s[%d,%d,%d]", k++ ? "," : "", i, sp, pa); }
-    bput(b, "]}");
+    bput(b, "]");
+    {   /* spectators (outside the sim): this copy's role, the server's list, the host's counters */
+        dsnet_server_stats ss; int hs = mp_server_stats(S, &ss) == 0;
+        bput(b, ",\"spectator\":%s,\"spectators\":%u,\"spectators_allowed\":%d,\"bye_reason\":%d",
+             dsnet_is_spectator(dc) ? "true" : "false", dsnet_spectator_mask(dc), dsnet_spectators_allowed(dc), dsnet_bye_reason(dc));
+        if (hs) bput(b, ",\"srv_spectators\":%u,\"srv_spect_saves\":%u,\"srv_spect_join_points\":%u,\"srv_held\":%u", ss.spectators, ss.spectator_saves, ss.spectator_join_points, ss.held_steps);
+    }
+    bput(b, "}");
 }
 
 char *mp_game_exec(const char *cmd, const char *line) {

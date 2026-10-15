@@ -9,8 +9,10 @@
 enum {
     P_HELLO = 1,      /* c->s  u16 proto, u8 want_host, u32 mod_version, u32 round_mode, uid[16], u8 build_len, build[],
                                u8 match_rule, u8 modset_len, modset[] (hex, 0 = none), u16 lines_len, lines[] ('\n'-joined
-                               launcher modset_lines), name[] (proto 2) */
-    P_WELCOME,        /* s->c  u8 player, u8 is_host, u8 needs_state, u32 timer, u32 sent_cmds, u32 fp_interval, u8 allow_speedup, u8 pause_mode, u8 gear_mode, u8 units_per_player */
+                               launcher modset_lines), u8 role (proto 3), name[] */
+    P_WELCOME,        /* s->c  u8 player, u8 is_host, u8 needs_state, u32 timer, u32 sent_cmds, u32 fp_interval, u8 allow_speedup, u8 pause_mode, u8 gear_mode, u8 units_per_player,
+                         u8 event_choice, u8 population, u8 has_world, world[48], u8 shared_fog, u8 role (echo), u8 allow_spectators,
+                         u8 max_spectators */
     P_CMD,            /* c->s  u8 type, u8 scope, u16 len, payload */
     P_SCMD,           /* s->c  u32 seq, u8 type, u32 tick, u8 player, u8 scope, u16 len, payload */
     P_TIMECTL,        /* s->c  u32 timer, u32 sent_cmds, u32 time_per_tick_us, u32 busy_mask */
@@ -40,6 +42,8 @@ enum {
     P_FULL,           /* host c->s, then s->c relay: u32 tick, text (full-state check: "section hash" lines, lan_v10) */
     P_MARK,           /* c->s  u8 op (1 add, 2 delete), u8 owner, u8 id, u32 map_key, i16 x, i16 y; s->c u8 from + same (add: owner
                          = from). Relayed to all but the sender; the server drops a 5th add from one sender within 5 s */
+    P_SPECT,          /* s->c  u8 allow, u8 max, u8 count, then per spectator: u8 id, u8 state, u16 ping ms, name[32] (~5 Hz) */
+    P_SPECT_RULE,     /* c->s (host) u8 allow: spectators on / off during play (off: BYE reason 2 to each spectator) */
 };
 /* SAVE: host -> server -> joiners (join point). PATCH: host -> server -> the players of a PATCH_POINT (partial resync).
    REPORT: guest -> server -> host, outside the sim (desync report part; the server stamps seq_after = the sender's slot). */

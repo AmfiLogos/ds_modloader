@@ -56,7 +56,10 @@ struct dsnet_client {
     pthread_mutex_t mu;
     pthread_cond_t cv;
 
-    int welcomed, player, is_host, needs_state, disconnected, rejected, host_left;
+    int welcomed, player, is_host, needs_state, disconnected, rejected, host_left, bye_reason;
+    int role, spectator;                                        /* asked for / granted (WELCOME): watch only */
+    int sp_allow, sp_max, sp_seen;                              /* spectator list from the server (outside the sim) */
+    struct { uint8_t set, state; uint16_t ping; char name[32]; } sp[DSNET_MAX_PLAYERS];
     int has_world; uint8_t world_id[16]; char world_name[32];   /* host's world from the WELCOME (lan_v10 F17) */
     dsnet_chat_msg chat[128]; uint32_t chat_head, chat_tail;   /* chat ring (outside the sim) */
     double typing_until[DSNET_MAX_PLAYERS];                     /* "is typing" (ms clock), 0 = not */
@@ -125,6 +128,13 @@ static void fp_compare(dsnet_client *c, uint32_t tick) {
 }
 
 /* ---- network thread ---- */
+static void chat_local(dsnet_client *c, int player, int kind, const char *name) {   /* lock held */
+    dsnet_chat_msg *m = &c->chat[c->chat_tail++ % 128];
+    if (c->chat_tail - c->chat_head > 128) c->chat_head = c->chat_tail - 128;
+    m->player = player; m->kind = kind; m->watching = kind == DSNET_CHAT_WATCHING || kind == DSNET_CHAT_STOPPED_WATCHING;
+    snprintf(m->name, sizeof m->name, "%s", name); m->text[0] = 0;
+}
+
 static void process_timectl(dsnet_client *c) {     /* MultiplayerSession.ProcessTimeControl */
     if (c->received >= c->remote_sent && c->remote_timer > c->tick_until) c->tick_until = c->remote_timer;
 }
@@ -142,11 +152,31 @@ static void on_frame(dsnet_client *c, const uint8_t *p, uint32_t n) {
             if (e[0] < DSNET_MAX_PLAYERS) { c->net[e[0]].state = e[1]; c->net[e[0]].ping = get16(e + 2); c->net[e[0]].behind = get16(e + 4); }
         }
         break;
+    case P_SPECT: {                                          /* spectators: came / went lines (not on the first list) */
+        if (n < 4 || n < 4 + 36u * p[3]) return;
+        uint8_t now[DSNET_MAX_PLAYERS] = { 0 };
+        c->sp_allow = p[1]; c->sp_max = p[2];
+        for (int i = 0; i < p[3]; i++) {
+            const uint8_t *e = p + 4 + 36 * i;
+            if (e[0] >= DSNET_MAX_PLAYERS) continue;
+            now[e[0]] = 1;
+            char nm[32]; memcpy(nm, e + 4, 31); nm[31] = 0;
+            if (c->sp_seen && (!c->sp[e[0]].set || strcmp(c->sp[e[0]].name, nm)) && e[0] != c->player) chat_local(c, e[0], DSNET_CHAT_WATCHING, nm);
+            c->sp[e[0]].set = 1; c->sp[e[0]].state = e[1]; c->sp[e[0]].ping = get16(e + 2); memcpy(c->sp[e[0]].name, nm, 32);
+        }
+        for (int i = 0; i < DSNET_MAX_PLAYERS; i++) if (c->sp[i].set && !now[i]) {
+            if (c->sp_seen && i != c->player) chat_local(c, i, DSNET_CHAT_STOPPED_WATCHING, c->sp[i].name);
+            c->sp[i].set = 0; c->view[i].set = 0;
+        }
+        c->sp_seen = 1;
+        break;
+    }
     case P_CHAT:
         if (n >= 34) {
             dsnet_chat_msg *m = &c->chat[c->chat_tail++ % 128];
             if (c->chat_tail - c->chat_head > 128) c->chat_head = c->chat_tail - 128;   /* full: drop the oldest */
             m->player = p[1]; m->kind = DSNET_CHAT_TEXT; memcpy(m->name, p + 2, 31); m->name[31] = 0;
+            m->watching = p[1] < DSNET_MAX_PLAYERS && c->sp[p[1]].set;
             uint32_t tl = n - 34 > DSNET_CHAT_MAX ? DSNET_CHAT_MAX : n - 34; memcpy(m->text, p + 34, tl); m->text[tl] = 0;
             if (p[1] < DSNET_MAX_PLAYERS) c->typing_until[p[1]] = 0;          /* the line arrived: no longer typing */
         }
@@ -176,8 +206,8 @@ static void on_frame(dsnet_client *c, const uint8_t *p, uint32_t n) {
         if (n >= 3 && p[1] < DSNET_MAX_PLAYERS) c->typing_until[p[1]] = p[2] ? dsnet_now_ms() + DSNET_TYPING_MS : 0;
         break;
     case P_BYE:                                              /* the host ended the session (not our own link) */
-        c->host_left = 1;
-        dsnet_logf("client %d: the host ended the session", c->player);
+        c->host_left = 1; c->bye_reason = n >= 2 ? p[1] : DSNET_BYE_HOST_ENDED;
+        dsnet_logf("client %d: %s", c->player, c->bye_reason == DSNET_BYE_SPECTATORS_OFF ? "the host turned spectators off" : "the host ended the session");
         break;
     case P_REJECT:
         if (n >= 2) c->rejected = p[1];
@@ -206,6 +236,7 @@ static void on_frame(dsnet_client *c, const uint8_t *p, uint32_t n) {
         c->sim.rules[5] = n >= 22 && p[21] <= DSNET_POP_MULTIPLIED ? p[21] : DSNET_POP_SHARED;
         c->sim.rules[6] = n >= 72 && p[71] == 1;                       /* shared fog (proto 2) */
         if (n >= 71 && p[22]) { c->has_world = 1; memcpy(c->world_id, p + 23, 16); memcpy(c->world_name, p + 39, 32); c->world_name[31] = 0; }
+        c->spectator = n >= 73 && p[72]; c->sp_allow = n >= 74 ? p[73] : 1; c->sp_max = n >= 75 ? p[74] : DSNET_SPECTATORS_MAX;   /* after shared fog (proto 3) */
         c->welcomed = 1;
         pthread_cond_broadcast(&c->cv);
         break;
@@ -323,12 +354,12 @@ static void *client_main(void *arg) {
     return NULL;
 }
 
-static dsnet_client *client_new(int fd, const char *name, int want_host) {
+static dsnet_client *client_new(int fd, const char *name, int want_host, int role) {
     dsnet_client *c = calloc(1, sizeof *c);
     dsnet_link_init(&c->link, dsnet_fd_transport(fd));
     pthread_mutex_init(&c->mu, NULL);
     pthread_cond_init(&c->cv, NULL);
-    c->player = -1; c->exec_player = -1; c->fp_interval = 30; c->tpt_ms = 1000.0f / 60;
+    c->player = -1; c->exec_player = -1; c->fp_interval = 30; c->tpt_ms = 1000.0f / 60; c->role = role;
     uint8_t b[128 + DSNET_MODLINES_MAX], *p = b;
     size_t nl = name ? strlen(name) : 0; if (nl > 31) nl = 31;
     size_t bl = strlen(dsnet_build_id), ml = strlen(dsnet_modset), dl = strlen(dsnet_mod_lines);
@@ -339,6 +370,7 @@ static dsnet_client *client_new(int fd, const char *name, int want_host) {
     p = put8(p, bl); memcpy(p, dsnet_build_id, bl); p += bl;
     p = put8(p, dsnet_match_rule); p = put8(p, ml); memcpy(p, dsnet_modset, ml); p += ml;
     p = put16(p, (uint16_t)dl); memcpy(p, dsnet_mod_lines, dl); p += dl;
+    p = put8(p, (uint8_t)role);
     memcpy(p, name, nl); p += nl;
     dsnet_link_send(&c->link, b, p - b);
     c->last_rx = dsnet_now_ms();
@@ -351,7 +383,7 @@ dsnet_client *dsnet_client_connect_local(dsnet_server *s, const char *name) {
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) return NULL;
     if (dsnet_server_add_local(s, sv[0])) { close(sv[0]); close(sv[1]); return NULL; }
-    return client_new(sv[1], name, 1);
+    return client_new(sv[1], name, 1, DSNET_ROLE_PLAYER);
 }
 
 /* ---- TCP connect with a time limit ----
@@ -459,13 +491,16 @@ void dsnet_connect_free(dsnet_connector *k) {
 }
 
 dsnet_client *dsnet_client_connect_tcp(const char *host, uint16_t port, const char *name) {
+    return dsnet_client_connect_tcp_role(host, port, name, DSNET_ROLE_PLAYER);
+}
+dsnet_client *dsnet_client_connect_tcp_role(const char *host, uint16_t port, const char *name, int role) {
     int fd = -1;
     pthread_mutex_lock(&adopt_mu);
     if (adopted.fd >= 0 && adopted.port == port && !strcmp(adopted.host, host)) { fd = adopted.fd; adopted.fd = -1; }
     pthread_mutex_unlock(&adopt_mu);
     if (fd < 0) fd = tcp_connect(host, port, dsnet_now_ms() + DSNET_CONNECT_TIMEOUT_MS, NULL);
     if (fd < 0) { dsnet_logf("client: cannot connect to %s:%u (%d)", host, port, fd); return NULL; }
-    return client_new(fd, name, 0);
+    return client_new(fd, name, 0, role == DSNET_ROLE_SPECTATOR ? DSNET_ROLE_SPECTATOR : DSNET_ROLE_PLAYER);
 }
 
 void dsnet_client_close(dsnet_client *c) {
@@ -507,6 +542,8 @@ const char *dsnet_reject_text(int why) {
     case DSNET_REJ_DUP_ID: return "you are already in this game (same Steam account or same copy of the game)";
     case DSNET_REJ_OTHER_WORLD: return "the host is playing another world now";
     case DSNET_REJ_MODSET: return dsnet_reject_detail[0] ? dsnet_reject_detail : "your gameplay mods are different from the host's: start the game from the launcher with the host's mods";
+    case DSNET_REJ_NO_SPECTATORS: return "this world does not allow spectators";
+    case DSNET_REJ_SPECTATORS_FULL: return "this world already has the most spectators it allows";
     default: return "";
     }
 }
@@ -517,7 +554,7 @@ int dsnet_reject_reason(dsnet_client *c) {
 
 /* ---- game thread API ---- */
 int dsnet_submit(dsnet_client *c, uint8_t type, uint8_t scope, const void *payload, uint16_t len) {
-    if (len > DSNET_MAX_PAYLOAD) return -1;
+    if (len > DSNET_MAX_PAYLOAD || c->role == DSNET_ROLE_SPECTATOR) return -1;   /* spectators send no commands (the server drops them too) */
     uint8_t b[8 + DSNET_MAX_PAYLOAD], *p = b;
     p = put8(p, P_CMD); p = put8(p, type); p = put8(p, scope); p = put16(p, len);
     if (len) memcpy(p, payload, len);
@@ -916,7 +953,7 @@ static void sim_apply(simstate *s, const dsnet_cmd *cmd) {
 static void chat_system(dsnet_client *c, const dsnet_cmd *cmd) {
     if (cmd->player >= DSNET_MAX_PLAYERS) return;
     dsnet_chat_msg *m = &c->chat[c->chat_tail % 128];
-    m->player = cmd->player; m->text[0] = 0;
+    m->player = cmd->player; m->text[0] = 0; m->watching = 0;
     if (cmd->type == DSNET_PLAYER_JOIN) {
         int nl = cmd->len > 16 ? cmd->len - 16 : 0; if (nl > 31) nl = 31;
         memcpy(m->name, cmd->payload + 16, nl); m->name[nl] = 0;
@@ -1092,7 +1129,8 @@ int dsnet_steps_this_frame(dsnet_client *c, float frame_ms) {
     pthread_mutex_lock(&c->mu);
     int behind = (int)(c->tick_until - c->timer), n = 0;
     if (!c->welcomed || c->needs_state || (c->desynced && c->patch != 1) || c->patch == 2 || c->has_pending) n = 0;
-    else if (c->catching_up) n = behind < 0 ? 0 : behind > 200 ? 200 : behind;
+    else if (c->catching_up || (c->spectator && behind > 30)) n = behind < 0 ? 0 : behind > 200 ? 200 : behind;   /* a slow spectator
+                                                                                 catches up in bursts: it never holds the timer */
     else {
         /* Several steps per frame, so a low-fps peer keeps real speed (TickPatch replay path):
          * accumulate real time, run a step per step time, keep the remainder. A long stall counts
@@ -1420,7 +1458,7 @@ void dsnet_set_patch_cb(dsnet_client *c, dsnet_patch_cb cb, void *user) {
 }
 int dsnet_request_patch(dsnet_client *c) {
     pthread_mutex_lock(&c->mu);
-    int ok = c->desynced && !c->patch && !c->needs_state && !c->is_host;
+    int ok = c->desynced && !c->patch && !c->needs_state && !c->is_host && !c->spectator;   /* spectator: the cached save */
     if (ok) c->patch = 1;
     pthread_mutex_unlock(&c->mu);
     if (!ok) return -1;
@@ -1567,6 +1605,7 @@ int dsnet_party_ok(dsnet_client *c, const uint8_t (*guids)[16], int n) {
 int dsnet_gear_mode(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->sim.rules[2]; pthread_mutex_unlock(&c->mu); return r; }
 
 int dsnet_may_equip(dsnet_client *c, int player, const uint8_t unit[16]) {
+    if (c->spectator && player == c->player) return 0;
     pthread_mutex_lock(&c->mu);
     int o = unit_owner(&c->sim, unit);
     int adm = player == 0 && c->sim.admin;
@@ -1596,6 +1635,7 @@ int dsnet_item_set_owner(dsnet_client *c, const uint8_t item[16], int owner) {
 }
 
 int dsnet_may_use_item(dsnet_client *c, int player, const uint8_t item[16]) {
+    if (c->spectator && player == c->player) return 0;
     if (dsnet_gear_mode(c) != DSNET_GEAR_OWN_STORAGE) return 1;
     int o = dsnet_item_owner(c, item);
     return o == -1 || o == player || (o == DSNET_OWNER_RESERVED && player == 0 && dsnet_admin_mode(c));
@@ -1614,7 +1654,35 @@ int dsnet_player_net(dsnet_client *c, int player, int *ping_ms, int *ticks_behin
 
 int dsnet_is_disconnected(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->disconnected; pthread_mutex_unlock(&c->mu); return r; }
 int dsnet_host_left(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->host_left; pthread_mutex_unlock(&c->mu); return r; }
+int dsnet_bye_reason(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->host_left ? c->bye_reason : 0; pthread_mutex_unlock(&c->mu); return r; }
+
+/* ---- spectators ---- */
+int dsnet_is_spectator(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->spectator || (!c->welcomed && c->role == DSNET_ROLE_SPECTATOR); pthread_mutex_unlock(&c->mu); return r; }
+uint32_t dsnet_spectator_mask(dsnet_client *c) {
+    pthread_mutex_lock(&c->mu);
+    uint32_t r = 0;
+    for (int i = 0; i < DSNET_MAX_PLAYERS; i++) if (c->sp[i].set) r |= 1u << i;
+    pthread_mutex_unlock(&c->mu);
+    return r;
+}
+int dsnet_spectator_info(dsnet_client *c, int slot, char name[32], int *ping_ms, int *state) {
+    if (slot < 0 || slot >= DSNET_MAX_PLAYERS) return -1;
+    pthread_mutex_lock(&c->mu);
+    int r = c->sp[slot].set ? 0 : -1;
+    if (!r) { if (name) memcpy(name, c->sp[slot].name, 32); if (ping_ms) *ping_ms = c->sp[slot].ping; if (state) *state = c->sp[slot].state; }
+    pthread_mutex_unlock(&c->mu);
+    return r;
+}
+int dsnet_spectators_allowed(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->sp_allow; pthread_mutex_unlock(&c->mu); return r; }
+int dsnet_spectators_max(dsnet_client *c) { pthread_mutex_lock(&c->mu); int r = c->sp_max; pthread_mutex_unlock(&c->mu); return r; }
+int dsnet_set_spectators(dsnet_client *c, int allow) {
+    if (!c || !c->is_host) return -1;
+    pthread_mutex_lock(&c->mu); c->sp_allow = allow != 0; pthread_mutex_unlock(&c->mu);
+    uint8_t b[2] = { P_SPECT_RULE, (uint8_t)(allow != 0) };
+    return dsnet_link_send(&c->link, b, 2) ? -1 : 0;
+}
 void dsnet_test_cut(dsnet_client *c) { pthread_mutex_lock(&c->mu); c->link.dead = 1; pthread_mutex_unlock(&c->mu); }
+void dsnet_test_spectator_sends(dsnet_client *c) { pthread_mutex_lock(&c->mu); c->role = DSNET_ROLE_PLAYER; pthread_mutex_unlock(&c->mu); }
 
 size_t dsnet_save_overhead(dsnet_client *c) {
     uint8_t *b = malloc(SIM_BYTES);
@@ -1660,6 +1728,7 @@ int dsnet_temp_control(dsnet_client *c, const uint8_t uid[16]) {
     return r;
 }
 int dsnet_may_order(dsnet_client *c, int player, const uint8_t unit[16]) {
+    if (c->spectator && player == c->player) return 0;     /* a spectator's own checks (its commands never reach the sim) */
     pthread_mutex_lock(&c->mu);
     int reg = tag_reg(c->sim.own, c->sim.nown, unit), o = reg_view(&c->sim, reg);
     int host = player == 0, adm = host && c->sim.admin;

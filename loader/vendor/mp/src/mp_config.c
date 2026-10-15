@@ -12,6 +12,7 @@ void mp_config_defaults(mp_config *c) {
     c->min_players = 1;
     c->auto_resync = 1; c->resync_delay_ms = 300; c->auto_resume = 1; c->partial_resync = 1; c->full_check_steps = 10800;
     c->connect_timeout_ms = 5000;
+    c->allow_spectators = 1;
     snprintf(c->name, sizeof c->name, "player");
 }
 
@@ -81,6 +82,8 @@ int mp_config_parse(const char *j, mp_config *c) {
     if (get_num(j, "auto_resume", &d)) c->auto_resume = d != 0;
     if (get_num(j, "connect_timeout_ms", &d)) c->connect_timeout_ms = (int)d;
     if (get_num(j, "need_save", &d)) c->need_save = d != 0;
+    if (get_num(j, "spectator", &d)) c->spectator = d != 0;
+    if (get_num(j, "allow_spectators", &d)) c->allow_spectators = d != 0;
     if (get_num(j, "shared_fog", &d)) c->shared_fog = d != 0;
     if (!c->host && (!c->host_addr[0] || !c->port)) return -2;   /* a client needs host + port */
     return 0;

@@ -126,6 +126,9 @@ static mp_session *sess(void) { return mp_game_session ? mp_game_session() : NUL
 static dsnet_client *cli(void) { mp_session *s = sess(); return s ? mp_client(s) : NULL; }
 static int me(void) { dsnet_client *c = cli(); return c ? dsnet_player_id(c) : -1; }
 static int on(void) { return me() >= 0; }                    /* session up and welcomed */
+/* Spectator (owner 2026-10-14): this copy watches. It sees everything, chats and pings, owns no units; every order, vote,
+   claim and popup choice is refused here with "You are watching" (dsnet refuses its commands anyway). */
+static int spect(void) { mp_session *s = sess(); return s && mp_is_spectator(s); }
 static int owner_of(Obj unit) {
     dsnet_client *c = cli();
     if (!c || !unit) return UI_UNCLAIMED;
@@ -183,10 +186,13 @@ static void color_step(int player, int dir) {                /* Auto -> 0 .. 7 -
 static void players(ui_players *p) {
     memset(p, 0, sizeof *p);
     dsnet_client *c = cli();
-    if (!c) return;
+    if (!c) { ui_spectators = 0; return; }
     p->present = dsnet_present_mask ? dsnet_present_mask(c) : (1u | 1u << (unsigned)dsnet_player_id(c));
     if (dsnet_player_name)
         for (int i = 0; i < UI_MAX_PLAYERS; i++) { const char *n = dsnet_player_name(c, i); if (n) snprintf(p->name[i], sizeof p->name[i], "%s", n); }
+    /* spectators: never present (outside the sim), but named for chat, pings and the "Watching" rows; grey (ui_model) */
+    ui_spectators = dsnet_spectator_mask(c);
+    for (int i = 0; i < UI_MAX_PLAYERS; i++) if ((ui_spectators >> i & 1u) && !p->name[i][0]) dsnet_spectator_info(c, i, p->name[i], NULL, NULL);
 }
 
 /* ---------------------------------------------------------------- notices (HelpNoticeView, the game's toast) */
@@ -350,6 +356,8 @@ static int lmenu_open(Obj parts, Obj unit);
 static int follow_order(mp_session *s, int player, const uint8_t guid[16], const uint8_t *a, uint16_t n);
 /* lan_v10 co-op markers (8j): used before their section */
 static char *ui_coop_cmd(const char *line);
+static char *ui_spect_cmd(const char *line);
+static char *ui_mini_cmd(const char *line);
 static int pmenu_open(int pl, float x, float y);
 static int look_at(int pl);
 static void scr_to_layer(Obj layer, float sx, float sy, float *ux, float *uy);
@@ -480,6 +488,7 @@ static void owned_counts(int cnt[UI_MAX_PLAYERS]) {          /* over the units o
 static void hk_sc_click(Obj parts, Obj ev, void *mi) {
     if (!on() || !ev || AT(ev, 0x148, int) != 1) { o_sc_click(parts, ev, mi); return; }
     o_sc_click(parts, ev, mi);                               /* stock: right-click only plays the button feedback */
+    if (spect()) { notice("You are watching: spectators cannot take units"); return; }
     mp_session *s = sess();
     Obj unit = AT(parts, 0x228, Obj);
     if (!s || !is_unit(unit)) return;
@@ -726,6 +735,7 @@ int ui_map_change_blocks(void) {
 }
 int ui_check_order(const uint8_t g[16]) {
     static const uint8_t zero[16];
+    if (on() && spect()) { notice("You are watching: spectators cannot give orders"); return 0; }   /* base work too */
     if (!on() || !memcmp(g, zero, 16)) return 1;
     /* runs 26 / 35: during an agreed map change (return to base, next floor) no unit moves, the host's own included;
        the order used to go out and do nothing. Now the player is told why. */
@@ -750,6 +760,7 @@ static void clock_lobby(Obj clock) {
     if (!on() || !u_alive(clock)) return;
     dsnet_client *c = cli();
     int sp = dsnet_allow_speedup(c), pa = dsnet_allow_pause(c);
+    if (spect()) { sp = pa = 0; u_active(AT(clock, 0x50, Obj), false); }   /* spectators: no speed or pause buttons at all */
     u_active(AT(clock, 0x58, Obj), sp);
     u_active(AT(clock, 0x60, Obj), sp);
     u_active(AT(clock, 0x48, Obj), pa);
@@ -1109,6 +1120,7 @@ static int map_propose_order(mp_session *s, int player, const uint8_t guid[16], 
         return 0;
     }
     if (mapv.decided >= 0) map_decided(mapv.decided);
+    else if (spect()) { char nm[40]; notice("%s wants to %s", ui_player_label(&p, player, nm), ui_map_short(kind)); }   /* no vote */
     else if (player != me() && left_prompt) { prompt_pending = 1; rig_log("ui: map vote waits for the disconnect box to close (ux_flow F20)"); }
     else if (player != me()) prompt_show();
     else { map_open_t = now_s(); map_cancel_sent = 0; }      /* the panel line "Waiting for <names> to agree" says the rest */
@@ -1126,6 +1138,7 @@ static int result_send(int kind, const uint8_t *order, size_t len);
 int ui_map_propose(int kind, const uint8_t *order, size_t len) {
     mp_session *s = sess();
     if (!on() || !s || len > UI_MAP_MAX_ORDER) return 0;
+    if (spect()) { notice("You are watching: only players change the map"); return 1; }
     if (result_open && result_chooser == me()) return result_send(kind, order, len);
     if (ui_mapvote_open(&mapv)) { notice("Another map change is being voted on"); return 1; }
     uint8_t buf[UI_MAP_MAX_ORDER + 8]; static const uint8_t zero[16];
@@ -1229,6 +1242,10 @@ static void hk_activate_view(Obj cont, int type, void *mi) {
                 if (k == UI_POP_TRADE) notice("%s is trading with %s", ui_player_label(&p, owner >= 0 ? owner : 0, pn), un);
                 return;
             }
+        }
+        if (spect() && type == 2) {                            /* the stock Expedition window: players plan, spectators watch */
+            notice("You are watching: only players plan expeditions");
+            return;
         }
         if (k == UI_POP_STORY) {
             story_pause(1);
@@ -1680,6 +1697,8 @@ char *ui_exec(const char *cmd, const char *line) {
     }
     if (!strcmp(cmd, "ui_escape")) return ui_escape_cmd(line);
     if (!strcmp(cmd, "ui_coop")) return ui_coop_cmd(line);
+    if (!strcmp(cmd, "ui_spect")) return ui_spect_cmd(line);
+    if (!strcmp(cmd, "ui_mini")) return ui_mini_cmd(line);
     if (!strcmp(cmd, "ui_tip_hover")) return ui_tip_hover_cmd(line);
     if (!strcmp(cmd, "ui_tip_where")) return ui_tip_where_cmd();
     if (!strcmp(cmd, "ui_players_lists")) return ui_players_lists_cmd(line);
@@ -1736,7 +1755,7 @@ static void ev_choices_look(void) {
     if (!on() || !u_alive(v) || !ev_node) return;
     Obj list = AT(v, 0x60, Obj), items = list ? AT(list, 0x10, Obj) : NULL;
     int n = list ? AT(list, 0x18, int32_t) : 0, ch = ev_chooser();
-    int readonly = ch >= 0 && ch != me() && !(story.node == ev_node && story.decided >= 0);
+    int readonly = (spect() || (ch >= 0 && ch != me())) && !(story.node == ev_node && story.decided >= 0);
     int mine = story.node == ev_node && ch < 0 ? story.vote[me() & 31] : -1;
     if (n > UI_MAX_CHOICES) n = UI_MAX_CHOICES;
     for (int i = 0; i < n; i++) {
@@ -1819,6 +1838,11 @@ static void hk_ev_click(Obj v, int idx, void *mi) {
     if (!on() || !s) { o_ev_click(v, idx, mi); return; }
     if (story.node == ev_node && story.decided >= 0) return; /* already chosen; the host's click is on its way */
     int ch = ev_chooser();
+    if (spect()) {                                           /* spectators never vote */
+        ui_players p; players(&p); char nm[40];
+        if (ch >= 0) notice("You are watching: %s is choosing", ui_player_label(&p, ch, nm)); else notice("You are watching: the players are voting");
+        return;
+    }
     ui_route r = ch >= 0 ? (ch == me() ? UI_ROUTE_STORY_CHOOSER : UI_ROUTE_STORY_READONLY) : UI_ROUTE_STORY_VOTE;
     if (r == UI_ROUTE_STORY_READONLY) {
         ui_players p; players(&p); char nm[40];
@@ -2041,6 +2065,8 @@ enum { PL_HDR, PL_BODY, PL_SEE, PL_NAMES, PL_ADMIN, PL_STATUS, PL_NOTE, PL_BODYR
        PL_TIPS, PL_TIPSR, PL_HINT, PL_CFADE, PL_CFADER, PL_CJOIN, PL_CJOINR, PL_CHAT, PL_CHATR, PL_SIZE, PL_SIZER,
        /* lan_v10: co-op markers, outline, other players' colours (7 rows: players 2-8 of a full game) */
        PL_PINGS, PL_PINGSR, PL_PSOUND, PL_PSOUNDR, PL_PCHAT, PL_PCHATR, PL_VIEWS, PL_VIEWSR, PL_OFFS, PL_OFFSR, PL_OUTL, PL_OUTLR,
+       PL_SPECT, PL_SPECTR,                                  /* host: spectators allowed (owner 2026-10-14) */
+       PL_MINI, PL_MINIR, PL_MSIZE, PL_MSIZER,               /* spectator: mini overview shown / its size (8k) */
        PL_COL0, PL_COLR0 = PL_COL0 + 7, PL_N = PL_COLR0 + 7 };
 #define PL_SETMAX 24                                         /* settings rows at most (each: label, value, < >) */
 static uintptr_t h_pl[PL_N], h_plate;                      /* h_plate: the panel frame */
@@ -2050,8 +2076,9 @@ static void chat_get(int *fade, int *join, int *en); static void chat_step(int r
 static float pl_y0;
 static int pl_anchor_bar, pl_pop;                            /* pl_pop: the cog is pressed (settings rows shown) */
 static float pl_cur_L, pl_cur_Y; static int pl_shown, pl_hide_why, cog_has_icon;       /* where the panel is now (lan_v8 drag) */
-static int row_player[9];                                    /* player of each row (connection tooltip; PL_MAXROWS + 1) */
-static int row_lvl[9];                                       /* its connection level (ui_conn_level; -2 = left) */
+static int row_player[19];                                   /* player of each row (connection tooltip; PL_MAXROWS + 1) */
+static int row_lvl[19];                                      /* its connection level (ui_conn_level; -2 = left, -3 = "Watching" divider) */
+static int row_watch[19];                                    /* the row is a spectator (no Follow / look menu: they send no view) */
 typedef struct { float x, y, w, h; } RectF4;
 static uintptr_t h_bar_view;
 static float bar_bottom_y(Obj root) {                       /* y just under the unit portrait bar (canvas root space) */
@@ -2074,7 +2101,7 @@ static float bar_bottom_y(Obj root) {                       /* y just under the 
 #define PL_HDR_H 34.0f
 #define PL_ROW_H 32.0f
 #define PL_SET_H 28.0f
-#define PL_MAXROWS 8
+#define PL_MAXROWS 18                                        /* players (8), left players, "Watching (n)" + spectators (8) */
 static int lobby_open(void) {                                /* review #30: hidden behind mpmenu's lobby panel */
     static int (*fn)(void); static unsigned tries;
     if (!fn && tries++ % 50 == 0) fn = (int (*)(void))dlsym(RTLD_DEFAULT, "mpmenu_lobby_open");
@@ -2113,7 +2140,7 @@ static float tmp_pref_w(Obj t) {                             /* TMP_Text.preferr
     return (*(float (**)(Obj, void *))((char *)k + 0x678))(t, *(void **)((char *)k + 0x680));
 }
 static void plist_set(int i, const char *txt) {
-    Obj t = u_gc_get(h_pl[i]); char cur[1024];
+    Obj t = u_gc_get(h_pl[i]); char cur[3000];
     if (!u_alive(t)) return;
     str_utf8(tmp_get(t), cur, sizeof cur);
     if (strcmp(cur, txt) || !pl_written[i]) {
@@ -2161,18 +2188,20 @@ int ui_panel_compact(void) { settings_load(); return uiset.compact; }   /* teams
 /* the cog's rows, in order (lan_v10: + co-op markers, outline, other players' colours; host rows last). arg = the
    player of a colour row, else -1. Returns the count. */
 static int pl_is_label(int i) { return i == PL_SEE || i == PL_NAMES || i == PL_ADMIN || i == PL_UNITS || i == PL_TIPS || i == PL_CFADE || i == PL_CJOIN || i == PL_CHAT || i == PL_SIZE
-                                     || i == PL_PINGS || i == PL_PSOUND || i == PL_PCHAT || i == PL_VIEWS || i == PL_OFFS || i == PL_OUTL || (i >= PL_COL0 && i < PL_COL0 + 7); }
+                                     || i == PL_PINGS || i == PL_PSOUND || i == PL_PCHAT || i == PL_VIEWS || i == PL_OFFS || i == PL_OUTL || i == PL_SPECT || i == PL_MINI || i == PL_MSIZE || (i >= PL_COL0 && i < PL_COL0 + 7); }
 static int pl_is_value(int i) { return i == PL_SEER || i == PL_NAMESR || i == PL_UNITSR || i == PL_ADMINR || i == PL_TIPSR || i == PL_CFADER || i == PL_CJOINR || i == PL_CHATR || i == PL_SIZER
-                                     || i == PL_PINGSR || i == PL_PSOUNDR || i == PL_PCHATR || i == PL_VIEWSR || i == PL_OFFSR || i == PL_OUTLR || (i >= PL_COLR0 && i < PL_COLR0 + 7); }
+                                     || i == PL_PINGSR || i == PL_PSOUNDR || i == PL_PCHATR || i == PL_VIEWSR || i == PL_OFFSR || i == PL_OUTLR || i == PL_SPECTR || i == PL_MINIR || i == PL_MSIZER || (i >= PL_COLR0 && i < PL_COLR0 + 7); }
 static int set_rows(int *lab, int *val, int *arg) {
     static const int fixed[][2] = { { PL_SEE, PL_SEER }, { PL_NAMES, PL_NAMESR }, { PL_OUTL, PL_OUTLR }, { PL_TIPS, PL_TIPSR }, { PL_SIZE, PL_SIZER },
         { PL_CFADE, PL_CFADER }, { PL_CJOIN, PL_CJOINR }, { PL_CHAT, PL_CHATR },
         { PL_PINGS, PL_PINGSR }, { PL_PSOUND, PL_PSOUNDR }, { PL_PCHAT, PL_PCHATR }, { PL_VIEWS, PL_VIEWSR }, { PL_OFFS, PL_OFFSR } };
     int n = 0;
     for (size_t k = 0; k < sizeof fixed / sizeof fixed[0]; k++) { lab[n] = fixed[k][0]; val[n] = fixed[k][1]; arg[n++] = -1; }
+    if (spect()) { lab[n] = PL_MINI; val[n] = PL_MINIR; arg[n++] = -1; lab[n] = PL_MSIZE; val[n] = PL_MSIZER; arg[n++] = -1; }
     ui_players p; players(&p); int c = 0;
     for (int i = 0; i < UI_MAX_PLAYERS && c < 7; i++) if (i != me() && (p.present >> i & 1u)) { lab[n] = PL_COL0 + c; val[n] = PL_COLR0 + c; arg[n++] = i; c++; }
-    if (me() == 0) { lab[n] = PL_UNITS; val[n] = PL_UNITSR; arg[n++] = -1; lab[n] = PL_ADMIN; val[n] = PL_ADMINR; arg[n++] = -1; }
+    if (me() == 0) { lab[n] = PL_UNITS; val[n] = PL_UNITSR; arg[n++] = -1; lab[n] = PL_ADMIN; val[n] = PL_ADMINR; arg[n++] = -1;
+                     lab[n] = PL_SPECT; val[n] = PL_SPECTR; arg[n++] = -1; }
     return n;
 }
 static int plist_style(void) {
@@ -2307,8 +2336,9 @@ static void plist_frame(void) {
     dsnet_client *c = cli(); ui_players p; players(&p);
     mp_stats ms; mp_get_stats(sess(), &ms);
     /* rows: present players, then players that left and are waited for (red X) */
-    char bl[1400] = "<line-height=32>", br[600] = "<line-height=32>", row[256], rr[128];
+    char bl[2600] = "<line-height=32>", br[1200] = "<line-height=32>", row[256], rr[128];
     size_t nl = strlen(bl), nr = strlen(br); int np = 0, rows = 0, lvl[PL_MAXROWS], worst = 3;
+    memset(row_watch, 0, sizeof row_watch);
     for (int i = 0; i < UI_MAX_PLAYERS && rows < PL_MAXROWS; i++) {
         if (!(p.present >> i & 1u)) continue;
         np++;
@@ -2336,6 +2366,30 @@ static void plist_frame(void) {
           nr += (size_t)snprintf(br + nr, sizeof br - nr, "%s<color=#f16071>X</color>", rows ? "\n" : "");
           rows++;
       } }
+    {   /* spectators (owner 2026-10-14): a "Watching (n)" divider, then one grey row each with its connection bars */
+        int ns = 0; for (int i = 0; i < UI_MAX_PLAYERS; i++) ns += ui_spectators >> i & 1u;
+        if (ns && rows < PL_MAXROWS) {
+            snprintf(row, sizeof row, "<size=86%%><smallcaps><color=#a69085>Watching (%d)</color></smallcaps></size>", ns);
+            lvl[rows] = -3; row_player[rows] = -1; row_lvl[rows] = -3;
+            nl += (size_t)snprintf(bl + nl, sizeof bl - nl, "%s%s", rows ? "\n" : "", row);
+            nr += (size_t)snprintf(br + nr, sizeof br - nr, "%s ", rows ? "\n" : "");
+            rows++;
+            for (int i = 0; i < UI_MAX_PLAYERS && rows < PL_MAXROWS; i++) {
+                if (!(ui_spectators >> i & 1u)) continue;
+                char snm[32] = ""; int ping = -1, sst = 0;
+                dsnet_spectator_info(c, i, snm, &ping, &sst);
+                int cs = sst == DSNET_NET_IN_SYNC ? 0 : sst == DSNET_NET_LOADING ? 1 : sst == DSNET_NET_RESYNCING ? 2 : -1;
+                if (i == me()) cs = ms.desynced ? 2 : (ms.loading || ms.needs_state) ? 1 : 0;
+                snprintf(row, sizeof row, "<color=%s>%s</color> <color=%s>%s</color>", UI_SPECTATOR_COLOR, pl_dot, UI_SPECTATOR_COLOR, snm[0] ? snm : "A spectator");
+                lvl[rows] = i == me() ? -1 : ui_conn_level(ping, 0, cs); row_lvl[rows] = lvl[rows];   /* never the header's worst */
+                row_player[rows] = i; row_watch[rows] = 1;
+                nl += (size_t)snprintf(bl + nl, sizeof bl - nl, "\n%s", row);
+                nr += (size_t)snprintf(br + nr, sizeof br - nr, "\n%s", i == me() ? "<color=#a69085>You</color>" : " ");
+                rows++;
+            }
+        }
+        for (int r = rows; r < PL_MAXROWS; r++) { row_player[r] = -1; row_lvl[r] = -3; }
+    }
     char hdr[64], h2[128];
     ui_list_header(np, uiset.list_open, hdr, sizeof hdr);
     snprintf(h2, sizeof h2, "<smallcaps><color=#ccbeb8>%s</color></smallcaps>", hdr);
@@ -2349,6 +2403,12 @@ static void plist_frame(void) {
     snprintf(row, sizeof row, "<color=#ccbeb8>%d%%</color>", uiset.see_through); plist_set(PL_SEER, row);
     snprintf(row, sizeof row, "<color=#ccbeb8>%s</color>", ui_names_text(uiset.names)); plist_set(PL_NAMESR, row);
     snprintf(row, sizeof row, "<color=#ccbeb8>%d</color>", ui_max_owned); plist_set(PL_UNITSR, row);
+    {   int nw = 0; for (int i = 0; i < UI_MAX_PLAYERS; i++) nw += ui_spectators >> i & 1u;
+        plist_set(PL_SPECT, "<color=#a69085>Spectators (host)</color>");
+        if (!dsnet_spectators_allowed(c)) snprintf(row, sizeof row, "<color=#ccbeb8>Off</color>");
+        else if (nw) snprintf(row, sizeof row, "<color=#ccbeb8>On (%d)</color>", nw);
+        else snprintf(row, sizeof row, "<color=#ccbeb8>On</color>");
+        plist_set(PL_SPECTR, row); }
     plist_set(PL_TIPS, "<color=#a69085>Show tooltips on hover</color>");
     plist_set(PL_SIZE, "<color=#a69085>Panel size</color>");
     plist_set(PL_SIZER, uiset.compact ? "<color=#ccbeb8>Compact</color>" : "<color=#ccbeb8>Normal</color>");
@@ -2369,6 +2429,10 @@ static void plist_frame(void) {
       for (int k = 0; k < 5; k++) { snprintf(row, sizeof row, "<color=#a69085>%s</color>", onoff[k].txt); plist_set(onoff[k].lab, row);
                                     plist_set(onoff[k].val, vals[k] ? "<color=#ccbeb8>On</color>" : "<color=#ccbeb8>Off</color>"); }
       plist_set(PL_OUTL, "<color=#a69085>Unit outline</color>");
+      plist_set(PL_MINI, "<color=#a69085>Mini overview (O)</color>");
+      plist_set(PL_MINIR, uiset.mini ? "<color=#ccbeb8>Show</color>" : "<color=#ccbeb8>Hide</color>");
+      plist_set(PL_MSIZE, "<color=#a69085>Overview size</color>");
+      snprintf(row, sizeof row, "<color=#ccbeb8>%s</color>", ui_mini_size_text(uiset.mini_size)); plist_set(PL_MSIZER, row);
       snprintf(row, sizeof row, "<color=#ccbeb8>%s</color>", ui_outline_text(uiset.outline)); plist_set(PL_OUTLR, row);
       int lab2[PL_SETMAX], val2[PL_SETMAX], arg2[PL_SETMAX], n2 = set_rows(lab2, val2, arg2);
       for (int k = 0; k < n2; k++) if (arg2[k] >= 0) {
@@ -2630,7 +2694,7 @@ static void plist_mouse(void) {
       if ((rc || lc) && uiset.list_open && !pl_pop)
           for (int r = 0; r < PL_MAXROWS; r++) {
               int pl = row_player[r];
-              if (pl < 0 || pl == me() || !ui_hit(u_gc_get(h_rowbg[r]), mx, my)) continue;
+              if (pl < 0 || pl == me() || row_watch[r] || !ui_hit(u_gc_get(h_rowbg[r]), mx, my)) continue;
               if (rc) { Obj top = layer_top(); float ux = 0, uy = 0; if (top) scr_to_layer(top, mx, my, &ux, &uy); pmenu_open(pl, ux + 4, uy - 4); }
               else if (!look_at(pl)) { ui_players p; players(&p); char nm[40]; notice("%s's view is not known yet", ui_player_label(&p, pl, nm)); }
               return;
@@ -2647,10 +2711,18 @@ static void plist_mouse(void) {
                 int *f = i == PL_PINGS ? &uiset.pings : i == PL_PSOUND ? &uiset.ping_sound : i == PL_PCHAT ? &uiset.ping_chat : i == PL_VIEWS ? &uiset.views : &uiset.offscreen;
                 *f = !*f; settings_save();
             }
+            else if (i == PL_MINI) { uiset.mini = !uiset.mini; settings_save(); }
+            else if (i == PL_MSIZE) { uiset.mini_size = (uiset.mini_size + (k % 2 ? 1 : 2)) % 3; settings_save(); }
             else if (i == PL_UNITS) units_step(k % 2 ? 1 : -1);
             else if (i == PL_CFADE || i == PL_CJOIN || i == PL_CHAT) chat_step(i, k % 2 ? 1 : -1);
             else if (i == PL_TIPS || i == PL_SIZE) plist_click(i);
             else if (i == PL_ADMIN) plist_click(PL_ADMIN);
+            else if (i == PL_SPECT) {                        /* host: spectators on / off; off with watchers asks first (mpmenu box) */
+                dsnet_client *c = cli(); int allow = c && !dsnet_spectators_allowed(c);
+                static int (*set_fn)(int); if (!set_fn) set_fn = (int (*)(int))dlsym(RTLD_DEFAULT, "mpmenu_spectators_set");
+                int rc = set_fn ? set_fn(allow) : mp_set_spectators(sess(), allow);
+                rig_log("ui: spectators %s requested from the panel (rc %d)", allow ? "allowed" : "off", rc);
+            }
             else if (k % 2) plist_click(i); else plist_prev(i);
             plist_frame();
             return;
@@ -2978,7 +3050,8 @@ static void banner_frame(void) {
             if (u_go_active_self(u_go(b)) != show) u_go_active(u_go(b), show);
             if (show) {
                 char nm[40], t[160]; ui_players p; players(&p);
-                snprintf(t, sizeof t, "<color=%s>Owned by %s</color>\nYou cannot change this unit",
+                if (spect()) snprintf(t, sizeof t, "<color=%s>Spectator: view only</color>\nYou are watching", UI_SPECTATOR_COLOR);
+                else snprintf(t, sizeof t, "<color=%s>Owned by %s</color>\nYou cannot change this unit",
                          ui_player_color(foreign >= 0 ? foreign : 0), ui_player_label(&p, foreign >= 0 ? foreign : 0, nm));
                 char cur[200]; str_utf8(tmp_get(b), cur, sizeof cur);
                 if (strcmp(cur, t)) tmp_set(b, t);
@@ -3066,7 +3139,7 @@ static void esc_save_frame(void) {
         if (!save_label[0]) snprintf(save_label, sizeof save_label, "%s", cur);
         dis_apply(&esc_dis, sb);                                 /* first: it skips buttons that are already off */
         F(0xF2DC14, void (*)(Obj, bool, void *))(sb, false, NULL);              /* SubUI_SystemMenuButton.SetInteractable */
-        if (u_alive(tf)) F(0xF7B154, void (*)(Obj, Obj, bool, void *))(tf, u_str("Only the host saves this world"), false, NULL);
+        if (u_alive(tf)) F(0xF7B154, void (*)(Obj, Obj, bool, void *))(tf, u_str(spect() ? "You are watching: only the host saves this world" : "Only the host saves this world"), false, NULL);
     } else if (save_label[0]) {
         F(0xF2DC14, void (*)(Obj, bool, void *))(sb, true, NULL);
         dis_restore(&esc_dis);
@@ -3340,9 +3413,10 @@ static void viewer_send(int type, const uint8_t *a, uint16_t n) { static const u
 /* lan_v10: the follow is local (the leader's P_VIEW moves this camera, 8j); no sim order any more (UI_ORDER_FOLLOW /
    UI_ORDER_CAMERA went through the command stream; their handlers stay registered for older peers' orders) */
 static void follow_start(int pl); static void follow_stop(int quiet); static int viewer_follows;
+static int mini_kept;                                        /* 8k: the mini overview stays after a click on it, until Free camera */
 static void viewer_follow(int on_) {
     if (viewer_leader < 0) return;
-    if (on_) { follow_start(viewer_leader); viewer_follows = 1; } else { follow_stop(1); viewer_follows = 0; }
+    if (on_) { follow_start(viewer_leader); viewer_follows = 1; } else { follow_stop(1); viewer_follows = 0; mini_kept = 0; }
     rig_log("ui: viewer %s %d's camera", on_ ? "follows" : "stops following", viewer_leader);
 }
 static void viewer_ask(void) {
@@ -3390,11 +3464,23 @@ static void vpos_save(void) {
     if (vpos_set) fprintf(f, "{\"x\":%.0f,\"y\":%.0f}\n", vpos_x, vpos_y); else fputs("{}\n", f);
     fclose(f);
 }
+/* spectator (owner 2026-10-14): the box shows on every map: "Watching the owner's world", Follow <player>'s camera (the
+   leader's P_VIEW moves this camera, outside the sim) / Free camera / Next player (another present player to follow) */
+static int spect_leader = -1;
+static int spect_next_player(int from) {
+    ui_players p; players(&p);
+    for (int k = 1; k <= UI_MAX_PLAYERS; k++) { int i = ((from < 0 ? -1 : from) + k) % UI_MAX_PLAYERS; if (p.present >> i & 1u) return i; }
+    return -1;
+}
 static void viewer_frame(void) {
     cam_new = 0;                                             /* (lan_v10: the follow is 8j's follow_frame) */
     /* who watches: on a dungeon map, none of the player units there may be ordered by me */
     int v = 0, leader = -1;
-    if (on() && cur_map() > 0 && local_n > 0) {
+    if (on() && spect() && cur_map() >= 0 && !busy()) {
+        ui_players sp; players(&sp);
+        if (spect_leader < 0 || !(sp.present >> spect_leader & 1u)) spect_leader = spect_next_player(-1);
+        v = spect_leader >= 0; leader = spect_leader;
+    } else if (on() && cur_map() > 0 && local_n > 0) {
         v = 1; int cnt[UI_MAX_PLAYERS] = {0};
         for (int k = 0; k < local_n; k++) {
             int e = eff_of_guid((const uint8_t *)&local_order[k]);
@@ -3439,15 +3525,22 @@ static void viewer_frame(void) {
     }
     vb_cur_x = X0; vb_cur_y = Y0;
     place(box, X0, Y0, 660, full ? 70 : 48);
-    if (full) snprintf(t, sizeof t, "<smallcaps><color=#ccbeb8>Watching %s's expedition</color></smallcaps>", nm);
-    else snprintf(t, sizeof t, "<smallcaps><color=#ccbeb8>Watching %s's expedition</color></smallcaps> <size=80%%><color=#a69085>(click for options)</color></size>", nm);
+    int sv = spect(); char hn[40]; ui_player_label(&p, 0, hn);
+    const char *what = sv ? "world" : "expedition", *whose = sv ? hn : nm;
+    if (full) snprintf(t, sizeof t, "<smallcaps><color=#ccbeb8>Watching %s's %s</color></smallcaps>", whose, what);
+    else snprintf(t, sizeof t, "<smallcaps><color=#ccbeb8>Watching %s's %s</color></smallcaps> <size=80%%><color=#a69085>(click for options)</color></size>", whose, what);
     place(u_gc_get(h_vtitle), X0 + 18, Y0 - 10, 620, 28); line_text(u_gc_get(h_vtitle), t);
     if (!full) return;
-    snprintf(t, sizeof t, "<color=#a69085>You have no units on this run. You can watch and chat; %s gives the orders.</color>", nm);
+    if (sv) snprintf(t, sizeof t, "<color=#a69085>You are a spectator. You can chat and ping.</color>");
+    else snprintf(t, sizeof t, "<color=#a69085>You have no units on this run. You can watch and chat; %s gives the orders.</color>", nm);
     place(u_gc_get(h_vtext), X0 + 18, Y0 - 38, 620, 22); line_text(u_gc_get(h_vtext), t);
-    const char *lab[3] = { "Follow %s's camera", "Free camera", "Ask %s to lend a unit" };
+    /* HUD A (owner 2026-10-14 ~19:55): "Follow the owner" / "Following the owner" */
+    const char *lab[3] = { coop_follow == leader ? "Following %s" : "Follow %s", "Free camera", sv ? "Next player \u203A" : "Ask %s to lend a unit" };
+    int nb = 3;
+    if (sv) { int np = 0; for (int i = 0; i < UI_MAX_PLAYERS; i++) np += p.present >> i & 1u; if (np < 2) nb = 2; }   /* one player: nobody else to pick */
+    for (int k = nb; k < 3; k++) { show(u_gc_get(h_vbtn_b[k]), 0); show(u_gc_get(h_vbtn_bg[k]), 0); show(u_gc_get(h_vbtn_t[k]), 0); }
     float bx = X0;
-    for (int k = 0; k < 3; k++) {
+    for (int k = 0; k < nb; k++) {
         char bl[96]; snprintf(bl, sizeof bl, lab[k], nm);
         Obj bt = u_gc_get(h_vbtn_t[k]);
         char tx2[160]; snprintf(tx2, sizeof tx2, "<color=#ccbeb8>%s</color>", bl);
@@ -3481,9 +3574,39 @@ static void viewer_mouse(void) {
     if (viewer_min) { if (ui_hit(u_gc_get(h_vbox), m3.x, m3.y)) { viewer_min = 0; viewer_frame(); } return; }   /* unfold */
     for (int k = 0; k < 3; k++) {
         if (!ui_hit(u_gc_get(h_vbtn_b[k]), m3.x, m3.y)) continue;
-        if (k == 0) viewer_follow(1); else if (k == 1) viewer_follow(0); else viewer_ask();
+        if (k == 0) viewer_follow(1); else if (k == 1) viewer_follow(0);
+        else if (spect()) {                                  /* next player: the box (and a running follow) move to him */
+            int was = coop_follow == spect_leader, nx = spect_next_player(spect_leader);
+            if (nx >= 0) spect_leader = nx;
+            viewer_frame();
+            if (was) viewer_follow(1);
+        }
+        else viewer_ask();
         return;
     }
+}
+
+/* test: ui_spect {press: 0 Follow, 1 Free camera, 2 Next player / Ask} -> the spectator state as the screen shows it */
+static char *ui_spect_cmd(const char *line) {
+    double k = -1; jnum(line, "press", &k);
+    if (k >= 0 && k < 3 && viewer_on) {
+        if (k == 0) viewer_follow(1); else if (k == 1) viewer_follow(0);
+        else if (spect()) { int was = coop_follow == spect_leader, nx = spect_next_player(spect_leader); if (nx >= 0) spect_leader = nx; viewer_frame(); if (was) viewer_follow(1); }
+    }
+    viewer_frame();
+    char tt[300] = "", tx[300] = "", b0[160] = "", b1[160] = "", b2[160] = "", body[2600] = "", spr[200] = "", sprv[200] = "";
+    str_utf8(tmp_get(u_gc_get(h_vtitle)), tt, sizeof tt); str_utf8(tmp_get(u_gc_get(h_vtext)), tx, sizeof tx);
+    str_utf8(tmp_get(u_gc_get(h_vbtn_t[0])), b0, sizeof b0); str_utf8(tmp_get(u_gc_get(h_vbtn_t[1])), b1, sizeof b1); str_utf8(tmp_get(u_gc_get(h_vbtn_t[2])), b2, sizeof b2);
+    str_utf8(tmp_get(u_gc_get(h_pl[PL_BODY])), body, sizeof body);
+    str_utf8(tmp_get(u_gc_get(h_pl[PL_SPECT])), spr, sizeof spr); str_utf8(tmp_get(u_gc_get(h_pl[PL_SPECTR])), sprv, sizeof sprv);
+    Obj ck = u_gc_get(h_clock); int clk[4] = { -1, -1, -1, -1 };
+    if (u_alive(ck)) for (int i = 0; i < 4; i++) { Obj bt = AT(ck, 0x48 + 8 * i, Obj); clk[i] = u_alive(bt) ? u_go_active_self(u_go(bt)) : -1; }
+    Buf b = {0};
+    bput(&b, "{\"ok\":true,\"spectator\":%d,\"me\":%d,\"viewer_on\":%d,\"leader\":%d,\"follow\":%d,\"spectators\":%u,\"clock_buttons\":[%d,%d,%d,%d],\"b2_shown\":%d,\"title\":",
+         spect(), me(), viewer_on, viewer_leader, coop_follow, ui_spectators, clk[0], clk[1], clk[2], clk[3], u_alive(u_gc_get(h_vbtn_b[2])) && u_go_active_self(u_go(u_gc_get(h_vbtn_b[2]))));
+    bstr(&b, tt); bput(&b, ",\"text\":"); bstr(&b, tx); bput(&b, ",\"buttons\":["); bstr(&b, b0); bput(&b, ","); bstr(&b, b1); bput(&b, ","); bstr(&b, b2);
+    bput(&b, "],\"panel_body\":"); bstr(&b, body); bput(&b, ",\"panel_spect\":["); bstr(&b, spr); bput(&b, ","); bstr(&b, sprv); bput(&b, "]}");
+    return b.p;
 }
 
 /* 8j. Co-op markers (lan_v10; design research/ping_camera_v10.md, owner override 2026-10-14 01:55). Everything here is
@@ -3819,7 +3942,7 @@ static void pings_draw(void) {
 /* friends' views: P_VIEW out (at most 5 a second, only when it moved; 1 s after the last move; every 5 s), brackets in */
 static void view_send(void) {
     dsnet_client *c = cli(); Obj cs = cam_setting();
-    if (!c || !cs || !fn_view_send || !coop_ok()) return;
+    if (!c || !cs || !fn_view_send || !coop_ok() || spect()) return;   /* the server drops a spectator's view anyway */
     static double last_send, last_move; static float lx = 1e9f, ly, lo; static uint32_t lk; static int tail;
     V3 pos = F(0xD23584, V3 (*)(Obj, void *))(cs, NULL); float o = F(0xD23590, float (*)(Obj, void *))(cs, NULL);
     double t = now_s(); uint32_t key = coop_key();
@@ -3919,6 +4042,367 @@ static void follow_frame(void) {
     }
     follow_set_pos = F(0xD23584, V3 (*)(Obj, void *))(cs, NULL); follow_set_o = F(0xD23590, float (*)(Obj, void *))(cs, NULL); follow_set = 1;   /* after the stock clamp */
 }
+/* 8k. Spectator mini overview (owner 2026-10-14 ~19:55, board design/project/SpectatorHUDAMini). While a spectator
+   follows a player, a small window shows the whole map (a second camera renders it into a texture a few times a
+   second), every player's view as a rectangle in their colour, this screen's own view (grey), player units as dots and
+   pings as rings. Click on the map: look there (the follow stops; the window stays until Free camera). Title bar: drag
+   it (left or right button) to move the window, saved; - / + size; x hides it. O shows / hides it; the cog has
+   "Mini overview" and "Overview size". Everything is local to this screen, like the friends' views (8j): the second
+   camera only draws, unit positions are read only. A "Following <name>'s view" chip and a thin frame round the screen
+   say that the camera is not the spectator's own. */
+#define IL_OBJECT_NEW 0x6F96CC                               /* il2cpp_object_new */
+#define IL_RESOLVE_ICALL 0x6F8B90                            /* il2cpp_resolve_icall */
+#define MINI_TITLE 30
+#define MINI_LEGEND 24
+#define MINI_DOTS 64
+#define MINI_RECTS 8
+#define MINI_EVERY 6                                         /* the map camera draws one frame in 6 */
+static uintptr_t h_mcam, h_mrt;
+static uintptr_t h_mfr, h_mbg, h_mbar, h_mtitle, h_mfloor, h_mimg, h_mlegend, h_mown[4], h_mdot[MINI_DOTS], h_mring[UI_PING_MAX];
+static uintptr_t h_mbtn_b[3], h_mbtn_bg[3], h_mbtn_t[3], h_mrect[MINI_RECTS][4], h_mrname[MINI_RECTS];
+static uintptr_t h_fchip_b, h_fchip_bg, h_fchip_t, h_fedge[4];
+static int mini_on, mini_kept, mini_rt_w, mini_rt_h, mini_renders, mini_ndots, mini_nrings, mini_rect_pl[MINI_RECTS];
+static unsigned mini_tick; static float mini_X, mini_Y, mini_W, mini_H; static ui_mini_view mini_v; static int mini_have_v;
+static int mini_drag, mini_dragging; static float mini_mx0, mini_my0, mini_x0, mini_y0;
+static float mini_rect_at[MINI_RECTS][4], mini_own_at[4]; static int mini_own_on;   /* test probe: map px */
+static void *nat(Obj o) { return u_alive(o) ? AT(o, 0x10, void *) : NULL; }   /* Object.m_CachedPtr: the engine object */
+static void *icall(const char *n) {
+    void *f = F(IL_RESOLVE_ICALL, void *(*)(const char *))(n);
+    if (!f) rig_log("ui: mini overview: engine call %s missing", n);
+    return f;
+}
+static Obj new_go(const char *name) {                        /* new GameObject(name), in the active scene */
+    void *k = ord_debug_class ? ord_debug_class("UnityEngine", "GameObject") : NULL;
+    Obj go = k ? F(IL_OBJECT_NEW, Obj (*)(void *))(k) : NULL;
+    if (go) F(0x50F4674, void (*)(Obj, Obj, void *))(go, u_str(name), NULL);   /* GameObject..ctor(string) */
+    return u_alive(go) ? go : NULL;
+}
+/* the map camera: a copy of the main camera's settings (Camera.CopyFrom, engine call: the managed one is stripped),
+   orthographic, no UI layer, drawing into its own RenderTexture; disabled except one frame in MINI_EVERY */
+static Obj mini_cam(int w, int h) {
+    Obj cam = u_gc_get(h_mcam), rt = u_gc_get(h_mrt), main = cam_main();
+    if (u_alive(cam) && u_alive(rt) && w == mini_rt_w && h == mini_rt_h) return cam;
+    if (!main) return NULL;
+    if (!u_alive(cam)) {
+        static double next; if (now_s() < next) return NULL;
+        next = now_s() + 5;                                  /* a failure retries every 5 s, not every frame */
+        Obj tc = type_of("UnityEngine", "Camera"), go = tc ? new_go("DSMP_MiniOverviewCamera") : NULL;
+        cam = go ? F(0x50F2B90, Obj (*)(Obj, Obj, void *))(go, tc, NULL) : NULL;   /* GameObject.AddComponent */
+        if (!u_alive(cam)) { rig_log("ui: mini overview: no camera (go %p)", go); return NULL; }
+        static void (*copy)(void *, void *), (*ortho)(void *, bool), (*mask)(void *, int);
+        if (!copy) copy = (void (*)(void *, void *))icall("UnityEngine.Camera::CopyFrom_Injected");
+        if (!ortho) ortho = (void (*)(void *, bool))icall("UnityEngine.Camera::set_orthographic_Injected");
+        if (!mask) mask = (void (*)(void *, int))icall("UnityEngine.Camera::set_cullingMask_Injected");
+        if (copy) copy(nat(cam), nat(main));
+        if (ortho) ortho(nat(cam), true);
+        Obj top = layer_top(); int ul = top ? F(0x50F3118, int (*)(Obj, void *))(u_go(top), NULL) : 5;   /* GameObject.layer */
+        int cm = F(0x5080BC8, int (*)(Obj, void *))(main, NULL) & ~(1 << 5) & ~(1 << (ul & 31));   /* Camera.cullingMask */
+        if (mask) mask(nat(cam), cm);
+        F(0x5081194, void (*)(Obj, int, void *))(cam, 2, NULL);                    /* clearFlags = SolidColor */
+        F(0x5080F9C, void (*)(Obj, Col, void *))(cam, hex_col("#141218", 1), NULL); /* backgroundColor */
+        F(0x50ECEA0, void (*)(Obj, bool, void *))(cam, false, NULL);               /* Behaviour.enabled */
+        u_gc_free(h_mcam); h_mcam = u_gc_new(cam);
+        rig_log("ui: mini overview camera %p (copy %d, ortho %d, mask %d, culling 0x%x)", cam, copy != NULL, ortho != NULL, mask != NULL, cm);
+    }
+    if (!u_alive(rt) || w != mini_rt_w || h != mini_rt_h) {
+        void *k = ord_debug_class ? ord_debug_class("UnityEngine", "RenderTexture") : NULL;
+        Obj nrt = k ? F(IL_OBJECT_NEW, Obj (*)(void *))(k) : NULL;
+        if (nrt) F(0x50D1D9C, void (*)(Obj, int, int, int, void *))(nrt, w, h, 24, NULL);   /* RenderTexture(w, h, 24) */
+        if (!u_alive(nrt)) { rig_log("ui: mini overview: no render texture"); return NULL; }
+        F(0x50BE5C0, void (*)(Obj, int, void *))(nrt, 1, NULL);                    /* filterMode = Bilinear */
+        F(0x5081CB8, void (*)(Obj, Obj, void *))(cam, nrt, NULL);                  /* Camera.targetTexture */
+        Obj img = u_gc_get(h_mimg); if (u_alive(img)) F(0x54920B4, void (*)(Obj, Obj, void *))(img, nrt, NULL);   /* RawImage.texture */
+        if (u_alive(rt)) { F(0x50CF5B8, void (*)(Obj, void *))(rt, NULL); F(0x50FC8F8, void (*)(Obj, void *))(rt, NULL); }   /* Release, Destroy */
+        u_gc_free(h_mrt); h_mrt = u_gc_new(nrt); mini_rt_w = w; mini_rt_h = h;
+        rig_log("ui: mini overview texture %dx%d", w, h);
+    }
+    return cam;
+}
+static void mini_cam_off(void) { Obj cam = u_gc_get(h_mcam); if (u_alive(cam)) F(0x50ECEA0, void (*)(Obj, bool, void *))(cam, false, NULL); }
+static Obj mini_raw(Obj root) {                              /* a RawImage under root (a new GameObject: an Image clone cannot hold one) */
+    Obj tr = type_of("UnityEngine.UI", "RawImage"), go = tr ? new_go("DSMP_MiniOverview") : NULL;
+    Obj ri = go ? F(0x50F2B90, Obj (*)(Obj, Obj, void *))(go, tr, NULL) : NULL;
+    if (!ui_is(ri, K_GR)) { rig_log("ui: mini overview: no RawImage (go %p)", go); return NULL; }
+    F(0x50F3204, void (*)(Obj, int, void *))(go, F(0x50F3118, int (*)(Obj, void *))(u_go(root), NULL), NULL);   /* the layer's layer */
+    F(0x510B2C4, void (*)(Obj, Obj, bool, void *))(u_tr(ri), root, false, NULL);  /* Transform.SetParent(root, false) */
+    Obj rt = u_tr(ri);
+    F(0x5106B64, void (*)(float, float, Obj, void *))(0.5f, 1, rt, NULL);          /* as img_make: top centre, pivot top-left */
+    F(0x5106D48, void (*)(float, float, Obj, void *))(0.5f, 1, rt, NULL);
+    F(0x51072F4, void (*)(float, float, Obj, void *))(0, 1, rt, NULL);
+    graphic_color(ri, (Col){ 1, 1, 1, 1 });
+    return ri;
+}
+static Obj mini_text(Obj root, float size, int align) {
+    Obj t = line_clone(root, 1, 100, 22, 0);
+    if (ui_is(t, K_TMP)) { rt_top_left(u_tr(t)); tmp_style(t, u_gc_get(h_lora), size, align); }
+    return t;
+}
+static int mini_build(void) {
+    if (u_alive(u_gc_get(h_mimg)) && u_alive(u_gc_get(h_mfr))) return 1;
+    Obj root = layer_top(); if (!root || !u_alive(u_gc_get(h_lora))) return 0;
+    static double next; if (now_s() < next) return 0;
+    next = now_s() + 5;
+    Obj fr = flat(root, "#915847"), bg = flat(root, "#222025"), bar = flat(root, "#36323a");
+    Obj img = mini_raw(root);
+    if (!fr || !bg || !bar || !img) return 0;
+    u_gc_free(h_mfr); h_mfr = u_gc_new(fr); u_gc_free(h_mbg); h_mbg = u_gc_new(bg); u_gc_free(h_mbar); h_mbar = u_gc_new(bar);
+    u_gc_free(h_mimg); h_mimg = u_gc_new(img);
+    u_gc_free(h_mtitle); h_mtitle = u_gc_new(mini_text(root, 15, 513));
+    u_gc_free(h_mfloor); h_mfloor = u_gc_new(mini_text(root, 12, 516));
+    u_gc_free(h_mlegend); h_mlegend = u_gc_new(mini_text(root, 11, 513));
+    for (int k = 0; k < 3; k++) {
+        Obj b = flat(root, "#633d33"), b2 = flat(root, "#2a262c"), t = mini_text(root, 14, 514);
+        u_gc_free(h_mbtn_b[k]); h_mbtn_b[k] = u_gc_new(b); u_gc_free(h_mbtn_bg[k]); h_mbtn_bg[k] = u_gc_new(b2); u_gc_free(h_mbtn_t[k]); h_mbtn_t[k] = u_gc_new(t);
+    }
+    for (int k = 0; k < 4; k++) { u_gc_free(h_mown[k]); h_mown[k] = u_gc_new(flat(root, "#b5aeb0")); }
+    Obj ri = u_gc_get(h_mrt); if (u_alive(ri)) F(0x54920B4, void (*)(Obj, Obj, void *))(img, ri, NULL);
+    rig_log("ui: mini overview built");
+    return 1;
+}
+static void mini_hide_all(void) {
+    uintptr_t *one[] = { &h_mfr, &h_mbg, &h_mbar, &h_mtitle, &h_mfloor, &h_mimg, &h_mlegend };
+    for (size_t k = 0; k < sizeof one / sizeof one[0]; k++) show(u_gc_get(*one[k]), 0);
+    for (int k = 0; k < 3; k++) { show(u_gc_get(h_mbtn_b[k]), 0); show(u_gc_get(h_mbtn_bg[k]), 0); show(u_gc_get(h_mbtn_t[k]), 0); }
+    for (int k = 0; k < 4; k++) show(u_gc_get(h_mown[k]), 0);
+    for (int i = 0; i < MINI_RECTS; i++) { for (int k = 0; k < 4; k++) show(u_gc_get(h_mrect[i][k]), 0); show(u_gc_get(h_mrname[i]), 0); }
+    for (int i = 0; i < MINI_DOTS; i++) show(u_gc_get(h_mdot[i]), 0);
+    for (int i = 0; i < UI_PING_MAX; i++) show(u_gc_get(h_mring[i]), 0);
+    mini_ndots = mini_nrings = 0; mini_own_on = 0;
+    for (int i = 0; i < MINI_RECTS; i++) mini_rect_pl[i] = -1;
+}
+/* a rectangle outline (4 bars of 2) in map px, inside the map area */
+static void mini_outline(uintptr_t *h4, const float r[4], const char *hex, float a) {
+    float ix = mini_X + 2, iy = mini_Y - 2 - MINI_TITLE, T = 2;
+    float x[4] = { r[0], r[0], r[0], r[0] + r[2] - T }, y[4] = { r[1], r[1] + r[3] - T, r[1], r[1] };
+    float w[4] = { r[2], r[2], T, T }, h[4] = { T, T, r[3], r[3] };
+    for (int k = 0; k < 4; k++) { Obj im = u_gc_get(h4[k]); show(im, 1); place(im, ix + x[k], iy - y[k], w[k], h[k]); graphic_color(im, hex_col(hex, a)); }
+}
+static int mini_visible(void) { return coop_ok() && spect() && uiset.mini && (coop_follow >= 0 || mini_kept); }
+static void mini_place_default(Obj root, float wt, float ht, float *X, float *Y) {
+    float rx, ry; scr_to_layer(root, (float)scr_w() - 16, (float)scr_h() * 0.14f, &rx, &ry);   /* bottom right, over the skill keys */
+    *X = rx - wt; *Y = ry + ht;
+}
+static void mini_clamp(Obj root, float wt, float ht, float *X, float *Y) {
+    float x0, y0, x1, y1; scr_to_layer(root, 0, (float)scr_h(), &x0, &y0); scr_to_layer(root, (float)scr_w(), 0, &x1, &y1);
+    if (*X > x1 - wt) *X = x1 - wt; if (*X < x0) *X = x0;
+    if (*Y < y1 + ht) *Y = y1 + ht; if (*Y > y0) *Y = y0;
+}
+static void follow_chip(int on_) {                           /* "Following the owner's view" at the top centre + the screen frame */
+    Obj root = layer_top();
+    if (on_ && root && !u_alive(u_gc_get(h_fchip_t)) && u_alive(u_gc_get(h_lora))) {
+        u_gc_free(h_fchip_b); h_fchip_b = u_gc_new(flat(root, "#d9be8f")); u_gc_free(h_fchip_bg); h_fchip_bg = u_gc_new(flat(root, "#222025"));
+        u_gc_free(h_fchip_t); h_fchip_t = u_gc_new(mini_text(root, 14, 514));
+        for (int k = 0; k < 4; k++) { u_gc_free(h_fedge[k]); h_fedge[k] = u_gc_new(flat(root, "#d9be8f")); }
+        uintptr_t hs[] = { h_fchip_b, h_fchip_bg, h_fchip_t, h_fedge[0], h_fedge[1], h_fedge[2], h_fedge[3] };   /* clicks go through */
+        for (size_t k = 0; k < sizeof hs / sizeof hs[0]; k++) { Obj g = u_gc_get(hs[k]); if (ui_is(g, K_GR)) F(0x5260348, void (*)(Obj, bool, void *))(g, false, NULL); }
+    }
+    Obj b = u_gc_get(h_fchip_b), bg = u_gc_get(h_fchip_bg), t = u_gc_get(h_fchip_t);
+    show(b, on_); show(bg, on_); show(t, on_);
+    for (int k = 0; k < 4; k++) show(u_gc_get(h_fedge[k]), on_);
+    if (!on_ || !root || !u_alive(t)) return;
+    ui_players p; players(&p); char nm[40], tx[160];
+    snprintf(tx, sizeof tx, "<color=#d9be8f>%s  Following %s's view</color>", pl_dot, ui_player_label(&p, coop_follow, nm));
+    line_text(t, tx);
+    float w = tmp_pref_w(t) + 28; if (w < 160) w = 160;
+    float x0, y0, x1, y1; scr_to_layer(root, 0, (float)scr_h(), &x0, &y0); scr_to_layer(root, (float)scr_w(), 0, &x1, &y1);
+    float cy = y0 - 64;                                      /* under the top HUD row */
+    place(b, -w / 2, cy, w, 30); place(bg, -w / 2 + 1, cy - 1, w - 2, 28); place(t, -w / 2, cy - 1, w, 28);
+    graphic_color(bg, hex_col("#222025", 0.92f));
+    float T = 3, ex[4] = { x0, x0, x0, x1 - T }, ey[4] = { y0, y1 + T, y0, y0 }, ew[4] = { x1 - x0, x1 - x0, T, T }, eh[4] = { T, T, y0 - y1, y0 - y1 };
+    for (int k = 0; k < 4; k++) { Obj e = u_gc_get(h_fedge[k]); place(e, ex[k], ey[k], ew[k], eh[k]); graphic_color(e, hex_col("#d9be8f", 0.55f)); }
+}
+/* every frame: the window, its marks, the camera's one-frame-in-6 */
+static void mini_frame(void) {
+    follow_chip(coop_ok() && spect() && coop_follow >= 0);
+    int vis = mini_visible() && mini_build();
+    Obj root = layer_top(), cs = cam_setting();
+    if (!vis || !root || !cs) { if (mini_on) { mini_hide_all(); mini_cam_off(); mini_on = 0; } mini_drag = mini_dragging = 0; return; }
+    settings_load();
+    float W = ui_mini_width(uiset.mini_size), H = ui_mini_height(uiset.mini_size), wt = W + 4, ht = MINI_TITLE + H + MINI_LEGEND + 4;
+    float X, Y;
+    if (uiset.mini_pos_set) { X = (float)uiset.mini_x; Y = (float)uiset.mini_y; } else mini_place_default(root, wt, ht, &X, &Y);
+    if (mini_dragging) { X = mini_X; Y = mini_Y; }
+    mini_clamp(root, wt, ht, &X, &Y);
+    mini_X = X; mini_Y = Y; mini_W = W; mini_H = H; mini_on = 1;
+    /* the map: bounds from CameraSetting._mapBounds (+0x40: MinX, MaxX, MinY, MaxY) */
+    ui_mini_frame(AT(cs, 0x40, int32_t), AT(cs, 0x44, int32_t), AT(cs, 0x48, int32_t), AT(cs, 0x4C, int32_t), W / H, &mini_v); mini_have_v = 1;
+    float sk = layer_k(root) * 1.5f; if (sk < 1) sk = 1; if (sk > 3) sk = 3;   /* texture px per layer unit (sharp on big screens) */
+    Obj cam = mini_cam((int)(W * sk), (int)(H * sk));
+    if (cam) {
+        int draw = mini_tick++ % MINI_EVERY == 0;
+        if (draw) {
+            Obj mc = cam_main(); float z = mc ? F(0x5109A08, V3 (*)(Obj, void *))(u_tr(mc), NULL).z : -10;
+            F(0x5109B04, void (*)(Obj, V3, void *))(u_tr(cam), (V3){ mini_v.cx, mini_v.cy, z }, NULL);   /* Transform.position */
+            F(0x50805E8, void (*)(Obj, float, void *))(cam, mini_v.hh, NULL);                          /* orthographicSize */
+            mini_renders++;
+        }
+        F(0x50ECEA0, void (*)(Obj, bool, void *))(cam, draw, NULL);
+    }
+    /* the window */
+    Obj fr = u_gc_get(h_mfr), bg = u_gc_get(h_mbg), bar = u_gc_get(h_mbar), img = u_gc_get(h_mimg);
+    show(fr, 1); show(bg, 1); show(bar, 1); show(img, 1);
+    place(fr, X, Y, wt, ht); place(bg, X + 2, Y - 2, W, ht - 4); place(bar, X + 2, Y - 2, W, MINI_TITLE);
+    graphic_color(bg, hex_col("#222025", 0.95f));
+    place(img, X + 2, Y - 2 - MINI_TITLE, W, H);
+    Obj tt = u_gc_get(h_mtitle), fl = u_gc_get(h_mfloor), lg = u_gc_get(h_mlegend);
+    show(tt, 1); show(fl, 1); show(lg, 1);
+    place(tt, X + 12, Y - 6, 120, 22); line_text(tt, "<color=#ccbeb8>Overview</color>");
+    char ft[64]; int f = cur_floor();
+    if (cur_map() > 0 && f >= 0) snprintf(ft, sizeof ft, "<color=#a69085>Floor %d</color>", f + 1); else snprintf(ft, sizeof ft, "<color=#a69085>Settlement</color>");
+    place(fl, X + 2 + W - 3 * 28 - 118, Y - 6, 110, 22); line_text(fl, ft);
+    static const char *bl[3] = { "−", "+", "×" };
+    for (int k = 0; k < 3; k++) {
+        float bx = X + 2 + W - (float)(3 - k) * 28;
+        Obj b = u_gc_get(h_mbtn_b[k]), b2 = u_gc_get(h_mbtn_bg[k]), t = u_gc_get(h_mbtn_t[k]);
+        show(b, 1); show(b2, 1); show(t, 1);
+        place(b, bx, Y - 6, 24, 22); place(b2, bx + 1, Y - 7, 22, 20); place(t, bx, Y - 6, 24, 22);
+        char tx[48]; snprintf(tx, sizeof tx, "<color=#ccbeb8>%s</color>", bl[k]); line_text(t, tx);
+    }
+    /* players' views, in their colour, with the name */
+    ui_players p; players(&p);
+    char leg[600]; size_t ln = 0; leg[0] = 0;
+    int r = 0;
+    for (int i = 0; i < UI_MAX_PLAYERS && r < MINI_RECTS; i++) {
+        if (!(p.present >> i & 1u)) continue;
+        const char *hex = ui_player_color(i); char nm[40]; ui_player_label(&p, i, nm);
+        if (ln < sizeof leg - 80) ln += (size_t)snprintf(leg + ln, sizeof leg - ln, "<color=%s>%s</color> %s   ", hex, pl_dot, nm);
+        float v[4], q[4];
+        int have = uiset.views && view_get(i, v) && ui_mini_rect(&mini_v, W, H, v[0], v[1], v[2], v[3], q);
+        if (have && !u_alive(u_gc_get(h_mrect[r][0]))) {
+            for (int k = 0; k < 4; k++) { u_gc_free(h_mrect[r][k]); h_mrect[r][k] = u_gc_new(flat(root, hex)); }
+            u_gc_free(h_mrname[r]); h_mrname[r] = u_gc_new(mini_text(root, 11, 513));
+        }
+        if (have) {
+            mini_outline(h_mrect[r], q, hex, 1);
+            Obj nt = u_gc_get(h_mrname[r]); char tx[80]; snprintf(tx, sizeof tx, "<color=%s>%s</color>", hex, nm);
+            show(nt, 1); line_text(nt, tx);
+            float ny = q[1] > 14 ? q[1] - 15 : q[1] + 2;     /* above the rectangle, else just inside it */
+            place(nt, X + 2 + q[0] + 3, Y - 2 - MINI_TITLE - ny, 120, 14);
+            memcpy(mini_rect_at[r], q, sizeof q);
+        } else { for (int k = 0; k < 4; k++) show(u_gc_get(h_mrect[r][k]), 0); show(u_gc_get(h_mrname[r]), 0); }
+        mini_rect_pl[r] = have ? i : -1;
+        r++;
+    }
+    for (; r < MINI_RECTS; r++) { for (int k = 0; k < 4; k++) show(u_gc_get(h_mrect[r][k]), 0); show(u_gc_get(h_mrname[r]), 0); mini_rect_pl[r] = -1; }
+    /* own view (grey; it is the followed player's view while following, so only shown when free) */
+    { V3 cp = F(0xD23584, V3 (*)(Obj, void *))(cs, NULL); float co = F(0xD23590, float (*)(Obj, void *))(cs, NULL);
+      int h = scr_h(); float asp = h > 0 ? (float)scr_w() / (float)h : 1.6f, q[4];
+      mini_own_on = coop_follow < 0 && ui_mini_rect(&mini_v, W, H, cp.x, cp.y, co * asp, co, q);
+      if (mini_own_on) { mini_outline(h_mown, q, "#b5aeb0", 0.9f); memcpy(mini_own_at, q, sizeof q); }
+      else for (int k = 0; k < 4; k++) show(u_gc_get(h_mown[k]), 0); }
+    if (ln < sizeof leg - 120) ln += (size_t)snprintf(leg + ln, sizeof leg - ln, "<color=#b5aeb0>%s</color> You   <color=#a69085>Click: look there</color>", pl_dot);
+    place(lg, X + 12, Y - 2 - MINI_TITLE - H - 1, W - 20, 22); line_text(lg, leg);
+    /* player units (dots, 5 a second) and pings (rings) */
+    if (mini_tick % MINI_EVERY == 1) {
+        Obj pd = pos_dict(cur_map()); Obj pe = pd ? AT(pd, 0x18, Obj) : NULL; int pn = pd ? AT(pd, 0x20, int32_t) : 0, nd = 0;
+        for (int q = 0; pe && q < pn && nd < MINI_DOTS; q++) {
+            char *e = (char *)pe + 0x20 + q * 0x20;
+            if (*(int32_t *)e < 0) continue;
+            int o = owner_of_guid((const uint8_t *)(e + 8)), ef = eff_of_guid((const uint8_t *)(e + 8));
+            if (o != UI_RESERVED && ef >= 0) o = ef;           /* a lent unit shows its controller (lan_v9 colour rule) */
+            if (o < 0 || o >= UI_MAX_PLAYERS) continue;
+            float mx, my; ui_mini_w2m(&mini_v, W, H, *(float *)(e + 0x18), *(float *)(e + 0x1C), &mx, &my);
+            if (mx < 2 || my < 2 || mx > W - 2 || my > H - 2) continue;
+            Obj d = u_gc_get(h_mdot[nd]);
+            if (!u_alive(d)) { d = flat(root, "#ffffff"); u_gc_free(h_mdot[nd]); h_mdot[nd] = u_gc_new(d); }
+            show(d, 1); place(d, X + 2 + mx - 2.5f, Y - 2 - MINI_TITLE - my + 2.5f, 5, 5); graphic_color(d, hex_col(ui_player_color(o), 1));
+            nd++;
+        }
+        for (int k = nd; k < mini_ndots; k++) show(u_gc_get(h_mdot[k]), 0);
+        mini_ndots = nd;
+        uint32_t key = coop_key(); int nr = 0; Obj rs = ring_sprite();
+        for (int i = 0; i < UI_PING_MAX; i++) {
+            ui_ping *g = &pings.p[i];
+            if (!g->used || g->map_key != key || !uiset.pings) continue;
+            float mx, my; ui_mini_w2m(&mini_v, W, H, (float)g->x + 0.5f, (float)g->y + 0.5f, &mx, &my);
+            if (mx < 0 || my < 0 || mx > W || my > H) continue;
+            Obj rg = u_gc_get(h_mring[nr]);
+            if (!u_alive(rg)) { rg = img_make(root, rs, 14, 14); u_gc_free(h_mring[nr]); h_mring[nr] = u_gc_new(rg); }
+            show(rg, 1); place(rg, X + 2 + mx - 7, Y - 2 - MINI_TITLE - my + 7, 14, 14); graphic_color(rg, hex_col(ping_col(g->owner), 1));
+            nr++;
+        }
+        for (int k = nr; k < mini_nrings; k++) show(u_gc_get(h_mring[k]), 0);
+        mini_nrings = nr;
+    }
+}
+static void mini_set_size(int s) { if (s < UI_MINI_SMALL) s = UI_MINI_SMALL; if (s > UI_MINI_LARGE) s = UI_MINI_LARGE; uiset.mini_size = s; settings_save(); }
+static void mini_hide(void) { uiset.mini = 0; settings_save(); notice("Overview hidden. Press O to show it again."); rig_log("ui: mini overview hidden"); }
+static void mini_toggle(void) {                              /* O */
+    if (mini_visible()) { mini_hide(); return; }
+    uiset.mini = 1; settings_save();
+    if (coop_follow < 0) mini_kept = 1;                      /* free camera: show it anyway, until Free camera is pressed */
+    rig_log("ui: mini overview shown");
+}
+static void mini_look(float mx, float my) {                  /* a click on the map: look there (the follow stops) */
+    float wx, wy; ui_mini_m2w(&mini_v, mini_W, mini_H, mx, my, &wx, &wy);
+    if (coop_follow >= 0) follow_stop(0);
+    mini_kept = 1;
+    cam_jump(wx, wy);
+    rig_log("ui: mini overview: look at %.1f,%.1f", wx, wy);
+}
+/* every frame: O, the buttons, the map click, the title-bar drag (left or right button, as the other windows) */
+static void mini_input(void) {
+    if (spect() && coop_ok() && F(0x51AD280, bool (*)(int, void *))(111, NULL) && !text_focused()) { mini_toggle(); return; }   /* O */
+    if (!mini_on) return;
+    Obj root = layer_top(); if (!root) return;
+    V3 m = mouse_px(); float ux, uy; scr_to_layer(root, m.x, m.y, &ux, &uy);
+    int ld = F(0x51ACDD0, bool (*)(int, void *))(0, NULL), rd = F(0x51ACDD0, bool (*)(int, void *))(1, NULL);
+    if (mini_drag) {
+        int held = F(0x51ACD80, bool (*)(int, void *))(mini_drag - 1, NULL);
+        if (held) {
+            float sc = pl_scale(), dx = (m.x - mini_mx0) / sc, dy = (m.y - mini_my0) / sc;
+            if (!mini_dragging && dx * dx + dy * dy > 25) mini_dragging = 1;
+            if (mini_dragging) { mini_X = mini_x0 + dx; mini_Y = mini_y0 + dy; }
+            return;
+        }
+        if (mini_dragging) {
+            float wt = mini_W + 4, ht = MINI_TITLE + mini_H + MINI_LEGEND + 4, X = mini_X, Y = mini_Y; mini_clamp(root, wt, ht, &X, &Y);
+            uiset.mini_pos_set = 1; uiset.mini_x = (int)X; uiset.mini_y = (int)Y; settings_save();
+            rig_log("ui: mini overview moved to %d,%d", uiset.mini_x, uiset.mini_y);
+        }
+        mini_drag = mini_dragging = 0; return;
+    }
+    if (!ld && !rd) return;
+    if (ld) for (int k = 0; k < 3; k++) if (ui_hit(u_gc_get(h_mbtn_b[k]), m.x, m.y)) {
+        if (k == 0) mini_set_size(uiset.mini_size - 1); else if (k == 1) mini_set_size(uiset.mini_size + 1); else mini_hide();
+        return;
+    }
+    if (ui_hit(u_gc_get(h_mbar), m.x, m.y)) { mini_drag = ld ? 1 : 2; mini_dragging = 0; mini_mx0 = m.x; mini_my0 = m.y; mini_x0 = mini_X; mini_y0 = mini_Y; return; }
+    if (ld && ui_hit(u_gc_get(h_mimg), m.x, m.y)) mini_look(ux - (mini_X + 2), (mini_Y - 2 - MINI_TITLE) - uy);
+}
+static float jf(float v);
+/* test: ui_mini {action: o | smaller | bigger | hide | click (fx, fy: 0..1 of the map) | move (x, y) | reset} */
+static char *ui_mini_cmd(const char *line) {
+    char a[16] = ""; jstr(line, "action", a, sizeof a);
+    double fx = 0.5, fy = 0.5, x = 0, y = 0; jnum(line, "fx", &fx); jnum(line, "fy", &fy); jnum(line, "x", &x); jnum(line, "y", &y);
+    int rc = 0;
+    settings_load();
+    if (!strcmp(a, "o")) mini_toggle();
+    else if (!strcmp(a, "smaller")) mini_set_size(uiset.mini_size - 1);
+    else if (!strcmp(a, "bigger")) mini_set_size(uiset.mini_size + 1);
+    else if (!strcmp(a, "hide")) mini_hide();
+    else if (!strcmp(a, "click")) { if (mini_on) mini_look((float)fx * mini_W, (float)fy * mini_H); else rc = -1; }
+    else if (!strcmp(a, "move")) { uiset.mini_pos_set = 1; uiset.mini_x = (int)x; uiset.mini_y = (int)(y > 0 ? 0 : y); settings_save(); }
+    else if (!strcmp(a, "reset")) { uiset.mini_pos_set = 0; settings_save(); }
+    else if (a[0]) rc = -1;
+    mini_frame();
+    char leg[600] = "", chip[200] = "", fl[80] = "";
+    str_utf8(tmp_get(u_gc_get(h_mlegend)), leg, sizeof leg); str_utf8(tmp_get(u_gc_get(h_fchip_t)), chip, sizeof chip); str_utf8(tmp_get(u_gc_get(h_mfloor)), fl, sizeof fl);
+    Obj chipo = u_gc_get(h_fchip_t);
+    Buf b = {0};
+    bput(&b, "{\"ok\":true,\"rc\":%d,\"spectator\":%d,\"follow\":%d,\"setting\":%d,\"kept\":%d,\"shown\":%d,\"size\":%d,\"pos_set\":%d,\"x\":%.0f,\"y\":%.0f,\"w\":%.0f,\"h\":%.0f,"
+         "\"camera\":%d,\"texture\":[%d,%d],\"renders\":%d,\"view\":[%.2f,%.2f,%.2f,%.2f],\"dots\":%d,\"rings\":%d,\"chip_on\":%d,\"own\":",
+         rc, spect(), coop_follow, uiset.mini, mini_kept, mini_on, uiset.mini_size, uiset.mini_pos_set, mini_X, mini_Y, mini_W, mini_H,
+         u_alive(u_gc_get(h_mcam)), mini_rt_w, mini_rt_h, mini_renders, jf(mini_v.cx), jf(mini_v.cy), jf(mini_v.hw), jf(mini_v.hh), mini_ndots, mini_nrings,
+         u_alive(chipo) && u_go_active_self(u_go(chipo)));
+    if (mini_own_on) bput(&b, "[%.1f,%.1f,%.1f,%.1f]", mini_own_at[0], mini_own_at[1], mini_own_at[2], mini_own_at[3]); else bput(&b, "null");
+    bput(&b, ",\"rects\":[");
+    int n = 0;
+    for (int r = 0; r < MINI_RECTS; r++) if (mini_rect_pl[r] >= 0)
+        bput(&b, "%s{\"player\":%d,\"r\":[%.1f,%.1f,%.1f,%.1f]}", n++ ? "," : "", mini_rect_pl[r], mini_rect_at[r][0], mini_rect_at[r][1], mini_rect_at[r][2], mini_rect_at[r][3]);
+    bput(&b, "],\"legend\":"); bstr(&b, leg); bput(&b, ",\"chip\":"); bstr(&b, chip); bput(&b, ",\"floor\":"); bstr(&b, fl); bput(&b, "}");
+    return b.p;
+}
 /* keys and the middle button, every frame */
 static double mid_t; static float mid_x, mid_y; static int mid_ok;
 static void coop_input(void) {
@@ -3949,7 +4433,7 @@ static void coop_frame(void) {
     if (key != key_seen) { u_gc_free(h_camp); h_camp = 0;   /* the old map's camera presenter */
         int n = ui_ping_clear_other_maps(&pings, key); if (n) rig_log("ui: map changed: %d pings cleared", n); key_seen = key; memset(vr_have, 0, sizeof vr_have); }
     ui_players p; players(&p);
-    uint32_t gone = present_seen & ~p.present; present_seen = p.present;
+    uint32_t gone = present_seen & ~(p.present | ui_spectators); present_seen = p.present | ui_spectators;   /* spectators ping too */
     for (int i = 0; gone && i < UI_MAX_PLAYERS; i++) if (gone >> i & 1u) { ui_ping_clear_owner(&pings, i); ping_mute &= ~(1u << i); if (coop_follow == i) follow_stop(0); }
     marks_poll();
     if (coop_ok()) ping_arrival();
@@ -4070,7 +4554,8 @@ static int qs_selected_foreign(Obj v, char *who, size_t cap) {
     if (!on() || !c || !u_alive(v)) return 0;
     const uint8_t *g = (const uint8_t *)v + 0x50;
     if (!memcmp(g, zero, 16) || dsnet_may_order(c, me(), g)) return 0;
-    if (who) not_mine_text(g, who, cap);
+    if (who && spect()) snprintf(who, cap, "You are watching");
+    else if (who) not_mine_text(g, who, cap);
     return 1;
 }
 static void quick_frame(void) {
@@ -4248,6 +4733,7 @@ static int hk_clan_max(Obj clan, void *mi) { int h, c; return pop_override(&h, &
 static void (*o_recruit_click)(Obj, int, void *);
 static void hk_recruit_click(Obj v, int idx, void *mi) {
     dsnet_client *c = cli(); Obj c0 = cdc(), clan = c0 ? AT(c0, 0x50, Obj) : NULL;
+    if (on() && spect()) { notice("You are watching: spectators cannot recruit"); return; }
     if (on() && c && clan) {
         int base = AT(clan, 0x3C, int32_t), count = AT(clan, 0x38, int32_t), own = dsnet_owned_count(c, me()), cap = 0, pool = 1;
         int why = dsnet_recruit_check(c, me(), base, count, own, &cap, &pool);
@@ -4428,7 +4914,8 @@ static void tips_frame(void) {
             { PL_CJOIN, "Join and Leave Lines", "Shows a chat line when a player joins, leaves or reconnects." },
             { PL_CHAT, "Chat", "Turns the chat on or off on your screen." },
             { PL_UNITS, "Units per Player", "The most units each player can control (1, 2, 3, 4 or 6). Changes apply to everyone at once." },
-            { PL_ADMIN, "Admin Mode", "On: you can order every unit and release the units of absent players." } };
+            { PL_ADMIN, "Admin Mode", "On: you can order every unit and release the units of absent players." },
+            { PL_SPECT, "Spectators", "On: anyone you invite can join to watch (at most 8). They see everything, can chat and ping, own no units, and cannot pause or vote. Off: nobody can watch; turning it off removes the spectators (you are asked first)." } };
         for (size_t k = 0; k < sizeof rows / sizeof rows[0]; k++) tip_at(u_gc_get(h_pl[rows[k].id]), rows[k].t, rows[k].b);
         int lb[PL_SETMAX], vl[PL_SETMAX], ag[PL_SETMAX], ns = set_rows(lb, vl, ag);
         for (int k = 0; k < ns; k++) if (ag[k] >= 0) {
@@ -4441,7 +4928,8 @@ static void tips_frame(void) {
     if (uiset.list_open && !pl_pop)
         for (int r = 0; r < PL_MAXROWS; r++) if (row_player[r] >= 0 && row_player[r] != me()) {
             ui_player_label(&p, row_player[r], nm);
-            snprintf(b, sizeof b, "Click to look where %s looks. Right-click for more: Follow %s's view, Mute %s's pings.", nm, nm, nm);
+            if (row_watch[r]) snprintf(b, sizeof b, "%s is watching: a spectator sees everything and can chat and ping, but owns no units and cannot pause or vote.", nm);
+            else snprintf(b, sizeof b, "Click to look where %s looks. Right-click for more: Follow %s's view, Mute %s's pings.", nm, nm, nm);
             tip_at(u_gc_get(h_rowbg[r]), nm, b);
         }
     /* lan_v10 markers: pings (on the map / at the edge), friends' views */
@@ -4475,16 +4963,20 @@ static void tips_frame(void) {
     tip_at(u_gc_get(h_pl[PL_NOTE]), "Temporary Control", "A player disconnected and you chose Keep playing. You order their units until they come back; they stay theirs.");
     /* 3.9 skill bar of a unit that is not mine */
     if (qs_foreign) { char who[96] = ""; Obj v = u_gc_get(h_quick); qs_selected_foreign(v, who, sizeof who);
-        snprintf(b, sizeof b, "%s. You can look at its details, but only its controller gives it orders. Ask them to lend it to you.", who);
-        tip_at(u_gc_get(h_qs_line), "Not Your Unit", b); }
+        if (spect()) tip_at(u_gc_get(h_qs_line), "Spectator", "You are watching. You can look at every unit's details, but spectators give no orders.");
+        else { snprintf(b, sizeof b, "%s. You can look at its details, but only its controller gives it orders. Ask them to lend it to you.", who);
+               tip_at(u_gc_get(h_qs_line), "Not Your Unit", b); } }
     /* 3.10 viewer box */
     if (viewer_on) {
         ui_player_label(&p, viewer_leader, nm);
-        snprintf(b, sizeof b, "You have no units on this run. You can watch and chat; %s gives the orders.", nm); tip_at(u_gc_get(h_vtitle), "Watching", b);
+        if (spect()) tip_at(u_gc_get(h_vtitle), "Spectator", "You see everything and can chat (Enter) and ping (B or the middle mouse button). You own no units and cannot pause or vote.");
+        else { snprintf(b, sizeof b, "You have no units on this run. You can watch and chat; %s gives the orders.", nm); tip_at(u_gc_get(h_vtitle), "Watching", b); }
         snprintf(b, sizeof b, "Your camera follows what %s looks at.", nm); tip_at(u_gc_get(h_vbtn_b[0]), "Follow Camera", b);
         tip_at(u_gc_get(h_vbtn_b[1]), "Free Camera", "Move your camera yourself.");
-        snprintf(b, sizeof b, "Sends %s a request to lend you one of their units on this run.", nm); tip_at(u_gc_get(h_vbtn_b[2]), "Ask for a Unit", b);
+        if (spect()) tip_at(u_gc_get(h_vbtn_b[2]), "Next Player", "Pick the next player to follow.");
+        else { snprintf(b, sizeof b, "Sends %s a request to lend you one of their units on this run.", nm); tip_at(u_gc_get(h_vbtn_b[2]), "Ask for a Unit", b); }
     }
+    if (spect()) { Obj ck = u_gc_get(h_clock); if (u_alive(ck)) tip_at(AT(ck, 0x40, Obj), "Spectator", "Spectators cannot pause or change speed."); }
     /* 3.12 votes and boxes */
     tip_at(u_gc_get(h_strip_bg), "Map Vote", "Your proposal waits for the other players.");
     Obj nv = u_gc_get(h_notice);
@@ -4574,6 +5066,7 @@ void ui_frame(void) {
     lend_mouse();
     viewer_mouse();
     coop_input(); follow_frame(); pings_draw(); views_draw();   /* lan_v10 co-op markers (8j), every frame: smooth */
+    mini_input(); mini_frame();                              /* spectator mini overview (8k) */
     tips_frame();                                            /* lan_v9: the game-format tooltips (ui_tip.c) */
     if (n++ % 6) return;                                     /* 10 times a second is enough */
     static unsigned m; m++;
