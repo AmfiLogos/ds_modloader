@@ -7,3 +7,5 @@ loader/old/
 src-tauri/gen/
 target/
 test_env/
+loader/test/bie/*/obj/
+loader/test/bie/*/bin/

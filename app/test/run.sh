@@ -80,6 +80,22 @@ print -r -- '{"enabled": [ ], "order": []}' > "$D/Mods/active.json"
 stub >/dev/null 2>&1
 check "empty list unchanged (vanilla)" test "$(cat "$D/Mods/active.json")" = '{"enabled": [ ], "order": []}'
 
+echo "== (e) a BepInEx mod enabled: BepInEx installed at first use (real download), Doorstop env"
+mkdir -p "$ROOT/loader/mods/fake-bie"; print -r -- '{"id":"fake-bie","version":"1.0.0","kind":"bepinex","scope":"client","platforms":{"any":{"files":{}}}}' > "$ROOT/loader/mods/fake-bie/mod.json"
+print -r -- '{"enabled":["multiplayer","fake-bie"],"order":["multiplayer","fake-bie"]}' > "$D/Mods/active.json"
+t0=$(now); OUTB=$(stub 2>&1); t1=$(now); print -r -- "$OUTB" > "$T/dry_bie.txt"
+B="$ROOT/bepinex/mac-arm64/0.1.0"
+check "BepInEx installed" test -f "$B/libdoorstop.dylib" -a -f "$B/dotnet/libcoreclr.dylib"
+check "no quarantine on BepInEx" sh -c "! xattr -lr '$B' | grep -q quarantine"
+check "DYLD: dsload then Doorstop" grep -qxF "ENV DYLD_INSERT_LIBRARIES=$ROOT/loader/dsload.dylib:$B/libdoorstop.dylib" "$T/dry_bie.txt"
+check "plugin folder" grep -qxF "ENV BEPINEX_PLUGIN_DIRS=$ROOT/loader/mods/fake-bie" "$T/dry_bie.txt"
+check "Doorstop target" grep -qxF "ENV DOORSTOP_TARGET_ASSEMBLY=$B/BepInEx/core/BepInEx.Unity.IL2CPP.dll" "$T/dry_bie.txt"
+check "first-start notice" grep -q "Preparing mods (first start)" "$HOME/Library/Logs/DungeonSettlersModded.log"
+echo "bepinex first launch with download: $(python3 -c "print(f'{$t1-$t0:.1f}')") s"
+print -r -- '{"enabled":["multiplayer"],"order":["multiplayer"]}' > "$D/Mods/active.json"
+OUTN=$(stub 2>&1); print -r -- "$OUTN" > "$T/dry_nobie.txt"
+check "no BepInEx mod: no Doorstop" sh -c "! grep -q DOORSTOP '$T/dry_nobie.txt' && grep -qxF 'ENV DYLD_INSERT_LIBRARIES=$ROOT/loader/dsload.dylib' '$T/dry_nobie.txt'"
+
 echo "== (d) helper error goes to the notice (no Steam install in a fake HOME)"
 FH="$T/fakehome"; mkdir -p "$FH/Library/Logs"
 OUTE=$(env HOME="$FH" DSMODDED_DRY_RUN=1 DSMODDED_ROOT="$T/root_err" DSMP_NO_DIALOG=1 "$Q/Contents/MacOS/DS Modded" 2>&1); rce=$?

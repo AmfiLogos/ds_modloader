@@ -59,7 +59,7 @@ static void *my_load(void *self, void *name, const void *mi) {
     JNode *worlds = json_get(s, "worlds"), *w = NULL;
     if (worlds && worlds->t == JN_OBJ) for (JNode *c = worlds->child; c; c = c->next) if (c->key && !strcasecmp(c->key, g)) w = c;
     if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return it; }
-    if (mine && !strcasecmp(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
+    if (mine && dsl_key_same(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, w->str, mine ? mine : "?");
     dsl_world_mismatch(nm, g, w->str);                  /* asks "Load it with them?" (flow K, dsl_reg.c) */
     json_free(s);

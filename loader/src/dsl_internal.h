@@ -73,6 +73,7 @@ int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: H
 void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */
 void dsl_newworld_label(char *out, size_t cap);                      /* "Mods for this world: ..." */
 void dsl_newworld_change(void);
+int dsl_key_same(const char *a, const char *b);            /* gameplay keys equal (old keys with "multiplayer" too) */
 void dsl_world_mismatch(const char *save_name, const char *guid, const char *key);   /* dsl_world.c refused: ask (flow K) */
 const char *dsl_reg_data_dir(void);
 struct DSLHost; struct DSLPlugin;

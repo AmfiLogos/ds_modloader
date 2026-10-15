@@ -13,7 +13,7 @@ put() { codesign -f -s - "$1.tmp" 2>/dev/null; mv -f "$1.tmp" "$1"; }
 UISRC=(ui/*.c(N))                                   # Mods window (lane L2), when present
 WEAKU=(); for w in dsl_win_init dsl_win_open dsl_win_close dsl_win_is_open dsl_win_frame dsl_win_open_world; do WEAKU+=(-Wl,-U,_$w); done   # weak, defined by loader/ui
 nice -n 19 clang -arch arm64 -arch x86_64 $CF ${=EXTRA_CFLAGS} -Isrc -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc $WEAKU -install_name @rpath/dsload.dylib \
-  -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c src/dsl_world.c src/dsl_soft.c src/dsl_ui.c src/dsl_reg.c src/dsl_rows.c $UISRC start/mac/dsl_start_mac.c start/mac/dsl_soft_mac.c
+  -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c src/dsl_world.c src/dsl_soft.c src/dsl_ui.c src/dsl_reg.c src/dsl_rows.c $UISRC start/mac/dsl_start_mac.c start/mac/dsl_soft_mac.c start/mac/dsl_bie_mac.c
 put build/dsload.dylib; echo "built build/dsload.dylib"
 [[ -n "$LOADER_ONLY" ]] && exit 0
 
