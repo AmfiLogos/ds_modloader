@@ -318,7 +318,9 @@ static void mods_open(DSLObj root, float w, float h) {
         int bad = m->enabled && m->active != 1 && m->reason && m->reason[0];
         char d[400]; snprintf(d, sizeof d, "%s%s", bad ? "Not running: " : "", bad ? m->reason : (m->description ? m->description : ""));
         if (strlen(d) > 150) { size_t c = 146; while (c > 100 && d[c] != ' ') c--; snprintf(d + c, sizeof d - c, " ..."); }   /* two lines; all in the tooltip */
-        DSLObj t = U->text(list, 12, y + 38, m_lw - 56, rh - 40, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
+        int bep = m->kind && !strcmp(m->kind, "bepinex");               /* owner: BepInEx plugins (Windows) with a small mark */
+        if (bep) { snprintf(nm, sizeof nm, "mark:%s", m->id); named(U->text(list, 12, y + 38, 64, 18, "BepInEx", 13, DSL_TXT_LEFT, GOLD), 3, nm, NULL, NULL, "BepInEx"); }
+        DSLObj t = U->text(list, bep ? 80 : 12, y + 38, m_lw - (bep ? 124 : 56), rh - 40, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
         snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
         if (m->description && strlen(m->description) > 150) U->tooltip(mods[i].row, m->name, m->description);
     }
@@ -356,7 +358,11 @@ static void apply_watch(void) {
     if (b) applying_seen_busy = 1;
     if (!b && (applying_seen_busy || now_s() - applying_t > 5)) {
         applying = 0;
-        snprintf(carry_note, sizeof carry_note, "The mods did not change: the restart did not finish (see dsload.log).");
+        char why[240] = "", fp[1200]; const char *ld = getenv("DSL_LOG_DIR");          /* the loader writes the reason there */
+        if (ld) { snprintf(fp, sizeof fp, "%s/softrestart/handoff.json.failed", ld);
+                  FILE *f = fopen(fp, "r"); if (f) { size_t n = fread(why, 1, sizeof why - 1, f); why[n] = 0; fclose(f);
+                                                       while (n && (why[n - 1] == '\n' || why[n - 1] == '\r')) why[--n] = 0; } }
+        snprintf(carry_note, sizeof carry_note, "The mods did not change: %s", why[0] ? why : "the restart did not finish (see dsload.log).");
         dsl_log("win: the soft restart ended here without a swap: window opens with the reason");
         reopen_mark(0);
         dsl_win_open("mods");

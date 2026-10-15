@@ -55,6 +55,8 @@ def install_mods():
         if os.path.exists(d):
             os.makedirs(os.path.join(I, 'old'), exist_ok=True); os.replace(d, os.path.join(I, 'old', f'{m}_{int(time.time())}'))
         shutil.copytree(os.path.join(src, m), d)
+    d = os.path.join(MODS, 'test-bepinex'); os.makedirs(d, exist_ok=True)
+    shutil.copy2(os.path.join(HERE, 'fake-bepinex', 'mod.json'), os.path.join(d, 'mod.json'))
     d = os.path.join(MODS, 'dsltest-win')
     os.makedirs(d, exist_ok=True)
     for f in ('dsltest-win.dylib', 'mod.json'):
@@ -155,7 +157,8 @@ def main():
         results['controls_at_open'] = sorted(w)
         log('mods', {k: v['on'] for k, v in w.items() if k.startswith('mod:')})
         step('no change: status says how', 'state', lambda s: 'Switch mods on or off' in w['status']['text'])
-        step('hidden starter not listed', 'state', lambda s: 'mod:dsltest-win' not in w)
+        step('hidden test module not listed', 'state', lambda s: 'mod:dsltest-win' not in w)
+        step('BepInEx mark on the BepInEx mod only', 'state', lambda s: 'mark:test-bepinex' in w and not any(k.startswith('mark:') and k != 'mark:test-bepinex' for k in w))
         step('switch gcd-cdr on', 'click', target='mod:gcd-cdr')
         w = widgets()
         step('status lists the change', 'state', lambda s: w['mod:gcd-cdr']['on'] == 1 and 'gcd' in w['status']['text'].lower() or 'Global cooldown' in w['status']['text'])
