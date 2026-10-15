@@ -23,6 +23,7 @@
 #include <crt_externs.h>
 #include <mach-o/dyld.h>
 #include <spawn.h>
+#include <dlfcn.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,7 +63,8 @@ static JNode *hand;                                  /* B: parsed handoff */
 static double a_frame[4]; static int a_has_frame;
 
 /* ------------------------------------------------------------------ game access (names, resolved after il2cpp_init) */
-static Obj mf, fade;                                 /* MainFlow, ScreenFadeEffectView (from their Awake) */
+static Obj mf;
+#define fade live_fade()                                 /* MainFlow, ScreenFadeEffectView (from their Awake) */
 static void (*o_mf_awake)(Obj, const void *), (*o_fade_awake)(Obj, const void *);
 static int32_t off_scene = -1, off_boot = -1, off_eq = -1, off_set = -1, off_sl = -1, off_ts = -1, off_lc = -1;
 static void *(*obj_new)(void *klass); static void *(*str_new)(const char *);
@@ -144,13 +146,20 @@ static int camera(float *x, float *y, float *z) {
     V3 p = tf_pos(t, NULL); *x = p.x; *y = p.y; *z = cam_ortho ? cam_ortho(c, NULL) : 0; return 1;
 }
 
-static void (*o_fade_in_h)(Obj, const void *); static int fade_in_deferred;
-static void my_fade_in(Obj self, const void *mi) {                       /* B hidden: the game's fade in waits for the swap */
-    if (hidden && role_b) { if (!fade_in_deferred++) SLOG("B: game fade in deferred to the swap"); return; }
-    o_fade_in_h(self, mi);
-}
 static void my_mf_awake(Obj self, const void *mi) { mf = self; SLOG("MainFlow.Awake"); o_mf_awake(self, mi); }
-static void my_fade_awake(Obj self, const void *mi) { fade = self; o_fade_awake(self, mi); }
+/* the live ScreenFadeEffectView: Awake runs for every copy (a scene may bring a duplicate that the singleton destroys);
+   the one whose native object still exists (UnityEngine.Object.m_CachedPtr at 0x10) is used */
+static uintptr_t fades[8]; static int nfades;                            /* strong GC handles (pointer size in this il2cpp): a destroyed copy stays readable */
+static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t);
+static void my_fade_awake(Obj self, const void *mi) {
+    if (nfades < 8 && gc_new) fades[nfades++] = gc_new(self, 0);
+    SLOG("ScreenFadeEffectView.Awake %p (#%d)", self, nfades);
+    o_fade_awake(self, mi);
+}
+static Obj live_fade(void) {
+    for (int i = nfades - 1; i >= 0; i--) { Obj o = gc_get(fades[i]); if (o && AT(o, 0x10, void *)) return o; }
+    return NULL;
+}
 
 static void *meth(const char *ns, const char *k, const char *m, int argc) { return dsl_find_method_address(ns, k, m, argc); }
 static void *klass(const char *ns, const char *k) { void *c = dsl_find_class(ns, k); if (!c) dsl_log("soft: class %s.%s not found", ns, k); return c; }
@@ -342,13 +351,15 @@ static int spawn_b(void) {
     env[k] = NULL;
     posix_spawnattr_t at; posix_spawnattr_init(&at);
     posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSID);
-    char old[1024] = ""; if (!getcwd(old, sizeof old)) old[0] = 0;
-    if (cwd0[0] && chdir(cwd0)) {}
-    int r = posix_spawn(&b_pid, exe0, NULL, &at, argv0, env);
-    if (old[0] && chdir(old)) {}
-    posix_spawnattr_destroy(&at); free(env); free(extra); free(ov);
-    if (r) { SLOG("A: posix_spawn %s failed (%d)", exe0, r); b_pid = 0; return -1; }
-    SLOG("A: B started, pid %d (%s, profile %s)", b_pid, exe0, a_profile);
+    posix_spawn_file_actions_t fa; posix_spawn_file_actions_init(&fa);
+    if (cwd0[0]) posix_spawn_file_actions_addchdir_np(&fa, cwd0);       /* B starts in A's start folder */
+    const char *exe = exe0;                                               /* DSL_SOFT_EXE=<path>: the new set's own play copy */
+    for (int i = 0; env[i]; i++) if (!strncmp(env[i], "DSL_SOFT_EXE=", 13) && env[i][13]) exe = env[i] + 13;
+    int r = posix_spawn(&b_pid, exe, &fa, &at, argv0, env);
+    posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
+    if (r) { SLOG("A: posix_spawn %s failed (%d)", exe, r); b_pid = 0; free(env); free(extra); free(ov); return -1; }
+    SLOG("A: B started, pid %d (%s, profile %s)", b_pid, exe, a_profile);
+    free(env); free(extra); free(ov);
     return 0;
 }
 
@@ -377,11 +388,19 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
     snprintf(a_profile, sizeof a_profile, "%s", profile ? profile : "");
     snprintf(a_env, sizeof a_env, "%s", env_lines ? env_lines : "");
     a_scene = sc; a_save[0] = 0; a_t0 = since(); a_tstate = a_t0; b_pid = 0;
+    const char *ld = env_lines ? strstr(env_lines, "DSL_SOFT_LOAD=") : NULL;   /* restart straight into a given save */
+    if (ld && (ld == env_lines || ld[-1] == '\n')) {
+        ld += 14; size_t n = strcspn(ld, "\n"); if (n >= sizeof a_save) n = sizeof a_save - 1;
+        memcpy(a_save, ld, n); a_save[n] = 0;
+    }
+    if (a_save[0] && sc != 1) { dsl_log("soft: refused, DSL_SOFT_LOAD only from the title"); a_save[0] = 0; return -1; }
     char p[1300];
     for (const char *x = "ready\0go\0shown\0failed\0"; *x; x += strlen(x) + 1) { path_of(p, sizeof p, x); unlink(p); }
     if (getenv("DSL_SOFT_CAPTURE")) cap_on = 1;
     SLOG("A: APPLY profile %s (scene %d)", a_profile, sc);
-    if (sc == 2) {
+    if (a_save[0]) {                                                      /* given save: B loads it, A saves nothing */
+        a_scene = 2; a_speed = -1; a_save_done = 1; SLOG("A: B will load the save %s", a_save);
+    } else if (sc == 2) {
         a_speed = game_speed();
         set_speed(0);                                                     /* the save = what the player sees now */
         Obj e = obj_new(k_autosave); ctor_autosave(e, NULL); queue(e);    /* the game's own autosave */
@@ -434,7 +453,7 @@ static void a_tick(void) {
 
 /* ------------------------------------------------------------------ B side */
 enum { B_BOOT, B_LOADING, B_SETTLE, B_FADING, B_WAIT_GO, B_SHOWN, B_DONE };
-static int b_state = B_BOOT; static double b_tstate; static int b_frames_ok;
+static int b_state = B_BOOT; static double b_tstate; static int b_frames_ok, b_load_speed = -1;
 static void b_tick(void) {
     char p[1300]; double t = since();
     if (b_state == B_DONE) return;
@@ -469,15 +488,12 @@ static void b_tick(void) {
     if (b_state == B_LOADING) {
         if (sc != 2 || busy() || (fade_loading && fade_loading(fade, NULL))) { b_frames_ok = 0; return; }
         if (++b_frames_ok < 10) return;
-        set_speed(0);
-        SLOG("B: world loaded, paused until the swap (speed was %d)", game_speed());
+        b_load_speed = game_speed(); set_speed(0);
+        SLOG("B: world loaded, paused until the swap (speed was %d)", b_load_speed);
         b_state = B_SETTLE; b_tstate = t; return;
     }
     if (b_state == B_SETTLE) {
         fast_end();                                                       /* the loading screen fade runs at the game's own pace */
-        if (fade_in_deferred && fade_done && fade_done(fade, NULL)) {     /* the game's own loading screen is still up */
-            b_state = B_FADING; b_tstate = t - 1; return;
-        }
         if (t - b_tstate < 0.3) return;                                   /* a few frames for the view */
         if (fade) fade_out(fade, NULL, 1, NULL);
         b_state = B_FADING; b_tstate = t; return;
@@ -517,6 +533,7 @@ static void b_tick(void) {
         if (t - b_tstate < 0.05) return;                                  /* one frame on screen with the loading screen */
         if (fade && fade_in) fade_in(fade, NULL);
         int sp = json_get(hand, "speed") ? (int)json_get(hand, "speed")->num : -1;
+        if (sc == 2 && sp <= 0) sp = b_load_speed;                        /* given save: the speed the game loaded it with */
         if (sc == 2 && sp > 0) set_speed(sp);
         SLOG("B: fade in, speed %d", sp);
         b_state = B_DONE; b_tstate = t;
@@ -543,6 +560,7 @@ static void tick(CFRunLoopTimerRef tm, void *info) {
     double t = since();
     if (ff && (hidden || a_state != A_IDLE || t < ff_until || (role_b && b_state != B_DONE))) frame_log(role_b ? "B" : "A");
     if (b_state == B_DONE && ff_until == 0) ff_until = t + 3;
+    if (b_state == B_DONE && t < ff_until && a_state == A_IDLE) capture("B");   /* test: the first seconds after the swap */
     if (test_mode && !role_b && a_state == A_IDLE) {                    /* test: apply by file; optional camera nudge first */
         static double last, due; static char pend[1200], pend_env[1024];
         if (due > 0 && t >= due) { due = 0; dsl_soft_apply(pend, pend_env[0] ? pend_env : NULL); return; }
@@ -605,6 +623,14 @@ void dsl_soft_snapshot(const char *logdir) {
         }
     }
     if (role_b || stage_on) install_window_swizzles();
+    if (role_b) {                                    /* register with LaunchServices as a no-Dock app before AppKit checks in */
+        typedef struct { uint32_t hi, lo; } PSN;
+        int (*tpt)(const PSN *, uint32_t) = (int (*)(const PSN *, uint32_t))dlsym(RTLD_DEFAULT, "TransformProcessType");
+        if (!tpt) { void *h = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY); if (h) tpt = (int (*)(const PSN *, uint32_t))dlsym(h, "TransformProcessType"); }
+        PSN me = { 0, 2 };                           /* kCurrentProcess */
+        int e = tpt ? tpt(&me, 4) : -1;              /* kProcessTransformToUIElementApplication */
+        dsl_log("soft: B registered as UIElement before AppKit (TransformProcessType %d)", e);
+    }
     char fp[1300]; snprintf(fp, sizeof fp, "%s/softrestart_frames_%s_%d.log", sdir, role_b ? "B" : "A", getpid());
     if (role_b || test_mode) ff = fopen(fp, "w");
     dsl_log("soft: role %s%s%s%s, process started %.3f s ago", role_b ? "B (handoff " : "A", role_b ? handoff_path : "", role_b ? ")" : "",
@@ -616,6 +642,7 @@ void dsl_soft_snapshot(const char *logdir) {
 /* after il2cpp_init: names -> addresses; hooks on MainFlow.Awake and ScreenFadeEffectView.Awake (object capture only) */
 void dsl_soft_install(void) {
     obj_new = dsl_ga_sym("il2cpp_object_new"); str_new = dsl_ga_sym("il2cpp_string_new");
+    gc_new = dsl_ga_sym("il2cpp_gchandle_new"); gc_get = dsl_ga_sym("il2cpp_gchandle_get_target");
     void *kmf = klass("Refactor.Main", "MainFlow");
     if (kmf) {
         off_scene = foff(kmf, "_currentScene"); off_boot = foff(kmf, "_bootReady"); off_eq = foff(kmf, "_eventQueue");
@@ -653,13 +680,11 @@ void dsl_soft_install(void) {
         cap_tex = meth("UnityEngine", "ScreenCapture", "CaptureScreenshotAsTexture", 0);
         enc_png = meth("UnityEngine", "ImageConversion", "EncodeToPNG", 1); obj_destroy = meth("UnityEngine", "Object", "Destroy", 1);
     }
-    int miss = !obj_new || !str_new || !eq_add || !k_load || !ctor_load || !k_autosave || !ctor_autosave || !fade_out || !fade_in || !fade_done
+    int miss = !gc_new || !gc_get || !obj_new || !str_new || !eq_add || !k_load || !ctor_load || !k_autosave || !ctor_autosave || !fade_out || !fade_in || !fade_done
                || off_scene < 0 || off_eq < 0 || !k_setspeed || !ctor_setspeed || !k_chgspeed || !ctor_chgspeed;
     void *a1 = meth("Refactor.Main", "MainFlow", "Awake", 0), *a2 = meth("Refactor.UI", "ScreenFadeEffectView", "Awake", 0);
     int h1 = a1 ? dsl_hook(DSL_OWNER_LOADER, a1, (void *)my_mf_awake, (void **)&o_mf_awake, "loader soft MainFlow.Awake") : -1;
     int h2 = a2 ? dsl_hook(DSL_OWNER_LOADER, a2, (void *)my_fade_awake, (void **)&o_fade_awake, "loader soft ScreenFadeEffectView.Awake") : -1;
-    if (role_b && fade_in && !dsl_hook(DSL_OWNER_LOADER, (void *)fade_in, (void *)my_fade_in, (void **)&o_fade_in_h, "loader soft ScreenFadeEffectView.AnimateFadeIn (B)"))
-        fade_in = o_fade_in_h;                                            /* our own calls go to the original */
     if (miss || h1 || h2) { dsl_log("soft: game functions missing (%d) or hooks refused (%d %d): soft restart OFF", miss, h1, h2); obj_new = NULL; return; }
     SLOG("soft restart ready (%s)", role_b ? "B: waiting for the title" : "A");
 }

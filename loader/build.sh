@@ -10,8 +10,9 @@ mkdir -p build/mods
 CF=(-O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0)
 put() { codesign -f -s - "$1.tmp" 2>/dev/null; mv -f "$1.tmp" "$1"; }
 
+UISRC=(ui/*.c(N))                                   # Mods window (lane L2), when present
 nice -n 19 clang -arch arm64 -arch x86_64 $CF ${=EXTRA_CFLAGS} -Isrc -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -install_name @rpath/dsload.dylib \
-  -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c src/dsl_world.c src/dsl_soft.c
+  -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c src/dsl_world.c src/dsl_soft.c src/dsl_ui.c $UISRC
 put build/dsload.dylib; echo "built build/dsload.dylib"
 [[ -n "$LOADER_ONLY" ]] && exit 0
 

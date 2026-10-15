@@ -53,3 +53,22 @@ void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is e
 void dsl_soft_install(void);                 /* after il2cpp_init */
 int dsl_soft_wanted(void);                   /* 1 = this process is B of a soft restart */
 int dsl_soft_apply(const char *profile, const char *env_lines);   /* host->soft_restart */
+
+/* API 3 pieces (dsl_sdk.h API 3; MASTER_PLAN 2.2 A) */
+struct DSLUi; struct DSLLoadRow; struct DSLLoadFilter;
+/* dsl_ui.c: widget kit + the frame tick (EventSystem.Update -> dsl_frame_hook) */
+void dsl_ui_install(void);
+int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud);
+void dsl_frame_hook(void);                               /* dsl_reg.c: every frame, main thread */
+/* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
+   row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
+void dsl_rows_install(void);                             /* after dsl_ui_install */
+void dsl_rows_frame(void);                               /* from dsl_frame_hook */
+int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
+int dsl_rows_filter(const char *owner_id, const struct DSLLoadFilter *f);
+void dsl_rows_refresh(void);
+/* dsl_reg.c: mods per world (the loader's own row line and the New Campaign line) */
+int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: Hell difficulty, Multiplayer" (or "Mods: none") */
+void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */
+void dsl_newworld_label(char *out, size_t cap);                      /* "Mods for this world: ..." */
+void dsl_newworld_change(void);
