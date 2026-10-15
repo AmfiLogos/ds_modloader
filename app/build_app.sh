@@ -4,11 +4,11 @@
 #   Contents/MacOS/DS Modded        stub (app/stub/ds_modded.c)
 #   Contents/MacOS/dsml-helper      core crate, release, arm64
 #   Contents/Resources/AppIcon.icns app/icon/AppIcon.icns (make_icon.py)
-#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,gcd-cdr,modmenu} + VERSION
+#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,gcd-cdr,custom-modes} + VERSION
 set -e
 HERE="${0:A:h}"; REPO="${HERE:h}"
 OUTDIR="$HERE/build"; NAME="Dungeon Settlers Modded"; APP="$OUTDIR/$NAME.app"
-MODS=(multiplayer gcd-cdr modmenu)
+MODS=(multiplayer gcd-cdr custom-modes)
 die() { echo "ERROR: $*" >&2; exit 1; }
 [[ -f $REPO/loader/build/dsload.dylib ]] || die "no loader/build/dsload.dylib (build the loader first)"
 [[ -f $HERE/icon/AppIcon.icns ]] || die "no app/icon/AppIcon.icns (run app/icon/make_icon.py)"

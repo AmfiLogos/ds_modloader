@@ -27,11 +27,16 @@ def game_pids():
     return [int(p) for p in out.split()]
 
 
+server_alpha = []                       # window server's view of every test window, once a second
+
+
 def guard():
     while not stop_guard.is_set():
         pids = game_pids()
         if pids:
-            bad = [w for w in r.windows(pids) if w['alpha'] > 0 and w['onscreen'] and w['x'] > -5000 and w['y'] > -5000]
+            ws = r.windows(pids)
+            server_alpha.append([round(time.time(), 2)] + [(w['pid'], w['id'], w['alpha'], w['layer']) for w in ws if w['w'] > 300])
+            bad = [w for w in ws if w['alpha'] > 0 and w['onscreen'] and w['x'] > -5000 and w['y'] > -5000]
             fp = r.front_pid()
             if bad or fp in pids:
                 violations.append({'t': time.time(), 'windows': bad, 'front': fp})
@@ -131,7 +136,7 @@ def main():
     for f in glob.glob(os.path.join(SDIR, 'softrestart_frames_*.log')):
         os.makedirs(os.path.join(SDIR, 'old'), exist_ok=True); os.replace(f, os.path.join(SDIR, 'old', os.path.basename(f)))
     g = threading.Thread(target=guard, daemon=True); g.start()
-    summary = {'violations': violations}
+    summary = {'violations': violations, 'server_alpha': server_alpha}
     try:
         a = start_a('profile1.json')
         st = wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'A title')

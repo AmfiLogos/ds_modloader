@@ -200,12 +200,18 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     if (!release_single_instance()) dsl_log("soft: A: no single-instance mutex found");
     STARTUPINFOW si = { sizeof si };
     si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;           /* the first ShowWindow of B: hidden */
-    BOOL ok = CreateProcessW(exe0, cmd, NULL, NULL, FALSE, CREATE_UNICODE_ENVIRONMENT, blk, cwd0[0] ? cwd0 : NULL, &si, &child);
+    wchar_t exe[MAX_PATH]; wcscpy(exe, exe0);               /* DSL_SOFT_EXE=<path>: the new set's own game copy */
+    const char *se = env_lines ? strstr(env_lines, "DSL_SOFT_EXE=") : NULL;
+    if (se && (se == env_lines || se[-1] == '\n') && se[13] && se[13] != '\n') {
+        char e8[MAX_PATH]; size_t L = strcspn(se + 13, "\n"); if (L >= MAX_PATH) L = MAX_PATH - 1;
+        memcpy(e8, se + 13, L); e8[L] = 0; MultiByteToWideChar(CP_UTF8, 0, e8, -1, exe, MAX_PATH);
+    }
+    BOOL ok = CreateProcessW(exe, cmd, NULL, NULL, FALSE, CREATE_UNICODE_ENVIRONMENT, blk, cwd0[0] ? cwd0 : NULL, &si, &child);
     dsl_log("soft: A: B command line: %ls", cmd);
     free(blk); free(cmd);
-    if (!ok) { dsl_log("soft: A: CreateProcess %ls failed (%lu)", exe0, GetLastError()); memset(&child, 0, sizeof child); return -1; }
+    if (!ok) { dsl_log("soft: A: CreateProcess %ls failed (%lu)", exe, GetLastError()); memset(&child, 0, sizeof child); return -1; }
     CloseHandle(child.hThread); child.hThread = NULL;
-    dsl_log("soft: A: B started, pid %lu (%ls, profile %s)", child.dwProcessId, exe0, profile);
+    dsl_log("soft: A: B started, pid %lu (%ls, profile %s)", child.dwProcessId, exe, profile);
     return 0;
 }
 long dsl_sos_child_pid(void) { return (long)child.dwProcessId; }

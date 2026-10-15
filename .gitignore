@@ -1,7 +1,9 @@
-target/
-test_env/
-src-tauri/gen/
-builder/shots/
 app/build/
 app/old/
 loader/build/win/
+builder/shots/
+loader/build/pin/
+loader/old/
+src-tauri/gen/
+target/
+test_env/

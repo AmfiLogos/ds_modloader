@@ -20,6 +20,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <dlfcn.h>
 
 extern char **environ;
 #define MSG(ret, ...) ((ret (*)(__VA_ARGS__))objc_msgSend)
@@ -131,6 +132,14 @@ static void my_finish(id self, SEL s) {
 void dsl_sos_windows_install(int hide, int stage, double sx, double sy) {
     hidden = hide; stage_on = stage; stage_x = sx; stage_y = sy;
     no_activate_g = getenv("DSL_SOFT_NOACTIVATE") && *getenv("DSL_SOFT_NOACTIVATE") == '1';
+    if (hide) {                                      /* register with LaunchServices as a no-Dock app before AppKit checks in */
+        typedef struct { uint32_t hi, lo; } PSN;
+        int (*tpt)(const PSN *, uint32_t) = (int (*)(const PSN *, uint32_t))dlsym(RTLD_DEFAULT, "TransformProcessType");
+        if (!tpt) { void *h = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY); if (h) tpt = (int (*)(const PSN *, uint32_t))dlsym(h, "TransformProcessType"); }
+        PSN me = { 0, 2 };                           /* kCurrentProcess */
+        int e = tpt ? tpt(&me, 4) : -1;              /* kProcessTransformToUIElementApplication */
+        dsl_log("soft: B registered as UIElement before AppKit (TransformProcessType %d)", e);
+    }
     if (!hide && !stage) return;
     swap_m("NSWindow", "initWithContentRect:styleMask:backing:defer:", (IMP)my_init4, (IMP *)&o_init4, 0);
     swap_m("NSWindow", "initWithContentRect:styleMask:backing:defer:screen:", (IMP)my_init5, (IMP *)&o_init5, 0);
@@ -204,13 +213,15 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     env[k] = NULL;
     posix_spawnattr_t at; posix_spawnattr_init(&at);
     posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSID);
-    char old[1024] = ""; if (!getcwd(old, sizeof old)) old[0] = 0;
-    if (cwd0[0] && chdir(cwd0)) {}
-    int r = posix_spawn(&b_pid, exe0, NULL, &at, argv0, env);
-    if (old[0] && chdir(old)) {}
-    posix_spawnattr_destroy(&at); free(env); free(extra); free(ov);
-    if (r) { dsl_log("soft: A: posix_spawn %s failed (%d)", exe0, r); b_pid = 0; return -1; }
-    dsl_log("soft: A: B started, pid %d (%s, profile %s)", b_pid, exe0, profile);
+    posix_spawn_file_actions_t fa; posix_spawn_file_actions_init(&fa);
+    if (cwd0[0]) posix_spawn_file_actions_addchdir_np(&fa, cwd0);       /* B starts in A's start folder */
+    const char *exe = exe0;                                               /* DSL_SOFT_EXE=<path>: the new set's own play copy */
+    for (int i = 0; env[i]; i++) if (!strncmp(env[i], "DSL_SOFT_EXE=", 13) && env[i][13]) exe = env[i] + 13;
+    int r = posix_spawn(&b_pid, exe, &fa, &at, argv0, env);
+    posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
+    if (r) { dsl_log("soft: A: posix_spawn %s failed (%d)", exe, r); b_pid = 0; free(env); free(extra); free(ov); return -1; }
+    dsl_log("soft: A: B started, pid %d (%s, profile %s)", b_pid, exe, profile);
+    free(env); free(extra); free(ov);
     return 0;
 }
 long dsl_sos_child_pid(void) { return b_pid; }

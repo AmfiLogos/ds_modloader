@@ -24,3 +24,13 @@ static inline char *dsl_strcasestr(const char *h, const char *n) {
 __declspec(dllimport) int __stdcall MoveFileExA(const char *from, const char *to, unsigned long flags);
 static inline int dsl_rename(const char *from, const char *to) { return MoveFileExA(from, to, 0x1 | 0x2) ? 0 : -1; }  /* REPLACE_EXISTING | COPY_ALLOWED */
 #define rename dsl_rename
+/* setenv / unsetenv: the CRT copy (getenv) and the process block (children, the soft restart's B) */
+#include <stdlib.h>
+__declspec(dllimport) int __stdcall SetEnvironmentVariableA(const char *name, const char *value);
+static inline int dsl_setenv(const char *k, const char *v, int ow) {
+    if (!ow && getenv(k)) return 0;
+    SetEnvironmentVariableA(k, v); return _putenv_s(k, v) ? -1 : 0;
+}
+static inline int dsl_unsetenv(const char *k) { SetEnvironmentVariableA(k, 0); return _putenv_s(k, "") ? -1 : 0; }
+#define setenv dsl_setenv
+#define unsetenv dsl_unsetenv

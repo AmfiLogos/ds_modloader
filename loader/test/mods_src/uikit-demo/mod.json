@@ -1,0 +1,14 @@
+{
+ "id": "uikit-demo",
+ "name": "UI Kit Demo (test only)",
+ "version": "0.1.0",
+ "author": "loader lane L1",
+ "kind": "code",
+ "api": 3,
+ "game_builds": ["25846389"],
+ "platforms": { "mac-arm64": { "entry": "uikit-demo.dylib" } },
+ "requires": ["loader>=2.0.0"],
+ "conflicts": [],
+ "description": "Test module for the dsl_ui kit: a title button and one panel with every widget. Driven by loader/test/uikit_test.py (DSL_UIKIT_TEST).",
+ "scope": "client"
+}

@@ -218,6 +218,19 @@ static int h_module_loaded(const char *id) {
     for (int i = 0; i < np; i++) if (!strcmp(P[i].id, id)) return P[i].state == 1;
     return 0;
 }
+static struct DSLPlugin *find_mod_early(const char *id) { for (int i = 0; i < np; i++) if (!strcmp(P[i].id, id)) return &P[i]; return NULL; }
+/* for dsl_reg.c (API 3 services) */
+const char *dsl_mods_dir(void) { return modsdir; }
+const char *dsl_profile_file(void) { return profile_path; }
+const char *dsl_log_dir(void) { return logdir; }
+int dsl_plugin_index(DSLPlugin *self) { return self ? self->idx : -1; }
+const char *dsl_plugin_name(DSLPlugin *self) { return self ? self->id : "loader"; }
+int dsl_mod_state(const char *id, const char **why) {
+    struct DSLPlugin *p = find_mod_early(id);
+    if (why) *why = !p ? "not loaded (data mod, or not for this game build)" : p->state == 2 ? "failed to start (see dsload.log)"
+                  : p->state == 3 ? "not loaded (game build, requirement, conflict or crash guard: see dsload.log)" : "";
+    return p ? p->state : 0;
+}
 
 /* ------------------------------------------------------------------ manifests */
 static int vcmp(const char *a, const char *b) {          /* dotted numeric compare */
@@ -553,10 +566,12 @@ static void on_il2cpp_ready(const char *via) {
     guard_leave("_codepatch");
     dsl_log("il2cpp_init%s returned: runtime code patching works", via);
     if (dsl_il2cpp_bind()) dsl_log("il2cpp exports missing: name lookups will fail");
+    dsl_soft_install();
+    dsl_reg_ready(&host);                                            /* kit, rows, title "Mods": before the modules' init */
     run_init();
+    dsl_reg_after_init();
     write_modset();
     world_install();
-    dsl_soft_install();
     dsl_engine_set_late();
 }
 static int my_il2cpp_init(const char *domain) { int r = orig_init(domain); on_il2cpp_ready(""); return r; }
@@ -574,7 +589,7 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
             (unsigned long long)dsl_text_lo, (unsigned long long)dsl_text_hi, (unsigned long long)dsl_image_end);
     int any = 0, want_init = 0;
     for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) { any = 1; if (ORDER[i]->init) want_init = 1; }
-    if (getenv("DSML_SESSION")) want_init = any = 1;                 /* the world check runs after il2cpp_init */
+    if (getenv("DSML_SESSION") || getenv("DSL_PROFILE")) want_init = any = 1;   /* world check, Mods window: after il2cpp_init */
     if (dsl_soft_wanted()) any = 1;                                  /* B of a soft restart, even with no code mod */
     if (any) want_init = 1;                                          /* soft restart (dsl_soft.c) needs il2cpp names */
     if (!any) return 0;
@@ -661,8 +676,9 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
         .hook = h_hook, .hook_method = h_hook_method, .unhook = h_unhook,
         .hook_rva = h_hook_rva, .table = h_table, .module_dir = h_module_dir, .ga_path = h_ga_path, .module_loaded = h_module_loaded,
         .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods, .soft_restart = dsl_soft_apply };
+    dsl_reg_host(&host);
     scan_mods(dsl_build_id);
-    if (!norder && !getenv("DSML_SESSION") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
+    if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();
     return 0;
 }

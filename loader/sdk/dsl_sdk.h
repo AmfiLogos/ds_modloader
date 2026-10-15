@@ -144,8 +144,9 @@ typedef struct DSLHost {
     /* soft restart (flow J): the game's own loading screen covers the screen, a hidden new game process starts with
        `profile` (a profile JSON path, {"enabled":[ids],"order":[ids]}), returns to the same place (title page, or the
        same world after the game's own autosave, same camera / zoom / speed), then the windows swap. env_lines =
-       "KEY=value\n" lines that replace those keys in the new process, or NULL. DSL_SOFT_LOAD=<save name> = open
-       that save instead of the current place (flow K). Main thread, title or single-player world only; refused
+       "KEY=value\n" lines that replace those keys in the new process, or NULL. DSL_SOFT_LOAD=<save name> (from the
+       title) = the new process opens that save (flow K). DSL_SOFT_EXE=<game executable> (+ its DYLD_INSERT_LIBRARIES)
+       = start another play copy (a set with data mods). Main thread, title or single-player world only; refused
        (-1, reason in dsload.log) while session_busy() is set. 0 = started; failure or 90 s = old mods stay. */
     int (*soft_restart)(const char *profile, const char *env_lines);
     /* a running multiplayer session (or any mod state that must not be restarted under): reason text, NULL = free.
