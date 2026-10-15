@@ -33,6 +33,12 @@ int dsl_rows_filter(const char *owner, const DSLLoadFilter *f) {
     dsl_log("rows: load-list filter added by %s", owner); dirty = 1; return 0;
 }
 void dsl_rows_refresh(void) { dirty = 1; }
+/* test only (dsl_reg.c test_frame): every filter toggle on, as a click would do */
+void dsl_rows_test_toggles(int on) {
+    const DSLUi *u = dsl_ui_kit();
+    for (int i = 0; i < nf; i++) { F[i].on = on; if (u && F[i].tog) u->toggle_set(F[i].tog, on); }
+    dirty = 1;
+}
 
 /* ------------------------------------------------------------------ game access by name */
 static int ok;
@@ -219,6 +225,9 @@ static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn) {
 }
 
 /* filters: on list open ask mode + label; apply show() per world */
+/* worlds WE hid (kept across rebuilds): only those are shown again; a row hidden by someone else stays as it is */
+static char we_hid[MAXW][40]; static int nwh;
+static int hid_find(const char *g) { for (int i = 0; i < nwh; i++) if (!strcmp(we_hid[i], g)) return i; return -1; }
 static void filters_apply(Obj slv) {
     if (!nf) return;
     int changed = 0;
@@ -227,12 +236,17 @@ static void filters_apply(Obj slv) {
         int show = 1;
         if (o_cur >= 0 && AT(cs, o_cur, uint8_t)) show = 1;                 /* the world being played always shows */
         else for (int f = 0; f < nf && show; f++) if (F[f].mode != DSL_LIST_OFF) show = F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on);
-        if (show == !w->hid) continue;
-        w->hid = !show; changed = 1;
+        w->hid = !show;
+        Obj g = comp_go(cs, NULL); if (!g || go_self(g, NULL) == show) continue;   /* rows are rebuilt: compare with the game object */
+        int k = hid_find(w->guid);
+        if (show && k < 0) { w->hid = 1; continue; }                        /* hidden by another filter (multiplayer): not ours */
+        if (show) { memmove(we_hid[k], we_hid[k + 1], (size_t)(nwh - k - 1) * sizeof we_hid[0]); nwh--; }
+        else if (k < 0 && nwh < MAXW) snprintf(we_hid[nwh++], 40, "%s", w->guid);
+        changed = 1;
         set_on(cs, show);
-        Obj slots = AT(cs, o_slots, Obj); int sn = slots ? AT(slots, 0x18, int32_t) : 0; Obj sa = slots ? AT(slots, 0x10, Obj) : NULL;
         int open = AT(cs, o_cur + 1, uint8_t);                              /* _isNameCaseOpen (after _isCurrentCampaign) */
-        for (int s = 0; s < sn && sa; s++) { Obj g = AT(sa, 0x20 + 8 * s, Obj); if (g && alive(g, NULL)) go_set(g, show && open, NULL); }
+        Obj slots = AT(cs, o_slots, Obj); int sn = slots ? AT(slots, 0x18, int32_t) : 0; Obj sa = slots ? AT(slots, 0x10, Obj) : NULL;
+        for (int s = 0; s < sn && sa; s++) { Obj sg = AT(sa, 0x20 + 8 * s, Obj); if (sg && alive(sg, NULL)) go_set(sg, show && open, NULL); }
     }
     if (changed) refresh_size(slv, NULL);
 }
@@ -250,7 +264,8 @@ static void toggles_build(Obj slv) {
         if (F[f].tog && !live((Obj)F[f].tog)) F[f].tog = NULL;
         if (!lb || !*lb) { if (F[f].tog) u->set_active(F[f].tog, 0); continue; }
         F[f].on = 0;                                                        /* off each time the list opens */
-        if (!F[f].tog) F[f].tog = u->toggle(band, 8 + 300 * k, 4, 290, lb, 0, toggle_change, (void *)(intptr_t)f);
+        float x0 = dsl_mod_state("multiplayer", NULL) == 1 ? 310 : 8;      /* MP draws its own toggle on the left until it uses this API */
+        if (!F[f].tog) F[f].tog = u->toggle(band, x0 + 250 * k, 4, 230, lb, 0, toggle_change, (void *)(intptr_t)f);
         else { u->set_text(F[f].tog, lb); u->toggle_set(F[f].tog, 0); u->set_active(F[f].tog, 1); }
         k++;
     }
@@ -287,6 +302,7 @@ void dsl_rows_frame(void) {
         filters_apply(slv);
         decorate();
         sig_last = list_sig(slv);
-        dsl_log("rows: Load list rebuilt: %d world row(s), %d text source(s), %d filter(s)", nw, nr, nf);
+        int hidden = 0; for (int i = 0; i < nw; i++) hidden += W[i].hid;
+        dsl_log("rows: Load list rebuilt: %d world row(s) (%d hidden by filters), %d text source(s), %d filter(s)", nw, hidden, nr, nf);
     }
 }
