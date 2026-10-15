@@ -195,3 +195,6 @@ Open: whether gcd-cdr / hell-difficulty / floor-logger change the odds of the fo
 | 08:54 (7) | multiplayer, gcd-cdr, hell-difficulty, floor-logger (4 loaded, 174 hooks each copy), MP with corenext's 08:05 fog reload fix | PASS 3/3: 10.0 min, 0 desyncs, 0 partials, 21 full-state checks equal, orders 37 + 37 (`test_env/build/core_test/soak_20261015-085425`) |
 The 07:30 / 07:41 host crashes were the MP fog bug (stale VisionDataHandler after reload), fixed in src 08:05 by corenext.
 No run of this lane used the shared build/dsrig.dylib (our copies load the multiplayer module built here).
+Lead decision 10:45: the 08:54 run (all 4 modules = the brief's set plus hell-difficulty, after the fog fix) covers
+task 4; no rerun. The MP snapshot was then resynced to src 09:35 (taken while src_merge.lock was held; host tests
+31/31, no pair run on it). Next pair run of this lane should resync src first if a merge was in progress.
