@@ -248,6 +248,7 @@ static void write_handoff(void) {
 }
 
 int dsl_soft_wanted(void) { return role_b; }
+int dsl_soft_busy(void) { return role_b || (a_state != A_IDLE && a_state != A_FAILED); }
 void *dsl_soft_mainflow(void) { return mf; }
 int dsl_soft_apply(const char *profile, const char *env_lines) {
     if (role_b && hidden) { dsl_log("soft: refused, this process is still being handed over"); return -1; }

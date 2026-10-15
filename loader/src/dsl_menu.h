@@ -20,6 +20,7 @@ typedef struct DSLModInfo {
     int active;                                  /* 1 loaded and running, 0 not, -1 failed (reason) */
     const char *reason;                          /* why not active ("" if active) */
     int hidden;                                  /* loader-internal (not shown as a switch) */
+    const char *kind;                            /* mod.json "kind": "code" | "bepinex" | "data" ...; never NULL */
 } DSLModInfo;
 int dsl_mods_count(void);
 const DSLModInfo *dsl_mods_at(int i);
@@ -38,7 +39,7 @@ const char *dsl_busy_reason(void);              /* session busy / soft restart r
 
 /* mods of one world (Load list "Mods: ... Change"): ids of its gameplay set; set = remember another set for it
    (takes effect the next time it is loaded: the "Load it with them?" question then offers that set). */
-int dsl_world_mods(const char *guid, const char **ids, int max);    /* count; 0 = vanilla or unknown world */
+int dsl_world_mods(const char *guid, const char **ids, int max);    /* count; an unknown world = the running set; 0 = vanilla */
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n);
 
 /* ---- provided by L2 (loader/ui); weak in L1 */
