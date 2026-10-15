@@ -6,8 +6,8 @@
 //      rename into place; the old folder moves to ROOT/retired/, never written over: a running game maps it).
 //   3. game copy: PROFILE/copy.json {"build","app"} when that copy exists (pinned), else
 //      Contents/MacOS/dsml-helper prepare --root ROOT (last lines "BUILD <id>", "PLAY <path>" or "ERROR <msg>").
-//   4. first run: COPY the normal saves (read only); default DATA/Mods/active.json + worlds.json; the Mods menu
-//      ("modmenu") is always enabled.
+//   4. first run: COPY the normal saves (read only); default DATA/Mods/active.json + worlds.json. The Mods window is
+//      part of the loader itself (not a module), so no entry of active.json can switch it off.
 //   5. Steam (start it in the background when closed), env, execv of the play copy's game binary, cwd = PROFILE.
 // DSMODDED_DRY_RUN=1: everything except ensure_steam and execv; prints the env and argv instead (tests).
 // DSMP_NO_DIALOG=1: no dialogs. Log: ~/Library/Logs/DungeonSettlersModded.log
@@ -213,39 +213,15 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
     return 0;
 }
 
-/* 4. mods state: defaults; "modmenu" can never be switched off */
+/* 4. mods state: defaults only; an existing active.json is the player's choice and stays as it is */
 static void mods_state(const char *data) {
     char md[PATH_MAX], act[PATH_MAX], wl[PATH_MAX];
     snprintf(md, sizeof md, "%s/Mods", data); mkdirs(md);
     snprintf(act, sizeof act, "%s/active.json", md);
     snprintf(wl, sizeof wl, "%s/worlds.json", md);
     if (!exists(wl) && write_atomic(wl, "{\"worlds\":{}}\n") != 0) logf_("cannot write %s", wl);
-    char *j = slurp(act);
-    if (!j) {
-        if (write_atomic(act, "{\"enabled\":[\"multiplayer\",\"modmenu\"],\"order\":[\"multiplayer\",\"modmenu\"]}\n") != 0)
-            logf_("cannot write %s", act);
-        return;
-    }
-    char *e = strstr(j, "\"enabled\"");
-    char *lb = e ? strchr(e, '[') : NULL, *rb = lb ? strchr(lb, ']') : NULL;
-    if (!e) { free(j); return; }                 /* no list: the loader enables every installed mod */
-    if (!lb || !rb) { logf_("%s: enabled list not readable, left as is", act); free(j); return; }
-    int found = 0, empty = 1;
-    for (char *p = lb + 1; p < rb; p++) {
-        if (*p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') empty = 0;
-        if (!strncmp(p, "\"modmenu\"", 9) && p + 9 <= rb) found = 1;
-    }
-    if (!found) {
-        size_t n = strlen(j) + 16;
-        char *o = malloc(n);
-        if (o) {
-            snprintf(o, n, "%.*s%s\"modmenu\"%s", (int)(rb - j), j, empty ? "" : ",", rb);
-            if (write_atomic(act, o) != 0) logf_("cannot write %s", act);
-            else logf_("modmenu added to %s", act);
-            free(o);
-        }
-    }
-    free(j);
+    if (!exists(act) && write_atomic(act, "{\"enabled\":[\"multiplayer\"],\"order\":[\"multiplayer\"]}\n") != 0)
+        logf_("cannot write %s", act);
 }
 
 /* Asks the game's own libsteam_api in a child process (this process later becomes the game: it must not

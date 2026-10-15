@@ -2,9 +2,9 @@
 # app/test/run.sh - tests of "Dungeon Settlers Modded.app" without starting the game (no window).
 #   (a) dsml-helper prepare: base + play copy from Steam's real install (APFS clone, read only), second call
 #       instant, codesign -v of the play copy, Steam's app unchanged (CodeResources sha + mtimes)
-#   (b) stub dry run from a copy whose Resources (loader files) are QUARANTINED: env/argv, defaults, loader copy without quarantine,
+#   (b) stub dry run from a copy (never quarantined: macOS moved quarantined test copies to the Trash): env/argv, defaults, loader copy,
 #       pinned copy.json, loader update retires the old folder
-#   (c) active.json without "modmenu" gets it added
+#   (c) an existing active.json is never changed by the stub
 # Needs app/build/Dungeon Settlers Modded.app (app/build_app.sh). Tmp ROOT under test_env/ (gitignored).
 set -u
 HERE="${0:A:h}"; REPO="${HERE:h:h}"
@@ -36,13 +36,10 @@ check "play copy bundle id" test "$(plutil -extract CFBundleIdentifier raw "$PLA
 check "play copy icon" test -f "$PLAY/Contents/Resources/AppIcon.icns" -a "$(plutil -extract CFBundleIconFile raw "$PLAY/Contents/Info.plist")" = AppIcon
 check "Steam's app unchanged" test "$S0" = "$(steam_state)"
 
-echo "== (b) stub dry run from a quarantined copy"
+echo "== (b) stub dry run from a copy"
 Q="$T/q/Dungeon Settlers Modded.app"; mkdir -p "${Q:h}"; ditto "$APP" "$Q"
-# Only the payload is quarantined. macOS 27 KILLS a quarantined unsigned executable started from a shell and
-# moves the whole app to the Trash (seen 2026-10-15); the owner passes that gate once with "Open Anyway", after
-# which the loader files inside still carry the quarantine flag that dyld refuses: that is what this tests.
-find "$Q/Contents/Resources" -print0 | xargs -0 xattr -w com.apple.quarantine "0081;00000000;Test;"
-check "copy is quarantined" sh -c "xattr -p com.apple.quarantine '$Q/Contents/Resources/dsml/dsload.dylib'"
+# No quarantine flag is ever written on a test copy (lead rule 2026-10-15: macOS 27 moved such copies to the Trash).
+# The stub still runs `xattr -cr` on its loader folder, for a player's downloaded app.
 stub() { env DSMODDED_DRY_RUN=1 DSMODDED_ROOT="$ROOT" DSMP_NO_DIALOG=1 "$Q/Contents/MacOS/DS Modded" "$@"; }
 OUT=$(stub -psn_0_123 -foo 2>&1); rc=$?
 print -r -- "$OUT" > "$T/dry1.txt"
@@ -60,7 +57,7 @@ check "cwd = PROFILE" sh -c "grep -qxF 'CWD $P' '$T/dry1.txt'"
 ARGS=$(print -r -- "$OUT" | sed -n 's/^ARGV //p' | tr '\n' '|')
 check "argv (game, -logFile, args minus -psn_)" test "$ARGS" = "$PLAY/Contents/MacOS/Dungeon Settlers|-logFile|$P/player.log|-foo|"
 check "steam_appid.txt" test "$(cat "$P/steam_appid.txt")" = 2798330
-check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["multiplayer","modmenu"],"order":["multiplayer","modmenu"]}'
+check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["multiplayer"],"order":["multiplayer"]}'
 check "worlds.json default" test "$(cat "$D/Mods/worlds.json")" = '{"worlds":{}}'
 check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY'''} else 1)"
 check "loader VERSION copied" cmp "$ROOT/loader/VERSION" "$APP/Contents/Resources/dsml/VERSION"
@@ -75,15 +72,13 @@ stub >/dev/null 2>&1
 check "new VERSION: old loader moved to retired/" sh -c "ls -d '$ROOT'/retired/loader-* && grep -qx old '$ROOT'/retired/loader-*/VERSION"
 check "new VERSION: loader updated" cmp "$ROOT/loader/VERSION" "$APP/Contents/Resources/dsml/VERSION"
 
-echo "== (c) modmenu always enabled"
+echo "== (c) an existing active.json stays as it is"
 print -r -- '{"enabled":["multiplayer","hell-difficulty"],"order":["multiplayer","hell-difficulty"]}' > "$D/Mods/active.json"
 stub >/dev/null 2>&1
-check "modmenu added" python3 -c "import json,sys; j=json.load(open('$D/Mods/active.json')); sys.exit(0 if j['enabled']==['multiplayer','hell-difficulty','modmenu'] and j['order']==['multiplayer','hell-difficulty'] else 1)"
+check "player's active.json unchanged" test "$(cat "$D/Mods/active.json")" = '{"enabled":["multiplayer","hell-difficulty"],"order":["multiplayer","hell-difficulty"]}'
 print -r -- '{"enabled": [ ], "order": []}' > "$D/Mods/active.json"
 stub >/dev/null 2>&1
-check "modmenu added to an empty list" python3 -c "import json,sys; j=json.load(open('$D/Mods/active.json')); sys.exit(0 if j['enabled']==['modmenu'] else 1)"
-stub >/dev/null 2>&1
-check "already there: unchanged" python3 -c "import json,sys; j=json.load(open('$D/Mods/active.json')); sys.exit(0 if j['enabled']==['modmenu'] else 1)"
+check "empty list unchanged (vanilla)" test "$(cat "$D/Mods/active.json")" = '{"enabled": [ ], "order": []}'
 
 echo "== (d) helper error goes to the notice (no Steam install in a fake HOME)"
 FH="$T/fakehome"; mkdir -p "$FH/Library/Logs"
