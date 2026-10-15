@@ -70,6 +70,12 @@ typedef struct DSLHost {
     /* JSON of the running mod set (dsload_modset.json): {"gameplay":[{"id","version","files":{name:sha256}}],"client":[..],
        "session_modset", "check", ...}. Copies into buf (if any), returns the full length. Valid after dsl_plugin_init. */
     size_t (*gameplay_mods)(char *buf, size_t n);
+    /* soft restart (plan_modloader.md section 2): start the game again with another profile behind the game's own
+       loading screen, return to the same place (title, or the same world after its own autosave), then swap windows.
+       env_lines: "KEY=value\n" lines that replace those keys for the new process (e.g. DSML_MODSET; for a set that needs
+       another play copy: DSL_SOFT_EXE=<that copy's game executable> and its DYLD_INSERT_LIBRARIES), or NULL.
+       Main thread, title or single-player world only. 0 = started; the result is in dsload.log. Check `size` first. */
+    int (*soft_restart)(const char *profile, const char *env_lines);
 } DSLHost;
 
 #define DSL_PLUGIN() __attribute__((visibility("default"))) const uint32_t dsl_plugin_api_version = DSL_API_VERSION

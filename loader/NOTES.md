@@ -198,3 +198,80 @@ No run of this lane used the shared build/dsrig.dylib (our copies load the multi
 Lead decision 10:45: the 08:54 run (all 4 modules = the brief's set plus hell-difficulty, after the fog fix) covers
 task 4; no rerun. The MP snapshot was then resynced to src 09:35 (taken while src_merge.lock was held; host tests
 31/31, no pair run on it). Next pair run of this lane should resync src first if a merge was in progress.
+
+## Soft restart (plan_modloader.md row 3 / section 2) - 2026-10-15, branch `softrestart`
+
+Owner's words: apply mods without a visible restart; a loading screen like entering a dungeon, the game relaunches
+behind it with the fluff cut, the player is put back exactly where they were.
+
+### What is built (`src/dsl_soft.c`, in dsload itself, so it works whatever the new mod set is)
+- API: `host->soft_restart(profile, env_lines)` (SDK, appended field) = `dsl_soft_restart()`. The Mods window
+  (`modmenu`, other lane) calls it on Apply. `env_lines` replaces env keys for the new process (`DSML_MODSET` of the
+  new set; for a set with data mods: `DSL_SOFT_EXE=<that play copy's exe>` + its `DYLD_INSERT_LIBRARIES`).
+  It refuses (log line, returns -1) while the game is loading, not at the title / in a world, or already restarting.
+  It does not know about multiplayer: the caller must not offer it inside a running multiplayer session (plan).
+- A (running game): world case: pause + the game's own `AutoSaveRequested` (the normal autosave of that world; the
+  newest file in `<persistentDataPath>/Saves` is the one B loads). The game's own loading screen
+  (`ScreenFadeEffectView.AnimateFadeOut(null, showLoadingUI: true)`). Writes `<log dir>/softrestart/handoff.json`
+  (scene, save, speed, window frame, camera) and starts B AT ONCE with the same executable, arguments, start folder and
+  environment it was started with (taken before dsload edits `DYLD_INSERT_LIBRARIES`), `DSL_PROFILE` = the new profile.
+  B "ready" + A's fade done -> A yields activation to B (macOS 14+), writes "go". B "shown" -> A orders its windows out
+  and `Application.Quit()`. B dead or no "ready" in `DSL_SOFT_TIMEOUT` s (90): A kills B, fades back in, restores the
+  speed, keeps its mods (tested: two runs hit it during development, A stayed usable).
+- B (`DSL_SOFT_HANDOFF` set): `TransformProcessType` to UIElement before AppKit, Accessory policy before
+  `finishLaunching`, every NSWindow alpha 0 / lowest level / no mouse / never key-main / no activation from creation.
+  Fluff cut while hidden: the Unity splash screen is cancelled (icall `SplashScreen::CancelSplashScreen`: it WAS
+  running, 3.9 s), frame cap + vsync off (the Entry boot is frame bound: one loading step per frame), background
+  loading priority High; the game's own values come back before the swap. At the title: `LoadCampaignRequested(<save>)`
+  (the game's Load path; the world check of `dsl_world.c` applies), pause, the same loading screen, "ready". "go":
+  window on A's frame, normal level, alpha 1, front, Regular policy, activate, "shown", speed back, the game's fade in.
+  B never stays as an invisible process: A gone before the swap, or soft restart unusable, or 120 s -> B quits.
+- Game objects by name (il2cpp), hooks only on `MainFlow.Awake` and `ScreenFadeEffectView.Awake` (object capture;
+  the live fade view is kept by GC handle and checked through `m_CachedPtr`: a destroyed copy made the fade do nothing
+  in one run). GC handles are pointer size in this il2cpp (uint32 crashed).
+- Test-only switches (never set by a player's start): `DSL_SOFT_TEST=1` (apply by `softrestart/apply_request.json`,
+  optional camera nudge), `DSL_SOFT_STAGE=x,y` (every window kept far off every display), `DSL_SOFT_NOACTIVATE=1`,
+  `DSL_SOFT_CAPTURE=<dir>` (the game's own frame, ~10/s, `ScreenCapture.CaptureScreenshotAsTexture`). Every step goes
+  to dsload.log with the time since process start; the window state every tick to `softrestart/softrestart_frames_*.log`.
+
+### Proof (copy S = APFS clone, Steam gate off, lease AB; owner prefs identical before/after; nothing on his screen)
+`test/soft/soft_test.py <out>`: round 1 = A at the title with multiplayer -> apply multiplayer + gcd-cdr; round 2 = that
+B in a loaded world, camera target moved +3,+2, speed Fast -> apply multiplayer only. Final 3 runs (18:54-18:56):
+
+| | apply -> B on screen | B start -> MainFlow.Awake | -> title | -> world loaded |
+|---|---|---|---|---|
+| title case | 7.23 / 7.42 / 7.56 s | 0.45-0.47 s | 6.15-6.47 s | - |
+| world case | 13.68 / 13.74 / 14.02 s | 0.46 s | 6.2-6.5 s | 12.6-12.9 s |
+| before the fluff cut (run 4) | 14.8 s / 21.9 s | 4.4 s (splash) | 13.5 s | 21 s |
+
+- (a) B's window: alpha 0.00 in every tick before "go" (1064 ticks logged in one run), and the window server agrees
+  (1/s samples: 0.0 before, 1.0 after, every run). Guard (alpha > 0 inside a display, or frontmost): 0 violations.
+- (b) What the player sees (frames captured from both games, `soft_out/run12/round{1,2}_player.png`): the world
+  fades out (0.3 s) into the game's loading screen (NOW LOADING, Slogel, a tip), it stays ~7 s (title) / ~14 s (world),
+  then B's loading screen is shown in the same window place and fades into the same place. No logo, no title, no blank frame.
+- (c) B's dsload.log: round 1 "2 loaded" (multiplayer, gcd-cdr), round 2 "1 loaded"; A exited every time (no crash report).
+- (d) Same save (A's fresh autosave), camera target 447.50,108.50 zoom 19 in A and in B (exact), speed Fast (2) back.
+  In A the nudged target had not moved the visible camera yet (the game moves the view on its next camera input);
+  with real player input both agree.
+- Dock (`test/soft/dock_test.py`, copy T WITHOUT LSUIElement like a player's copy): LaunchServices lists B as a
+  Dock app ("Foreground") for 17 ms (29 ms without `TransformProcessType`), then UIElement until the swap.
+  Not visible in any test, but a one-frame Dock icon flicker cannot be ruled out without filming his Dock.
+  If he sees it: the copy maker sets LSUIElement in the play copy and dsload sets Regular at a normal start.
+
+### Not proven / open
+- Steam: test copies run with the Steam gate off. Two processes with the same app id for ~7-14 s and Steam's
+  overlay in B are NOT tested (owner may be in Steam; not tried on his account).
+- Real activation at the swap (`yieldActivationToApplication` + `activate`) is not run in tests (it would take focus).
+  The Regular switch + Dock icon swap at that moment (B's icon appears, A's goes) is expected, not observed.
+- Full-screen modes: the owner plays Windowed (prefs mode 3); a full-screen Space swap is not handled.
+- Times are on this Mac under load average 5-9 from other lanes.
+
+### Windows (how; not built: dsload is not ported to the baselib.dll proxy yet, plan row 8)
+Same file protocol and the same game calls (il2cpp exports and icalls are the same on Windows). Differences:
+start B with `CreateProcessW(GetModuleFileNameW, GetCommandLineW, env block from GetEnvironmentStringsW with
+DSL_PROFILE / DSL_SOFT_HANDOFF replaced, same folder)`; in B the proxy hooks `CreateWindowExW` for Unity's window
+(class `UnityWndClass`): add `WS_EX_TOOLWINDOW` (no taskbar button) + `WS_EX_LAYERED` alpha 0, never activate
+(`ShowWindow` / `SetWindowPos` get `SW_SHOWNOACTIVATE` / `SWP_NOACTIVATE`); swap: A calls
+`AllowSetForegroundWindow(B pid)`, B removes the two styles, `SetWindowPos` to A's rect + `HWND_TOP`,
+`SetForegroundWindow`. Risk [U]: a layered window may stop DXGI flip-model presents; fallback = window kept visible
+but off every monitor (like the Mac test stage). Start once the proxy runs dsload's loader + engine.

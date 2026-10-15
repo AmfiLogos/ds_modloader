@@ -12,8 +12,8 @@ CC=(nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0)
 $CC -O0 -dynamiclib -install_name @rpath/GameAssembly.dylib -o "$FW/GameAssembly.dylib" fake_ga.c || exit 1
 UUID=$(otool -l "$FW/GameAssembly.dylib" | awk '/uuid/{print $2; exit}')
 print "    { \"$UUID\", \"test\" }," > "$OUT/gen/test_builds.inc"
-$CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
-  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c || exit 1
+$CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
+  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_soft}.c || exit 1
 $CC -O0 -dynamiclib -o "$FW/foreign.dylib" foreign.c || exit 1
 $CC -O0 host.c -o "$OUT/host" "$FW/GameAssembly.dylib" -Wl,-rpath,"$FW" || exit 1
 for f in "$FW"/*.dylib "$OUT/host"; do codesign -f -s - "$f" 2>/dev/null; done
@@ -106,7 +106,7 @@ check "pin equal to the copy: modules load" 'log | grep -q "floor-logger 1.0.0: 
 
 print "== T5 unknown build: loader inactive"
 print "" > "$OUT/gen/test_builds.inc"
-$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
+$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_soft}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "nothing hooked, game runs, says why" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: The game was updated"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked && grep -q "\"active\":false,\"reason\":\"unknown_build\"" "$LOGD/dsload_status.json"'
 
