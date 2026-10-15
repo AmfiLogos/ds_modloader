@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <dlfcn.h>
+#include "dsl_os.h"
 
 #define REFUSE_TEXT "This world uses other mods."
 
@@ -75,7 +75,7 @@ static void *my_load(void *self, void *name, const void *mi) {
 /* after il2cpp_init; owner = the loader */
 void dsl_world_install(void **modules, int n) {
     for (int i = 0; i < n && nskip < 32; i++) {
-        int (*f)(void) = modules[i] ? (int (*)(void))dlsym(modules[i], "dsl_world_check_skip") : NULL;
+        int (*f)(void) = modules[i] ? (int (*)(void))dsl_os_dlsym(modules[i], "dsl_world_check_skip") : NULL;
         if (f) skip_fns[nskip++] = f;
     }
     if (!getenv("DSML_SESSION")) { dsl_log("world check: off (game not started by the launcher)"); return; }

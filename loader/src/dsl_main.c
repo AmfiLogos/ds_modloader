@@ -1,24 +1,17 @@
-// dsload.dylib: the one native mod loader of the Mac launcher. Injected first in DYLD_INSERT_LIBRARIES.
-//
-// Constructor (before GameAssembly is mapped):
-//   1. log; DYLD_INSERT_LIBRARIES: remove only our own entry, keep every other loader's entry;
-//   2. read the GameAssembly file's arm64 LC_UUID -> game build (dsl_builds.h); unknown build -> nothing loads;
-//   3. scan <mods>/<id>/mod.json, keep enabled code modules for this build + platform, check sha256, requires,
+// The loader core, the same C on every OS (Mac: dsload.dylib, Windows: inside the baselib.dll proxy). The OS start
+// part (dsl_os.h: start/mac, start/win) owns the process entry and calls, in order:
+//   dsl_core_log_open; dsl_core_start (before GameAssembly is mapped):
+//   1. game build from the start part (Mac: the GameAssembly file's arm64 LC_UUID; Windows: PE stamp) + launcher pin;
+//      unknown build -> nothing loads;
+//   2. scan <mods>/<id>/mod.json, keep enabled code modules for this build + platform, check sha256, requires,
 //      conflicts, per-build tables; order = dependencies first, then profile order;
-//   4. dlopen each module, call dsl_module_load.
-// GameAssembly add-image callback (none of its code has run): engine init, il2cpp_init hook, dsl_module_early.
+//   3. open each module (dlopen / LoadLibrary), call dsl_module_load.
+//   dsl_core_ga_mapped (none of GameAssembly's code has run): engine init, il2cpp_init hook, dsl_module_early.
 // il2cpp_init returned: dsl_plugin_init of every module, then new hooks go to the late stub page.
 // Crash guard per module and phase: <state dir>/<id>.pending left over at the next start = it crashed there.
 #include "dsl_internal.h"
-#include "dsl_builds.h"
+#include "dsl_os.h"
 #include "../sdk/dsl_sdk.h"
-#include <mach-o/dyld.h>
-#include <mach-o/loader.h>
-#include <mach-o/fat.h>
-#include <mach-o/nlist.h>
-#include <CommonCrypto/CommonDigest.h>
-#include <libkern/OSByteOrder.h>
-#include <dlfcn.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,14 +23,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <crt_externs.h>
-#include <CoreFoundation/CoreFoundation.h>
 
 uintptr_t dsl_ga_base;
 uint64_t dsl_text_lo, dsl_text_hi, dsl_image_end;
 const char *dsl_build_id;
-static const struct symtab_command *symtab;
-static uintptr_t linkedit_base;
 static char ga_path_s[1024];
 
 static FILE *lf;
@@ -68,7 +57,8 @@ void dsl_log(const char *fmt, ...) {
     if (!lf) return;
     pthread_mutex_lock(&loglock);
     struct timeval tv; gettimeofday(&tv, NULL);
-    char ts[32]; strftime(ts, sizeof ts, "%H:%M:%S", localtime(&tv.tv_sec));
+    time_t sec = tv.tv_sec;                         /* tv_sec is a long on Windows (32 bit), time_t 64 bit */
+    char ts[32]; strftime(ts, sizeof ts, "%H:%M:%S", localtime(&sec));
     fprintf(lf, "%s.%03d ", ts, (int)(tv.tv_usec / 1000));
     va_list ap; va_start(ap, fmt); vfprintf(lf, fmt, ap); va_end(ap);
     fputc('\n', lf); fflush(lf);
@@ -99,18 +89,9 @@ static void mkdirs(const char *p) {
 static void file_sig(const char *path, char *out, size_t n) {
     struct stat st;
     if (stat(path, &st)) { snprintf(out, n, "missing"); return; }
-    snprintf(out, n, "%lld:%ld", (long long)st.st_size, (long)st.st_mtimespec.tv_sec);
+    snprintf(out, n, "%lld:%ld", (long long)st.st_size, (long)st.st_mtime);
 }
-static int sha256_file(const char *path, char out[65]) {
-    FILE *f = fopen(path, "rb"); if (!f) return -1;
-    CC_SHA256_CTX c; CC_SHA256_Init(&c);
-    unsigned char buf[1 << 16]; size_t n;
-    while ((n = fread(buf, 1, sizeof buf, f)) > 0) CC_SHA256_Update(&c, buf, (CC_LONG)n);
-    fclose(f);
-    unsigned char d[32]; CC_SHA256_Final(d, &c);
-    for (int i = 0; i < 32; i++) snprintf(out + 2 * i, 3, "%02x", d[i]);
-    return 0;
-}
+static int sha256_file(const char *path, char out[65]) { return dsl_os_sha256_file(path, out); }
 
 /* ------------------------------------------------------------------ crash guard (same rules as dsmods loader 1.0) */
 static void guard_path(char *out, size_t n, const char *id, const char *ext) { snprintf(out, n, "%s/%s.%s", statedir, id, ext); }
@@ -142,25 +123,12 @@ void dsl_mark_codepatch(void) {
     codepatch_marked = 1; guard_enter("_codepatch", "runtime code patching (hook stubs)");
 }
 
-/* ------------------------------------------------------------------ GameAssembly: file (before mapping) and image */
-static void uuid_str(const uint8_t *u, char *out, size_t n) {
-    snprintf(out, n, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
-             u[0],u[1],u[2],u[3],u[4],u[5],u[6],u[7],u[8],u[9],u[10],u[11],u[12],u[13],u[14],u[15]);
-}
-static const char *build_of_uuid(const char *uuid) {
-    for (size_t i = 0; i < sizeof DSL_BUILDS / sizeof DSL_BUILDS[0]; i++) if (!strcmp(DSL_BUILDS[i].uuid, uuid)) return DSL_BUILDS[i].build;
-    return NULL;
-}
+/* ------------------------------------------------------------------ build guard */
 /* Build guard: the game build must be the pinned one, else no module starts and no hook / patch is written.
    Pinned = the launcher's build for this world (DSML_BUILD, or "build" in the DSML_SESSION file) when given,
    and always one of the builds this loader was made for (dsl_builds.h). The reason goes to dsload.log, stderr,
    <log dir>/dsload_status.json (for the launcher) and, in a normal (not -batchmode) start, one system notice. */
 static char status_why[512];
-static int is_batchmode(void) {
-    char **av = *_NSGetArgv(); int ac = *_NSGetArgc();
-    for (int i = 1; i < ac; i++) if (av[i] && !strcmp(av[i], "-batchmode")) return 1;
-    return 0;
-}
 static void json_esc(char *out, size_t n, const char *s) {
     size_t k = 0;
     for (; s && *s && k + 7 < n; s++) {
@@ -172,9 +140,8 @@ static void json_esc(char *out, size_t n, const char *s) {
 }
 static void write_status(int active, const char *reason, const char *uuid, const char *found, const char *pinned) {
     if (!logdir[0]) return;
-    char known[512] = "", w[600], e[1100];
-    for (size_t i = 0; i < sizeof DSL_BUILDS / sizeof DSL_BUILDS[0]; i++)
-        snprintf(known + strlen(known), sizeof known - strlen(known), "%s\"%s\"", i ? "," : "", DSL_BUILDS[i].build);
+    char known[512], w[600], e[1100];
+    snprintf(known, sizeof known, "%s", dsl_os_build_list());
     json_esc(w, sizeof w, status_why);
     snprintf(e, sizeof e, "{\"loader\":\"%s\",\"active\":%s,\"reason\":\"%s\",\"uuid\":\"%s\",\"found_build\":\"%s\",\"pinned_build\":\"%s\",\"loader_builds\":[%s],\"message\":\"%s\"}\n",
              DSL_LOADER_VERSION, active ? "true" : "false", reason, uuid ? uuid : "", found ? found : "", pinned ? pinned : "", known, w);
@@ -187,10 +154,8 @@ static void build_refused(const char *reason, const char *uuid, const char *foun
     dsl_log("no mod starts, no hook and no code patch is written; the game runs unmodded");
     fprintf(stderr, "dsload: %s\n", status_why);
     write_status(0, reason, uuid, found, pinned);
-    if (is_batchmode() || getenv("DSL_NO_ALERT")) return;
-    CFStringRef t = CFSTR("Dungeon Settlers: mods are off");
-    CFStringRef m = CFStringCreateWithCString(NULL, status_why, kCFStringEncodingUTF8);
-    if (m) { CFUserNotificationDisplayNotice(0, kCFUserNotificationCautionAlertLevel, NULL, NULL, NULL, t, m, CFSTR("OK")); CFRelease(m); }
+    if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) return;
+    dsl_os_notice("Dungeon Settlers: mods are off", status_why);
 }
 /* the launcher's pinned build for this start, or NULL */
 static const char *launcher_pin(void) {
@@ -204,73 +169,6 @@ static const char *launcher_pin(void) {
     if (b && *b) snprintf(pin, sizeof pin, "%s", b);
     json_free(j);
     return pin[0] ? pin : NULL;
-}
-
-/* arm64 LC_UUID of a (fat or thin) Mach-O file on disk */
-static int file_uuid(const char *path, char *out, size_t n) {
-    FILE *f = fopen(path, "rb"); if (!f) return -1;
-    uint8_t hdr[4096]; size_t got = fread(hdr, 1, sizeof hdr, f);
-    long off = 0; int r = -1;
-    if (got >= 8 && OSReadBigInt32(hdr, 0) == FAT_MAGIC) {
-        uint32_t nf = OSReadBigInt32(hdr, 4);
-        for (uint32_t i = 0; i < nf && 8 + 20 * (i + 1) <= got; i++)
-            if (OSReadBigInt32(hdr, 8 + 20 * i) == (uint32_t)CPU_TYPE_ARM64) off = (long)OSReadBigInt32(hdr, 8 + 20 * i + 8);
-        if (!off) { fclose(f); return -1; }
-    }
-    uint8_t *lc = malloc(1 << 20);
-    if (fseek(f, off, SEEK_SET) == 0 && fread(lc, 1, 1 << 20, f) > sizeof(struct mach_header_64)) {
-        const struct mach_header_64 *h = (const void*)lc;
-        if (h->magic == MH_MAGIC_64 && h->cputype == CPU_TYPE_ARM64 && h->sizeofcmds + sizeof *h <= (1 << 20)) {
-            const uint8_t *p = lc + sizeof *h;
-            for (uint32_t i = 0; i < h->ncmds; i++) {
-                const struct load_command *c = (const void*)p;
-                if (c->cmd == LC_UUID) { uuid_str(((const struct uuid_command*)c)->uuid, out, n); r = 0; break; }
-                p += c->cmdsize;
-            }
-        }
-    }
-    free(lc); fclose(f);
-    return r;
-}
-
-static int parse_ga(const struct mach_header_64 *h, char *uuid, size_t un) {
-    const uint8_t *p = (const uint8_t*)(h + 1);
-    uint64_t text_vm = 0, le_vm = 0, le_off = 0; int have_text = 0, have_le = 0;
-    uuid[0] = 0; dsl_text_lo = UINT64_MAX; dsl_text_hi = 0; dsl_image_end = 0;
-    for (uint32_t i = 0; i < h->ncmds; i++) {
-        const struct load_command *lc = (const void*)p;
-        if (lc->cmd == LC_UUID) uuid_str(((const struct uuid_command*)lc)->uuid, uuid, un);
-        else if (lc->cmd == LC_SEGMENT_64) {
-            const struct segment_command_64 *s = (const void*)lc;
-            if (s->vmaddr + s->vmsize > dsl_image_end && strcmp(s->segname, "__PAGEZERO")) dsl_image_end = s->vmaddr + s->vmsize;
-            if (!strcmp(s->segname, "__TEXT")) {
-                text_vm = s->vmaddr; have_text = 1;
-                const struct section_64 *sec = (const void*)(s + 1);
-                for (uint32_t k = 0; k < s->nsects; k++)
-                    if (sec[k].size && (sec[k].flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS))) {
-                        if (sec[k].addr < dsl_text_lo) dsl_text_lo = sec[k].addr;
-                        if (sec[k].addr + sec[k].size > dsl_text_hi) dsl_text_hi = sec[k].addr + sec[k].size;
-                    }
-            } else if (!strcmp(s->segname, "__LINKEDIT")) { le_vm = s->vmaddr; le_off = s->fileoff; have_le = 1; }
-        } else if (lc->cmd == LC_SYMTAB) symtab = (const void*)lc;
-        p += lc->cmdsize;
-    }
-    if (!have_text || !have_le || !symtab || text_vm != 0 || dsl_text_lo >= dsl_text_hi) return -1;
-    linkedit_base = dsl_ga_base + (uintptr_t)(le_vm - text_vm) - (uintptr_t)le_off;
-    return 0;
-}
-
-void *dsl_ga_sym(const char *name) {
-    if (!symtab || !name) return NULL;
-    const struct nlist_64 *nl = (const void*)(linkedit_base + symtab->symoff);
-    const char *str = (const char*)(linkedit_base + symtab->stroff);
-    for (uint32_t i = 0; i < symtab->nsyms; i++) {
-        if ((nl[i].n_type & N_TYPE) != N_SECT || !(nl[i].n_type & N_EXT) || (nl[i].n_type & N_STAB)) continue;
-        uint32_t sx = nl[i].n_un.n_strx; if (sx >= symtab->strsize) continue;
-        const char *s = str + sx;
-        if (s[0] == '_' && !strcmp(s + 1, name)) return (void*)(dsl_ga_base + nl[i].n_value);
-    }
-    return NULL;
 }
 
 /* ------------------------------------------------------------------ host API */
@@ -455,10 +353,10 @@ static void scan_mods(const char *build) {
         if (str_in(gb, build) == 0) { p->state = 3; dsl_log("%s: made for game build(s) other than %s: not loaded", id, build); continue; }
         if (p->api < 1 || p->api > DSL_API_VERSION) { p->state = 3; dsl_log("%s: module API %d, loader API %d: not loaded", id, p->api, DSL_API_VERSION); continue; }
         /* platform files */
-        JNode *plat = json_get(json_get(m, "platforms"), "mac-arm64");
+        JNode *plat = json_get(json_get(m, "platforms"), DSL_PLATFORM);
         const char *entry = plat ? json_str(plat, "entry") : NULL;
-        char defname[80]; snprintf(defname, sizeof defname, "%s.dylib", id);
-        if (json_get(m, "platforms") && !plat) { p->state = 3; dsl_log("%s: no mac-arm64 build: not loaded", id); continue; }
+        char defname[80]; snprintf(defname, sizeof defname, "%s" DSL_MODULE_EXT, id);
+        if (json_get(m, "platforms") && !plat) { p->state = 3; dsl_log("%s: no " DSL_PLATFORM " build: not loaded", id); continue; }
         snprintf(p->file, sizeof p->file, "%s/%s", dir, entry ? entry : defname);
         JNode *files = plat ? json_get(plat, "files") : NULL;
         int bad = 0;
@@ -472,8 +370,8 @@ static void scan_mods(const char *build) {
         /* per-build table: "tables" (or the plan's "hooks") -> build -> platform -> file */
         JNode *tb = json_get(m, "tables"); if (!tb) tb = json_get(m, "hooks");
         if (tb && tb->t == JN_OBJ) {
-            const char *rel = json_str(json_get(tb, build), "mac-arm64");
-            if (!rel) { p->state = 3; dsl_log("%s: no mac-arm64 table for game build %s: not loaded", id, build); continue; }
+            const char *rel = json_str(json_get(tb, build), DSL_PLATFORM);
+            if (!rel) { p->state = 3; dsl_log("%s: no " DSL_PLATFORM " table for game build %s: not loaded", id, build); continue; }
             if (load_table(p, rel)) { p->state = 3; continue; }
         }
     }
@@ -553,12 +451,12 @@ static void open_modules(void) {
         char what[128]; snprintf(what, sizeof what, "module %s", p->id);
         if (guard_check(p->id, p->sig, what)) { p->state = 3; continue; }
         guard_enter(p->id, "loading the dylib");
-        p->h = dlopen(p->file, RTLD_NOW | RTLD_LOCAL);
-        if (!p->h) { guard_leave(p->id); p->state = 2; dsl_log("%s: FAILED to load: %s", p->id, dlerror()); continue; }
-        const uint32_t *api = dlsym(p->h, "dsl_plugin_api_version");
-        p->load = (dsl_module_load_fn)dlsym(p->h, "dsl_module_load");
-        p->early = (dsl_module_early_fn)dlsym(p->h, "dsl_module_early");
-        p->init = (dsl_plugin_init_fn)dlsym(p->h, "dsl_plugin_init");
+        p->h = dsl_os_dlopen(p->file);
+        if (!p->h) { guard_leave(p->id); p->state = 2; dsl_log("%s: FAILED to load: %s", p->id, dsl_os_dlerror()); continue; }
+        const uint32_t *api = dsl_os_dlsym(p->h, "dsl_plugin_api_version");
+        p->load = (dsl_module_load_fn)dsl_os_dlsym(p->h, "dsl_module_load");
+        p->early = (dsl_module_early_fn)dsl_os_dlsym(p->h, "dsl_module_early");
+        p->init = (dsl_plugin_init_fn)dsl_os_dlsym(p->h, "dsl_plugin_init");
         if (!api || *api < 1 || *api > DSL_API_VERSION || !(p->load || p->early || p->init)) {
             guard_leave(p->id); p->state = 2;
             dsl_log("%s: FAILED: %s (loader API %d)", p->id, !api ? "no dsl_plugin_api_version (DSL_PLUGIN() missing)" :
@@ -618,7 +516,7 @@ static void write_modset(void) {
             struct DSLPlugin *p = ORDER[i];
             if (p->state != 1 || p->gameplay != (pass == 0)) continue;
             sb(&b, "%s{\"id\":\"%s\",\"version\":\"%s\",\"files\":{", first ? "" : ",", p->id, p->version); first = 0;
-            JNode *files = json_get(json_get(json_get(p->mf, "platforms"), "mac-arm64"), "files");
+            JNode *files = json_get(json_get(json_get(p->mf, "platforms"), DSL_PLATFORM), "files");
             char shas[16][65]; int ns = 0;
             if (files && files->t == JN_OBJ && files->child) {
                 for (JNode *f = files->child; f && ns < 16; f = f->next) {
@@ -679,24 +577,13 @@ static void on_il2cpp_ready(const char *via) {
 static int my_il2cpp_init(const char *domain) { int r = orig_init(domain); on_il2cpp_ready(""); return r; }
 static int my_il2cpp_init_utf16(const void *domain) { int r = orig_init_utf16(domain); on_il2cpp_ready("_utf16"); return r; }
 
-static void on_image(const struct mach_header *mh, intptr_t slide) {
-    (void)slide;
-    if (dsl_ga_base) return;
-    Dl_info di;
-    if (!dladdr(mh, &di) || !di.dli_fname || !strstr(di.dli_fname, "/GameAssembly.dylib")) return;
-    const struct mach_header_64 *h = (const void*)mh;
-    if (h->magic != MH_MAGIC_64) return;
-    dsl_ga_base = (uintptr_t)mh;
-    snprintf(ga_path_s, sizeof ga_path_s, "%s", di.dli_fname);
-    char uuid[40];
-    if (parse_ga(h, uuid, sizeof uuid)) { dsl_log("GameAssembly header not understood: modules get no game access"); dsl_build_id = NULL; return; }
-    const char *b = build_of_uuid(uuid);
-    if (!b || !dsl_build_id || strcmp(b, dsl_build_id)) {
-        dsl_log("mapped GameAssembly (uuid %s) is not the file read at start (build %s): modules get no game access", uuid, dsl_build_id ? dsl_build_id : "?");
-        snprintf(status_why, sizeof status_why, "The game loaded a different GameAssembly (%s) than the one checked at start (build %s). Mods stay off.",
-                 uuid, dsl_build_id ? dsl_build_id : "?");
-        build_refused("mapped_image_differs", uuid, b, dsl_build_id); return;
-    }
+/* GameAssembly mapped (start part: Mac add-image callback, Windows DllMain), none of its code ran yet. The start part
+   has checked that the mapped image is the build of dsl_core_start and set dsl_text_lo / hi, dsl_image_end and
+   dsl_ga_sym. 0 = modules started (or nothing to do). */
+int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
+    if (dsl_ga_base || !dsl_build_id) return -1;
+    dsl_ga_base = base;
+    snprintf(ga_path_s, sizeof ga_path_s, "%s", ga_path ? ga_path : "");
     host.ga_base = dsl_ga_base; host.game_build = dsl_build_id;
     dsl_log("GameAssembly build %s mapped at %p (code %#llx-%#llx, image end %#llx)", dsl_build_id, (void*)dsl_ga_base,
             (unsigned long long)dsl_text_lo, (unsigned long long)dsl_text_hi, (unsigned long long)dsl_image_end);
@@ -705,9 +592,9 @@ static void on_image(const struct mach_header *mh, intptr_t slide) {
     if (getenv("DSML_SESSION") || getenv("DSL_PROFILE")) want_init = any = 1;   /* world check, Mods window: after il2cpp_init */
     if (dsl_soft_wanted()) any = 1;                                  /* B of a soft restart, even with no code mod */
     if (any) want_init = 1;                                          /* soft restart (dsl_soft.c) needs il2cpp names */
-    if (!any) return;
-    if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return; }
-    if (dsl_engine_init()) return;
+    if (!any) return 0;
+    if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return -1; }
+    if (dsl_engine_init()) return -1;
     if (want_init) {
         void *ii = dsl_ga_sym("il2cpp_init"), *iu = dsl_ga_sym("il2cpp_init_utf16");
         int a = ii ? dsl_hook(DSL_OWNER_LOADER, ii, (void*)my_il2cpp_init, (void**)&orig_init, "loader il2cpp_init") : -1;
@@ -724,92 +611,63 @@ static void on_image(const struct mach_header *mh, intptr_t slide) {
         dsl_log("%s: early start done (%d hook(s))", p->id, dsl_hook_count(p->idx));
     }
     if (!want_init) { guard_leave("_codepatch"); run_init(); write_modset(); dsl_engine_set_late(); }
+    return 0;
 }
 
-/* DYLD_INSERT_LIBRARIES: drop our own entry so children (crash reporter, helpers) do not load us; keep every
-   other entry (BepInEx / MelonLoader doorstop, a profiler...) untouched and in its order. */
-static void pass_through_env(void) {
-    const char *e = getenv("DYLD_INSERT_LIBRARIES");
-    if (!e) return;
-    char rself[1024]; if (!realpath(self_path, rself)) snprintf(rself, sizeof rself, "%s", self_path);
-    char *copy = strdup(e), *out = calloc(1, strlen(e) + 1), *save = NULL;
-    int kept = 0, dropped = 0;
-    for (char *t = strtok_r(copy, ":", &save); t; t = strtok_r(NULL, ":", &save)) {
-        char rt[1024]; if (!realpath(t, rt)) snprintf(rt, sizeof rt, "%s", t);
-        if (!strcmp(rt, rself)) { dropped++; continue; }
-        if (kept++) strcat(out, ":");
-        strcat(out, t);
-    }
-    if (kept) setenv("DYLD_INSERT_LIBRARIES", out, 1); else unsetenv("DYLD_INSERT_LIBRARIES");
-    dsl_log("DYLD_INSERT_LIBRARIES: removed our entry (%d), kept %d other entr%s%s%s", dropped, kept, kept == 1 ? "y" : "ies", kept ? ": " : "", kept ? out : "");
-    free(copy); free(out);
+/* The mapped GameAssembly is not the file the build came from (start part's check): mods stay off. */
+void dsl_core_ga_differs(const char *ga_id, const char *found_build) {
+    snprintf(status_why, sizeof status_why, "The game loaded a different GameAssembly (%s) than the one checked at start (build %s). Mods stay off.",
+             ga_id, dsl_build_id ? dsl_build_id : "?");
+    build_refused("mapped_image_differs", ga_id, found_build, dsl_build_id);
 }
 
-static void note_other_loaders(void) {
-    static const char *known[] = { "dsrig.dylib", "dsmods.dylib", "libdoorstop", "MelonLoader", "Bootstrap.dylib", "libdobby" };
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *nm = _dyld_get_image_name(i); if (!nm) continue;
-        for (size_t k = 0; k < sizeof known / sizeof *known; k++) if (strstr(nm, known[k]))
-            dsl_log("other loader in the process: %s%s", nm, (k < 2) ? " (has its own hook engine: shared functions are refused, not chained)" : "");
-    }
-}
-
-__attribute__((constructor)) static void dsl_init(void) {
-#if !defined(__arm64__)
-    return;
-#endif
-    Dl_info di;
-    if (dladdr((void*)dsl_init, &di) && di.dli_fname) snprintf(self_path, sizeof self_path, "%s", di.dli_fname);
-    const char *ld = getenv("DSL_LOG_DIR"), *rd = getenv("DSRIG_DIR"), *home = getenv("HOME");
+/* log folder: DSL_LOG_DIR, else DSRIG_DIR, else the start part's default (the game's data folder) */
+int dsl_core_log_open(const char *logdir_default, const char *self) {
+    const char *ld = getenv("DSL_LOG_DIR"), *rd = getenv("DSRIG_DIR");
     if (ld && *ld) snprintf(logdir, sizeof logdir, "%s", ld);
     else if (rd && *rd) snprintf(logdir, sizeof logdir, "%s", rd);
-    else if (home) snprintf(logdir, sizeof logdir, "%s/Library/Application Support/CanOpener/Dungeon Settlers", home);
-    else return;
+    else if (logdir_default && *logdir_default) snprintf(logdir, sizeof logdir, "%s", logdir_default);
+    else return -1;
+    snprintf(self_path, sizeof self_path, "%s", self ? self : "");
     snprintf(statedir, sizeof statedir, "%s/dsload_state", logdir);
     mkdirs(statedir);
     char lp[1200], pp[1200];
     snprintf(lp, sizeof lp, "%s/dsload.log", logdir); snprintf(pp, sizeof pp, "%s/dsload.prev.log", logdir);
-    rename(lp, pp);
+    remove(pp);
+    if (rename(lp, pp) && !access(lp, 0))                /* Windows: a running game (soft restart A) still has it open */
+        snprintf(lp, sizeof lp, "%s/dsload.%d.log", logdir, (int)getpid());
     lf = fopen(lp, "w");
     file_sig(self_path, loader_sig, sizeof loader_sig);
-    dsl_log("dsload %s (module API %d) pid %d: %s", DSL_LOADER_VERSION, DSL_API_VERSION, getpid(), self_path);
-    dsl_soft_snapshot(logdir);
-    pass_through_env();
+    dsl_log("dsload %s (module API %d, %s) pid %d: %s", DSL_LOADER_VERSION, DSL_API_VERSION, DSL_PLATFORM, (int)getpid(), self_path);
+    return 0;
+}
+const char *dsl_core_logdir(void) { return logdir; }
 
-    /* main executable -> app; GameAssembly file -> build */
-    char exe[1024]; uint32_t sz = sizeof exe;
-    char appc[1100] = "";
-    if (_NSGetExecutablePath(exe, &sz) == 0) {
-        char r[1024]; if (realpath(exe, r)) snprintf(exe, sizeof exe, "%s", r);
-        char *s = strstr(exe, "/Contents/MacOS/");
-        if (s) { snprintf(appc, sizeof appc, "%.*s/Contents", (int)(s - exe), exe); }
-    }
-    const char *md = getenv("DSL_MODS_DIR"), *pf = getenv("DSL_PROFILE"), *gp = getenv("DSL_GA_PATH");
+/* Before GameAssembly is mapped. build = the start part's build for the GameAssembly file (NULL = unknown),
+   ga_id = what it read (Mac arm64 LC_UUID, Windows PE stamp) for the logs and the status file, modsdir_default =
+   the mods folder when DSL_MODS_DIR is not set. 0 = modules opened, the start part goes on to dsl_core_ga_mapped. */
+int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_default) {
+    const char *md = getenv("DSL_MODS_DIR"), *pf = getenv("DSL_PROFILE");
     if (md && *md) snprintf(modsdir, sizeof modsdir, "%s", md);
-    else if (appc[0]) snprintf(modsdir, sizeof modsdir, "%s/Resources/mods", appc);
+    else if (modsdir_default) snprintf(modsdir, sizeof modsdir, "%s", modsdir_default);
     snprintf(profile_path, sizeof profile_path, "%s", (pf && *pf) ? pf : "");
     if (!profile_path[0]) snprintf(profile_path, sizeof profile_path, "%s/profile.json", modsdir);
-    char gafile[1200];
-    if (gp && *gp) snprintf(gafile, sizeof gafile, "%s", gp);
-    else snprintf(gafile, sizeof gafile, "%s/Frameworks/GameAssembly.dylib", appc);
-    char uuid[40];
-    if (file_uuid(gafile, uuid, sizeof uuid)) { dsl_log("cannot read %s: loader inactive", gafile); return; }
-    dsl_build_id = build_of_uuid(uuid);
+    dsl_build_id = build;
     const char *pin = launcher_pin();
     if (!dsl_build_id) {
         snprintf(status_why, sizeof status_why, "The game was updated (GameAssembly %s is not a build this loader knows%s%s). "
-                 "Mods stay off until they are updated for this game version.", uuid, pin ? "; the launcher pinned build " : "", pin ? pin : "");
-        dsl_log("unknown GameAssembly build (arm64 uuid %s): loader inactive, the game runs without code mods", uuid);
-        build_refused("unknown_build", uuid, NULL, pin); return;
+                 "Mods stay off until they are updated for this game version.", ga_id, pin ? "; the launcher pinned build " : "", pin ? pin : "");
+        dsl_log("unknown GameAssembly build (%s): loader inactive, the game runs without code mods", ga_id);
+        build_refused("unknown_build", ga_id, NULL, pin); return -1;
     }
     if (pin && strcmp(pin, dsl_build_id)) {
         snprintf(status_why, sizeof status_why, "This copy of the game is build %s, but the launcher pinned build %s for this world. "
                  "Mods stay off. Start the world from the launcher again.", dsl_build_id, pin);
-        build_refused("not_pinned_build", uuid, dsl_build_id, pin); return;
+        build_refused("not_pinned_build", ga_id, dsl_build_id, pin); return -1;
     }
     snprintf(status_why, sizeof status_why, "build %s%s", dsl_build_id, pin ? " (launcher pin)" : "");
-    write_status(1, "ok", uuid, dsl_build_id, pin ? pin : dsl_build_id);
-    dsl_log("game build %s (%s); mods %s; profile %s", dsl_build_id, gafile, modsdir, profile_path);
+    write_status(1, "ok", ga_id, dsl_build_id, pin ? pin : dsl_build_id);
+    dsl_log("game build %s (%s); mods %s; profile %s", dsl_build_id, ga_id, modsdir, profile_path);
 
     host = (DSLHost){ .api_version = DSL_API_VERSION, .size = sizeof(DSLHost), .game_build = dsl_build_id, .ga_base = 0,
         .log = h_log, .plugin_id = h_plugin_id, .rva = h_rva, .il2cpp_ready = h_ready,
@@ -820,8 +678,7 @@ __attribute__((constructor)) static void dsl_init(void) {
         .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods, .soft_restart = dsl_soft_apply };
     dsl_reg_host(&host);
     scan_mods(dsl_build_id);
-    note_other_loaders();
-    if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return; }
+    if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();
-    _dyld_register_func_for_add_image(on_image);
+    return 0;
 }

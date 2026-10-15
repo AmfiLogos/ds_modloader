@@ -1,5 +1,6 @@
 app/build/
 app/old/
+loader/build/win/
 builder/shots/
 loader/build/pin/
 loader/old/
