@@ -4,3 +4,4 @@ src-tauri/gen/
 builder/shots/
 app/build/
 app/old/
+loader/build/win/
