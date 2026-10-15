@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Build the loader and the modules. Output:
 #   build/dsload.dylib                    the loader (injected first with DYLD_INSERT_LIBRARIES)
-#   build/mods/multiplayer/               multiplayer module (vendor/mp snapshot of ~/ds_multiplayer/src, minus rig_main.c + rig_hook.c)
+#   build/mods/multiplayer/               multiplayer module (pinned ds_multiplayer commit, mp_pin.txt; minus rig_main.c + rig_hook.c)
 #   build/mods/gcd-cdr/                   GCD-uses-cooldown-reduction module
 #   build/mods/floor-logger/              the owner's API 1 example plugin, binary copied unchanged from ~/DungeonSettlersMods/mods
 # Nothing outside this folder is written. Never overwrites a mapped dylib (mv of a new file).
@@ -17,20 +17,43 @@ nice -n 19 clang -arch arm64 -arch x86_64 $CF ${=EXTRA_CFLAGS} -Isrc -dynamiclib
 put build/dsload.dylib; echo "built build/dsload.dylib"
 [[ -n "$LOADER_ONLY" ]] && exit 0
 
-# multiplayer
-V=vendor/mp; M=build/mods/multiplayer; mkdir -p $M
-srcs=($V/src/{rig_sock,rig_cmd,rig_win,rig_det}.c $V/src/{mp_core,mp_config,mp_game,mp_fog}.c
-      $V/src/net/dsnet_link.c $V/src/net/dsnet_server.c $V/src/net/dsnet_client.c $V/src/net/steam/dsnet_steam.c
-      $V/src/{ord_core,ord_game,ord_mp}.c $V/src/ord_test/ord_smoke.c
-      $V/src/{ui_game,ui_model,ui_tip,ui_teams,ui_teams_model,mpmenu,mpmenu_model}.c $V/src/{trn_logic,trn_game,trn_mp}.c
-      $V/win/math/math_mac.c)
+# multiplayer: built from ONE pinned ds_multiplayer commit (mp_pin.txt, or MP_PIN=<commit/tag>), never a hand copy.
+# The tree is exported read-only with `git archive` into build/pin/<sha>/; the source list is read from that tree's own
+# src/build.sh (its dsrig.dylib list minus rig_main.c + rig_hook.c, which modules/multiplayer/mp_module.c replaces).
+# det_ranges.tsv is game-derived (not in git): MP_DET_RANGES, else ~/ds_multiplayer/build/det_ranges.tsv.
+MP_REPO=${MP_REPO:-$HOME/ds_multiplayer}; MP_PIN=${MP_PIN:-$(head -1 mp_pin.txt)}
+SHA=$(git -C $MP_REPO rev-parse --verify "$MP_PIN^{commit}") || { echo "mp pin $MP_PIN not found in $MP_REPO" >&2; exit 1; }
+V=build/pin/$SHA; M=build/mods/multiplayer; mkdir -p $M build/pin
+if [[ ! -f $V/src/build.sh ]]; then
+  mkdir -p $V.tmp; git -C $MP_REPO archive $SHA src win/math | tar -x -C $V.tmp; mv $V.tmp $V
+fi
+if [[ ! -f $V/win/math/build/libdsmath_arm64.a ]]; then        # arm64 part of win/math/build_math.sh
+  (cd $V/win/math && mkdir -p build/obj_arm64 && for f in musl/*.c; do nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0 -O2 -std=gnu11 \
+     -D_USE_MATH_DEFINES -ffp-contract=off -fno-fast-math -U__FP_FAST_FMA -U__FP_FAST_FMAF -Ishim -Imusl -include dsm_rename.h -w -c $f -o build/obj_arm64/${f:t:r}.o; done \
+   && ar rcs build/libdsmath_arm64.a build/obj_arm64/*.o)
+fi
+mpsrc=(${(f)"$(python3 - $V/src/build.sh <<'PY'
+import re, sys
+t = open(sys.argv[1]).read(); t = t[t.index('clang'):t.index('codesign')].replace('\\\n', ' ')
+for w in t.split():
+    if w.endswith('.c') and w not in ('rig_main.c', 'rig_hook.c') and not w.startswith('-'):
+        print(w)
+PY
+)"})
+(( ${#mpsrc} > 10 )) || { echo "cannot read the source list of $V/src/build.sh" >&2; exit 1; }
+srcs=(); for f in $mpsrc; do srcs+=($V/src/$f); done
 nice -n 19 clang -arch arm64 $CF -D_DARWIN_C_SOURCE -dynamiclib -framework AppKit -framework CoreGraphics -framework CoreFoundation \
   -install_name @rpath/multiplayer.dylib -Isdk -I$V/src -I$V/win/math -DDSMATH_DEFAULT_ON=1 \
-  -o $M/multiplayer.dylib.tmp modules/multiplayer/mp_module.c $srcs $V/win/math/build/libdsmath_arm64.a
+  -o $M/multiplayer.dylib.tmp modules/multiplayer/mp_module.c $srcs $V/win/math/build/libdsmath_arm64.a -lz
 put $M/multiplayer.dylib
-cp -c $V/det_ranges.tsv $M/det_ranges.tsv.tmp 2>/dev/null || cp $V/det_ranges.tsv $M/det_ranges.tsv.tmp; mv -f $M/det_ranges.tsv.tmp $M/det_ranges.tsv
+DR=${MP_DET_RANGES:-$MP_REPO/build/det_ranges.tsv}
+cp $DR $M/det_ranges.tsv.tmp; mv -f $M/det_ranges.tsv.tmp $M/det_ranges.tsv
 cp modules/multiplayer/mod.json $M/mod.json
-echo "built $M"
+print -r -- "$SHA" > $M/PINNED_COMMIT
+echo "built $M from ds_multiplayer $SHA (${#mpsrc} files)"
+# custom-modes: built from the same pinned tree once it has one (MASTER_PLAN M4: ds_multiplayer/custom)
+if [[ -f $V/custom/build_module.sh ]]; then OUT=$PWD/build/mods/custom-modes SDK=$PWD/sdk zsh $V/custom/build_module.sh && echo "built build/mods/custom-modes"
+else echo "custom-modes: not in ds_multiplayer $SHA yet (M4 split): skipped"; fi
 
 # gcd-cdr
 G=build/mods/gcd-cdr; mkdir -p $G/rva

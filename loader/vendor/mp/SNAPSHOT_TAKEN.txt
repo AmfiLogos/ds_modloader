@@ -1,4 +1,0 @@
-Thu Oct 15 06:16:36 WEST 2026
-mp_fog.c re-copied Thu Oct 15 06:26:27 WEST 2026 (06:16 fix)
-re-synced Thu Oct 15 08:36:39 WEST 2026 (corenext fog fix 08:05)
-re-synced Thu Oct 15 09:34:53 WEST 2026 while src_merge.lock was held (lead: reading src is fine)
