@@ -4,7 +4,8 @@ edited) on two of OUR copies (M hosts, N joins) that run dsload + the merged mod
 The pair lease comes from the real rig (night rules: lane 'loader', refused while rig/release.lock exists); its
 port is used. Output goes to test_env/build/core_test/ (our folder), not to ~/ds_multiplayer.
   pair_soak.py --minutes 10 [soak_test.py options]"""
-import importlib.util, os, sys, types
+import faulthandler, importlib.util, os, signal, sys, types
+faulthandler.register(signal.SIGUSR1, all_threads=True)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import lrig

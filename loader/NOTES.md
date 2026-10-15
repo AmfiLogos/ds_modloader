@@ -150,3 +150,33 @@ To refresh the MP snapshot: re-copy `~/ds_multiplayer/src` (+ `win/math/{math_ma
 - Second layer: the engine itself refuses `hook` / `patch` while `dsl_build_id` is NULL (a module that tries later
   gets a refusal line, nothing is written).
 - Host test: 31/31 (T6: env pin differs, session pin differs, pin equal; T5: unknown build says why).
+
+### gcd-cdr proven in game (task 1) - 2026-10-15 05:45, copy L, lease CD, `test/gcd_world_test.py`
+Probe = `test/probe/gcd-probe` (test only, never shipped): hooks `SubtractGlobalCooldown` + `HasGlobalCooldown`; a
+global cooldown is measured as the sum of the game's own dt from its first count-down tick until it reaches 0.
+The save's units used no skill in 150 s, so the probe started 8 global cooldowns per run through the game's public
+`SetGlobalCooldown()` (the call `TickEventApplier.Apply` makes after a skill, and the function gcd-cdr hooks) on
+units that have cooldown reduction. Base (combat table) 5.000 s. Results (game seconds; last tick adds ~0.01 s):
+
+| Cooldown reduction | Without the mod | With gcd-cdr | Rule 5 / (1 + CDR/100) |
+|---|---|---|---|
+| 2.4 | 5.01 | 4.893 | 4.883 |
+| 2.76 | 5.01 | 4.876 | 4.866 |
+| 7.2 | 5.01 | 4.676 | 4.664 |
+| 8.7 | 5.01 | 4.609 | 4.600 |
+| 9.9 | 5.01 | 4.559 | 4.550 |
+| 11.7 | 5.01 | 4.492 | 4.476 |
+| 12.9 | 5.01 | 4.442 | 4.429 |
+
+gcd-cdr logged each call ("global cooldown #1: 5.000 s, cooldown reduction 2.8 -> 4.866 s"). Not seen yet: a
+global cooldown started by a real skill cast (none happened in these runs). Logs: `test_env/gcd_out/20261015-054549/`.
+
+### World check in game (task 3) - same runs
+- Address verified for build 25846389 (Steam buildid 25846389, arm64 UUID 3C5DD8BD-...): dump.cs
+  `CampaignLoadingEventHandler.LoadCampaign(string)` RVA 0xD6C900, `TryGetSaveHeader` 0xD6CA44,
+  `CancelIronModeLoad` 0xD6CE14; the loader resolves it by name and logged "hooked 0xd6c900". Direct callers
+  (BL scan): 0xD75F84, 0xD764BC.
+- Session file says the save's world (f816ebc6-...) uses mod set bbb, this copy aaa: "world check: REFUSED ...",
+  the game stayed on the title screen (scene 1, no crash). Session changed to aaa: same save "allowed" and loaded.
+- [U] The notice text on screen is not verified: batchmode, and the rig screenshot shows only the camera, not the UI.
+  `CancelIronModeLoad` takes a TEXT KEY; our plain sentence may show as-is or not resolve. Check in a window run.
