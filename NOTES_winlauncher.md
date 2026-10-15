@@ -56,3 +56,10 @@ cd src-tauri && nice -n 19 cargo tauri build --target x86_64-pc-windows-gnu
 - `UnityCrashHandler64.exe` is not in the stock list (not needed to play; the bottle's stock copy has none).
 - Unsigned: SmartScreen shows "Windows protected your PC" -> "More info" -> "Run anyway" (plan section 8).
 - The dev key signs the seed (NOTES_ownerapp.md). Same rule before a public release.
+
+## Cross-platform mod-set hash (finding for the in-game loader, 2026-10-15)
+- `join.rs modset_lines` puts the sha256 of the mod's files FOR THIS PLATFORM in each line, so Mac and Windows get different hashes for the same mod.
+- `dsnet_server.c modset_refused` compares the hashes with strcmp, so a Mac host refuses a Windows guest (DSNET_REJ_MODSET) even when both run the same mod versions.
+- Lead-approved fix (not built, owner stopped the lane): hash the files of EVERY platform listed in the signed index (platform keys sorted), the same for patches, and use the same rule in the loader's dsload_modset.json check.
+- Also: leave the multiplayer mod itself out of the gameplay mod set (HELLO already checks build + protocol), so a guest with no session (friend kit) can join a host that runs only multiplayer.
+- Test to add: for one index, the Mac line equals the Windows line.
