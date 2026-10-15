@@ -197,9 +197,20 @@ static void jdump(const JNode *j, char **b, size_t *n, size_t *cap) {
 
 /* ------------------------------------------------------------------ worlds.json */
 static JNode *worlds_doc;
+static int worlds_migrated;
+/* world keys written before the multiplayer mod left the key ("multiplayer", "a+multiplayer"): same key without it */
+static void strip_mp(JNode *c) {
+    if (!c || c->t != JN_STR || !c->str || !strstr(c->str, "multiplayer")) return;
+    char out[512] = ""; char b[512]; snprintf(b, sizeof b, "%s", c->str);
+    for (char *t = strtok(b, "+"); t; t = strtok(NULL, "+")) if (strcmp(t, "multiplayer")) { if (out[0]) strlcat(out, "+", sizeof out); strlcat(out, t, sizeof out); }
+    if (!out[0]) snprintf(out, sizeof out, "vanilla");
+    if (strcmp(out, c->str)) { free(c->str); c->str = strdup(out); worlds_migrated = 1; }
+}
 static void worlds_load(void) {
     if (worlds_doc) return;
     char *t = slurp(worlds_path(), 8 << 20); worlds_doc = t ? json_parse(t) : NULL; free(t);
+    JNode *w = json_get(worlds_doc, "worlds");
+    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) strip_mp(c);
 }
 static const char *world_key(const char *guid) {
     worlds_load();
@@ -628,7 +639,7 @@ void dsl_reg_after_init(void) {
     const char *old = json_str(worlds_doc, "modset");
     { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
       /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
-      if (!(given && *given) && (!old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
+      if (!(given && *given) && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
     int nb = 0; for (int i = 0; i < nmi; i++) nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1;
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d)", run_key, nmi, nb, dsl_bie_state());
 }
