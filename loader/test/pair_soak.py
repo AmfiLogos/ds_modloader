@@ -11,6 +11,7 @@ import lrig
 spec = importlib.util.spec_from_file_location('realrig', os.path.expanduser('~/ds_multiplayer/rig/rig.py'))
 realrig = importlib.util.module_from_spec(spec); spec.loader.exec_module(realrig)
 
+os.environ['DSRIG_MAX_PAIRS'] = '2'                   # night rules: at most 2 leased pairs machine-wide
 MAP = {}
 shim = types.ModuleType('rig')
 shim.__dict__.update({k: v for k, v in lrig.__dict__.items() if not k.startswith('__')})

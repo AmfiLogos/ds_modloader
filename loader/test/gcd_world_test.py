@@ -100,6 +100,12 @@ def run(name, enabled, world_test):
 
 
 mode = sys.argv[1] if len(sys.argv) > 1 else 'both'
+import subprocess
+RIG = os.path.expanduser('~/ds_multiplayer/rig/rig.py')
+lp = subprocess.run([sys.executable, RIG, 'lease', 'loader', '--pid', str(os.getpid())], capture_output=True, text=True, env=dict(os.environ, DSRIG_MAX_PAIRS='2'))
+if lp.returncode:
+    sys.exit('no lease (night rules): ' + lp.stderr.strip())
+PAIR = lp.stdout.strip(); log('lease', PAIR, '(held while copy L runs)')
 print('owner prefs identical before:', lrig.check_prefs(restore=False))
 install_probe()
 mj = os.path.join(lrig.idir(X), 'mp.json')
@@ -112,6 +118,7 @@ if mode in ('mod', 'both'):
     results.append(run('mod', ['multiplayer', 'gcd-cdr', 'gcd-probe'], world_test=False))
 if os.path.exists(mj + '.aside'):
     os.replace(mj + '.aside', mj)
+subprocess.run([sys.executable, RIG, 'release', PAIR])
 print('owner prefs identical after:', lrig.check_prefs(restore=False))
 json.dump(results, open(os.path.join(out, 'results.json'), 'w'), indent=1)
 for r in results:
