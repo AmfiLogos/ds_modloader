@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """TEST ONLY: Mods window proof on test copy Y (never the owner's install, saves or screen).
 
-The game runs with a test dsload (build_test.sh: this branch's loader + lane L1's dsl_ui.c kit + ../dsl_win.c +
-win_glue.c) + the multiplayer module + the starter module dsltest-win. Its window sits far off every display (DSL_SOFT_STAGE), never activates; a guard kills it if
+The game runs with this branch's loader (lane L1's build.sh, which compiles ../dsl_win.c) + L1's built multiplayer /
+gcd-cdr / hell-difficulty modules + the test module dsltest-win (adds a tab through the SDK with --tab). Its window sits far off every display (DSL_SOFT_STAGE), never activates; a guard kills it if
 a window with alpha > 0 is ever on a display or it becomes frontmost. Commands go through DSL_UI_TEST (files); a click calls
 the named control's own callback (the kit's mouse path is lane L1's uikit_test). Shots = the game's own frames (PNG) in <out>/.
 Usage: ui_test.py <out dir> [--apply]
@@ -47,9 +47,9 @@ def guard():
 
 def install_mods():
     fw = os.path.join(I, 'DungeonSettlers.app', 'Contents', 'Frameworks')
-    shutil.copy2(os.path.join(HERE, 'build', 'dsload.dylib'), os.path.join(fw, 'dsload.dylib.tmp')); os.replace(os.path.join(fw, 'dsload.dylib.tmp'), os.path.join(fw, 'dsload.dylib'))
+    shutil.copy2(os.path.join(HERE, '..', '..', 'build', 'dsload.dylib'), os.path.join(fw, 'dsload.dylib.tmp')); os.replace(os.path.join(fw, 'dsload.dylib.tmp'), os.path.join(fw, 'dsload.dylib'))
     os.makedirs(MODS, exist_ok=True)
-    src = os.path.expanduser('~/ds_launcher_l1core/loader/build/mods')
+    src = os.path.expanduser('~/ds_launcher_l1core/loader/build/mods')   # lane L1's built modules
     for m in ('multiplayer', 'gcd-cdr', 'hell-difficulty'):
         d = os.path.join(MODS, m)
         if os.path.exists(d):
@@ -64,7 +64,7 @@ def install_mods():
 def start():
     r.prepare_data(X)
     os.makedirs(os.path.dirname(PROF), exist_ok=True)
-    for f in ('groups.json', 'pending.json'):
+    for f in ('groups.json', 'pending.json', 'worlds.json'):
         p = os.path.join(os.path.dirname(PROF), f)
         if os.path.exists(p):
             os.makedirs(os.path.join(I, 'old'), exist_ok=True); os.replace(p, os.path.join(I, 'old', f'{f}_{int(time.time())}'))
@@ -186,6 +186,20 @@ def main():
         step('reopen', 'open', lambda s: s['open'] == 1, tab='mods')
         w = widgets()
         step('reopen: group listed, switches from the profile', 'state', lambda s: 'group:Boss runs' in w and w['mod:gcd-cdr']['on'] == 0)
+        guid = 'f816ebc6195c432c9fff754b75ee3738'
+        step('open for a world', 'open_world', lambda s: s['open'] == 1, guid=guid, world='Elven Expedition')
+        w = widgets()
+        step('world: heading + Save button', 'state', lambda s: w['heading']['text'] == 'Mods for Elven Expedition' and w['apply']['text'] == 'Save for this world')
+        step('world: switch gcd-cdr on', 'click', target='mod:gcd-cdr')
+        step('world: save', 'click', target='apply')
+        shot('11_world_saved')
+        wj = json.load(open(os.path.join(os.path.dirname(PROF), 'worlds.json')))
+        results['worlds_json'] = wj
+        step('worlds.json: the world has gcd-cdr', 'state', lambda s: 'gcd-cdr' in json.dumps(wj.get('worlds', {}).get(guid, '')))
+        step('world: no restart, running set unchanged', 'state', lambda s: s['open'] == 1 and len(game_pids()) == 1)
+        step('normal open again', 'open', lambda s: s['open'] == 1, tab='mods')
+        w = widgets()
+        step('normal: Apply + running set', 'state', lambda s: w['apply']['text'] == 'Apply' and w['mod:gcd-cdr']['on'] == 0)
         if not APPLY:
             step('delete asks (game notice)', 'click', target='group-del:Boss runs')
             shot('06_delete_notice')

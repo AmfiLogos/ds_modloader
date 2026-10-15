@@ -145,7 +145,8 @@ static void unreg_all(void) { nreg = 0; }
 
 /* ---------------------------------------------------------------- the Mods tab */
 #define NM 64
-static struct { const DSLModInfo *m; int on; DSLObj row; } mods[NM]; static int nmods;
+static struct { const DSLModInfo *m; int on, base; DSLObj row; } mods[NM]; static int nmods;   /* base: running set, or the world's */
+static int world_mode; static char world_guid[80], world_name[120];   /* Mods tab bound to one world (Load list "Change") */
 static DSLObj m_status, m_apply, m_undo, m_save, m_field, m_fsave, m_fcancel, m_glist, m_gmark, m_gnone;
 static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applying_seen_busy;
 static double applying_t;
@@ -156,7 +157,7 @@ static void destroy_all(void);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
-static int changed(void) { for (int i = 0; i < nmods; i++) if (mods[i].on != (mods[i].m->enabled != 0)) return 1; return 0; }
+static int changed(void) { for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1; return 0; }
 static int group_is_current(int g) {
     const char *ids[NM]; int n = dsl_group_mods(g, ids, NM);
     for (int i = 0; i < nmods; i++) {
@@ -172,17 +173,18 @@ static void mods_sync(void) {
     char s[600];
     if (applying) snprintf(s, sizeof s, "Restarting with the new mods...");
     else if (m_note[0]) snprintf(s, sizeof s, "%s", m_note);
-    else if (busy && ch) snprintf(s, sizeof s, "Mods cannot change now: %s", busy);
+    else if (busy && ch && !world_mode) snprintf(s, sizeof s, "Mods cannot change now: %s", busy);
+    else if (!ch && world_mode) snprintf(s, sizeof s, "Switch mods on or off, then Save. The world loads with these mods.");
     else if (!ch) snprintf(s, sizeof s, "Switch mods on or off, then Apply. The game restarts in the background and brings you back here.");
     else {
         size_t o = (size_t)snprintf(s, sizeof s, "Changes:");
         int k = 0;
-        for (int i = 0; i < nmods && o < sizeof s; i++) if (mods[i].on != (mods[i].m->enabled != 0))
+        for (int i = 0; i < nmods && o < sizeof s; i++) if (mods[i].on != mods[i].base)
             o += (size_t)snprintf(s + o, sizeof s - o, "%s %s %s", k++ ? "," : "", mods[i].m->name, mods[i].on ? "on" : "off");
-        if (o < sizeof s) snprintf(s + o, sizeof s - o, ". Apply to use them.");
+        if (o < sizeof s) snprintf(s + o, sizeof s - o, world_mode ? ". Save for this world to keep them." : ". Apply to use them.");
     }
     set_text(m_status, s);
-    U->set_enabled(m_apply, ch && !busy && !applying);
+    U->set_enabled(m_apply, ch && (world_mode || !busy) && !applying);
     U->set_enabled(m_undo, ch && !applying);
     U->set_enabled(m_save, !applying);
     for (int i = 0; i < nmods; i++) U->set_enabled(mods[i].row, !applying);
@@ -264,12 +266,18 @@ static void fsave_click(void *ud, DSLObj w) {
     naming_show(0);
     groups_build(); mods_sync();
 }
-static void undo_click(void *ud, DSLObj w) { (void)ud; (void)w; for (int i = 0; i < nmods; i++) mods[i].on = mods[i].m->enabled != 0; m_note[0] = 0; mods_sync(); }
+static void undo_click(void *ud, DSLObj w) { (void)ud; (void)w; for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base; m_note[0] = 0; mods_sync(); }
 static void apply_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
     if (!changed() || applying) return;
     const char *ids[NM]; int n = 0;
     for (int i = 0; i < nmods; i++) if (mods[i].on) ids[n++] = mods[i].m->id;
+    if (world_mode) {                                                  /* no restart: the world remembers its set */
+        if (dsl_world_set_mods(world_guid, ids, n)) snprintf(m_note, sizeof m_note, "The mods for this world could not be saved (see dsload.log).");
+        else { for (int i = 0; i < nmods; i++) mods[i].base = mods[i].on; snprintf(m_note, sizeof m_note, "Saved. %s loads with these mods.", world_name[0] ? world_name : "This world"); }
+        dsl_log("win: world %s: %d mods saved", world_guid, n);
+        mods_sync(); return;
+    }
     char why[300] = "";
     if (dsl_apply_mods(ids, n, why, sizeof why)) { snprintf(m_note, sizeof m_note, "The mods did not change: %s", why[0] ? why : "refused (see dsload.log)"); mods_sync(); return; }
     applying = 1; applying_seen_busy = 0; applying_t = now_s(); m_note[0] = 0;
@@ -283,11 +291,21 @@ static void mods_open(DSLObj root, float w, float h) {
     for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
         const DSLModInfo *m = dsl_mods_at(i);
         if (!m || m->hidden) continue;
-        mods[nmods].m = m; mods[nmods].on = m->enabled != 0; mods[nmods].row = NULL; nmods++;
+        mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = NULL; nmods++;
     }
+    if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
+        const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
+        for (int i = 0; i < nmods; i++) {
+            if (mods[i].m->scope && !strcmp(mods[i].m->scope, "client")) continue;
+            int in = 0; for (int k = 0; k < wn; k++) if (!strcmp(wid[k], mods[i].m->id)) in = 1;
+            mods[i].base = in;
+        }
+    }
+    for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base;
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
     float lh = h - 40 - 76;
-    U->text(root, 0, 0, m_lw, 32, "Installed mods", 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
+    char hd[200]; snprintf(hd, sizeof hd, world_mode ? "Mods for %s" : "Installed mods", world_name[0] ? world_name : "this world");
+    named(U->text(root, 0, 0, m_lw, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);
     U->panel(root, 0, 40, m_lw, lh, 0);
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
     float y = 0, rh = 74;
@@ -319,9 +337,11 @@ static void mods_open(DSLObj root, float w, float h) {
     /* bottom */
     flat(U->panel(root, 0, h - 66, w, 1, 0), 0x633D33FF);
     m_status = named(U->text(root, 0, h - 58, m_lw, 58, "", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "status", NULL, NULL, "");
-    m_undo = named(U->button(root, m_rx, h - 52, 150, 44, "Undo changes", undo_click, NULL), 0, "undo", undo_click, NULL, "Undo changes");
-    m_apply = named(U->button(root, w - 170, h - 52, 170, 44, "Apply", apply_click, NULL), 0, "apply", apply_click, NULL, "Apply");
-    U->tooltip(m_apply, "Apply", "The game restarts in the background with these mods, behind a loading screen, and brings you back to the same place.");
+    m_undo = named(U->button(root, m_rx, h - 52, 134, 44, "Undo changes", undo_click, NULL), 0, "undo", undo_click, NULL, "Undo changes");
+    const char *al = world_mode ? "Save for this world" : "Apply";
+    m_apply = named(U->button(root, w - 200, h - 52, 200, 44, al, apply_click, NULL), 0, "apply", apply_click, NULL, al);
+    if (world_mode) U->tooltip(m_apply, al, "This world loads with these mods. The mods running now do not change.");
+    else U->tooltip(m_apply, "Apply", "The game restarts in the background with these mods, behind a loading screen, and brings you back to the same place.");
     mods_sync();
 }
 static void mods_update(void) {
@@ -462,7 +482,20 @@ void dsl_win_init(void) {
     reopen_wait = reopen;                                              /* opens once the restart is over (dsl_busy_reason NULL) */
     dsl_log("win: Mods window ready (%s)%s", U ? "kit ok" : "no kit yet", reopen ? "; opens again after the Apply restart" : "");
 }
-void dsl_win_open(const char *tab_id) { snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
+static void rebind(int wm) {                                          /* the Mods tab changes its meaning: build it again */
+    if (wm != world_mode && is_open && cur == 0) { world_mode = wm; tab_close(); return; }
+    world_mode = wm;
+}
+void dsl_win_open(const char *tab_id) { rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
+void dsl_win_open_world(const char *guid, const char *name) {
+    if (!guid || !*guid) { dsl_win_open(NULL); return; }
+    int same = world_mode && !strcmp(world_guid, guid);
+    if (!same && is_open && cur == 0) tab_close();
+    snprintf(world_guid, sizeof world_guid, "%s", guid); snprintf(world_name, sizeof world_name, "%s", name ? name : "");
+    world_mode = 1;
+    snprintf(want_tab, sizeof want_tab, "mods"); want_open = 1;
+    dsl_log("win: Mods for world %s (%s)", guid, world_name);
+}
 int dsl_win_is_open(void) { return is_open; }
 void dsl_win_close(void) {
     if (!is_open) return;
@@ -516,6 +549,7 @@ static void test_frame(void) {
     if (!op) { ok = 0; snprintf(msg, sizeof msg, "bad command"); }
     else if (!strcmp(op, "open")) { dsl_win_open(json_str(j, "tab")); open_now(); }
     else if (!strcmp(op, "close")) dsl_win_close();
+    else if (!strcmp(op, "open_world")) { dsl_win_open_world(json_str(j, "guid"), json_str(j, "world")); open_now(); }
     else if (!strcmp(op, "state")) dump = 1;
     else if (!strcmp(op, "shot")) { char sp[1300]; snprintf(sp, sizeof sp, "%s/%s.png", test_dir, json_str(j, "name") ? json_str(j, "name") : "shot"); ok = shot(sp) == 0; snprintf(msg, sizeof msg, "%s", sp); }
     else if (!strcmp(op, "click") || !strcmp(op, "type")) {
