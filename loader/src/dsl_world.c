@@ -13,9 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <dlfcn.h>
+#include "dsl_os.h"
 
-#define REFUSE_TEXT "This world uses other mods. Start it from the launcher."
+#define REFUSE_TEXT "This world uses other mods."
 
 static void *(*orig_load)(void *self, void *name, const void *mi);
 static int (*try_header)(void *self, void *name, void *hdr, void **set, const void *mi);
@@ -59,8 +59,9 @@ static void *my_load(void *self, void *name, const void *mi) {
     JNode *worlds = json_get(s, "worlds"), *w = NULL;
     if (worlds && worlds->t == JN_OBJ) for (JNode *c = worlds->child; c; c = c->next) if (c->key && !strcasecmp(c->key, g)) w = c;
     if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return it; }
-    if (mine && !strcasecmp(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
+    if (mine && dsl_key_same(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, w->str, mine ? mine : "?");
+    dsl_world_mismatch(nm, g, w->str);                  /* asks "Load it with them?" (flow K, dsl_reg.c) */
     json_free(s);
     dsl_world_refusals++;
     if (it) *(int32_t*)((char*)it + 0x10) = -2;      /* <>1__state: MoveNext returns false at once */
@@ -74,7 +75,7 @@ static void *my_load(void *self, void *name, const void *mi) {
 /* after il2cpp_init; owner = the loader */
 void dsl_world_install(void **modules, int n) {
     for (int i = 0; i < n && nskip < 32; i++) {
-        int (*f)(void) = modules[i] ? (int (*)(void))dlsym(modules[i], "dsl_world_check_skip") : NULL;
+        int (*f)(void) = modules[i] ? (int (*)(void))dsl_os_dlsym(modules[i], "dsl_world_check_skip") : NULL;
         if (f) skip_fns[nskip++] = f;
     }
     if (!getenv("DSML_SESSION")) { dsl_log("world check: off (game not started by the launcher)"); return; }

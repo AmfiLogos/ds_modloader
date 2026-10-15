@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_LOADER_VERSION "2.0.0"
+#define DSL_LOADER_VERSION "3.0.0"
 #define DSL_OWNER_LOADER (-1)
 
 extern uintptr_t dsl_ga_base;            /* GameAssembly arm64 load address, 0 before it is mapped */
@@ -47,3 +47,46 @@ JNode *json_parse(const char *text);
 void json_free(JNode *n);
 JNode *json_get(const JNode *obj, const char *key);
 const char *json_str(const JNode *obj, const char *key);  /* NULL if missing / not a string */
+
+/* soft restart (dsl_soft.c) */
+void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is edited */
+void dsl_soft_install(void);                 /* after il2cpp_init */
+int dsl_soft_busy(void);                     /* a restart runs (A) or is not finished (B) */
+int dsl_soft_wanted(void);                   /* 1 = this process is B of a soft restart */
+int dsl_soft_apply(const char *profile, const char *env_lines);   /* host->soft_restart */
+
+/* API 3 pieces (dsl_sdk.h API 3; MASTER_PLAN 2.2 A) */
+struct DSLUi; struct DSLLoadRow; struct DSLLoadFilter;
+/* dsl_ui.c: widget kit + the frame tick (EventSystem.Update -> dsl_frame_hook) */
+void dsl_ui_install(void);
+int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud);
+void dsl_frame_hook(void);                               /* dsl_reg.c: every frame, main thread */
+/* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
+   row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
+void dsl_rows_install(void);                             /* after dsl_ui_install */
+void dsl_rows_frame(void);                               /* from dsl_frame_hook */
+int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
+int dsl_rows_filter(const char *owner_id, const struct DSLLoadFilter *f);
+void dsl_rows_refresh(void);
+/* dsl_reg.c: mods per world (the loader's own row line and the New Campaign line) */
+int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: Hell difficulty, Multiplayer" (or "Mods: none") */
+void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */
+void dsl_newworld_label(char *out, size_t cap);                      /* "Mods for this world: ..." */
+void dsl_newworld_change(void);
+int dsl_key_same(const char *a, const char *b);            /* gameplay keys equal (old keys with "multiplayer" too) */
+void dsl_world_mismatch(const char *save_name, const char *guid, const char *key);   /* dsl_world.c refused: ask (flow K) */
+const char *dsl_reg_data_dir(void);
+struct DSLHost; struct DSLPlugin;
+void dsl_reg_host(struct DSLHost *h);                    /* constructor: API 3 host fields */
+void dsl_reg_ready(struct DSLHost *h);                   /* il2cpp_init returned, before the modules' init */
+void dsl_reg_after_init(void);                           /* after the modules' init */
+/* dsl_main.c, for dsl_reg.c */
+const char *dsl_mods_dir(void);
+const char *dsl_profile_file(void);
+const char *dsl_log_dir(void);
+int dsl_plugin_index(struct DSLPlugin *self);
+const char *dsl_plugin_name(struct DSLPlugin *self);
+int dsl_mod_state(const char *id, const char **why);     /* 1 running, 2 failed, 3 skipped, 0 listed / unknown */
+int dsl_soft_shot(const char *png_path);                 /* test: full frame incl. UI */
+void *dsl_soft_mainflow(void);                           /* dsl_soft.c: the live MainFlow or NULL */
+#define MAXP_REG 32

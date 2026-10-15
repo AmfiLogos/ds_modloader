@@ -1,0 +1,11 @@
+{
+ "id": "rows-demo",
+ "name": "Rows Demo (test only)",
+ "version": "0.1.0",
+ "kind": "code",
+ "api": 3,
+ "game_builds": ["25846389"],
+ "platforms": { "mac-arm64": { "entry": "rows-demo.dylib" } },
+ "description": "Test module for the loader's load-list rows, filter, tab and session busy (loader/test/l1_rows_test.py).",
+ "scope": "client"
+}

@@ -12,8 +12,8 @@ CC=(nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0)
 $CC -O0 -dynamiclib -install_name @rpath/GameAssembly.dylib -o "$FW/GameAssembly.dylib" fake_ga.c || exit 1
 UUID=$(otool -l "$FW/GameAssembly.dylib" | awk '/uuid/{print $2; exit}')
 print "    { \"$UUID\", \"test\" }," > "$OUT/gen/test_builds.inc"
-$CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
-  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c || exit 1
+$CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
+  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_soft,dsl_ui,dsl_reg,dsl_rows}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_bie_mac.c -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world || exit 1
 $CC -O0 -dynamiclib -o "$FW/foreign.dylib" foreign.c || exit 1
 $CC -O0 host.c -o "$OUT/host" "$FW/GameAssembly.dylib" -Wl,-rpath,"$FW" || exit 1
 for f in "$FW"/*.dylib "$OUT/host"; do codesign -f -s - "$f" 2>/dev/null; done
@@ -68,7 +68,7 @@ print "== T1b mods per world: session file from the launcher"
 EH=$(shasum -a 256 "$M/early-mod/early-mod.dylib" | cut -c1-64)
 print -r -- "{\"world\":null,\"modset\":\"aaa\",\"rule\":\"mods\",\"worlds\":{\"11111111-1111-1111-1111-111111111111\":\"aaa\",\"22222222-2222-2222-2222-222222222222\":\"bbb\"},\"modset_lines\":[\"early-mod@1.2.0:$EH\",\"floor-logger@1.0.0:00\",\"ghost@1.0.0:\"]}" > "$OUT/session.json"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session.json" DSML_MODSET=aaa)
-check "same mod set loads, other mod set refused with the launcher message" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1 text=This world uses other mods. Start it from the launcher."* ]] && log | grep -q "world check: REFUSED save2 (world 22222222-2222-2222-2222-222222222222): the world.s mod set bbb, this copy aaa"'
+check "same mod set loads, other mod set refused with the launcher message" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1 text=This world uses other mods."* ]] && log | grep -q "world check: REFUSED save2 (world 22222222-2222-2222-2222-222222222222): the world.s mod set bbb, this copy aaa"'
 check "modset compared with the launcher lines (floor-logger sha differs, early-mod matches)" 'grep -q "\"check\":\"differs\"" "$LOGD/dsload_modset.json" && log | grep -q "mod set: floor-logger@1.0.0 file sha256" && ! log | grep -q "mod set: early-mod"'
 check "game still runs" '[[ "$r" == *"$EXPECT"* ]]'
 
@@ -106,7 +106,7 @@ check "pin equal to the copy: modules load" 'log | grep -q "floor-logger 1.0.0: 
 
 print "== T5 unknown build: loader inactive"
 print "" > "$OUT/gen/test_builds.inc"
-$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
+$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_soft,dsl_ui,dsl_reg,dsl_rows}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_bie_mac.c -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "nothing hooked, game runs, says why" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: The game was updated"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked && grep -q "\"active\":false,\"reason\":\"unknown_build\"" "$LOGD/dsload_status.json"'
 

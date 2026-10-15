@@ -1,0 +1,97 @@
+#!/bin/zsh
+# build_app.sh -> app/build/Dungeon Settlers Modded.app (+ .zip). No game file inside: the app makes its own
+# game copy from Steam's install on its first start (dsml-helper prepare).
+#   Contents/MacOS/DS Modded        stub (app/stub/ds_modded.c)
+#   Contents/MacOS/dsml-helper      core crate, release, arm64
+#   Contents/Resources/AppIcon.icns app/icon/AppIcon.icns (make_icon.py)
+#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,gcd-cdr,custom-modes} + VERSION
+set -e
+HERE="${0:A:h}"; REPO="${HERE:h}"
+OUTDIR="$HERE/build"; NAME="Dungeon Settlers Modded"; APP="$OUTDIR/$NAME.app"
+MODS=(multiplayer gcd-cdr custom-modes)
+die() { echo "ERROR: $*" >&2; exit 1; }
+[[ -f $REPO/loader/build/dsload.dylib ]] || die "no loader/build/dsload.dylib (build the loader first)"
+[[ -f $HERE/icon/AppIcon.icns ]] || die "no app/icon/AppIcon.icns (run app/icon/make_icon.py)"
+mkdir -p "$OUTDIR"
+
+# 1. binaries
+clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation \
+  -o "$OUTDIR/ds_modded" "$HERE/stub/ds_modded.c"
+(cd "$REPO" && nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
+HELPER="$REPO/target/release/dsml-helper"
+[[ -f $HELPER ]] || die "dsml-helper was not built"
+[[ $(lipo -archs "$HELPER") == arm64 ]] || die "dsml-helper is not arm64 (build on an Apple silicon Mac)"
+
+# 2. bundle in a temp folder, then moved into place (old build -> app/old/)
+TMP="$OUTDIR/$NAME.app.building"
+[[ -e $TMP ]] && { mkdir -p "$HERE/old"; mv "$TMP" "$HERE/old/$NAME.app.building-$(date +%Y%m%d-%H%M%S)"; }
+C="$TMP/Contents"
+mkdir -p "$C/MacOS" "$C/Resources/dsml/mods"
+cp "$OUTDIR/ds_modded" "$C/MacOS/DS Modded"
+cp "$HELPER" "$C/MacOS/dsml-helper"
+cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
+cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
+cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
+for m in $MODS; do
+  if [[ -d $REPO/loader/build/mods/$m ]]; then cp -R "$REPO/loader/build/mods/$m" "$C/Resources/dsml/mods/$m"
+  else echo "WARNING: loader/build/mods/$m does not exist yet: not in this app" >&2; fi
+done
+
+# every Mach-O: minimum macOS 12.0 or lower (dyld refuses a library newer than the running macOS)
+for f in "$C/MacOS/DS Modded" "$C/MacOS/dsml-helper" ${(f)"$(find "$C/Resources/dsml" -type f)"}; do
+  file -b "$f" | grep -q Mach-O || continue
+  MINOS=$(xcrun vtool -show-build "$f" | awk '/minos/{print $2; exit}')
+  if [[ ${MINOS%%.*} -gt 12 ]]; then
+    xcrun vtool -set-build-version macos 12.0 ${MINOS} -replace -output "$f.v12" "$f" && mv "$f.v12" "$f"
+    echo "${f:t}: minos $MINOS -> 12.0 (code unchanged)"
+    [[ $f == "$C/Resources/dsml/"* ]] && echo "WARNING: ${f:t} bytes changed: its sha256 in mod.json / the MP mod-set no longer matches; rebuild it with -mmacosx-version-min=12.0" >&2
+  fi
+done
+
+# VERSION = sha256 of the dsml folder contents (path + file sha256, sorted)
+(cd "$C/Resources/dsml" && find . -type f ! -name VERSION | LC_ALL=C sort | while read -r f; do
+   print -r -- "$f $(shasum -a 256 "$f" | cut -c1-64)"; done | shasum -a 256 | cut -c1-64) > "$OUTDIR/VERSION.tmp"
+mv "$OUTDIR/VERSION.tmp" "$C/Resources/dsml/VERSION"
+
+cat > "$C/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>DS Modded</string>
+  <key>CFBundleIdentifier</key><string>com.amfilogos.ds-modded</string>
+  <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundleDisplayName</key><string>$NAME</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+plutil -lint "$C/Info.plist" >/dev/null
+
+# 3. ad-hoc signatures inside-out
+xattr -cr "$TMP"
+find "$C/Resources/dsml" -type f | while read -r f; do
+  file -b "$f" | grep -q Mach-O || continue
+  # keep the published bytes when already validly signed: the loader and the MP mod-set check compare sha256
+  codesign -v "$f" 2>/dev/null || codesign -f -s - "$f"
+done
+codesign -f -s - "$C/MacOS/dsml-helper"
+codesign -f -s - "$C/MacOS/DS Modded"
+codesign -f -s - "$TMP"
+codesign -v --deep --strict "$TMP" || die "signature check failed"
+
+if [[ -e $APP ]]; then mkdir -p "$HERE/old"; mv "$APP" "$HERE/old/$NAME-$(date +%Y%m%d-%H%M%S).app"; fi
+mv "$TMP" "$APP"
+codesign -v "$APP" && echo "signature ok"
+Z="$OUTDIR/$NAME.zip"
+[[ -e $Z ]] && { mkdir -p "$HERE/old"; mv "$Z" "$HERE/old/$NAME-$(date +%Y%m%d-%H%M%S).zip"; }
+(cd "$OUTDIR" && nice -n 10 ditto -c -k --keepParent "$NAME.app" "$Z")
+echo "built: $APP"
+echo "zip:   $Z ($(du -h "$Z" | cut -f1))"
+echo "dsml VERSION $(cat "$APP/Contents/Resources/dsml/VERSION")"

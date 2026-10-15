@@ -11,6 +11,10 @@ name = "dsml_core"
 name = "dsml-tool"
 path = "src/bin/dsml_tool.rs"
 
+[[bin]]
+name = "dsml-helper"
+path = "src/bin/dsml_helper.rs"
+
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TEST ONLY: BepInEx side of the same-function test (loader/test/l1_bie_test.py). BieDir = a BepInEx install. -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>SameFn</AssemblyName>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <BieDir Condition="'$(BieDir)' == ''">$(HOME)/ds_multiplayer/ext/bepinexmac/inst.noindex/bie/BepInEx</BieDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(BieDir)/core/BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/0Harmony.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/Il2CppInterop.Runtime.dll" Private="false" />
+  </ItemGroup>
+</Project>

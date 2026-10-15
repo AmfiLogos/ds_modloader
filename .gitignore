@@ -1,7 +1,12 @@
+app/build/
+app/old/
+loader/build/win/
+builder/shots/
+loader/build/pin/
+loader/old/
+src-tauri/gen/
 target/
 test_env/
-src-tauri/gen/
-builder/shots/
 
 # built binaries
 *.dylib
@@ -9,3 +14,5 @@ builder/shots/
 *.exe
 *.so
 .DS_Store
+loader/test/bie/*/obj/
+loader/test/bie/*/bin/
