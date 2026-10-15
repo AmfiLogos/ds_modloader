@@ -12,6 +12,7 @@ pub mod flow;
 pub mod launch;
 pub mod macho;
 pub mod model;
+pub mod seed;
 pub mod steam;
 pub mod windows;
 pub mod worlds;

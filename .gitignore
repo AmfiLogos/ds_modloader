@@ -2,3 +2,4 @@ target/
 test_env/
 src-tauri/gen/
 builder/shots/
+src-tauri/seed/

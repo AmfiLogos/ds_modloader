@@ -15,6 +15,10 @@ use std::path::PathBuf;
 /// release: replace with the owner's offline key + a rotation key (plan section 5).
 const TRUSTED_KEYS: &[&str] = &[include_str!("../../dev_keys/dev.pub")];
 const PROFILE: &str = "default";
+/// Turned on for new worlds the first time the launcher runs (the player can turn it off).
+const ON_BY_DEFAULT: &[&str] = &["multiplayer"];
+/// Why the bundled mod list was not installed (shown instead of "no checked mod list").
+static SEED_ERROR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 #[derive(Serialize)]
 struct SteamView { found: bool, build: Option<String>, path: Option<String>, updating: bool }
@@ -43,10 +47,28 @@ fn data_dir() -> PathBuf { paths().profile_dir(PROFILE).join("data") }
 fn install() -> Option<steam::Install> { steam::find_install(&steam::default_steam_roots()) }
 fn err(e: impl std::fmt::Display) -> String { format!("{e:#}") }
 
+/// Verified stock asset copies: DSML_STOCK_DIRS (':'-separated) and <root>/stock_dirs.txt (one folder per line;
+/// the owner's Mac, whose live install has mod-changed assets).
 fn copy_opts() -> CopyOptions {
     let mut o = CopyOptions::default();
     if let Ok(d) = std::env::var("DSML_STOCK_DIRS") { o.extra_stock_dirs = d.split(':').map(PathBuf::from).collect(); }
+    if let Ok(t) = std::fs::read_to_string(paths().root.join("stock_dirs.txt")) {
+        o.extra_stock_dirs.extend(t.lines().map(str::trim).filter(|l| !l.is_empty()).map(PathBuf::from));
+    }
     o
+}
+
+/// The signed mod list shipped in the app (Contents/Resources/seed; DSML_SEED_DIR overrides).
+fn seed_dir() -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("DSML_SEED_DIR") { return Some(d.into()) }
+    Some(std::env::current_exe().ok()?.parent()?.parent()?.join("Resources/seed"))
+}
+
+fn install_seed() {
+    let Some(dir) = seed_dir() else { return };
+    if let Err(e) = dsml_core::seed::install_seed(&paths(), &dir, TRUSTED_KEYS, this_platform(), ON_BY_DEFAULT) {
+        let _ = SEED_ERROR.set(format!("The mod list inside the launcher could not be used: {e:#}"));
+    }
 }
 
 fn edit(f: impl FnOnce(&mut State)) -> Result<(), String> {
@@ -61,7 +83,7 @@ fn status_with(which: Which, index: Result<Index, String>) -> Result<Status, Str
     let mut state = p.load_state().map_err(err)?;
     let inst = install();
     let platform = this_platform();
-    let (idx, index_error) = match index { Ok(i) => (Some(i), None), Err(e) => (None, Some(e)) };
+    let (idx, index_error) = match index { Ok(i) => (Some(i), None), Err(e) => (None, Some(SEED_ERROR.get().cloned().unwrap_or(e))) };
 
     // worlds the game made since the last look get the profile they were created with
     let saves = worlds::scan_saves(&data_dir());
@@ -214,8 +236,33 @@ fn remove_copy(which: Which, build: String) -> Result<Status, String> {
     status(which)
 }
 
+/// DSML_SMOKE=status|prepare: the launcher's own code path with no window (tests; see core/tests/e2e_mac.rs
+/// owner_app_smoke). status = what the mod list shows for a new world; prepare = Play up to the ready copy, not started.
+fn smoke(what: &str) -> Result<serde_json::Value, String> {
+    match what {
+        "status" => status(Which::New).and_then(|s| serde_json::to_value(s).map_err(err)),
+        "prepare" => {
+            let p = paths();
+            let st = p.load_state().map_err(err)?;
+            let idx = fetch::cached_index(&p, TRUSTED_KEYS).map_err(err)?;
+            let ready = flow::prepare(&p, install().as_ref(), &st, &Which::New, &idx, this_platform(), &copy_opts()).map_err(err)?;
+            p.save_state(&ready.state).map_err(err)?;
+            let session = flow::session(&ready, &Which::New, this_platform());
+            Ok(serde_json::json!({ "build": ready.build, "app": ready.app, "modset": ready.modset, "mods": ready.mods, "session": session }))
+        }
+        _ => Err(format!("DSML_SMOKE={what}: status or prepare")),
+    }
+}
+
 fn main() {
     use ds_unit_builder::tauri_cmds::*;
+    install_seed();
+    if let Ok(what) = std::env::var("DSML_SMOKE") {
+        match smoke(&what) {
+            Ok(v) => { println!("{v}"); std::process::exit(0) }
+            Err(e) => { eprintln!("{e}"); std::process::exit(1) }
+        }
+    }
     tauri::Builder::default()
         // Unit Builder: "my units" live in <launcher root>/builder/units.json
         .manage(UnitBuilderState::new(paths().root))

@@ -394,3 +394,56 @@ fn make_pair_copies() {
         println!("{w} {x}: {} mods {:?}", dst.display(), r.mods.iter().map(|m| m.key()).collect::<Vec<_>>());
     }
 }
+
+/// The owner's test app as installed (OWNER_APP, default ~/Applications/DS Mod Launcher.app), run with no window
+/// (DSML_SMOKE) on its own fresh launcher folder: the bundled signed mod list is installed at the first start and
+/// lists the multiplayer mod ON for a new world; Play's prepare makes the copy from the real Steam install (only
+/// read: APFS clone); that copy then boots hidden with the multiplayer dylib answering on its socket.
+/// The DEV-ONLY no-Steam patch (in the bundled list, hidden from players) is added for the hidden boot only.
+#[test]
+#[ignore]
+fn owner_app_smoke() {
+    let before = owner_files();
+    let app = std::env::var_os("OWNER_APP").map(PathBuf::from)
+        .unwrap_or_else(|| home().join("Applications/DS Mod Launcher.app"));
+    let exe = std::fs::read_dir(app.join("Contents/MacOS")).unwrap().next().unwrap().unwrap().path();
+    let root = fresh_dir("owner-app-root");
+    let run = |what: &str| -> serde_json::Value {
+        let out = Command::new(&exe).env("DSML_ROOT", &root).env("DSML_SMOKE", what).env_remove("DSML_SEED_DIR").output().unwrap();
+        assert!(out.status.success(), "DSML_SMOKE={what} failed: {}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+
+    let st = run("status");
+    assert!(st["index_error"].is_null(), "mod list error: {}", st["index_error"]);
+    let mp = st["mods"].as_array().unwrap().iter().find(|m| m["id"] == "multiplayer").expect("multiplayer listed");
+    assert_eq!(mp["enabled"], true, "multiplayer is not on by default: {mp}");
+    assert!(st["mods"].as_array().unwrap().iter().all(|m| m["id"] != "test-steam-gate-off"), "dev mod shown to the player");
+    assert_eq!(st["steam"]["build"], BUILD);
+    println!("launcher lists: {}", st["mods"].as_array().unwrap().iter()
+        .map(|m| format!("{} {} on={}", m["name"], m["latest"], m["enabled"])).collect::<Vec<_>>().join(", "));
+
+    // hidden boot only: no Steam, and the owner's verified stock assets (his live install has mod-changed ones)
+    let paths = Paths::new(&root);
+    let mut s = paths.load_state().unwrap();
+    s.new_world.push("test-steam-gate-off".into());
+    paths.save_state(&s).unwrap();
+    std::fs::write(root.join("stock_dirs.txt"), format!("{}\n", opts().extra_stock_dirs[0].display())).unwrap();
+    let r = run("prepare");
+    let copy = PathBuf::from(r["app"].as_str().unwrap());
+    let mods: Vec<dsml_core::model::ModRelease> = serde_json::from_value(r["mods"].clone()).unwrap();
+    assert!(copy.starts_with(&root) && Command::new("/usr/bin/codesign").arg("-v").arg(&copy).status().unwrap().success());
+    let shipped = |f: &str| sha(&app.join("Contents/Resources/seed/files/multiplayer")
+        .join(mods.iter().find(|m| m.id == "multiplayer").unwrap().version.as_str()).join(f));
+    assert_eq!(sha(&copy.join("Contents/Frameworks/dsrig.dylib")), shipped("dsrig.dylib"));
+    println!("copy ready: {} (dsrig.dylib {})", copy.display(), &shipped("dsrig.dylib")[..16]);
+
+    let session: flow::Session = serde_json::from_value(r["session"].clone()).unwrap();
+    let profile = paths.profile_dir("test");
+    let (v, log, pid) = hidden_run(&copy, &profile, &mods, None, r["modset"].as_str().unwrap(), Some(session),
+                                   |v| v["scene"].as_i64() == Some(1) && v["busy"].as_bool() == Some(false), Duration::from_secs(300));
+    assert!(log.contains(&format!("rig start pid {pid}")), "dylib did not log its start");
+    assert_eq!(v["scene"].as_i64(), Some(1), "did not reach the title screen: {v}");
+    println!("game booted hidden, multiplayer socket answered: scene {} frames {}", v["scene"], v["frames"]);
+    assert_eq!(before, owner_files(), "owner's prefs / settings / real GameAssembly changed");
+}
