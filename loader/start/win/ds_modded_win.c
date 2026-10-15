@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <wchar.h>
+#include "bie_win.h"
 
 #define APPID L"2798330"
 static wchar_t root[MAX_PATH], game[MAX_PATH], profile[MAX_PATH], data[MAX_PATH];
@@ -137,6 +138,17 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
 
     copy_saves();
     int steam = dry ? steam_user() : ensure_steam();
+
+    /* BepInEx plugins of the profile the game starts with (bie_win.c): Doorstop on only when one is enabled */
+    char r8[MAX_PATH * 3], g8[MAX_PATH * 3], p8[MAX_PATH * 3], why[600];
+    WideCharToMultiByte(CP_ACP, 0, root, -1, r8, sizeof r8, NULL, NULL);
+    WideCharToMultiByte(CP_ACP, 0, game, -1, g8, sizeof g8, NULL, NULL);
+    { wchar_t pw[MAX_PATH]; _snwprintf(pw, MAX_PATH, L"%ls\\Mods\\active.json", data); WideCharToMultiByte(CP_ACP, 0, pw, -1, p8, sizeof p8, NULL, NULL); }
+    bie_set_log(logf_);
+    int bie_any = 0;
+    if (bie_prepare(r8, g8, p8, &bie_any, why, sizeof why))
+        MessageBoxA(NULL, why, "Dungeon Settlers Modded: BepInEx mods are off this time", MB_OK | MB_ICONWARNING);
+    SetEnvironmentVariableW(L"DOORSTOP_DISABLE", bie_any ? NULL : L"1");
 
     wchar_t v[MAX_PATH * 2];
     env(L"SteamAppId", APPID); env(L"SteamGameId", APPID);

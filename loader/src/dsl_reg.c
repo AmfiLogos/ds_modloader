@@ -97,6 +97,16 @@ static void mods_scan(void) {
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
         const char *why = NULL; int st = dsl_mod_state(id, &why);
+        const char *kind = json_str(m, "kind");
+        if (kind && !strcmp(kind, "bepinex")) {             /* BepInEx plugin: the Windows start part runs it (start/win/bie_win.c) */
+#ifdef _WIN32
+            const char *dd = getenv("DOORSTOP_DISABLE");
+            int runs = on && !(dd && *dd);
+            st = runs ? 1 : 0; why = runs ? "" : on ? "BepInEx is off this start (see starter.log)" : "off";
+#else
+            st = 0; why = "BepInEx plugins run on Windows only";
+#endif
+        }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
         x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "not loaded (see dsload.log)"));
         json_free(m);
@@ -107,12 +117,18 @@ int dsl_mods_count(void) { mods_scan(); return nmi; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
 static const DSLModInfo *mod_by_id(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return &MI[i]; return NULL; }
 
-/* running gameplay key: sorted ids of the gameplay modules that run in this process */
+/* running gameplay key: sorted ids of the gameplay modules that run in this process. The multiplayer mod itself is
+   not in it (its HELLO already checks build + protocol), so a world's key and the join check are the same with or
+   without it, and a player without the loader (old friend kit) can still join a host that runs only multiplayer
+   (cross-platform finding, ds_launcher NOTES_winlauncher.md). Ids only: the same key on Mac and Windows. */
 static char run_key[512];
 static int cmpstr(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
 static void key_of(const char *const *ids, int n, char *out, size_t cap) {
     const char *v[MAXM]; int k = 0;
-    for (int i = 0; i < n && k < MAXM; i++) { const DSLModInfo *m = mod_by_id(ids[i]); if (!m || !strcmp(m->scope, "gameplay")) v[k++] = ids[i]; }
+    for (int i = 0; i < n && k < MAXM; i++) {
+        if (!strcmp(ids[i], "multiplayer")) continue;
+        const DSLModInfo *m = mod_by_id(ids[i]); if (!m || !strcmp(m->scope, "gameplay")) v[k++] = ids[i];
+    }
     qsort(v, (size_t)k, sizeof *v, cmpstr);
     out[0] = 0;
     for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
@@ -180,11 +196,18 @@ static void worlds_save(const char *add_guid, const char *add_key) {
     PUT("{");
     int first = 1;
     if (st && st->t == JN_OBJ) for (JNode *c = st->child; c; c = c->next) {     /* keep every other member as it is */
-        if (!c->key || !strcmp(c->key, "worlds") || !strcmp(c->key, "modset")) continue;
+        if (!c->key || !strcmp(c->key, "worlds") || !strcmp(c->key, "modset") || !strcmp(c->key, "modset_lines")) continue;
         jesc(e1, sizeof e1, c->key); PUT("%s\"%s\":", first ? "" : ",", e1); first = 0;
         jdump(c, &b, &n, &cap);
     }
-    jesc(e2, sizeof e2, run_key); PUT("%s\"modset\":\"%s\",\"worlds\":{", first ? "" : ",", e2);
+    /* top-level "modset" = what the multiplayer HELLO sends: "" when no gameplay mod (its "none"), else the key */
+    /* "modset_lines": <id>@<version> of each running gameplay mod in the key, for the names in a join refusal */
+    PUT("%s\"modset_lines\":[", first ? "" : ","); first = 0;
+    { int nl = 0; for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
+        jesc(e1, sizeof e1, MI[i].id); jesc(e2, sizeof e2, MI[i].version ? MI[i].version : "");
+        PUT("%s\"%s@%s\"", nl++ ? "," : "", e1, e2); } }
+    PUT("]");
+    jesc(e2, sizeof e2, strcmp(run_key, "vanilla") ? run_key : ""); PUT(",\"modset\":\"%s\",\"worlds\":{", e2);
     int k = 0; JNode *w = json_get(st, "worlds");
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) {
         if (!c->key || c->t != JN_STR || (add_guid && !strcasecmp(c->key, add_guid))) continue;
@@ -491,6 +514,6 @@ void dsl_reg_after_init(void) {
     else setenv("DSML_MODSET", run_key, 1);                             /* dsl_world.c compares with it */
     worlds_load();
     const char *old = json_str(worlds_doc, "modset");
-    if (!old || strcmp(old, run_key)) worlds_save(NULL, NULL);
+    if (!old || strcmp(old, strcmp(run_key, "vanilla") ? run_key : "") || !json_get(worlds_doc, "modset_lines")) worlds_save(NULL, NULL);
     dsl_log("reg: running gameplay set %s (%d installed mod(s))", run_key, nmi);
 }

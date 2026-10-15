@@ -18,14 +18,17 @@ CF=(-O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/src -I$L/s
 # the core = every src/*.c except the arm64 engine (dsl_engine_win.c replaces it) + the Mods window (loader/ui, lane L2)
 CORE=($L/src/*.c(N) $L/ui/*.c(N)); CORE=(${CORE:#*/dsl_engine.c})
 for f in $CORE; do nice -n 19 $TC $CF -include compat/dsl_compat_win.h -c $f -o $OBJ/${f:t:r}.o; done
-for f in dsl_start_win.c dsl_engine_win.c dsl_os_win.c dsl_soft_win.c; do nice -n 19 $TC $CF -c $f -o $OBJ/${f:t:r}.o; done
+for f in dsl_start_win.c dsl_engine_win.c dsl_os_win.c dsl_soft_win.c bie_win.c; do nice -n 19 $TC $CF -I$D/win/third_party/zlib -c $f -o $OBJ/${f:t:r}.o; done
+for f in $D/win/third_party/zlib/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC -O2 -w -c $f -o $OBJ/zl_${f:t:r}.o; done
 for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c; do nice -n 19 $TC -O2 -w -I$MH/include -c $f -o $OBJ/mh_${f:t:r}.o; done
-nice -n 19 $TC -shared -o $O/baselib.dll.tmp $OBJ/*.o $O/baselib_exports.def -static -static-libgcc -lbcrypt -Wl,-Bstatic -lpthread
+nice -n 19 $TC -shared -o $O/baselib.dll.tmp $OBJ/*.o $O/baselib_exports.def -static -static-libgcc -lbcrypt -lurlmon -Wl,-Bstatic -lpthread
 mv -f $O/baselib.dll.tmp $O/baselib.dll
 echo "built $O/baselib.dll"
 
 $B/x86_64-w64-mingw32-windres ds_modded_win.rc -O coff -o $OBJ/ds_modded_res.res.o
-nice -n 19 $TC -O2 -Wall -municode -mwindows ds_modded_win.c $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid
+ZL=$D/win/third_party/zlib; ZO=(); mkdir -p $OBJ/zl
+for f in $ZL/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC -O2 -w -c $f -o $OBJ/zl/${f:t:r}.o; ZO+=($OBJ/zl/${f:t:r}.o); done
+nice -n 19 $TC -O2 -Wall -municode -mwindows -I$L/src -I$ZL ds_modded_win.c bie_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
 mv -f "$O/Dungeon Settlers Modded.exe.tmp" "$O/Dungeon Settlers Modded.exe"
 echo "built $O/Dungeon Settlers Modded.exe"
 

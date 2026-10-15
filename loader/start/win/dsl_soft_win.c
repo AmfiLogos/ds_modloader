@@ -9,6 +9,7 @@
 #include "dsl_internal.h"
 #include "dsl_soft_os.h"
 #include "MinHook.h"
+#include "bie_win.h"
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -165,10 +166,17 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
         snprintf(keys[nk++], 128, "%.*s", (int)(eq - l), l);
     }
     free(ov);
+    /* BepInEx plugins of the new set into the game copy (bie_win.c); Doorstop's variables of A never pass on */
+    char g8[MAX_PATH * 3], r8[MAX_PATH * 3], why[600]; int bie_any = 0;
+    WideCharToMultiByte(CP_ACP, 0, exe0, -1, g8, sizeof g8, NULL, NULL);
+    { char *sl = strrchr(g8, '\\'); if (sl) *sl = 0; }
+    snprintf(r8, sizeof r8, "%s", g8); { char *sl = strrchr(r8, '\\'); if (sl) *sl = 0; }
+    bie_set_log(dsl_log);
+    if (bie_prepare(r8, g8, profile, &bie_any, why, sizeof why)) dsl_log("soft: A: BepInEx mods off for B: %s", why);
     size_t cap = env0_len + 8192, n = 0;
     wchar_t *blk = malloc(cap * sizeof *blk);
     for (const wchar_t *p = env0; p && *p; p += wcslen(p) + 1) {
-        int drop = 0; for (int i = 0; i < nk; i++) if (env_key_is(p, keys[i])) drop = 1;
+        int drop = !bie_env_keep(p); for (int i = 0; i < nk; i++) if (env_key_is(p, keys[i])) drop = 1;
         if (drop) continue;
         size_t L = wcslen(p) + 1; memcpy(blk + n, p, L * sizeof *blk); n += L;
     }
@@ -176,6 +184,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     #define ADD(s) do { int w = MultiByteToWideChar(CP_UTF8, 0, s, -1, blk + n, (int)(cap - n - 2)); if (w > 0) n += (size_t)w; } while (0)
     snprintf(line, sizeof line, "DSL_PROFILE=%s", profile); ADD(line);
     snprintf(line, sizeof line, "DSL_SOFT_HANDOFF=%s", handoff); ADD(line);
+    if (!bie_any) ADD("DOORSTOP_DISABLE=1");
     ov = _strdup(env_lines ? env_lines : ""); sv = NULL;
     for (char *l = strtok_s(ov, "\n", &sv); l; l = strtok_s(NULL, "\n", &sv)) if (strchr(l, '=') && l[0] != '=') ADD(l);
     free(ov);
