@@ -55,7 +55,8 @@ fn front_pid() -> Option<u32> {
 }
 
 fn ask(sock: &Path, cmd: &str) -> std::io::Result<String> {
-    let mut s = std::os::unix::net::UnixStream::connect(sock)?;
+    // a long socket path is a link to a short one (dsrig rig_sock_start): connect to the target
+    let mut s = std::os::unix::net::UnixStream::connect(std::fs::canonicalize(sock).unwrap_or(sock.to_path_buf()))?;
     s.set_read_timeout(Some(Duration::from_secs(30)))?;
     s.write_all(format!("{{\"cmd\":\"{cmd}\"}}\n").as_bytes())?;
     let mut line = String::new();
@@ -448,4 +449,40 @@ fn owner_app_smoke() {
     assert_eq!(v["scene"].as_i64(), Some(1), "did not reach the title screen: {v}");
     println!("game booted hidden, multiplayer socket answered: scene {} frames {}", v["scene"], v["frames"]);
     assert_eq!(before, owner_files(), "owner's prefs / settings / real GameAssembly changed");
+}
+
+/// A multiplayer dylib (DSRIG_DYLIB, default ~/ds_multiplayer/build/dsrig.dylib) with a profile folder whose control
+/// socket path is over the 104-byte unix limit (a player with a long user name): the socket must still answer.
+#[test]
+#[ignore]
+fn long_socket_path_answers() {
+    let before = owner_files();
+    let inst = steam::find_install(&[fake_steam()]).unwrap();
+    let dylib = std::env::var_os("DSRIG_DYLIB").map(PathBuf::from).unwrap_or_else(|| home().join("ds_multiplayer/build/dsrig.dylib"));
+    let rel = fresh_dir("long-sock-release");
+    std::fs::copy(&dylib, rel.join("dsrig.dylib")).unwrap();
+    std::fs::copy(home().join("ds_multiplayer/build/det_ranges.tsv"), rel.join("det_ranges.tsv")).unwrap();
+    let url = serve(rel.clone());
+    let stock_ga = inst.game_path.join(format!("Contents/Frameworks/GameAssembly.dylib.stock_{BUILD}"));
+    let idx = serde_json::json!({ "schema": 1, "seq": 1, "games": { BUILD: { "mac-arm64": { "gameassembly_sha256": sha(&stock_ga) } } },
+        "mods": [
+          { "id": "multiplayer", "name": "Multiplayer", "version": "0.10.0", "kind": "code", "game_builds": [BUILD],
+            "platforms": { "mac-arm64": { "files": [file_entry(&rel.join("dsrig.dylib"), &url), file_entry(&rel.join("det_ranges.tsv"), &url)],
+              "inject": ["dsrig.dylib"], "env": { "DSRIG_DIR": "{profile_dir}", "DSRIG_LIVE": "1" } } } },
+          { "id": "test-steam-gate-off", "name": "TEST: no Steam", "version": "1.0.0", "kind": "patch", "dev_only": true,
+            "game_builds": [BUILD], "platforms": { "mac-arm64": { "patches": { BUILD: [
+              { "file": GA, "offset": "0xD25730", "expect": "20008052", "new": "00008052" } ] } } } } ] });
+    publish_index(&rel, &idx);
+    let paths = Paths::new(fresh_dir("long-sock-root"));
+    let mut st = State { new_world: vec!["multiplayer".into(), "test-steam-gate-off".into()], ..Default::default() };
+    let index = fetch::fetch_index(&paths, &format!("{url}/index.json"), &[&dev_pub()], &mut st).unwrap();
+    let ready = flow::prepare(&paths, Some(&inst), &st, &Which::New, &index, "mac-arm64", &opts()).unwrap();
+    let profile = paths.profile_dir("a-player-with-a-rather-long-user-name-and-folder");
+    let sock = profile.join("ctl.sock");
+    assert!(sock.as_os_str().len() > 104, "path not long enough: {}", sock.as_os_str().len());
+    let (v, log, pid) = hidden_run(&ready.app, &profile, &ready.mods, None, &ready.modset, None, |_| true, Duration::from_secs(180));
+    assert!(log.contains(&format!("rig start pid {pid}")));
+    println!("socket path {} bytes; {}", sock.as_os_str().len(), log.lines().find(|l| l.contains("too long")).unwrap_or("(no link line)"));
+    assert!(v.get("scene").is_some(), "status has no scene: {v}");
+    assert_eq!(before, owner_files());
 }
