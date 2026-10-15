@@ -89,6 +89,15 @@ static dsnet_client *client(int *me) {
 }
 static int tracking(void) { return !g_bad && client(NULL) != NULL; }   /* keep masks up to date */
 static int filtering(void) { return !g_shared && tracking(); }         /* change what the view shows */
+/* A load or a map change frees the old RuntimeMapData: every cached VisionDataHandler is dropped and the view stays
+   vanilla until a presenter call (SetDefaultVision / RefreshVision / OnRefreshHideVision) hands a live one again.
+   (Loader lane 07:31: SIGBUS in rebuild <- decide <- EntityObjectView.SetVisible during the host's join-point reload.) */
+static void drop_vh(void);
+static int world_changing(void) {
+    if (!busy() && !mp_game_load_pending()) return 0;
+    drop_vh();
+    return 1;
+}
 
 static int counts_for_me(dsnet_client *c, int me, const uint8_t g[16]) {
     int o = dsnet_owner_of(c, g);
@@ -166,10 +175,11 @@ static void add_vis(MapFog *m, V2I p, int seen) {
 }
 
 /* rebuild my_vis of `map` from vh (read only). 0 ok, -1 not possible (caller stays vanilla for this call). */
+static void drop_vh(void) { for (int i = 0; i < NMAP; i++) M[i].vh = NULL; if (filtering()) g_pending = 1; }   /* redraw after it */
 static int rebuild(int map, Obj vh) {
     MapFog *m = mapfog(map);
     int me; dsnet_client *c = client(&me);
-    if (!m || !c || g_bad || !vh_ok(vh, map)) return -1;
+    if (!m || !c || g_bad || world_changing() || !vh_ok(vh, map)) return -1;
     for (int k = 0; k < m->vis_n; k++) clrb(m->vis, m->vis_list[k]);
     m->vis_n = 0; m->vh = vh; m->vh_scene = scene(); m->built_frame = rig_frames;
 
@@ -352,7 +362,7 @@ static EntRec *ent_rec(Guid g, int make) {
 static int decide(int map, Guid g, int want) {         /* 1 = show */
     if (!want || !filtering()) return want;
     MapFog *m = mapfog(map); V2I t;
-    if (!m || !m->vh || m->vh_scene != scene()) return want;
+    if (world_changing() || !m || !m->vh || m->vh_scene != scene()) return want;
     if (m->built_frame != rig_frames && rebuild(map, m->vh) < 0) return want;
     if (!unit_tile(map, g, &t)) return want;
     int i = idx(t);
@@ -391,7 +401,7 @@ static void redraw_entities(int map) {
 }
 static void redraw_now(void) {
     int map = cur_map();
-    if (map < 0 || busy() || scene() != 2) return;        /* keep pending until the campaign runs */
+    if (map < 0 || busy() || mp_game_load_pending() || scene() != 2) return;   /* keep pending until the campaign runs */
     g_pending = 0;
     Obj P = presenter_of(map);
     if (P) {
