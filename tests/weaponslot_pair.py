@@ -40,6 +40,7 @@ arg = lambda n, d: type(d)(sys.argv[sys.argv.index(n) + 1]) if n in sys.argv els
 TICKS = arg('--ticks', 3000)
 MINUTES = arg('--minutes', 0.0)
 CAST_EVERY = arg('--cast-every', 8.0)
+NO_FULL = '--no-full-check' in sys.argv        # full-state (save) check off: the save's QuickSlots section differs by design
 H, G = pair[0], pair[1]
 log = m.log
 
@@ -66,9 +67,10 @@ def main():
         assert os.path.exists(os.path.join(rig.idir(x), rig.EXE_REL)), f'copy {x} missing: run make_pair_copies first'
     assert rig.check_prefs(), 'owner prefs differ from backup before start'
     port = rig.pair_port(H)
-    json.dump({'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True},
-              open(os.path.join(rig.idir(H), 'mp.json'), 'w'))
-    json.dump({'role': 'client', 'host': '127.0.0.1', 'port': port, 'name': 'Guest', 'partial_resync': False},
+    json.dump({'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True,
+               **({'full_check_steps': 0} if NO_FULL else {})}, open(os.path.join(rig.idir(H), 'mp.json'), 'w'))
+    json.dump({'role': 'client', 'host': '127.0.0.1', 'port': port, 'name': 'Guest', 'partial_resync': False,
+               **({'full_check_steps': 0} if NO_FULL else {})},
               open(os.path.join(rig.idir(G), 'mp.json'), 'w'))
     res = {'pair': pair, 'ticks': TICKS}
     try:
@@ -134,14 +136,21 @@ def main():
                 if el >= MINUTES * 60:
                     break
                 if el - phase * 90 >= 0:                               # move out / back every 90 s, forever
-                    live = [e for e in m.units('A') if e['faction'] == 3 and not e['dead'] and 'cell' in e and not near_portal(e['cell'])]
+                    try:
+                        us_phase = m.units('A')
+                    except KeyError:
+                        us_phase = []
+                    live = [e for e in us_phase if e['faction'] == 3 and not e['dead'] and 'cell' in e and not near_portal(e['cell'])]
                     for x, u, far, home in plan:
                         tgt = (min(live, key=lambda e: d2(u, e))['cell'] if live else far) if phase % 2 == 0 else home
                         log(f'phase {phase}: {x} orders {u["name"][:10]} -> {tgt}: {"sent" if m.order_move(x, u["guid"], tgt) else "INJECT FAILED"}')
                     phase += 1
                 if time.time() - last_cast >= CAST_EVERY:
                     last_cast = time.time()
-                    us_now = m.units('A')
+                    try:
+                        us_now = m.units('A')
+                    except KeyError:                                   # reloading (resync): try at the next round
+                        continue
                     live = [e for e in us_now if e['faction'] == 3 and not e['dead'] and 'cell' in e]
                     pos = {x_['guid']: x_ for x_ in us_now}
                     for g, sk in weapon.items():
@@ -190,7 +199,7 @@ def main():
         res.update({
             'fp_common_ticks': n, 'fp_first_diff_tick': first, 'fp_equal': n > (m.st('A')['tick'] - t_start) * 0.9 and first is None,
             'ticks_run': m.st('A')['tick'] - t_start, 'wall_minutes': round((time.time() - t_wall) / 60, 1),
-            'orders_applied': (ma.get('orders'), mb.get('orders')), 'desyncs': (ma.get('desyncs'), mb.get('desyncs')),
+            'orders_applied': (ma.get('orders'), mb.get('orders')), 'desyncs': (ma.get('desyncs'), mb.get('desyncs')), 'full_checks_ok_fail': (ma.get('full_ok'), ma.get('full_fails'), mb.get('full_ok'), mb.get('full_fails')),
             'units_equal_at_paused_tick': same is not None and key(la) == key(lb), 'paused_tick': same,
             'enemy_hp_start_end': (hp0.get('f3'), m.summary(la).get('f3')),
         })

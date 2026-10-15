@@ -1,0 +1,119 @@
+--- src/mp_game.c
++++ src/mp_game.c
+@@ -5,6 +5,7 @@
+ #include "ord_api.h"
+ #include "trn.h"
+ #include "mp_steam.h"
++#include "net/ds_modcheck.h"                         /* wrong-modset text (launcher lane, header only) */
+ #include <time.h>
+ #include <stdint.h>
+ #include <stdio.h>
+@@ -740,6 +741,7 @@
+     static char t[200];
+     const char *w = dsnet_reject_text(why);
+     if (!*w) return "Could not connect to the host";
++    if (why == DSNET_REJ_MODSET) return "Could not join: your gameplay mods are not the same as the host's";   /* details: mp_game_modset_text */
+     if (why == DSNET_REJ_OTHER_WORLD && mp_last_other_world()[0]) snprintf(t, sizeof t, "Could not join: %s (%s)", w, mp_last_other_world());
+     else snprintf(t, sizeof t, "Could not join: %s", w);
+     return t;
+@@ -799,11 +801,28 @@
+ }
+ 
+ static int last_reject;              /* enum dsnet_reject of the last failed start, 0 if none */
++static int modset_unshown;           /* the last refusal was DSNET_REJ_MODSET and its details were not shown yet */
++/* mpmenu (dlsym), once per DSNET_REJ_MODSET refusal: the notice text naming the missing / extra / other-version gameplay
++ * mods (host lines from the REJECT against this copy's own lines). 1 = out filled, 0 = nothing (new) to show. */
++__attribute__((visibility("default"))) int mp_game_modset_text(char *out, size_t n) {
++    if (!modset_unshown || last_reject != DSNET_REJ_MODSET) return 0;
++    modset_unshown = 0;
++    static char host[DSNET_MODLINES_MAX]; int rule = 0;
++    if (dsnet_reject_host_mods(&rule, host, sizeof host) != 0) host[0] = 0;
++    char body[600];
++    if (!dsmc_guest_text(host, dsnet_my_mod_lines(), rule == 1, NULL, body, sizeof body, NULL))
++        snprintf(body, sizeof body, "%s", dsnet_reject_text(DSNET_REJ_MODSET));   /* same lines, other hash: the host's words */
++    snprintf(out, n, "<size=150%%>Could not join</size>\n%s", body);
++    for (char *q = body; *q; q++) if (*q == '\n') *q = '|';                      /* one log line */
++    rig_log("mp: modset refusal: %s", body);
++    for (char *q = body; *q; q++) if (*q == '|') *q = '\n';
++    return 1;
++}
+ static int start_now(const mp_config *c) {                   /* game thread (dsnet reads fegetround) */
+     int why = 0;
+     set_uid();
+     S = mp_start(c, &api, &why);
+-    last_reject = S ? 0 : why;
++    last_reject = S ? 0 : why; modset_unshown = last_reject == DSNET_REJ_MODSET;
+     if (S) { S_gen++; ord_mp_attach(S); trn_set_role(c->host); rig_det_arm(); }
+     if (!S) { rig_log("mp: session did not start (reject reason %d)", why); return why ? -why : -1; }
+     return 0;
+@@ -960,7 +979,7 @@
+             int why = 0;
+             set_uid();
+             S = mp_start(&c, &api, &why);                    /* waits for the WELCOME (connect_timeout_ms) */
+-            last_reject = S ? 0 : why;
++            last_reject = S ? 0 : why; modset_unshown = last_reject == DSNET_REJ_MODSET;
+             if (S) { S_gen++; ord_mp_attach(S); trn_set_role(0); rig_det_arm(); }
+             else end_session(reject_text(why));
+         } else if (r < 0) {
+@@ -1080,7 +1099,10 @@
+ 
+ int mp_game_frame(void) {
+     if (!cfg_ok) return 0;
+-    if (!S && !start_failed && !steam_join && start_now(&cfg)) start_failed = 1;   /* mp.json session */
++    if (!S && !start_failed && !steam_join && start_now(&cfg)) {                     /* mp.json session */
++        start_failed = 1;
++        if (last_reject == DSNET_REJ_MODSET) { end_session(reject_text(last_reject)); return 0; }   /* wrong mods: tell the player (mpmenu notice) */
++    }
+     if (!S) return 0;
+     if (cfg.host && !owners_restored && rig_det_mp_ready() && !host_reload) owners_restore();   /* before the first tick */
+     if (cfg.host && rig_det_mp_ready() && !host_reload) {   /* F17: tell the server which world runs (WELCOME of later joiners) */
+--- src/mpmenu.c
++++ src/mpmenu.c
+@@ -454,6 +454,7 @@
+ static int chat_typing, chat_close_frames, chat_scroll, chat_fade_s = 12, chat_show_join = 1, chat_on = 1;
+ static float chat_x = 0, chat_y = 0;                     /* offset from the default place (canvas units), remembered */
+ static int fields_edited, test_escape;                   /* test_escape: mpm_escape (tests: no keyboard in a hidden copy) */                               /* title_sync: a field's text changed (read in the next observe) */
++static void modset_notice(void);
+ static void observe(mpm_obs *o) {
+     memset(o, 0, sizeof *o);
+     o->scene = scene();
+@@ -469,7 +470,7 @@
+     Obj ev = o->scene == 2 ? esc_view() : NULL;
+     o->esc_open = ev && u_on(ev);
+     mp_steam_info in; mp_steam_state(&in);
+-    if (in.state == MP_STEAM_ENDED) { o->failed = 1; snprintf(o->msg, sizeof o->msg, "%s", in.msg); }
++    if (in.state == MP_STEAM_ENDED) { o->failed = 1; snprintf(o->msg, sizeof o->msg, "%s", in.msg); modset_notice(); }   /* Steam join refused for mods */
+     else if (in.is_host) o->role = 1;
+     else if (in.state == MP_STEAM_JOINING || in.state == MP_STEAM_IN_GAME) {
+         o->role = 2;
+@@ -1510,12 +1511,18 @@
+ static mp_config conn_cfg;
+ static double conn_t0;
+ static double now_ms_(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6; }
++static void modset_notice(void) {                                    /* wrong gameplay mods: the notice box names them */
++    static int (*fn)(char *, size_t); static int looked;
++    if (!looked) { looked = 1; fn = (int (*)(char *, size_t))dlsym(RTLD_DEFAULT, "mp_game_modset_text"); }
++    if (fn) fn(M.notice, sizeof M.notice);
++}
+ static void join_refused(int rc, const char *addr) {
+     static int (*last_reject)(void); static int looked;                 /* mpglue: enum dsnet_reject of the last failed start */
+     if (!looked) { looked = 1; last_reject = (int (*)(void))dlsym(RTLD_DEFAULT, "mp_game_last_reject"); }
+     int r = rc && last_reject ? last_reject() : 0;
+     const char *w = dsnet_reject_text(r);                               /* the same wording as mp_game's reject_text (ux #22) */
+-    if (*w) snprintf(M.msg, sizeof M.msg, "Could not join: %s", w);
++    if (r == DSNET_REJ_MODSET) { snprintf(M.msg, sizeof M.msg, "Could not join: your gameplay mods are not the same as the host's"); modset_notice(); }
++    else if (*w) snprintf(M.msg, sizeof M.msg, "Could not join: %s", w);
+     else if (rc) snprintf(M.msg, sizeof M.msg, "%s answered, but the game did not start. Try again.", addr);
+ }
+ static void join_by_address(void) {
+--- src/mpmenu.h
++++ src/mpmenu.h
+@@ -99,7 +99,7 @@
+     mpm_settings set;
+     char msg[128];          /* last error / status for the title */
+     char connecting[96];    /* join page: "ip:port" being connected (set by the game side), "" none */
+-    char notice[320];       /* session ended (host left...): text for the stock notice box on the title, "" none */
++    char notice[640];         /* session ended (host left...): text for the stock notice box on the title, "" none */
+     char host[64];          /* guest: host name for the Joining line */
+     char direct[96];        /* host: "192.168.1.20:47777" (LAN) for the lobby, set by the game side */
+     char internet[96];      /* host: public ip:port as Steam sees it, "" unknown */
