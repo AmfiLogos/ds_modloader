@@ -3,7 +3,15 @@
 Client-side would mean: the guest joins the host's world, replays the host's orders, and both copies have the
 same fingerprint every tick.
 
-  weaponslot_pair.py <PAIR> [--ticks 3000] [--minutes 10]
+  weaponslot_pair.py <PAIR> [--ticks 3000] [--minutes 10] [--auto weapon|last] [--dylib PATH]
+
+With --auto: no manual casts. The host turns quick-slot auto-use ON (ToggleAutoSkillRequested, the order the
+right-click menu's auto option sends) for each host unit's last free slot (quick slot 4: a slot a stock guest does
+not have) or, with `weapon`, quick slot 0 (no player can do that: the mod gives the weapon slot no menu). The units then fight on their own; each round
+reads both copies' cooldown of that skill (auto-casts) and the step fingerprints are compared at the end.
+--flip (with --auto): send one toggle at that index whatever the skill's state (the index path on both copies).
+--dylib: the multiplayer dylib to test (default: the rig's shared build/dsrig.dylib).
+WEAPONSLOT_ROOT: the launcher folder that holds test_env/pair (default: this script's repo).
 
 With --minutes: the game runs that long (wall clock) and the HOST casts each of its units' weapon skill (the
 mod's weapon slot, quick slot 0) on the nearest enemy every --cast-every seconds (UseSkillTargetRequested through
@@ -18,7 +26,7 @@ the multiplayer dylib is a snapshot copy. Hidden launch, rig guard, owner prefs 
 """
 import json, os, shutil, subprocess, sys, time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.environ.get('WEAPONSLOT_ROOT') or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAIRDIR = os.path.join(ROOT, 'test_env', 'pair')
 RIG = os.path.expanduser('~/ds_multiplayer/rig')
 pair = sys.argv[1]
@@ -30,8 +38,9 @@ rig.INST = PAIRDIR
 rig.__file__ = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pair_guard.py')  # guard sees test_env/pair
 snap = os.path.join(PAIRDIR, 'rigdylib')
 os.makedirs(snap, exist_ok=True)
-for f in ('dsrig.dylib', 'det_ranges.tsv'):
-    shutil.copy2(os.path.join(rig.ROOT, 'build', f), os.path.join(snap, f))
+DYLIB = sys.argv[sys.argv.index('--dylib') + 1] if '--dylib' in sys.argv else os.path.join(rig.ROOT, 'build', 'dsrig.dylib')
+shutil.copy2(DYLIB, os.path.join(snap, 'dsrig.dylib'))
+shutil.copy2(os.path.join(rig.ROOT, 'build', 'det_ranges.tsv'), os.path.join(snap, 'det_ranges.tsv'))
 rig.DYLIB = os.path.join(snap, 'dsrig.dylib')
 import mp2_test as m  # noqa: E402  (its A/B helpers now map to this pair, in test_env/pair)
 from demo import make_demo_save  # noqa: E402
@@ -40,7 +49,9 @@ arg = lambda n, d: type(d)(sys.argv[sys.argv.index(n) + 1]) if n in sys.argv els
 TICKS = arg('--ticks', 3000)
 MINUTES = arg('--minutes', 0.0)
 CAST_EVERY = arg('--cast-every', 8.0)
-NO_FULL = '--no-full-check' in sys.argv        # full-state (save) check off: the save's QuickSlots section differs by design
+AUTO = arg('--auto', '')                        # weapon | last: auto-use test, no manual casts
+NO_FULL = '--no-full-check' in sys.argv
+FLIP = '--flip' in sys.argv                     # with --auto: send one toggle at that index whatever the current state        # full-state (save) check off: the save's QuickSlots section differs by design
 H, G = pair[0], pair[1]
 log = m.log
 
@@ -55,6 +66,30 @@ def quickslots(path):
 def cooldowns(x, guid):
     r = m.c(x, cmd='ord_read', guid=guid)
     return r.get('cooldowns', {}), r.get('quick', [])
+
+
+def auto_of(x, guid):
+    return m.c(x, cmd='ord_read', guid=guid).get('auto', {})
+
+
+def set_auto_on(guid, skill, slot):
+    """host turns auto-use ON for `skill` the way the right-click menu does (InteractionOption_SetAutoSkill1..4 ->
+    ToggleAutoSkillRequested; with the mod its Index is the quick-slot index 1..4, never 0). A toggle that flipped
+    another skill is sent again to undo it. Returns the index that worked, or None."""
+    for idx in (slot,):
+        before = auto_of('A', guid)
+        if before.get(skill):
+            return "already on"
+        r = m.inject('A', 'ToggleAutoSkillRequested', i32_16=m.st('A').get('map', 0), guid_20=guid, i32_36=idx)
+        time.sleep(2)
+        after = auto_of('A', guid)
+        log(f'toggle index {idx}: {r.get("ok")} auto {before} -> {after}')
+        if after.get(skill):
+            return idx
+        if after != before:
+            m.inject('A', 'ToggleAutoSkillRequested', i32_16=m.st('A').get('map', 0), guid_20=guid, i32_36=idx)
+            time.sleep(2)
+    return None
 
 
 def cast(guid, skill, target):
@@ -126,6 +161,24 @@ def main():
             weapon[u['guid']] = q[0] if q and q[0] else None
             log(f'host unit {u["name"][:12]} quick slots {q}')
         res['host_weapon_skills'] = weapon
+        if AUTO:
+            slot = 0 if AUTO == 'weapon' else 4
+            auto = {'slot': slot, 'units': {}, 'rounds': 0, 'host_cd_seen': 0, 'guest_cd_seen': 0, 'cd_mismatch': 0, 'samples': []}
+            for u in mine['A']:
+                g = u['guid']
+                qa, qb = cooldowns('A', g)[1], cooldowns('B', g)[1]
+                sk = qa[slot] if len(qa) > slot and qa[slot] else None
+                if sk and FLIP:                                       # send the toggle even if it is on: test the index path
+                    m.inject('A', 'ToggleAutoSkillRequested', i32_16=m.st('A').get('map', 0), guid_20=g, i32_36=slot)
+                    time.sleep(3)
+                    idx = f'flipped at {slot}'
+                else:
+                    idx = set_auto_on(g, sk, slot) if sk else None
+                time.sleep(3)
+                auto['units'][g] = {'skill': sk, 'toggle_index': idx, 'host_quick': qa, 'guest_quick': qb,
+                                    'host_auto': auto_of('A', g), 'guest_auto': auto_of('B', g)}
+                log(f'auto unit {u["name"][:12]}: {auto["units"][g]}')
+            res['auto'] = auto
         casts = {'sent': 0, 'inject_failed': 0, 'no_target': 0, 'host_cooldown_seen': 0, 'guest_cooldown_seen': 0, 'samples': []}
         t_wall, last_cast = time.time(), 0
         while True:
@@ -145,7 +198,19 @@ def main():
                         tgt = (min(live, key=lambda e: d2(u, e))['cell'] if live else far) if phase % 2 == 0 else home
                         log(f'phase {phase}: {x} orders {u["name"][:10]} -> {tgt}: {"sent" if m.order_move(x, u["guid"], tgt) else "INJECT FAILED"}')
                     phase += 1
-                if time.time() - last_cast >= CAST_EVERY:
+                if AUTO and time.time() - last_cast >= CAST_EVERY:    # auto-use: read both copies, never cast
+                    last_cast = time.time()
+                    auto['rounds'] += 1
+                    for g, a in auto['units'].items():
+                        if not a['skill']:
+                            continue
+                        ca, cb = cooldowns('A', g)[0].get(a['skill']), cooldowns('B', g)[0].get(a['skill'])
+                        auto['host_cd_seen'] += ca is not None and ca > 0
+                        auto['guest_cd_seen'] += cb is not None and cb > 0
+                        auto['cd_mismatch'] += (ca is not None and ca > 0) != (cb is not None and cb > 0)
+                        if len(auto['samples']) < 20 and ca:
+                            auto['samples'].append({'tick': m.st('A')['tick'], 'skill': a['skill'], 'cd_host': ca, 'cd_guest': cb})
+                elif not AUTO and time.time() - last_cast >= CAST_EVERY:
                     last_cast = time.time()
                     try:
                         us_now = m.units('A')
@@ -200,6 +265,7 @@ def main():
             'fp_common_ticks': n, 'fp_first_diff_tick': first, 'fp_equal': n > (m.st('A')['tick'] - t_start) * 0.9 and first is None,
             'ticks_run': m.st('A')['tick'] - t_start, 'wall_minutes': round((time.time() - t_wall) / 60, 1),
             'orders_applied': (ma.get('orders'), mb.get('orders')), 'desyncs': (ma.get('desyncs'), mb.get('desyncs')), 'full_checks_ok_fail': (ma.get('full_ok'), ma.get('full_fails'), mb.get('full_ok'), mb.get('full_fails')),
+            'auto_end': {g: (auto_of('A', g), auto_of('B', g)) for g in res.get('auto', {}).get('units', {})},
             'units_equal_at_paused_tick': same is not None and key(la) == key(lb), 'paused_tick': same,
             'enemy_hp_start_end': (hp0.get('f3'), m.summary(la).get('f3')),
         })
