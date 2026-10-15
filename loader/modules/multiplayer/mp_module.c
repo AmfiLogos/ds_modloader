@@ -22,6 +22,7 @@ void ui_teams_install(void);
 #include <pthread.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 DSL_PLUGIN();
 
@@ -51,11 +52,26 @@ int rig_hook(uintptr_t rva, void *repl, void **orig, const char *who) {
     return r;
 }
 
+/* ---- session busy (MASTER_PLAN "Open for M4 SPLIT"): while a multiplayer game runs or starts, the loader refuses soft
+   restart and the Mods tab's Apply (dsl_set_session_busy). The reason comes from multiplayer's mp_api
+   (mp_session_busy_reason, ds_multiplayer src/mp_api.c; found with RTLD_SELF so an older pinned tree still links). */
+static void busy_poll(void) {
+    static const char *(*why)(void); static int looked; static char last[128]; static int was;
+    if (!looked) { looked = 1; why = (const char *(*)(void))dlsym(RTLD_SELF, "mp_session_busy_reason"); }
+    if (!why) return;
+    const char *r = why();
+    if ((r != NULL) == was && (!r || !strcmp(r, last))) return;
+    was = r != NULL; snprintf(last, sizeof last, "%s", r ? r : "");
+    dsl_set_session_busy(H, ME, r);
+    rig_log("loader: session busy %s%s", r ? "SET: " : "cleared", r ? r : "");
+}
+
 /* ---- hooks (rig_main.c) */
 static void (*o_update)(void *, void *);
 static void my_update(void *self, void *mi) {
     rig_hooks_late = 1;
     rig_frame(self);
+    busy_poll();
     if (!getenv("DSRIG_MINIMAL")) rig_det_frame(self);
     o_update(self, mi);
 }
