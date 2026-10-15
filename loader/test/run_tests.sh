@@ -12,7 +12,7 @@ CC=(nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0)
 $CC -O0 -dynamiclib -install_name @rpath/GameAssembly.dylib -o "$FW/GameAssembly.dylib" fake_ga.c || exit 1
 UUID=$(otool -l "$FW/GameAssembly.dylib" | awk '/uuid/{print $2; exit}')
 print "    { \"$UUID\", \"test\" }," > "$OUT/gen/test_builds.inc"
-$CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
+$CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
   "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c || exit 1
 $CC -O0 -dynamiclib -o "$FW/foreign.dylib" foreign.c || exit 1
 $CC -O0 host.c -o "$OUT/host" "$FW/GameAssembly.dylib" -Wl,-rpath,"$FW" || exit 1
@@ -37,7 +37,7 @@ mkdir -p "$M/floor-logger"; cp ~/DungeonSettlersMods/mods/floor-logger/floor-log
 sed 's/"game_build": "25846389"/"game_build": "test"/' ~/DungeonSettlersMods/mods/floor-logger/mod.json > "$M/floor-logger/mod.json"
 print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch"],"provided":["notch-fix"]}' > "$M/profile.json"
 
-run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
+run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_NO_ALERT=1 DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
 EXPECT="orig_init=1 orig_safe=2 orig_normal=1 orig_tick=1 orig_update=2"
 
 print "== T1 all modules, our loader first, a foreign loader second (with its own detour)"
@@ -61,6 +61,7 @@ check "patch_rva: applied, wrong bytes refused, overlap with a hook refused" '[[
 check "failing module: its patch is undone" 'log | grep -q "failpatch: FAILED: dsl_module_early returned 9; 1 hook(s) removed"'
 check "modset file: gameplay vs client scope, no session" 'grep -q "\"client\":\[{\"id\":\"patcher\"" "$LOGD/dsload_modset.json" && grep -q "\"check\":\"no session\"" "$LOGD/dsload_modset.json" && grep -q "\"id\":\"early-mod\",\"version\":\"1.2.0\",\"files\":{\"early-mod.dylib\":\"[0-9a-f]\{64\}\"" "$LOGD/dsload_modset.json"'
 check "world check off without a session" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: off"'
+check "build status for the launcher: active on the pinned build" 'grep -q "\"active\":true,\"reason\":\"ok\"" "$LOGD/dsload_status.json"'
 check "codepatch guard cleared" '[[ ! -e "$LOGD/dsload_state/_codepatch.pending" ]]'
 
 print "== T1b mods per world: session file from the launcher"
@@ -94,11 +95,20 @@ check "crash leaves the pending marker" '[[ $rc -ne 0 && -f "$LOGD/dsload_state/
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "next start: crasher OFF, floor-logger loads, game runs" '[[ "$r" == *"orig_safe=2"* ]] && log | grep -q "CRASH GUARD: the game stopped last time while module crasher ran (dsl_plugin_init)" && log | grep -q "floor-logger 1.0.0: loaded"'
 
+print "== T6 future build guard: the launcher pinned another build than this copy's"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=99999999)
+check "env pin differs: no module, no hook, game runs, clear reason" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: This copy of the game is build test, but the launcher pinned build 99999999"* ]] && log | grep -q "GAME BUILD CHECK FAILED (not_pinned_build)" && ! log | grep -q "hooked" && ! log | grep -q "loaded (" && grep -q "\"active\":false,\"reason\":\"not_pinned_build\"" "$LOGD/dsload_status.json"'
+print -r -- '{"build":"88888888","modset":"aaa","worlds":{}}' > "$OUT/session_pin.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_pin.json")
+check "session pin differs: same refusal (world check not installed either)" '[[ "$r" == *"orig_safe=2"* && "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "pinned build 88888888" && ! log | grep -q "hooked"'
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=test)
+check "pin equal to the copy: modules load" 'log | grep -q "floor-logger 1.0.0: loaded" && grep -q "\"pinned_build\":\"test\"" "$LOGD/dsload_status.json"'
+
 print "== T5 unknown build: loader inactive"
 print "" > "$OUT/gen/test_builds.inc"
-$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
+$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world}.c && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
-check "nothing hooked, game runs" '[[ "$r" == *"orig_safe=2"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked'
+check "nothing hooked, game runs, says why" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: The game was updated"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked && grep -q "\"active\":false,\"reason\":\"unknown_build\"" "$LOGD/dsload_status.json"'
 
 print "== $pass passed, $fails failed (output $OUT)"
 exit $fails

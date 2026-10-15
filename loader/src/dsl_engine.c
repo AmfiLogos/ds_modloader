@@ -104,6 +104,7 @@ static const Patch *patch_over(uintptr_t a, size_t n) {
 
 static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who) {
     uintptr_t site = (uintptr_t)target;
+    if (!dsl_build_id) { dsl_log("%s: hook refused: the game build is not the pinned one", who); return -1; }
     if (!region || !site || !repl) { dsl_log("%s: hook refused (null target/replacement or engine inactive)", who); return -1; }
     if ((site & 3) || site < dsl_ga_base + dsl_text_lo || site >= dsl_ga_base + dsl_text_hi) {
         dsl_log("%s: hook refused: %p is not code inside GameAssembly", who, target); return -1;
@@ -186,6 +187,7 @@ int dsl_unhook_owner(int owner) {
 
 int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t n, const char *who) {
     uintptr_t a = (uintptr_t)target;
+    if (!dsl_build_id) { dsl_log("%s: patch refused: the game build is not the pinned one", who); return -1; }
     if (!region || !a || !old || !neu || n == 0 || n > 16 || (a & 3) || (n & 3)) { dsl_log("%s: patch refused (bad arguments or engine inactive)", who); return -1; }
     if (a < dsl_ga_base + dsl_text_lo || a + n > dsl_ga_base + dsl_text_hi) { dsl_log("%s: patch refused: %p is not code inside GameAssembly", who, target); return -1; }
     uintptr_t rva = a - dsl_ga_base;

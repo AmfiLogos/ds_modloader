@@ -30,6 +30,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <crt_externs.h>
+#include <CoreFoundation/CoreFoundation.h>
 
 uintptr_t dsl_ga_base;
 uint64_t dsl_text_lo, dsl_text_hi, dsl_image_end;
@@ -149,6 +151,61 @@ static const char *build_of_uuid(const char *uuid) {
     for (size_t i = 0; i < sizeof DSL_BUILDS / sizeof DSL_BUILDS[0]; i++) if (!strcmp(DSL_BUILDS[i].uuid, uuid)) return DSL_BUILDS[i].build;
     return NULL;
 }
+/* Build guard: the game build must be the pinned one, else no module starts and no hook / patch is written.
+   Pinned = the launcher's build for this world (DSML_BUILD, or "build" in the DSML_SESSION file) when given,
+   and always one of the builds this loader was made for (dsl_builds.h). The reason goes to dsload.log, stderr,
+   <log dir>/dsload_status.json (for the launcher) and, in a normal (not -batchmode) start, one system notice. */
+static char status_why[512];
+static int is_batchmode(void) {
+    char **av = *_NSGetArgv(); int ac = *_NSGetArgc();
+    for (int i = 1; i < ac; i++) if (av[i] && !strcmp(av[i], "-batchmode")) return 1;
+    return 0;
+}
+static void json_esc(char *out, size_t n, const char *s) {
+    size_t k = 0;
+    for (; s && *s && k + 7 < n; s++) {
+        if (*s == '"' || *s == '\\') { out[k++] = '\\'; out[k++] = *s; }
+        else if ((unsigned char)*s < 0x20) k += (size_t)snprintf(out + k, n - k, "\\u%04x", *s);
+        else out[k++] = *s;
+    }
+    out[k] = 0;
+}
+static void write_status(int active, const char *reason, const char *uuid, const char *found, const char *pinned) {
+    if (!logdir[0]) return;
+    char known[512] = "", w[600], e[1100];
+    for (size_t i = 0; i < sizeof DSL_BUILDS / sizeof DSL_BUILDS[0]; i++)
+        snprintf(known + strlen(known), sizeof known - strlen(known), "%s\"%s\"", i ? "," : "", DSL_BUILDS[i].build);
+    json_esc(w, sizeof w, status_why);
+    snprintf(e, sizeof e, "{\"loader\":\"%s\",\"active\":%s,\"reason\":\"%s\",\"uuid\":\"%s\",\"found_build\":\"%s\",\"pinned_build\":\"%s\",\"loader_builds\":[%s],\"message\":\"%s\"}\n",
+             DSL_LOADER_VERSION, active ? "true" : "false", reason, uuid ? uuid : "", found ? found : "", pinned ? pinned : "", known, w);
+    char path[1200]; snprintf(path, sizeof path, "%s/dsload_status.json", logdir);
+    write_file(path, e);
+}
+static void build_refused(const char *reason, const char *uuid, const char *found, const char *pinned) {
+    dsl_build_id = NULL;
+    dsl_log("GAME BUILD CHECK FAILED (%s): %s", reason, status_why);
+    dsl_log("no mod starts, no hook and no code patch is written; the game runs unmodded");
+    fprintf(stderr, "dsload: %s\n", status_why);
+    write_status(0, reason, uuid, found, pinned);
+    if (is_batchmode() || getenv("DSL_NO_ALERT")) return;
+    CFStringRef t = CFSTR("Dungeon Settlers: mods are off");
+    CFStringRef m = CFStringCreateWithCString(NULL, status_why, kCFStringEncodingUTF8);
+    if (m) { CFUserNotificationDisplayNotice(0, kCFUserNotificationCautionAlertLevel, NULL, NULL, NULL, t, m, CFSTR("OK")); CFRelease(m); }
+}
+/* the launcher's pinned build for this start, or NULL */
+static const char *launcher_pin(void) {
+    static char pin[64];
+    const char *e = getenv("DSML_BUILD");
+    if (e && *e) { snprintf(pin, sizeof pin, "%s", e); return pin; }
+    const char *sp = getenv("DSML_SESSION");
+    char *txt = sp ? read_file(sp, 8 << 20) : NULL;
+    JNode *j = txt ? json_parse(txt) : NULL; free(txt);
+    const char *b = json_str(j, "build");
+    if (b && *b) snprintf(pin, sizeof pin, "%s", b);
+    json_free(j);
+    return pin[0] ? pin : NULL;
+}
+
 /* arm64 LC_UUID of a (fat or thin) Mach-O file on disk */
 static int file_uuid(const char *path, char *out, size_t n) {
     FILE *f = fopen(path, "rb"); if (!f) return -1;
@@ -620,7 +677,9 @@ static void on_image(const struct mach_header *mh, intptr_t slide) {
     const char *b = build_of_uuid(uuid);
     if (!b || !dsl_build_id || strcmp(b, dsl_build_id)) {
         dsl_log("mapped GameAssembly (uuid %s) is not the file read at start (build %s): modules get no game access", uuid, dsl_build_id ? dsl_build_id : "?");
-        dsl_build_id = NULL; return;
+        snprintf(status_why, sizeof status_why, "The game loaded a different GameAssembly (%s) than the one checked at start (build %s). Mods stay off.",
+                 uuid, dsl_build_id ? dsl_build_id : "?");
+        build_refused("mapped_image_differs", uuid, b, dsl_build_id); return;
     }
     host.ga_base = dsl_ga_base; host.game_build = dsl_build_id;
     dsl_log("GameAssembly build %s mapped at %p (code %#llx-%#llx, image end %#llx)", dsl_build_id, (void*)dsl_ga_base,
@@ -717,7 +776,20 @@ __attribute__((constructor)) static void dsl_init(void) {
     char uuid[40];
     if (file_uuid(gafile, uuid, sizeof uuid)) { dsl_log("cannot read %s: loader inactive", gafile); return; }
     dsl_build_id = build_of_uuid(uuid);
-    if (!dsl_build_id) { dsl_log("unknown GameAssembly build (arm64 uuid %s): loader inactive, the game runs without code mods", uuid); return; }
+    const char *pin = launcher_pin();
+    if (!dsl_build_id) {
+        snprintf(status_why, sizeof status_why, "The game was updated (GameAssembly %s is not a build this loader knows%s%s). "
+                 "Mods stay off until they are updated for this game version.", uuid, pin ? "; the launcher pinned build " : "", pin ? pin : "");
+        dsl_log("unknown GameAssembly build (arm64 uuid %s): loader inactive, the game runs without code mods", uuid);
+        build_refused("unknown_build", uuid, NULL, pin); return;
+    }
+    if (pin && strcmp(pin, dsl_build_id)) {
+        snprintf(status_why, sizeof status_why, "This copy of the game is build %s, but the launcher pinned build %s for this world. "
+                 "Mods stay off. Start the world from the launcher again.", dsl_build_id, pin);
+        build_refused("not_pinned_build", uuid, dsl_build_id, pin); return;
+    }
+    snprintf(status_why, sizeof status_why, "build %s%s", dsl_build_id, pin ? " (launcher pin)" : "");
+    write_status(1, "ok", uuid, dsl_build_id, pin ? pin : dsl_build_id);
     dsl_log("game build %s (%s); mods %s; profile %s", dsl_build_id, gafile, modsdir, profile_path);
 
     host = (DSLHost){ .api_version = DSL_API_VERSION, .size = sizeof(DSLHost), .game_build = dsl_build_id, .ga_base = 0,
