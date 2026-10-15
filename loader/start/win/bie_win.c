@@ -134,6 +134,22 @@ static int dll_count(const char *dir) {
     } while (FindNextFileA(h, &fd));
     FindClose(h); return n;
 }
+/* "rel/name.dll":"sha256" members for every DLL under dir */
+static void list_dlls(const char *dir, const char *rel, char *out, size_t cap) {
+    char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", dir);
+    WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, "..")) continue;
+        char p[1400], r[600]; snprintf(p, sizeof p, "%s\\%s", dir, fd.cFileName); snprintf(r, sizeof r, "%s%s%s", rel, *rel ? "/" : "", fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { list_dlls(p, r, out, cap); continue; }
+        size_t L = strlen(fd.cFileName); if (L < 5 || _stricmp(fd.cFileName + L - 4, ".dll")) continue;
+        size_t n = 0; char *b = slurp(p, &n); char hx[65] = "";
+        if (b && !sha256_hex((unsigned char *)b, n, hx)) { size_t k = strlen(out); snprintf(out + k, cap - k, "%s\"%s\": \"%s\"", k ? ", " : "", r, hx); }
+        free(b);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
 static void wrap_loose(const char *mods) {          /* a plugin folder dropped in without mod.json */
     char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", mods);
     WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
@@ -142,9 +158,12 @@ static void wrap_loose(const char *mods) {          /* a plugin folder dropped i
         if (fd.cFileName[0] == '.' || !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
         char d[1400], mj[1500]; snprintf(d, sizeof d, "%s\\%s", mods, fd.cFileName); snprintf(mj, sizeof mj, "%s\\mod.json", d);
         if (exists(mj) || !dll_count(d)) continue;
+        char files[8192]; files[0] = 0; list_dlls(d, "", files, sizeof files);
         FILE *f = fopen(mj, "w"); if (!f) continue;
+        /* the shared shape (lane bepinexmac): platforms.any.files = the plugin DLLs (AnyCPU) with their sha256 */
         fprintf(f, "{\n \"id\": \"%s\",\n \"name\": \"%s\",\n \"version\": \"0\",\n \"kind\": \"bepinex\",\n \"scope\": \"gameplay\",\n"
-                   " \"description\": \"BepInEx plugin (BepInEx %s). Every multiplayer player needs it.\"\n}\n", fd.cFileName, fd.cFileName, BIE_TAG);
+                   " \"platforms\": {\"any\": {\"files\": {%s}}},\n"
+                   " \"description\": \"BepInEx plugin (BepInEx %s). Every multiplayer player needs it.\"\n}\n", fd.cFileName, fd.cFileName, files, BIE_TAG);
         fclose(f);
         lg("bepinex: %s has plugin DLLs and no mod.json: mod.json written (kind bepinex)", fd.cFileName);
     } while (FindNextFileA(h, &fd));

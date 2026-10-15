@@ -145,10 +145,11 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     WideCharToMultiByte(CP_ACP, 0, game, -1, g8, sizeof g8, NULL, NULL);
     { wchar_t pw[MAX_PATH]; _snwprintf(pw, MAX_PATH, L"%ls\\Mods\\active.json", data); WideCharToMultiByte(CP_ACP, 0, pw, -1, p8, sizeof p8, NULL, NULL); }
     bie_set_log(logf_);
-    int bie_any = 0;
+    int bie_any = 0; why[0] = 0;
     if (bie_prepare(r8, g8, p8, &bie_any, why, sizeof why))
         MessageBoxA(NULL, why, "Dungeon Settlers Modded: BepInEx mods are off this time", MB_OK | MB_ICONWARNING);
     SetEnvironmentVariableW(L"DOORSTOP_DISABLE", bie_any ? NULL : L"1");
+    SetEnvironmentVariableA("DSL_BIE_REASON", why[0] ? why : NULL);   /* the Mods window's "Not running: <reason>" */
 
     wchar_t v[MAX_PATH * 2];
     env(L"SteamAppId", APPID); env(L"SteamGameId", APPID);

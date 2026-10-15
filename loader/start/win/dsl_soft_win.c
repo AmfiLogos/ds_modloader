@@ -159,7 +159,7 @@ static int env_key_is(const wchar_t *line, const char *key) {
 int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_lines) {
     /* environment = as started, without DSL_PROFILE / DSL_SOFT_HANDOFF / the caller's keys, + those values */
     char keys[66][128]; int nk = 0;
-    snprintf(keys[nk++], 128, "DSL_PROFILE"); snprintf(keys[nk++], 128, "DSL_SOFT_HANDOFF");
+    snprintf(keys[nk++], 128, "DSL_PROFILE"); snprintf(keys[nk++], 128, "DSL_SOFT_HANDOFF"); snprintf(keys[nk++], 128, "DSL_BIE_REASON");
     char *ov = _strdup(env_lines ? env_lines : ""), *sv = NULL;
     for (char *l = strtok_s(ov, "\n", &sv); l && nk < 66; l = strtok_s(NULL, "\n", &sv)) {
         char *eq = strchr(l, '='); if (!eq || eq == l) continue;
@@ -167,7 +167,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     }
     free(ov);
     /* BepInEx plugins of the new set into the game copy (bie_win.c); Doorstop's variables of A never pass on */
-    char g8[MAX_PATH * 3], r8[MAX_PATH * 3], why[600]; int bie_any = 0;
+    char g8[MAX_PATH * 3], r8[MAX_PATH * 3], why[600] = ""; int bie_any = 0;
     WideCharToMultiByte(CP_ACP, 0, exe0, -1, g8, sizeof g8, NULL, NULL);
     { char *sl = strrchr(g8, '\\'); if (sl) *sl = 0; }
     snprintf(r8, sizeof r8, "%s", g8); { char *sl = strrchr(r8, '\\'); if (sl) *sl = 0; }
@@ -185,6 +185,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     snprintf(line, sizeof line, "DSL_PROFILE=%s", profile); ADD(line);
     snprintf(line, sizeof line, "DSL_SOFT_HANDOFF=%s", handoff); ADD(line);
     if (!bie_any) ADD("DOORSTOP_DISABLE=1");
+    if (why[0]) { snprintf(line, sizeof line, "DSL_BIE_REASON=%s", why); ADD(line); }
     ov = _strdup(env_lines ? env_lines : ""); sv = NULL;
     for (char *l = strtok_s(ov, "\n", &sv); l; l = strtok_s(NULL, "\n", &sv)) if (strchr(l, '=') && l[0] != '=') ADD(l);
     free(ov);

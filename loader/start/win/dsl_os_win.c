@@ -25,6 +25,16 @@ int dsl_os_sha256_file(const char *path, char out[65]) {
     return r;
 }
 
+int dsl_os_sha256_buf(const void *data, size_t n, char out[65]) {
+    BCRYPT_ALG_HANDLE alg = NULL; BCRYPT_HASH_HANDLE h = NULL; unsigned char d[32]; int r = -1;
+    if (!BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, NULL, 0) && !BCryptCreateHash(alg, &h, NULL, 0, NULL, 0, 0) &&
+        !BCryptHashData(h, (PUCHAR)data, (ULONG)n, 0) && !BCryptFinishHash(h, d, sizeof d, 0)) {
+        for (int i = 0; i < 32; i++) snprintf(out + 2 * i, 3, "%02x", d[i]); r = 0;
+    }
+    if (h) BCryptDestroyHash(h);
+    if (alg) BCryptCloseAlgorithmProvider(alg, 0);
+    return r;
+}
 static char dlerr[512];
 void *dsl_os_dlopen(const char *path) {
     char p[1200]; snprintf(p, sizeof p, "%s", path);

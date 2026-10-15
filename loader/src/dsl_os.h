@@ -30,6 +30,7 @@ const char *dsl_core_logdir(void);
 /* ---- start part, called by the core */
 const char *dsl_os_build_list(void);                     /* JSON list of the builds this loader knows: "\"a\",\"b\"" */
 int dsl_os_sha256_file(const char *path, char out[65]);  /* 0 = ok */
+int dsl_os_sha256_buf(const void *data, size_t n, char out[65]);
 void *dsl_os_dlopen(const char *path);                   /* NULL = failed, see dsl_os_dlerror */
 void *dsl_os_dlsym(void *h, const char *name);
 const char *dsl_os_dlerror(void);

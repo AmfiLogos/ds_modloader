@@ -10,6 +10,7 @@
 // Everything here runs on the main thread (dsl_frame_hook from the kit's EventSystem.Update tick, or host calls made
 // by modules from their own main-thread code).
 #include "dsl_internal.h"
+#include "dsl_os.h"
 #include "dsl_menu.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -104,7 +105,8 @@ static void mods_scan(void) {
 #ifdef _WIN32
             const char *dd = getenv("DOORSTOP_DISABLE");
             int runs = on && !(dd && *dd);
-            st = runs ? 1 : 0; why = runs ? "" : on ? "BepInEx is off this start (see starter.log)" : "off";
+            const char *br = getenv("DSL_BIE_REASON");
+            st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : "BepInEx did not start (see starter.log)";
 #else
             st = 0; why = "BepInEx plugins run on Windows only";
 #endif
@@ -190,6 +192,22 @@ static const char *world_key(const char *guid) {
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR) return c->str;
     return NULL;
 }
+/* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save */
+static void set_lines(char *out, size_t cap, char ms[65]) {
+    static char ln[MAXM][2048]; const char *lp[MAXM]; int nl = 0; char hs[1800], e1[2100];
+    for (int i = 0; i < nmi && nl < MAXM; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
+        extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
+        dsl_mod_hashes(MI[i].id, hs, sizeof hs);
+        snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;
+    }
+    qsort(lp, (size_t)nl, sizeof *lp, cmpstr);
+    static char joined[MAXM * 2048]; joined[0] = 0; out[0] = 0;
+    for (int i = 0; i < nl; i++) {
+        jesc(e1, sizeof e1, lp[i]); size_t k = strlen(out); snprintf(out + k, cap - k, "%s\"%s\"", i ? "," : "", e1);
+        if (i) strlcat(joined, "\n", sizeof joined); strlcat(joined, lp[i], sizeof joined);
+    }
+    ms[0] = 0; if (nl) dsl_os_sha256_buf(joined, strlen(joined), ms);
+}
 static void worlds_save(const char *add_guid, const char *add_key) {
     worlds_load();
     size_t cap = 1 << 16, n = 0; char *b = malloc(cap); char e1[600], e2[600];
@@ -203,13 +221,11 @@ static void worlds_save(const char *add_guid, const char *add_key) {
         jdump(c, &b, &n, &cap);
     }
     /* top-level "modset" = what the multiplayer HELLO sends: "" when no gameplay mod (its "none"), else the key */
-    /* "modset_lines": <id>@<version> of each running gameplay mod in the key, for the names in a join refusal */
-    PUT("%s\"modset_lines\":[", first ? "" : ","); first = 0;
-    { int nl = 0; for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
-        jesc(e1, sizeof e1, MI[i].id); jesc(e2, sizeof e2, MI[i].version ? MI[i].version : "");
-        PUT("%s\"%s@%s\"", nl++ ? "," : "", e1, e2); } }
-    PUT("]");
-    jesc(e2, sizeof e2, strcmp(run_key, "vanilla") ? run_key : ""); PUT(",\"modset\":\"%s\",\"worlds\":{", e2);
+    /* "modset_lines": <id>@<version>:<sha256s of every platform's files> of each running gameplay mod (multiplayer
+       left out), sorted; "modset" = sha256 of those lines ('\n'-joined), "" = no gameplay mod. That is what the
+       multiplayer HELLO sends and compares: the same on Mac and Windows for the same mods, names in a refusal. */
+    { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
+      PUT("%s\"modset_lines\":[%s],\"modset\":\"%s\",\"worlds\":{", first ? "" : ",", lj, ms); first = 0; }
     int k = 0; JNode *w = json_get(st, "worlds");
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) {
         if (!c->key || c->t != JN_STR || (add_guid && !strcasecmp(c->key, add_guid))) continue;
@@ -520,6 +536,8 @@ void dsl_reg_after_init(void) {
     else setenv("DSML_MODSET", run_key, 1);                             /* dsl_world.c compares with it */
     worlds_load();
     const char *old = json_str(worlds_doc, "modset");
-    if (!old || strcmp(old, strcmp(run_key, "vanilla") ? run_key : "") || !json_get(worlds_doc, "modset_lines")) worlds_save(NULL, NULL);
+    { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
+      /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
+      if (!(given && *given) && (!old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
     dsl_log("reg: running gameplay set %s (%d installed mod(s))", run_key, nmi);
 }
