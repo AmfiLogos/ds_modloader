@@ -7,3 +7,12 @@ loader/old/
 src-tauri/gen/
 target/
 test_env/
+
+# built binaries
+*.dylib
+*.dll
+*.exe
+*.so
+.DS_Store
+loader/test/bie/*/obj/
+loader/test/bie/*/bin/

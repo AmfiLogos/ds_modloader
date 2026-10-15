@@ -100,6 +100,8 @@ typedef struct DSLUi {
     void (*destroy)(DSLObj w);
     size_t (*clipboard_get)(char *out, size_t cap);
     void (*clipboard_set)(const char *s);
+    /* appended (check size): close the notice box this kit showed last, no callback (e.g. a "please wait" box) */
+    void (*notice_close)(void);
 } DSLUi;
 
 typedef struct DSLHost {

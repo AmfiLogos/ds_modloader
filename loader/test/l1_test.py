@@ -63,7 +63,16 @@ def wait_log(s, limit=60):
     return False
 
 
+def require_hidden_copy(app):
+    """refuse a test copy that could take focus or show in the Dock (lead rule 2026-10-15)"""
+    import plistlib
+    pl = plistlib.load(open(os.path.join(app, 'Contents', 'Info.plist'), 'rb'))
+    if not (pl.get('LSBackgroundOnly') and pl.get('LSUIElement')):
+        raise SystemExit(f'refused: {app} lacks LSBackgroundOnly/LSUIElement (rebuild it with make_instance.sh)')
+
+
 def start_a(enabled=('multiplayer',), extra_env=None):
+    require_hidden_copy(os.path.join(I, 'DungeonSettlers.app'))
     r.prepare_data(X)
     os.makedirs(os.path.join(I, 'data', 'Saves'), exist_ok=True)
     shutil.copy2(SAVE_SEED, os.path.join(I, 'data', 'Saves', os.path.basename(SAVE_SEED)))
@@ -170,7 +179,7 @@ def main():
         check('kit ready', 'ui: kit ready' in L, [l for l in L.splitlines() if 'ui:' in l][:3])
         check('reg ready', 'reg: ready' in L)
         check('rows service on', 'rows: load list service on' in L)
-        check('running set multiplayer', 'reg: running gameplay set multiplayer' in L)
+        check('running set (multiplayer is not in the key)', 'reg: running gameplay set vanilla' in L)
         check('no refused hook', 'refused' not in L.replace('world check: REFUSED', ''), [l for l in L.splitlines() if 'refused' in l][:3])
         shot('1_title')
         r.send(X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
@@ -187,7 +196,7 @@ def main():
         summary['flowK_seconds'] = round(dt, 2)
         st = wait(lambda s: s.get('scene') == 2 and not s.get('busy'), 'B in the world', 60)
         L = dlog()
-        check('B runs gcd-cdr + multiplayer', 'reg: running gameplay set gcd-cdr+multiplayer' in L)
+        check('B runs gcd-cdr + multiplayer', 'reg: running gameplay set gcd-cdr ' in L and 'multiplayer' in json.load(open(os.path.join(MODS, 'active.json'))).get('enabled', []))
         check('B world check allowed', 'uses this mod set: allowed' in L)
         act = json.load(open(os.path.join(MODS, 'active.json')))
         check('pending -> active.json', 'gcd-cdr' in act.get('enabled', []), act)
@@ -200,10 +209,10 @@ def main():
         summary['flowJ_world_seconds'] = round(dt2, 2)
         st = wait(lambda s: s.get('scene') == 2 and not s.get('busy'), 'C in the world', 60)
         L = dlog()
-        check('C runs multiplayer only', 'reg: running gameplay set multiplayer' in L)
+        check('C runs multiplayer only', 'reg: running gameplay set vanilla' in L)
         check('C world check allowed (world re-registered)', 'uses this mod set: allowed' in L)
         w = json.load(open(os.path.join(MODS, 'worlds.json')))
-        check('worlds.json: world now multiplayer', w.get('worlds', {}).get(GUID) == 'multiplayer', w)
+        check('worlds.json: world now multiplayer only (key vanilla)', w.get('worlds', {}).get(GUID) == 'vanilla', w)
         act = json.load(open(os.path.join(MODS, 'active.json')))
         check('active.json multiplayer only', act.get('enabled') == ['multiplayer'], act)
         summary['C_status'] = {k: st.get(k) for k in ('scene', 'map', 'tick', 'speed')}

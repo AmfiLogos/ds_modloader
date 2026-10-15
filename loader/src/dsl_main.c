@@ -501,6 +501,34 @@ static void sb(SB *b, const char *fmt, ...) {
     if (b->n + (size_t)k + 1 > b->cap) { b->cap = (b->n + (size_t)k + 1) * 2; b->p = realloc(b->p, b->cap); }
     va_start(ap, fmt); vsnprintf(b->p + b->n, (size_t)k + 1, fmt, ap); va_end(ap); b->n += (size_t)k;
 }
+/* Cross-platform mod-set hashes: the sha256s listed in mod.json for EVERY platform ("platforms": {key: {"files":
+   {name: sha256}}}, keys sorted, "any" = BepInEx plugins), so Mac and Windows give the same line for the same mod.
+   Writes "<platform>/<name>":"<sha>" JSON members (json != 0) or the sorted shas joined by ',' into out. 0 = none listed. */
+static int cmp_s(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
+static int listed_hashes(const JNode *mf, char *out, size_t cap, int json) {
+    const char *ent[128]; int n = 0; static char buf[128][200];
+    JNode *pl = json_get(mf, "platforms");
+    if (pl && pl->t == JN_OBJ) for (JNode *k = pl->child; k; k = k->next) {
+        JNode *fs = json_get(k, "files");
+        if (fs && fs->t == JN_OBJ) for (JNode *f = fs->child; f && n < 128; f = f->next) if (f->t == JN_STR && f->key) {
+            if (json) snprintf(buf[n], sizeof buf[n], "\"%s/%s\":\"%s\"", k->key ? k->key : "", f->key, f->str);
+            else snprintf(buf[n], sizeof buf[n], "%s", f->str);
+            for (char *c = buf[n]; *c && !json; c++) *c = (char)tolower((unsigned char)*c);
+            ent[n] = buf[n]; n++;
+        }
+    }
+    qsort(ent, (size_t)n, sizeof *ent, cmp_s);
+    out[0] = 0;
+    for (int i = 0; i < n; i++) { if (i) strlcat(out, ",", cap); strlcat(out, ent[i], cap); }
+    return n;
+}
+/* for dsl_reg.c: "<sorted shas>" of a mod folder's mod.json (every platform); "" when it lists none */
+int dsl_mod_hashes(const char *id, char *out, size_t cap) {
+    char mp[1300]; snprintf(mp, sizeof mp, "%s/%s/mod.json", modsdir, id);
+    char *t = read_file(mp, 1 << 20); JNode *m = t ? json_parse(t) : NULL; free(t);
+    int n = m ? listed_hashes(m, out, cap, 0) : 0; if (!m && cap) out[0] = 0;
+    json_free(m); return n;
+}
 static void write_modset(void) {
     char *stxt = NULL; const char *sp = getenv("DSML_SESSION");
     if (sp) stxt = read_file(sp, 8 << 20);
@@ -515,10 +543,15 @@ static void write_modset(void) {
         for (int i = 0; i < norder; i++) {
             struct DSLPlugin *p = ORDER[i];
             if (p->state != 1 || p->gameplay != (pass == 0)) continue;
+            if (pass == 0 && !strcmp(p->id, "multiplayer")) continue;      /* not part of the set: its HELLO checks build + protocol */
             sb(&b, "%s{\"id\":\"%s\",\"version\":\"%s\",\"files\":{", first ? "" : ",", p->id, p->version); first = 0;
             JNode *files = json_get(json_get(json_get(p->mf, "platforms"), DSL_PLATFORM), "files");
             char shas[16][65]; int ns = 0;
-            if (files && files->t == JN_OBJ && files->child) {
+            static char all[16384];
+            if (listed_hashes(p->mf, all, sizeof all, 1)) {                   /* every platform's listed files */
+                sb(&b, "%s", all);
+                if (files && files->t == JN_OBJ) for (JNode *f = files->child; f && ns < 16; f = f->next) if (f->t == JN_STR) snprintf(shas[ns++], 65, "%s", f->str);
+            } else if (files && files->t == JN_OBJ && files->child) {
                 for (JNode *f = files->child; f && ns < 16; f = f->next) {
                     char fp[1400]; snprintf(fp, sizeof fp, "%s/%s", p->dir, f->key);
                     if (sha256_file(fp, shas[ns])) continue;
@@ -540,6 +573,26 @@ static void write_modset(void) {
         char id[64]; size_t k = 0; while (l->str[k] && l->str[k] != '@' && k < 63) { id[k] = l->str[k]; k++; } id[k] = 0;
         struct DSLPlugin *o = find_mod(id);
         if (o && o->state != 1) { diffs++; dsl_log("mod set: the launcher lists %s but it is not running (%s)", l->str, o->state == 2 ? "failed" : "skipped"); }
+    }
+    /* BepInEx plugins (mod.json kind "bepinex"; started outside dlopen: start/win/bie_win.c, the Mac launcher) that the
+       profile enables: in the set like a code module, with the same every-platform hashes */
+    for (int pass = 0; pass < 2; pass++) {
+        sb(&b, "%s", pass ? "" : "],\"bepinex\":[");
+        int f1 = 1;
+        if (pass == 1) break;
+        for (int i = 0; i < nprovided; i++) {
+            char mp[1300]; snprintf(mp, sizeof mp, "%s/%s/mod.json", modsdir, provided[i]);
+            char *t = read_file(mp, 1 << 20); JNode *m = t ? json_parse(t) : NULL; free(t);
+            const char *k = json_str(m, "kind");
+            if (k && !strcmp(k, "bepinex")) {
+                static char all[16384]; listed_hashes(m, all, sizeof all, 1);
+                const char *sc = json_str(m, "scope");
+                sb(&b, "%s{\"id\":\"%s\",\"version\":\"%s\",\"scope\":\"%s\",\"files\":{%s}}", f1 ? "" : ",", provided[i],
+                   json_str(m, "version") ? json_str(m, "version") : "", sc && !strcmp(sc, "client") ? "client" : "gameplay", all);
+                f1 = 0;
+            }
+            json_free(m);
+        }
     }
     sb(&b, "],\"provided\":[");
     for (int i = 0; i < nprovided; i++) sb(&b, "%s\"%s\"", i ? "," : "", provided[i]);

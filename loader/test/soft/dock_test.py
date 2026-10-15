@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""B's start in a copy WITHOUT LSUIElement (like a player's copy): is it ever a Dock (Foreground) app or visible
+"""RETIRED 2026-10-15 (lead): no test copy may lack LSBackgroundOnly / LSUIElement, so this test refuses to run.
+Was: B's start in a copy WITHOUT LSUIElement (like a player's copy): is it ever a Dock (Foreground) app or visible
 before the swap? Fake handoff from this script (title case); B is killed once it reports ready. No activation."""
 import json, os, re, signal, subprocess, sys, time
 sys.path.insert(0, os.path.expanduser('~/ds_launcher/loader/test'))
 import lrig as r
+raise SystemExit('dock_test.py is retired: test copies must keep LSBackgroundOnly / LSUIElement (lead 2026-10-15)')
 X = 'T'; I = r.idir(X); SD = os.path.join(I, 'softrestart'); os.makedirs(SD, exist_ok=True)
 r.prepare_data(X)
 H = os.path.join(SD, 'handoff.json')
