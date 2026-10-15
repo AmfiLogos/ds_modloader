@@ -24,10 +24,10 @@ Goal: one app the owner opens from ~/Applications and tests on his own Mac, with
 `tools/make_seed.sh && cd src-tauri && CARGO_BUILD_JOBS=4 nice -n 19 cargo tauri build --config tauri.owner.conf.json`,
 then install the app (old one to ~/Applications/old_versions/ with a date-time suffix) and run `owner_app_smoke`.
 
-## Test result 2026-10-15 17:5x
-`owner_app_smoke` PASS on the installed ~/Applications/DS Mod Launcher.app (multiplayer 0.10.0 = lan v10, dsrig.dylib
-3d83e997...): listed ON, copy made from the real Steam install (read only), hidden boot to the title screen, socket
-answered, owner's prefs / UserSetting.json / real GameAssembly unchanged.
-Found: the multiplayer control socket is `<profile>/ctl.sock`; a path over 104 bytes is cut (`ctl.soc`) and nothing
-answers. The owner's path is 85 bytes (fine). A player with a long user name could pass the limit: only the test /
-control socket is affected, not play (needs a check in the dylib before a public release).
+## Test results 2026-10-15
+- 18:00 `owner_app_smoke` PASS on the installed app with lan v11 (multiplayer 0.11.0, dsrig.dylib e58c6dec...): listed ON,
+  copy from the real Steam install (read only), hidden boot to the title screen, socket answered, owner's prefs /
+  UserSetting.json / real GameAssembly unchanged. v10 app moved to ~/Applications/old_versions/DS Mod Launcher-2026-10-15-1800.app.
+- Socket path limit: a control socket path over 104 bytes was cut (`ctl.soc`) and nothing answered. Fix on
+  ds_multiplayer branch `sockpath` (rig_sock.c: long path binds at /tmp/dsrig-<uid>-<hash>.sock, link at the asked
+  path). `long_socket_path_answers` PASS with that dylib (148-byte path). Not in v11: it ships with the next merge.
