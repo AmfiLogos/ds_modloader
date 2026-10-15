@@ -25,7 +25,8 @@ MP_REPO=${MP_REPO:-$HOME/ds_multiplayer}; MP_PIN=${MP_PIN:-$(head -1 mp_pin.txt)
 SHA=$(git -C $MP_REPO rev-parse --verify "$MP_PIN^{commit}") || { echo "mp pin $MP_PIN not found in $MP_REPO" >&2; exit 1; }
 V=build/pin/$SHA; M=build/mods/multiplayer; mkdir -p $M build/pin
 if [[ ! -f $V/src/build.sh ]]; then
-  mkdir -p $V.tmp; git -C $MP_REPO archive $SHA src win/math | tar -x -C $V.tmp; mv $V.tmp $V
+  ex=(src win/math); for d in custom sdk; do git -C $MP_REPO cat-file -e $SHA:$d 2>/dev/null && ex+=($d); done   # Custom Modes (M4 split) when the tree has it
+  mkdir -p $V.tmp; git -C $MP_REPO archive $SHA $ex | tar -x -C $V.tmp; mv $V.tmp $V
 fi
 if [[ ! -f $V/win/math/build/libdsmath_arm64.a ]]; then        # arm64 part of win/math/build_math.sh
   (cd $V/win/math && mkdir -p build/obj_arm64 && for f in musl/*.c; do nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0 -O2 -std=gnu11 \
