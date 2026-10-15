@@ -298,6 +298,19 @@ static void capture(const char *who) {
     FILE *f = fopen(p, "wb"); if (f) { fwrite((char *)png + 0x20, 1, n, f); fclose(f); }
 }
 
+/* test: the game's own full frame (UI included) to a PNG file; main thread, between frames */
+int dsl_soft_shot(const char *path) {
+    if (!cap_tex) { cap_tex = meth("UnityEngine", "ScreenCapture", "CaptureScreenshotAsTexture", 0);
+                    enc_png = meth("UnityEngine", "ImageConversion", "EncodeToPNG", 1); obj_destroy = meth("UnityEngine", "Object", "Destroy", 1); }
+    if (!cap_tex || !enc_png || !dsl_ready) return -1;
+    Obj tex = cap_tex(NULL); if (!tex) return -1;
+    Obj png = enc_png(tex, NULL); if (obj_destroy) obj_destroy(tex, NULL);
+    if (!png) return -1;
+    size_t n = (size_t)AT(png, 0x18, uintptr_t);
+    FILE *f = fopen(path, "wb"); if (!f) return -1;
+    fwrite((char *)png + 0x20, 1, n, f); fclose(f); return 0;
+}
+
 /* ------------------------------------------------------------------ A side */
 enum { A_IDLE, A_WAIT_READY, A_WAIT_SHOWN, A_QUITTING, A_FAILED };
 static int a_state = A_IDLE; static double a_t0, a_tstate; static pid_t b_pid;
@@ -379,6 +392,7 @@ static void write_handoff(void) {
 }
 
 int dsl_soft_wanted(void) { return role_b; }
+void *dsl_soft_mainflow(void) { return mf; }
 int dsl_soft_apply(const char *profile, const char *env_lines) {
     if (role_b && hidden) { dsl_log("soft: refused, this process is still being handed over"); return -1; }
     if (a_state != A_IDLE && a_state != A_FAILED) { dsl_log("soft: refused, a soft restart already runs"); return -1; }
@@ -393,7 +407,6 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
         ld += 14; size_t n = strcspn(ld, "\n"); if (n >= sizeof a_save) n = sizeof a_save - 1;
         memcpy(a_save, ld, n); a_save[n] = 0;
     }
-    if (a_save[0] && sc != 1) { dsl_log("soft: refused, DSL_SOFT_LOAD only from the title"); a_save[0] = 0; return -1; }
     char p[1300];
     for (const char *x = "ready\0go\0shown\0failed\0"; *x; x += strlen(x) + 1) { path_of(p, sizeof p, x); unlink(p); }
     if (getenv("DSL_SOFT_CAPTURE")) cap_on = 1;

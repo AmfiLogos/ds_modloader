@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_LOADER_VERSION "2.0.0"
+#define DSL_LOADER_VERSION "3.0.0"
 #define DSL_OWNER_LOADER (-1)
 
 extern uintptr_t dsl_ga_base;            /* GameAssembly arm64 load address, 0 before it is mapped */
@@ -72,3 +72,19 @@ int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: H
 void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */
 void dsl_newworld_label(char *out, size_t cap);                      /* "Mods for this world: ..." */
 void dsl_newworld_change(void);
+void dsl_world_mismatch(const char *save_name, const char *guid, const char *key);   /* dsl_world.c refused: ask (flow K) */
+const char *dsl_reg_data_dir(void);
+struct DSLHost; struct DSLPlugin;
+void dsl_reg_host(struct DSLHost *h);                    /* constructor: API 3 host fields */
+void dsl_reg_ready(struct DSLHost *h);                   /* il2cpp_init returned, before the modules' init */
+void dsl_reg_after_init(void);                           /* after the modules' init */
+/* dsl_main.c, for dsl_reg.c */
+const char *dsl_mods_dir(void);
+const char *dsl_profile_file(void);
+const char *dsl_log_dir(void);
+int dsl_plugin_index(struct DSLPlugin *self);
+const char *dsl_plugin_name(struct DSLPlugin *self);
+int dsl_mod_state(const char *id, const char **why);     /* 1 running, 2 failed, 3 skipped, 0 listed / unknown */
+int dsl_soft_shot(const char *png_path);                 /* test: full frame incl. UI */
+void *dsl_soft_mainflow(void);                           /* dsl_soft.c: the live MainFlow or NULL */
+#define MAXP_REG 32

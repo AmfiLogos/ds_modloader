@@ -15,7 +15,7 @@
 #include <strings.h>
 #include <dlfcn.h>
 
-#define REFUSE_TEXT "This world uses other mods. Start it from the launcher."
+#define REFUSE_TEXT "This world uses other mods."
 
 static void *(*orig_load)(void *self, void *name, const void *mi);
 static int (*try_header)(void *self, void *name, void *hdr, void **set, const void *mi);
@@ -61,6 +61,7 @@ static void *my_load(void *self, void *name, const void *mi) {
     if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return it; }
     if (mine && !strcasecmp(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, w->str, mine ? mine : "?");
+    dsl_world_mismatch(nm, g, w->str);                  /* asks "Load it with them?" (flow K, dsl_reg.c) */
     json_free(s);
     dsl_world_refusals++;
     if (it) *(int32_t*)((char*)it + 0x10) = -2;      /* <>1__state: MoveNext returns false at once */
