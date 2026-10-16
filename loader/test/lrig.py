@@ -192,6 +192,15 @@ def fix_mp_port(x):
         json.dump(d, open(p + '.tmp', 'w')); os.replace(p + '.tmp', p)
 
 
+def require_windowed(x):
+    """a test copy never opens full screen on the owner's display (a full-screen copy switched his Space, 2026-10-16):
+    its own prefs domain must say windowed after prepare_data, else the start is refused"""
+    dom = f'com.CanOpener.Dungeon-Settlers.mp{x}'
+    m = subprocess.run(['defaults', 'read', dom, 'Screenmanager Fullscreen mode'], capture_output=True, text=True).stdout.strip()
+    if m in ('0', '1'):
+        raise SystemExit(f'refused: test copy {x} ({dom}) would open full screen (Screenmanager Fullscreen mode {m})')
+
+
 def prepare_data(x):
     d = os.path.join(idir(x), 'data')
     os.makedirs(os.path.join(d, 'Saves'), exist_ok=True)
@@ -242,6 +251,8 @@ def start(x, window=False, fps=30, show=None):
            'TMPDIR': os.environ.get('TMPDIR', '/tmp'), 'DSRIG_DIR': idir(x), 'DSRIG_FPS': str(fps),
            'DYLD_INSERT_LIBRARIES': ':'.join([os.environ.get('LRIG_DYLIB') or os.path.join(idir(x), DYLIB_REL)] + ([os.environ['LRIG_EXTRA_INSERT']] if os.environ.get('LRIG_EXTRA_INSERT') else []))}
     env.update({k: v for k, v in os.environ.items() if (k.startswith('DSRIG_') or k.startswith('DSL_') or k.startswith('FOREIGN_') or k.startswith('DSML_')) and k not in env})   # DSRIG_DIAG, DSRIG_DETAIL_SYNC...
+    env.setdefault('DSL_NOTCH', '0')                           # the notch fix covers the whole screen: off in tests (notch_test sets 1)
+    require_windowed(x)
     args = [exe, '-logFile', os.path.join(idir(x), 'player.log'), '-screen-fullscreen', '0',
             '-screen-width', '960', '-screen-height', '540']
     if window and show:

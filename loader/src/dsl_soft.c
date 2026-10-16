@@ -73,6 +73,7 @@ static void (*fade_out)(Obj, Obj, int, const void *), (*fade_in)(Obj, const void
 static int (*fade_done)(Obj, const void *), (*fade_loading)(Obj, const void *);
 static void (*app_quit)(const void *);
 static Obj (*cap_tex)(const void *); static Obj (*enc_png)(Obj, const void *); static void (*obj_destroy)(Obj, const void *);
+static int (*get_fsmode)(void); static void (*set_fsmode)(int);         /* Screen.fullScreenMode (icalls): B takes A's */
 
 /* B boot speed: the Unity splash is cancelled and frames are uncapped while hidden (the boot is frame bound:
    one loading step per frame); a prewarm B waiting at the title runs at DSL_SOFT_IDLE_FPS (10). The game's own frame
@@ -307,8 +308,8 @@ static void write_handoff(const char *profile, int prewarm, double apply_at) {
     char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", handoff_path);
     FILE *o = fopen(tmp, "w"); if (!o) return;
     fprintf(o, "{\"v\":2,\"from_pid\":%d,\"profile\":\"%s\",\"scene\":%d,\"save\":\"%s\",\"speed\":-1,\"prewarm\":%d,"
-               "\"frame\":[%.1f,%.1f,%.1f,%.1f],\"apply_at\":%.3f}\n",
-            (int)getpid(), jp, a_scene, js, prewarm, f[0], f[1], f[2], f[3], apply_at);
+               "\"frame\":[%.1f,%.1f,%.1f,%.1f],\"fsmode\":%d,\"apply_at\":%.3f}\n",
+            (int)getpid(), jp, a_scene, js, prewarm, f[0], f[1], f[2], f[3], get_fsmode ? get_fsmode() : -1, apply_at);
     fclose(o); rename(tmp, handoff_path);
     SLOG("A: handoff written: scene %d save '%s' prewarm %d frame %.0f,%.0f %.0fx%.0f", a_scene, a_save, prewarm, f[0], f[1], f[2], f[3]);
 }
@@ -534,6 +535,10 @@ static void b_tick(void) {
         if (!up && t - go_seen < 1.5) { force_fps(10000); return; }      /* the fade runs at once, uncapped */
         if (!up) SLOG("B: loading screen not up 1.5 s after go: shown anyway");
         b_read_handoff();
+        {   /* A's window mode (windowed / full screen): the new game shows the same */
+            JNode *fm = json_get(hand, "fsmode"); int want = fm ? (int)fm->num : -1, have = get_fsmode ? get_fsmode() : -1;
+            if (want >= 0 && have >= 0 && want != have && set_fsmode) { set_fsmode(want); SLOG("B: window mode %d -> %d (A's)", have, want); }
+        }
         hidden = 0;
         fast_end();
         mute_end();
@@ -649,6 +654,7 @@ void dsl_soft_install(void) {
     fade_loading = meth("Refactor.UI", "ScreenFadeEffectView", "get_IsLoading", 0);
     app_quit = meth("UnityEngine", "Application", "Quit", 0);
     void *(*icall)(const char *) = dsl_ga_sym("il2cpp_resolve_icall");
+    if (icall) { get_fsmode = icall("UnityEngine.Screen::get_fullScreenMode"); set_fsmode = icall("UnityEngine.Screen::set_fullScreenMode"); }
     if (role_b && icall) {
         get_vol = icall("UnityEngine.AudioListener::get_volume"); set_vol = icall("UnityEngine.AudioListener::set_volume");
         get_apause = icall("UnityEngine.AudioListener::get_pause"); set_apause = icall("UnityEngine.AudioListener::set_pause");
