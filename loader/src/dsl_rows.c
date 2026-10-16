@@ -47,7 +47,6 @@ typedef struct { float x, y, w, h; } URect;
 static URect (*rt_rect)(Obj t, const void *mi);
 static void dsl_rows_place(Obj cs, DSLObj line, DSLObj chg);
 static int dsl_rows_line_chars(Obj cs);
-static void fit(char *t, int maxc);
 static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn);
 static int32_t o_cases = -1, o_dict = -1, o_slots = -1, o_title_name = -1, o_cur = -1, o_lowload = -1;
 static Obj (*find_obj)(Obj type, int inactive, const void *mi);
@@ -180,42 +179,64 @@ static void build_rows(Obj slv) {
     }
 }
 
+/* the world's mods (owner 2026-10-16 #6, #9): short names on the RIGHT of the world row, as many as fit + "+N";
+   the hover card lists every mod, one per line. The multiplayer tag stays on the left, after the world name. */
+void dsl_mod_short(const char *id, char *out, size_t cap);
+const char *dsl_mod_name(const char *id);
+int dsl_reg_scene(void);
+static void world_texts(const char *guid, int maxc, char *line, size_t lcap, char *all, size_t acap) {
+    const char *ids[64]; int n = dsl_world_mods(guid, ids, 64);
+    all[0] = 0; line[0] = 0;
+    if (!n) { snprintf(line, lcap, "<color=#A69085>Mods:</color> none"); snprintf(all, acap, "No mods."); return; }
+    int used = 6, k = 0;                                                  /* "Mods: " */
+    char shown[600] = "";
+    for (int i = 0; i < n; i++) {
+        const char *nm = dsl_mod_name(ids[i]);
+        char one[300]; snprintf(one, sizeof one, "%s%s", nm ? nm : ids[i], nm ? "" : " (not installed)");
+        if (i) strlcat(all, "\n", acap);
+        strlcat(all, one, acap);
+        char sh[64]; dsl_mod_short(ids[i], sh, sizeof sh);
+        int len = (int)strlen(sh) + (k ? 3 : 0), plus = i + 1 < n ? 4 : 0;
+        if (k && used + len + plus > maxc) continue;                      /* the first one always shows */
+        if (k) strlcat(shown, " \xC2\xB7 ", sizeof shown);
+        strlcat(shown, sh, sizeof shown); used += len; k++;
+    }
+    if (k < n) { char pl[16]; snprintf(pl, sizeof pl, "  +%d", n - k); strlcat(shown, pl, sizeof shown); }
+    snprintf(line, lcap, "<color=#A69085>Mods:</color> %s", shown);
+}
 static void decorate(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
+    int at_title = dsl_reg_scene() != 2;                                  /* in a world mods do not change (owner #10) */
     for (int i = 0; i < nw; i++) {
         WRow *w = &W[i]; Obj cs = gc_get(w->cs); if (!live(cs) || w->hid) continue;
-        char txt[1200], one[400]; dsl_world_label(w->guid, txt, sizeof txt);
+        char txt[1200], all[1400], one[400];
+        world_texts(w->guid, dsl_rows_line_chars(cs), txt, sizeof txt, all, sizeof all);
         for (int r = 0; r < nr; r++) {
             one[0] = 0; R[r].r.text(R[r].r.ud, w->guid, w->save, one, sizeof one);
-            if (one[0]) { strlcat(txt, "   ", sizeof txt); strlcat(txt, one, sizeof txt); }
+            if (one[0]) { strlcat(txt, "   ", sizeof txt); strlcat(txt, one, sizeof txt); strlcat(all, "\n", sizeof all); strlcat(all, one, sizeof all); }
         }
         Obj tr = comp_tr(cs, NULL);
-        /* right part of the world row's header (the stock texts sit on the left and in the middle) */
-        char full[1200]; snprintf(full, sizeof full, "%s", txt);
-        fit(txt, dsl_rows_line_chars(cs));
-        if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, txt, 13, DSL_TXT_RIGHT, 0xA69085FF);
+        if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, txt, 14, DSL_TXT_RIGHT, 0xD9C7B0FF);
         else u->set_text(w->line, txt);
-        if (strcmp(full, txt)) u->tooltip(w->line, "Mods of this world", full);   /* cut: the whole list on hover */
+        u->tooltip(w->line, "Mods of this world", all);
         if (!w->chg) { w->chg = u->button(tr, 0, 0, 10, 10, "Change", change_click, (void *)(intptr_t)i);
                        u->tooltip(w->chg, "Change", "Choose the mods this world loads with."); }
-        dsl_rows_place(cs, w->line, w->chg);
+        u->set_active(w->chg, at_title);
+        dsl_rows_place(cs, w->line, at_title ? w->chg : NULL);
     }
 }
 
 /* layout: local units of the row's RectTransform (rect from RectTransform.get_rect) */
-/* one line on the world row's header, right of the world name: "Mods: ... [Change]" */
-#define LINE_X 0.45f
+/* one line on the right of the world row's header: "Mods: a · b +N  [Change]"; the left half keeps the name + tag */
+#define LINE_X 0.5f
 #define CHG_W 64.f
 static float row_w(Obj cs) { Obj t = comp_tr(cs, NULL); return t && rt_rect ? rt_rect(t, NULL).w : 0; }
-static int dsl_rows_line_chars(Obj cs) { float w = row_w(cs) * (1 - LINE_X) - CHG_W - 12; return w > 60 ? (int)(w / 6.4f) : 10; }
-static void fit(char *t, int maxc) {                                    /* cut at maxc characters (UTF-8 aware) + "..." */
-    int c = 0; for (char *p = t; *p; p++) if ((*p & 0xC0) != 0x80 && ++c > maxc - 3) { *p = 0; strcat(t, "..."); return; }
-}
+static int dsl_rows_line_chars(Obj cs) { float w = row_w(cs) * (1 - LINE_X) - CHG_W - 12; return w > 60 ? (int)(w / 7.0f) : 10; }
 static void dsl_rows_place(Obj cs, DSLObj line, DSLObj chg) {
     const DSLUi *u = dsl_ui_kit(); float w = row_w(cs); if (!u || w <= 0) return;
-    float x0 = w * LINE_X, bx = w - CHG_W - 4;
+    float x0 = w * LINE_X, bx = chg ? w - CHG_W - 4 : w - 4;
     u->place(line, x0, 1, bx - x0 - 8, 20);
-    u->place(chg, bx, 2, CHG_W, 18);
+    if (chg) u->place(chg, bx, 2, CHG_W, 18);
 }
 static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn) {
     const DSLUi *u = dsl_ui_kit(); Obj t = comp_tr(cs, NULL); if (!u || !t || !rt_rect) return;
@@ -285,6 +306,9 @@ static void new_campaign_frame(void) {
     else u->set_text(nc_line, t);
     dsl_rows_place_newcampaign(cs, nc_line, nc_btn);
 }
+
+/* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
+DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
 
 void dsl_rows_frame(void) {
     if (!ok) return;

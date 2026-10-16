@@ -90,7 +90,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_cs_match, *m_cs_getmatch, *m_cs_smm, *m_cs_getsmm, *m_rtu_w2s,
     *m_sr_content, *m_sr_viewport, *m_sr_h, *m_sr_v, *m_sr_move, *m_sr_sens,
     *m_es_update, *m_tb_init, *m_tb_inter, *m_nv_select, *m_nv_confirm, *m_ui_prefab,
-    *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks;
+    *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks, *m_scr_w;
 
 static int32_t f_tb_label = -1, f_tv_btn[7], f_tv_credit = -1, f_nv_text = -1, f_nv_tok = -1, f_nv_tcancel = -1,
                f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1,
@@ -727,18 +727,24 @@ static void tip_blocks(Obj etc, int on) {
     Obj cg = comp_get(etc, K.CanvasGroup); if (!cg && !on) cg = comp_add(etc, K.CanvasGroup);
     if (cg) CALL(m_cg_blocks, void, Obj, bool)(cg, on != 0, m_cg_blocks);
 }
-static void tip_hide(void) {
-    if (!tip_shown) return;
-    tip_blocks(hget(h_tip_etc), 1);
-    tip_shown = 0; hfree(&h_tip_shown_target); tip_cur_title[0] = 0;
-    Obj v = tooltip_view(); if (v) CALL(m_tt_hide, void, Obj, Guid)(v, TIP_ID, m_tt_hide);
+/* placement (owner 2026-10-16 #3): the card goes OUTSIDE the panel the element sits in, at the panel's right edge, its
+   top level with the element's top; no room on the right -> outside the panel's left edge. Never over the panel. */
+static float tip_panel[4], tip_el_top; static int tip_side, tip_check;            /* side 0 right, 1 left; frames left to check */
+static float screen_w(void) { return m_scr_w ? (float)CALL0(m_scr_w, int)(m_scr_w) : 1920.f; }
+/* the panel of an element: the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list) */
+static void tip_panel_of(Obj target, const float el[4], float out[4]) {
+    memcpy(out, el, 4 * sizeof *out);
+    float sw = screen_w(); Obj t = tr_of(target);
+    for (int d = 0; d < 16 && t; d++) {
+        t = tr_parent(t); float r[4];
+        if (!t || !rect_screen(t, r)) break;
+        if (r[2] - r[0] >= sw * 0.75f) break;
+        if (r[0] <= el[0] + 1 && r[2] >= el[2] - 1 && r[2] - r[0] >= out[2] - out[0]) memcpy(out, r, sizeof r);
+    }
 }
-static void tip_show(TipE *e) {
-    Obj v = tooltip_view(); if (!v || !tip_ok()) return;
-    if (tip_shown) tip_hide();
-    raise_view(v, 32050);
-    float r[4]; if (!rect_screen(e->target, r)) return;
-    V2 pos = { r[0] + 2, r[1] - 2 };                                  /* bottom-left corner, stock OFFSET_X / OFFSET_Y */
+static void tip_card_rect(float r[4]) { Obj etc = hget(h_tip_etc); if (!etc || !rect_screen(etc, r)) r[0] = r[1] = r[2] = r[3] = 0; }
+static void tip_show_at(TipE *e, V2 pos) {
+    Obj v = tooltip_view(); if (!v) return;
     struct { uint8_t b[0xC0]; } ctx; memset(&ctx, 0, sizeof ctx); ctx.b[f_ctx_hidehold] = 1;   /* HideHoldLayout */
     CALL(m_tt_show, void, Obj, Guid, int, Obj, V2, int, __typeof__(ctx))(v, TIP_ID, 0, str(BASE_KEY), pos, 0, ctx, m_tt_show);
     tip_shown = 1; hset(&h_tip_shown_target, e->target);
@@ -756,6 +762,37 @@ static void tip_show(TipE *e) {
     if (f_tb_canhold >= 0) AT(etc, f_tb_canhold, bool) = false;
     if (m_tb_disablehold) CALL(m_tb_disablehold, void, Obj)(etc, m_tb_disablehold);
     tip_blocks(etc, 0);
+}
+static void tip_hide(void) {
+    if (!tip_shown) return;
+    tip_blocks(hget(h_tip_etc), 1);
+    tip_shown = 0; tip_check = 0; hfree(&h_tip_shown_target); tip_cur_title[0] = 0;
+    Obj v = tooltip_view(); if (v) CALL(m_tt_hide, void, Obj, Guid)(v, TIP_ID, m_tt_hide);
+}
+#define TIP_GAP 8.f
+static void tip_show(TipE *e) {
+    Obj v = tooltip_view(); if (!v || !tip_ok()) return;
+    if (tip_shown) tip_hide();
+    raise_view(v, 32050);
+    float r[4]; if (!rect_screen(e->target, r)) return;
+    tip_panel_of(e->target, r, tip_panel); tip_el_top = r[3]; tip_side = 0;
+    tip_show_at(e, (V2){ tip_panel[2] + TIP_GAP, r[3] });             /* pos = the card's top-left corner */
+    tip_check = 4;                                                    /* the card gets its size in the next frames */
+}
+/* the card's real size is known after layout: off the screen on the right, or pushed back over the panel by the stock
+   screen clamp -> the left side, outside the panel */
+static void tip_place_frame(void) {
+    if (!tip_shown || tip_check <= 0) return;
+    tip_check--;
+    float c[4]; tip_card_rect(c); float w = c[2] - c[0];
+    if (w <= 1 || tip_side) return;
+    if (c[0] < tip_panel[2] - 1 || c[2] > screen_w() + 1) {
+        Obj t = hget(h_tip_shown_target); TipE *e = NULL;
+        for (int i = 0; i < ntips; i++) if (tips[i].target == t) e = &tips[i];
+        if (!e) return;
+        float x = tip_panel[0] - TIP_GAP - w; if (x < 0) x = 0;
+        tip_side = 1; tip_show_at(e, (V2){ x, tip_el_top }); tip_check = 0;
+    }
 }
 static void tips_frame(void) {
     if (!ntips && !tip_shown) return;
@@ -787,6 +824,10 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
 }
 /* test only: hover this target instead of the mouse (NULL = the mouse) */
 __attribute__((visibility("default"))) void dsl_ui_test_hover(DSLObj target) { tip_test_target = target; }
+/* test only: the shown card's screen rect and the panel it was placed against (x0, y0, x1, y1) */
+__attribute__((visibility("default"))) int dsl_ui_test_tip_rects(float card[4], float panel[4]) {
+    tip_card_rect(card); memcpy(panel, tip_panel, sizeof tip_panel); return tip_shown;
+}
 __attribute__((visibility("default"))) int dsl_ui_test_tip(char *title, size_t cap) {   /* 1 = our tooltip shows; its title as drawn */
     Obj etc = hget(h_tip_etc);
     if (title && cap) { title[0] = 0; if (tip_shown && etc) utf8_of(tmp_get(AT(etc, f_etc_title, Obj)), title, cap); }
@@ -941,9 +982,25 @@ static void title_frame(void) {
             if (e->tip[0]) k_tooltip(tr_of(b), e->label, e->tip);
             dsl_log("ui: title button \"%s\" added to the title column (%d children)", e->label, n);
         }
-        int want = n - ntbs + i;
-        if (sibling(b) != want) set_sibling(b, want);
         go_active(b, stock_on);
+    }
+    /* order (owner 2026-10-16 #2): right below the multiplayer module's "Multiplayer" button, then by order; without
+       it, last in the column as before */
+    Obj mp = NULL;
+    for (int c = 0, nc = child_count(col); c < nc && !mp; c++) {
+        Obj x = child_at(col, c), tb = comp_get(x, K.TitleButton); if (!tb) continue;
+        int ours = 0; for (int i = 0; i < ntbs; i++) ours |= hget(tbs[i].h_btn) == tb;
+        if (ours) continue;
+        char l[96]; utf8_of(tmp_get(btn_label(tb)), l, sizeof l);
+        if (!strcmp(l, "Multiplayer")) mp = x;
+    }
+    Obj prev = mp;
+    for (int i = 0; i < ntbs; i++) {
+        Obj b = hget(ord[i]->h_btn); if (!b) continue;
+        if (!prev) { int want = n - ntbs + i; if (sibling(b) != want) set_sibling(b, want); continue; }
+        int ps = sibling(prev), bs = sibling(b);
+        if (bs != ps + 1) set_sibling(b, bs < ps ? ps : ps + 1);       /* SetSiblingIndex takes the final index */
+        prev = b;
     }
 }
 
@@ -991,6 +1048,7 @@ static void tick(void) {
     run_queue();
     fields_frame();
     tips_frame();
+    tip_place_frame();
 }
 static void h_es_update(Obj self, const void *mi) {
     o_es_update(self, mi);
@@ -1150,6 +1208,7 @@ void dsl_ui_install(void) {
     m_tt_show = OPT(K.TooltipUI, "ShowTooltipAtScreenPosition", 6); m_tt_hide = OPT(K.TooltipUI, "HideToolTip", 1);
     m_tb_id = OPT(kTB, "get_TooltipID", 0); m_tb_hidediv = OPT(kTB, "HideLastDivider", 0); m_tb_disablehold = OPT(kTB, "DisableHoldLayout", 0);
     m_cg_blocks = OPT(K.CanvasGroup, "set_blocksRaycasts", 1);
+    m_scr_w = OPT(klass(UE, "Screen"), "get_width", 0);
     f_tb_label = fld(K.TitleButton, "_buttonName");
     { static const char *const nm[7] = { "_continueButton", "_newGameButton", "_loadCampaignButton", "_settingButton", "_creditButton", "_reportBugButton", "_quitButton" };
       for (int i = 0; i < 7; i++) f_tv_btn[i] = fld(K.TitleMenuView, nm[i]); f_tv_credit = f_tv_btn[4]; }
