@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Owner item 9: a mod whose saves need the loader (mod.json "save_dependent": hell-difficulty) shows a warning, on
-test copy S (hidden, muted, staged; take a lease first). Uses this worktree's build/.
+test copy K (hidden, muted, staged; take a lease first). Uses this worktree's build/.
  1. Load list: the world (gcd-cdr) has no warning in its hover card
  2. its "Change" -> Mods window: Hell off = no warning line; Hell on = "Saves made with Hell difficulty may not work
     without the mod loader." under its switch
@@ -15,9 +15,8 @@ OUT = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/ds_launcher/lo
 os.makedirs(OUT, exist_ok=True); T.OUT = OUT; V.OUT = OUT
 V.UI = os.path.join(OUT, 'ui'); os.makedirs(V.UI, exist_ok=True)
 check, log = T.check, T.log
-X = os.environ.get('DSL_TEST_COPY')                     # another test copy when S is busy with another lane (e.g. M)
-if X:
-    T.X = X; T.I = r.idir(X); T.SDIR = os.path.join(T.I, 'softrestart'); T.MODS = os.path.join(T.I, 'data', 'Mods')
+X = os.environ.get('DSL_TEST_COPY', 'K')                # its own copy (S is shared with other lanes); make_instance.sh K
+T.X = X; T.I = r.idir(X); T.SDIR = os.path.join(T.I, 'softrestart'); T.MODS = os.path.join(T.I, 'data', 'Mods')
 WARN = 'Saves made with Hell difficulty may not work without the mod loader.'
 
 
@@ -34,6 +33,9 @@ def warn_text(st):
 def main():
     for p in T.game_pids(): raise SystemExit(f'copy {T.X} already running: {p}')
     os.makedirs(T.SDIR, exist_ok=True)
+    sv = os.path.join(T.I, 'data', 'Saves')                 # only the seed world on the list: row 0 = Elven Expedition
+    if os.path.isdir(sv):
+        old = os.path.join(T.I, 'old', time.strftime('%Y%m%d-%H%M%S')); os.makedirs(old, exist_ok=True); shutil.move(sv, old)
     V.install()
     g = threading.Thread(target=T.guard, daemon=True); g.start()
     S = {'violations': T.violations, 'checks': T.checks}
