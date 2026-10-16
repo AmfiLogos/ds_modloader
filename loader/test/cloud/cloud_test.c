@@ -103,7 +103,8 @@ int main(int argc, char **argv) {
     pc("dsmodded_Moon.json", q); put(q, "moon cloud again", now - 120);     /* cloud change, older */
     setenv("FAKE_GAME_USE", "100000000", 1); setenv("FAKE_QUOTA_TOTAL", "2000000000", 1);   /* backup cloud, upload fails (space) */
     int cb = count_backups("B"); dsl_cloud_pass(); dsl_cloud_pass(); dsl_cloud_pass();
-    check("3 passes, upload blocked by space: 1 backup only", count_backups("B") == cb + 1);
+    (void)cb; { char c4[900]; sprintf(c4, "ls '%s/B/Mods/cloud_backups' | grep -c '^Moon-cloud-'", T); FILE *pp = popen(c4, "r"); int k = 0; fscanf(pp, "%d", &k); pclose(pp);
+      check("3 passes, upload blocked by space: 1 backup of that version only", k == 1); }
     unsetenv("FAKE_GAME_USE"); unsetenv("FAKE_QUOTA_TOTAL");
     puts("== 11 open check: Steam returns another case for a name -> one save, no download over it, no delete");
     sprintf(p, "%s/D", T); mkdir(p, 0755); sprintf(p, "%s/D/Saves", T); mkdir(p, 0755); machine("D"); dsl_cloud_pass();
@@ -116,6 +117,31 @@ int main(int argc, char **argv) {
       extern int dsl_cloud_lock_busy; int lb = dsl_cloud_lock_busy;
       pid_t k = fork(); if (k == 0) { _exit(dsl_cloud_pass() == 1 ? 0 : 1); } int stx; waitpid(k, &stx, 0);
       check("pass skipped while the lock is held (other process)", WIFEXITED(stx) && WEXITSTATUS(stx) == 0); (void)lb; close(fd); }
+    puts("== 13 review: deleted on another computer -> not uploaded back; moved aside here (never deleted)");
+    sprintf(p, "%s/E", T); mkdir(p, 0755); sprintf(p, "%s/E/Saves", T); mkdir(p, 0755);
+    sprintf(p, "%s/F", T); mkdir(p, 0755); sprintf(p, "%s/F/Saves", T); mkdir(p, 0755);
+    machine("E"); { char x[900]; sprintf(x, "%s/E/Saves/Rot__AutoSave_9_0.json", T); put(x, "rot", now - 500); sprintf(x, "%s/E/Saves/Keep.json", T); put(x, "keep", now - 500); } dsl_cloud_pass();
+    machine("F"); dsl_cloud_pass();                                          /* F gets both */
+    loc("F", "Rot__AutoSave_9_0.json", p); unlink(p); dsl_cloud_pass();    /* F's game rotates the autosave away */
+    pc("dsmodded_Rot__AutoSave_9_0.json", q); check("F: deleted from the cloud", !has(q));
+    machine("E"); extern int dsl_cloud_rdel; int rd0 = dsl_cloud_rdel; dsl_cloud_pass(); loc("E", "Rot__AutoSave_9_0.json", p);
+    { char c3[900]; sprintf(c3, "ls '%s/E/Mods/cloud_backups' | grep -c Rot__AutoSave_9_0-deleted-elsewhere", T); FILE *pp = popen(c3, "r"); int k = 0; fscanf(pp, "%d", &k); pclose(pp);
+      check("E: not uploaded back, moved to cloud_backups", !has(q) && !has(p) && dsl_cloud_rdel == rd0 + 1 && k == 1); }
+    machine("F"); pc("dsmodded_Keep.json", q); unlink(q);                   /* gone from the cloud ... */
+    loc("F", "Keep.json", p); put(p, "keep changed on F", now - 100);       /* ... but F changed it since the sync: upload */
+    dsl_cloud_pass(); check("F: changed here since the sync -> uploaded, not moved aside", has(q) && !strcmp(get(q), "keep changed on F"));
+    puts("== 14 review: import reads only the header, and never opens another world's autosaves");
+    { char x[900]; sprintf(x, "%s/gamesaves/Big__AutoSave_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_0.json", T);
+      FILE *f = fopen(x, "w"); for (int i = 0; i < 40000; i++) fputs("{\"filler\":\"0123456789012345678901234567890123456789\"},", f);
+      fputs("\"CampaignSaveHeader\":{\"CampaignGuid\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"ClanName\":\"Big\",\"SaveTime\":\"2026-10-01\"}", f);
+      for (int i = 0; i < 40000; i++) fputs(",{\"after\":\"0123456789012345678901234567890123456789\"}", f);
+      fclose(f); struct stat bs; stat(x, &bs);
+      extern int dsl_cloud_header_bytes; machine("A"); dsl_cloud_header_bytes = 0;
+      dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738", 0, NULL, 0);
+      check("import of another world: the big autosave is not opened", dsl_cloud_header_bytes < 4096);
+      dsl_cloud_header_bytes = 0; char mw[24]; int ni = dsl_cloud_import("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 0, mw, sizeof mw);
+      printf("    header bytes read %d of a %lld byte file (the copy itself reads it once)\n", dsl_cloud_header_bytes, (long long)bs.st_size);
+      check("its own import: header found without reading the whole file", ni == 1 && dsl_cloud_header_bytes < bs.st_size); }
     printf("== %d ok, %d failed\n", oks, fails);
     return fails != 0;
 }
