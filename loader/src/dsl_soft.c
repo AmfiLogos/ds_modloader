@@ -112,7 +112,11 @@ static void fast_end(void) {
     if (!fast_on) return;
     fast_on = 0;
     if (saved_blp >= 0 && set_blp) set_blp(saved_blp);
-    if (fast_saved && set_fps && set_vsync) { set_vsync(saved_vsync); set_fps(saved_fps); SLOG("B: frame cap %d vsync %d restored", saved_fps, saved_vsync); }
+    /* test only: DSL_SOFT_NO_VSYNC=1 (set by the loader tests when the Mac's display is asleep): vsync stays 0. With the
+       display asleep a SHOWN window with vsync on blocks Unity's main thread waiting for a frame (no frames, no rig
+       commands): l1_test 8/9 "timeout waiting for B in the world" while the owner's screen was off, 2026-10-16. */
+    int vs = test_mode && getenv("DSL_SOFT_NO_VSYNC") && *getenv("DSL_SOFT_NO_VSYNC") == '1' ? 0 : saved_vsync;
+    if (fast_saved && set_fps && set_vsync) { set_vsync(vs); set_fps(saved_fps); SLOG("B: frame cap %d vsync %d restored%s", saved_fps, vs, vs != saved_vsync ? " (test: display asleep, vsync off)" : ""); }
 }
 
 /* B mute while hidden: AudioListener.pause + volume 0 (icalls; the game's own volume / pause wanted values come back
