@@ -71,7 +71,8 @@ and modded saves do not show in the normal game's Load list.
 
 To bring in a world later, click "Import a save" on the title screen (under Mods). It shows the worlds of your
 normal saves one at a time. Click Import to copy that world into the modded saves, or "Next world". The normal
-save does not change.
+save does not change. If the modded saves already have that world with other progress, it asks first (Replace or
+Keep mine). When you replace it, the old modded copy goes to `data/Mods/cloud_backups/`.
 
 The modded saves are in the `data/Saves` folder of:
 
@@ -90,6 +91,7 @@ the modded game, its cloud copy goes too. The game's own cloud saves never chang
 ## Known limits
 
 - One game build only (25846389).
+- Saves made with Hell difficulty may not work without the mod loader. The Mods window and the world's hover card say so.
 - Windows was tested in CrossOver on a Mac, not yet on a real Windows PC with Steam.
 - Multiplayer was tested on one local network, not yet between two homes over the internet.
 - The Mac app and the Windows installer are not signed, so the system warns on the first start.
