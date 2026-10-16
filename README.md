@@ -38,7 +38,8 @@ Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-2.0.0
    (Or open the folder yourself. Mac: in Finder, click Go, Go to Folder, paste
    `~/Library/Application Support/DSModLauncher/mods`. Windows: press Windows+R, paste
    `%LOCALAPPDATA%\Dungeon Settlers Modded\mods`, press Enter.)
-3. Quit the game and start it again. The mod is installed. Click Mods and turn it on.
+3. In the Mods window, click Refresh. The mod shows up in the list. Turn it on and click Apply.
+   The game restarts behind a loading screen, with the mod on.
 
 A zip of a mod you already have replaces that mod. A file that is not a mod moves to the folder `.failed`.
 
