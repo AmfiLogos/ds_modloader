@@ -145,8 +145,8 @@ static void write_status(int active, const char *reason, const char *uuid, const
     char known[512], w[600], e[1100];
     snprintf(known, sizeof known, "%s", dsl_os_build_list());
     json_esc(w, sizeof w, status_why);
-    snprintf(e, sizeof e, "{\"loader\":\"%s\",\"active\":%s,\"reason\":\"%s\",\"uuid\":\"%s\",\"found_build\":\"%s\",\"pinned_build\":\"%s\",\"loader_builds\":[%s],\"message\":\"%s\"}\n",
-             DSL_LOADER_VERSION, active ? "true" : "false", reason, uuid ? uuid : "", found ? found : "", pinned ? pinned : "", known, w);
+    snprintf(e, sizeof e, "{\"loader\":\"%s\",\"api\":\"%s\",\"active\":%s,\"reason\":\"%s\",\"uuid\":\"%s\",\"found_build\":\"%s\",\"pinned_build\":\"%s\",\"loader_builds\":[%s],\"message\":\"%s\"}\n",
+             DSL_RELEASE, DSL_LOADER_VERSION, active ? "true" : "false", reason, uuid ? uuid : "", found ? found : "", pinned ? pinned : "", known, w);
     char path[1200]; snprintf(path, sizeof path, "%s/dsload_status.json", logdir);
     write_file(path, e);
 }
@@ -565,8 +565,8 @@ static void write_modset(void) {
     JNode *sess = stxt ? json_parse(stxt) : NULL; free(stxt);
     JNode *lines = json_get(sess, "modset_lines");
     SB b = {0};
-    sb(&b, "{\"build\":\"%s\",\"loader\":\"%s\",\"session_modset\":\"%s\",\"gameplay\":[", dsl_build_id ? dsl_build_id : "",
-       DSL_LOADER_VERSION, getenv("DSML_MODSET") ? getenv("DSML_MODSET") : (json_str(sess, "modset") ? json_str(sess, "modset") : ""));
+    sb(&b, "{\"build\":\"%s\",\"loader\":\"%s\",\"api\":\"%s\",\"session_modset\":\"%s\",\"gameplay\":[", dsl_build_id ? dsl_build_id : "",
+       DSL_RELEASE, DSL_LOADER_VERSION, getenv("DSML_MODSET") ? getenv("DSML_MODSET") : (json_str(sess, "modset") ? json_str(sess, "modset") : ""));
     int first = 1, diffs = 0;
     for (int pass = 0; pass < 2; pass++) {
         if (pass == 1) { sb(&b, "],\"client\":["); first = 1; }
@@ -739,7 +739,7 @@ int dsl_core_log_open(const char *logdir_default, const char *self) {
         snprintf(lp, sizeof lp, "%s/dsload.%d.log", logdir, (int)getpid());
     lf = fopen(lp, "w");
     file_sig(self_path, loader_sig, sizeof loader_sig);
-    dsl_log("dsload %s (module API %d, %s) pid %d: %s", DSL_LOADER_VERSION, DSL_API_VERSION, DSL_PLATFORM, (int)getpid(), self_path);
+    dsl_log("dsload %s (module API %d, %s) pid %d: %s", DSL_RELEASE, DSL_API_VERSION, DSL_PLATFORM, (int)getpid(), self_path);
     return 0;
 }
 const char *dsl_core_logdir(void) { return logdir; }
