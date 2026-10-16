@@ -73,8 +73,10 @@ Log: `<log dir>/dsload.log` (previous run: `dsload.prev.log`).
   - the recruit staff strip, ported from the cave to a C hook on `RecruitHelper.ParseItems`. It filters only when
     called from `DetermineInitialEquipments`+0xA4 and when CombatDifficulty == 5.
 
-  Its table half (difficulty rows, texts, catalog.bin) is data: `apply_hell.py --install --tables-only --out-dir`
-  makes it, the launcher puts it into the copy, and the module `requires` `hell-difficulty-data`.
+  Its table half (difficulty rows, texts) is in the module too (`hell_data.c`): at start it rebuilds the Hell table
+  bundle from the player's own stock bundle and a shipped delta (`rva/<build>_<mac|win>_tables.dsdelta`, made by
+  `tools/hell_delta.py` from the owner's `apply_hell.py` table edits; no game file ships) and loads it instead of the
+  stock one. No delta, or a stock bundle that is not the expected one = Hell off. Details: `modules/NOTES_crossmods.md`.
   The mod.json has `"difficulty": {"value": 5}` for the launcher's difficulty list.
 
 ## Modules built here (`./build.sh` -> `build/`)

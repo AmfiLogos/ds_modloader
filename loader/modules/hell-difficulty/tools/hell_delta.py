@@ -74,7 +74,9 @@ def main():
     files = list(env.files.values())
     if len(files) != 1: sys.exit("table bundle has %d top-level files, expected 1" % len(files))
     dst = bytes(files[0].save(packer="none"))
-    chk = Path(str(outp) + ".check.bundle"); chk.write_bytes(dst); ah.verify_bundle(chk)   # owner's check: Hell is a sixth step
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:                # owner's check: Hell is a sixth step (the built bundle is a
+        chk = Path(td) / "check.bundle"; chk.write_bytes(dst); ah.verify_bundle(chk)   # game file: never left next to the delta
     ops = make_ops(src, dst)
     if apply_ops(src, ops) != dst: sys.exit("delta self-check failed")
     name = stock.name.encode()

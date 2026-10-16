@@ -22,3 +22,9 @@ loader/build/cmpin/
 ui/bicons/
 __pycache__/
 *.pyc
+loader/build/mods_all/
+loader/build/packages/
+loader/build/pinwin/
+loader/build/old/
+loader/build/hell_delta/
+loader/build/test_mods/
