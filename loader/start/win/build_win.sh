@@ -15,6 +15,7 @@ olds=($OBJ/*.o(N)); (( ${#olds} )) && mv -f $olds $O/old/
 
 python3 gen_def.py $GAME/baselib.dll $O/baselib_exports.def
 PM=(-ffile-prefix-map=$HOME=/src)                               # no build path (user name) in what ships (gate G12)
+PM+=(-ffile-prefix-map=$L=/loader -ffile-prefix-map=${D:A}=/mp)  # any build folder: the same debug info, so the same .buildid hash
 # links: -Wl,--no-insert-timestamp = no build time in the PE headers (the same bytes from every build)
 CF=($PM -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/src -I$L/sdk -I$MH/include)
 # MelonLoader guard plugin (kind "melon" mods): its DLL is embedded into bie_win.c (starter + baselib.dll)
