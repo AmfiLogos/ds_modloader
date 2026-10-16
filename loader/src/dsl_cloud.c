@@ -45,7 +45,7 @@
 static char saves_d[1100], mods_d[1100], state_p[1200], backups_d[1200], game_saves[1100];
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static char status_s[300] = "Cloud backup starts once Steam is ready.";
-int dsl_cloud_passes, dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
+int dsl_cloud_rdel, dsl_cloud_passes, dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
 
 static struct {
     void *(*get)(void);
@@ -254,6 +254,9 @@ static int pass_locked(void) {
     int gone = 0, synced = 0;
     for (int i = 0; i < nE; i++) { St *s = state_get(E[i].name); if (s) { synced++; if (!E[i].here && E[i].there && s->rts == E[i].rts) gone++; } }
     int no_delete = gone > 2 && gone * 2 > synced;
+    int rgone = 0; for (int i = 0; i < nE; i++) { St *s = state_get(E[i].name); if (s && s->rts && E[i].here == 1 && !E[i].there) rgone++; }
+    int no_rdelete = rgone > 2 && rgone * 2 > synced;                    /* an empty or failed cloud list: keep everything */
+    if (no_rdelete) dsl_log("cloud: %d of %d synced saves are missing in the cloud: nothing moved aside here", rgone, synced);
     if (no_delete) dsl_log("cloud: %d of %d synced saves are missing here: nothing deleted in the cloud", gone, synced);
     int fails = 0, space = 0;
     for (int i = 0; i < nE; i++) {
@@ -280,7 +283,17 @@ static int pass_locked(void) {
                 if (backup(e->name, "this-computer", tag, p, NULL, 0)) { fails++; continue; }
                 fails += download(rs, e) != 0;
             }
-        } else if (e->here) {
+        } else if (e->here && s && s->rts && s->lm == e->mtime && s->ls == e->size) {
+            /* synced before, unchanged here, gone from the cloud = deleted on another computer (autosave rotation, a
+               world deleted there): moved to cloud_backups, never deleted; skipped when many vanish at once */
+            if (no_rdelete) continue;
+            char p[1400], tag[32]; snprintf(p, sizeof p, "%s/%s", saves_d, e->name); snprintf(tag, sizeof tag, "%lld", (long long)e->mtime);
+            char bp[1500]; mkdir(backups_d, 0755);
+            snprintf(bp, sizeof bp, "%s/%.*s-deleted-elsewhere-%s.json", backups_d, (int)(strlen(e->name) - 5), e->name, tag);
+            if (rename(p, bp)) { fails++; dsl_log("cloud: %s deleted in the cloud, but moving it aside failed (%s)", e->name, strerror(errno)); continue; }
+            state_drop(e->name); dsl_cloud_rdel++;
+            dsl_log("cloud: %s was deleted on another computer: moved to %s", e->name, bp);
+        } else if (e->here) {                                                 /* new here, or changed here since the sync */
             int r = upload(rs, e, &ours_n, &ours_bytes); fails += r < 0; space += r == 1;
         } else if (e->there) {
             if (s && s->rts == e->rts && no_delete) continue;
@@ -352,12 +365,38 @@ static void header_str(const char *h, const char *key, char *out, size_t cap) {
     p = strchr(p + strlen(k), ':'); if (!p) return; p = strchr(p, '"'); if (!p) return; p++;
     size_t i = 0; while (p[i] && p[i] != '"' && i + 1 < cap) { out[i] = p[i]; i++; } out[i] = 0;
 }
+/* the save's "CampaignSaveHeader" block: read in 256 KB steps, stopped once the block is in (not the whole file) */
+int dsl_cloud_header_bytes;                                              /* bytes read for headers (test) */
 static int file_header(const char *dir, const char *f, char *guid, char *clan, char *when) {
     char p[1400]; snprintf(p, sizeof p, "%s/%s", dir, f);
-    long n; char *b = read_all(p, &n); if (!b) return 0;
-    const char *h = strstr(b, "\"CampaignSaveHeader\"");
-    header_str(h, "CampaignGuid", guid, 40); header_str(h, "ClanName", clan, 64); header_str(h, "SaveTime", when, 24);
-    free(b); return strlen(guid) == 36;
+    guid[0] = clan[0] = when[0] = 0;
+    FILE *fp = fopen(p, "rb"); if (!fp) return 0;
+    enum { STEP = 256 << 10, KEEP = 4096 };
+    char *b = malloc(STEP + KEEP + 1); size_t have = 0; const char *h = NULL; int ok = 0;
+    while (b) {
+        size_t r = fread(b + have, 1, STEP, fp); dsl_cloud_header_bytes += (int)r; have += r; b[have] = 0;
+        if (!h && (h = strstr(b, "\"CampaignSaveHeader\""))) {              /* the block start; read on until its end is in */
+            size_t at = (size_t)(h - b); memmove(b, h, have - at); have -= at;
+            if (have > KEEP) have = KEEP;                                    /* the block is small: its first 4 KB */
+            b[have] = 0; h = b;
+        }
+        if (h && (strstr(h, "\"SaveTime\"") || !r)) {
+            header_str(h, "CampaignGuid", guid, 40); header_str(h, "ClanName", clan, 64); header_str(h, "SaveTime", when, 24);
+            ok = strlen(guid) == 36; break;
+        }
+        if (!r) break;
+        if (!h && have > KEEP) { memmove(b, b + have - KEEP, KEEP); have = KEEP; }   /* the key may span two reads */
+    }
+    free(b); fclose(fp); return ok;
+}
+/* "__AutoSave_<32 hex>_": the world's guid is in the name; 0 = no guid in the name (a manual save: read its header) */
+static int name_guid(const char *f, char *g) {
+    const char *a = strstr(f, "__AutoSave_"); if (!a) return 0;
+    const char *h = a + 11;
+    for (int i = 0; i < 32; i++) if (!h[i] || !strchr("0123456789abcdefABCDEF", h[i])) return 0;
+    snprintf(g, 40, "%.8s-%.4s-%.4s-%.4s-%.12s", h, h + 8, h + 12, h + 16, h + 20);
+    for (char *c = g; *c; c++) if (*c >= 'A' && *c <= 'F') *c += 32;
+    return 1;
 }
 static void scan_game(void) {
     nW = 0; DIR *d = game_saves[0] ? opendir(game_saves) : NULL; struct dirent *de; if (!d) return;
@@ -380,7 +419,9 @@ int dsl_cloud_import(const char *g, int replace, char *mwhen, size_t mcap) {
     if (mwhen && mcap) mwhen[0] = 0;
     while ((de = readdir(d)) && nn < 64) {
         if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
-        char fg[40], c[64], w[24]; if (!file_header(game_saves, de->d_name, fg, c, w) || strcmp(fg, g)) continue;
+        char fg[40], c[64], w[24];
+        if (name_guid(de->d_name, fg) && strcasecmp(fg, g)) continue;         /* another world: not even opened */
+        if (!file_header(game_saves, de->d_name, fg, c, w) || strcasecmp(fg, g)) continue;
         snprintf(names[nn++], 256, "%s", de->d_name);
     }
     closedir(d);
