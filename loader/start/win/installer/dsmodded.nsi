@@ -226,10 +226,18 @@ Section "Uninstall"
     ${EndIf}
   ${Loop}
   FileClose $6
-  ${If} ${FileExists} "$INSTDIR\install_dirs.log"
-    nsExec::Exec `"$SYSDIR\cmd.exe" /c for /f "delims=" %d in ('sort /r "$INSTDIR\install_dirs.log"') do @rd "%d" 2>nul`
-    Pop $0
-  ${EndIf}
+  ; then the folders our install made, deepest first; RMDir without /r removes a folder only when it is empty, so a
+  ; folder that still holds a file nobody of ours made stays (profiles\ is never touched)
+  Push "$INSTDIR\game"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\mods"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\update"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\retired"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\cache"
+  Call un.RemoveEmptyDirs
   Delete "$INSTDIR\install_files.log"
   Delete "$INSTDIR\install_files.prev.log"
   Delete "$INSTDIR\install_dirs.log"
@@ -248,6 +256,31 @@ Section "Uninstall"
     MessageBox MB_OK "${NAME} is removed. Steam's game was never changed.$\r$\nYour modded saves stay in $INSTDIR\profiles. You can delete that folder if you do not need them." /SD IDOK
   ${EndIf}
 SectionEnd
+
+; un.RemoveEmptyDirs <folder>: every empty folder below <folder>, children before parents, then <folder> itself when
+; empty. Never deletes a file.
+Function un.RemoveEmptyDirs
+  Exch $R0
+  Push $R1
+  Push $R2
+  ClearErrors
+  FindFirst $R1 $R2 "$R0\*.*"
+  ${DoUntil} ${Errors}
+    ${If} $R2 != "."
+    ${AndIf} $R2 != ".."
+    ${AndIf} ${FileExists} "$R0\$R2\*.*"
+      Push "$R0\$R2"
+      Call un.RemoveEmptyDirs
+    ${EndIf}
+    ClearErrors
+    FindNext $R1 $R2
+  ${Loop}
+  FindClose $R1
+  RMDir "$R0"
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
 
 Function un.TasklistGame
   nsExec::ExecToStack '"$SYSDIR\cmd.exe" /c tasklist /fi "imagename eq DungeonSettlers.exe" | find /i "DungeonSettlers.exe"'

@@ -28,7 +28,12 @@ if exist "%ROOT%\game\dsmodded_build.txt" (
   dir /s /b /ad "%ROOT%\game" >> "%ROOT%\install_dirs.log"
 )
 for /f "usebackq delims=" %%f in ("%ROOT%\install_files.log") do if exist "%%f" del /f /q "%%f"
-if exist "%ROOT%\install_dirs.log" for /f "delims=" %%d in ('sort /r "%ROOT%\install_dirs.log"') do rd "%%d" 2>nul
+rem then the folders our install made, deepest first: rd without /s removes a folder only when it is empty (each pass
+rem removes one level), so a folder that still holds a file nobody of ours made stays; profiles\ is never touched
+for %%r in (game mods update retired cache) do if exist "%ROOT%\%%r\" (
+  for /l %%i in (1,1,12) do for /f "delims=" %%d in ('dir /s /b /ad "%ROOT%\%%r" 2^>nul') do rd "%%d" 2>nul
+  rd "%ROOT%\%%r" 2>nul
+)
 for %%f in (install_files.log install_files.prev.log install_dirs.log dsmodded_install.txt) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"
 set "DESK="
 for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul') do set "DESK=%%b"
