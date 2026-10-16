@@ -8,20 +8,18 @@ Refresh (test request), the new mod listed and off; Apply gcd-cdr (test request)
 import json, os, shutil, subprocess, sys, time, glob
 H = os.path.expanduser('~'); sys.path.insert(0, f'{H}/ds_multiplayer/win'); import wloader as w
 LW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOCK = f'{H}/ds_multiplayer/rig/wine.lock'; MODS = f'{w.ROOT}/mods'; ACTIVE = f'{w.PROF}/data/Mods/active.json'
+LOCK, WL = f'{H}/ds_multiplayer/rig/wine.lock', f'{H}/ds_multiplayer/rig/wine_lease.py'; MODS = f'{w.ROOT}/mods'; ACTIVE = f'{w.PROF}/data/Mods/active.json'
 PKG = os.environ.get('PKG_ZIP', f'{H}/ds_launcher/loader/build/packages/gcd-cdr-2.0.0.zip')
 log = lambda *a: print(time.strftime('%H:%M:%S'), *a, flush=True)
 checks = []
 def check(n, ok, d=''): checks.append({'name': n, 'ok': bool(ok), 'detail': str(d)[:400]}); log('PASS' if ok else 'FAIL', n, '' if ok else d)
 def lock():
-    busy = subprocess.run(['/bin/sh', '-c', "ps -axo etime=,comm= | grep -iE 'wine|\\.exe$' | grep -ve '-[0-9][0-9]:'"], capture_output=True, text=True).stdout.strip()
-    if busy: sys.exit('wine busy: ' + busy[:300])
-    os.mkdir(LOCK); open(f'{LOCK}/owner', 'w').write('loaderui\n'); log('wine lock taken')
-def owned(): return os.path.exists(f'{LOCK}/owner') and open(f'{LOCK}/owner').read().strip() == 'loaderui'
+    # held for the calling shell (lock / unlock are steps of a script); the DSMP bottle must be idle
+    if subprocess.run([sys.executable, WL, 'take', 'loaderui', '--pid', str(os.getppid())]).returncode: sys.exit('wine busy / locked')
+def owned(): return os.path.exists(f'{LOCK}/owner') and open(f'{LOCK}/owner').read().split('\n')[0].strip() == 'loaderui'
 def unlock():
     if not owned(): return
-    os.makedirs(f'{H}/ds_multiplayer/rig/old', exist_ok=True)
-    os.replace(f'{LOCK}/owner', f'{H}/ds_multiplayer/rig/old/wine.lock.owner.loaderui.{int(time.time())}'); os.rmdir(LOCK); log('wine lock released')
+    subprocess.run([sys.executable, WL, 'release', 'loaderui'])
 def install():
     assert owned()
     env = dict(os.environ, MODS=f'{H}/ds_multiplayer/win/build/mods/multiplayer')
