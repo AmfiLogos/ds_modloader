@@ -107,7 +107,8 @@ Plan: `research/plan_launcher.md` in ds_multiplayer. Owner decisions: ds_multipl
 - `src-tauri/`: UNUSED PROTOTYPE, not shipped (see `src-tauri/README.md`). Tauri 2 shell (commands: status,
   refresh_index, set_enabled, play, remove_copy).
 - `ui/`: the prototype's pages: plain HTML/CSS/JS, game palette, Cinzel + Lora (OFL, `ui/fonts/OFL-*.txt`).
-  `ui/bicons/` holds game art (see `ui/bicons/NOTICE.md`).
+  `ui/bicons/` holds game art. It is not in git: `builder/gen/extract_icons.py` extracts it from your installed
+  game (see BUILDING.md, Unit Builder icons).
 - `dev_keys/`: DEV ONLY test key pair (see its README).
 
 Tests:

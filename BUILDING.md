@@ -93,3 +93,20 @@ Old outputs are moved to `old/` folders, never deleted. Each build scans its out
   The game test `cargo test -p dsml-core --test e2e_mac -- --ignored --nocapture` needs the game from Steam.
 - App: `zsh app/test/run.sh`. Needs the built app and the game installed by Steam.
 - `loader/test/*_test.py` and `tests/*.py` start real game copies through the ds_multiplayer test rig.
+
+## 5. Unit Builder icons
+
+The Unit Builder screen of `src-tauri/` shows game icons from `ui/bicons/`.
+These icons are game art. They are not in the repo, and `ui/bicons/` is in `.gitignore`.
+You extract them from your own installed game:
+
+```
+python3 builder/gen/extract_icons.py
+```
+
+- Needs Python 3 with `UnityPy` and `Pillow` (`python3 -m pip install UnityPy Pillow`).
+- Needs Dungeon Settlers from Steam, build 25846389 (Mac or Windows). The script reads the game files and never changes them.
+- The script finds the game in your Steam libraries. If it does not, add `--game <folder>` or set `DS_GAME_DIR`.
+  The folder can be the Steam folder `Dungeon Settlers`, the `.app`, or the game's Data folder.
+- It writes 876 icons, then `ui/bicons/manifest.txt`. One icon (`stats/Talent_DontKnow.png`) is not in this game build.
+- Without `ui/bicons/manifest.txt`, `cargo build -p ds-mod-launcher` and `src-tauri/tests/ui_smoke.py` stop and tell you to run the script.
