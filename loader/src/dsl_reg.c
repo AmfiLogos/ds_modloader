@@ -227,11 +227,50 @@ static void strip_mp(JNode *c) {
     if (!out[0]) snprintf(out, sizeof out, "vanilla");
     if (strcmp(out, c->str)) { free(c->str); c->str = strdup(out); worlds_migrated = 1; }
 }
+/* mods belong to the WORLD (owner 2026-10-16 v13 #4): a key that names one save file ("<Clan>__AutoSave_<32 hex>_0",
+   any "<name>_<32 hex>_<n>") becomes its world's guid. Two entries for one world: a guid entry wins (written by this
+   code, so newer); between two save entries the one whose save file is newer wins. */
+static int save_key_guid(const char *k, char out[40]) {
+    size_t L = strlen(k);
+    for (size_t i = 0; i + 32 <= L; i++) {
+        if (i && k[i - 1] != '_') continue;
+        int hex = 1; for (int j = 0; j < 32 && hex; j++) hex = strchr("0123456789abcdefABCDEF", k[i + j]) != NULL;
+        if (!hex || (i + 32 < L && k[i + 32] != '_')) continue;
+        const char *h = k + i;
+        snprintf(out, 40, "%.8s-%.4s-%.4s-%.4s-%.12s", h, h + 8, h + 12, h + 16, h + 20);
+        for (char *p = out; *p; p++) if (*p >= 'A' && *p <= 'F') *p += 32;
+        return 1;
+    }
+    return 0;
+}
+static double save_mtime(const char *name) {
+    const char *d = getenv("DSML_DATA"); if (!d || !*d) return 0;
+    char p[1400]; struct stat st; snprintf(p, sizeof p, "%s/Saves/%s.json", d, name);
+    return stat(p, &st) ? 0 : (double)st.st_mtime;
+}
+static void migrate_save_keys(JNode *w) {
+    for (JNode *c = w->child; c; c = c->next) {
+        char g[40]; if (!c->key || c->t != JN_STR || !save_key_guid(c->key, g) || !strcasecmp(c->key, g)) continue;
+        JNode *other = NULL;
+        for (JNode *o = w->child; o; o = o->next) if (o != c && o->t == JN_STR && o->key) {
+            char g2[40]; if (!strcasecmp(o->key, g) || (save_key_guid(o->key, g2) && !strcasecmp(g2, g) && strcasecmp(o->key, g2))) { other = o; break; }
+        }
+        int lose = 0;
+        if (other) {
+            char g2[40]; int other_is_guid = !(save_key_guid(other->key, g2) && strcasecmp(other->key, g2));
+            lose = other_is_guid || save_mtime(other->key) > save_mtime(c->key);
+        }
+        dsl_log("worlds: per-save entry %s -> world %s%s", c->key, g, lose ? " (another entry of that world is newer: dropped)" : "");
+        if (lose) c->t = JN_NULL;                                      /* worlds_save keeps strings only */
+        else { free(c->key); c->key = strdup(g); }
+        worlds_migrated = 1;
+    }
+}
 static void worlds_load(void) {
     if (worlds_doc) return;
     char *t = slurp(worlds_path(), 8 << 20); worlds_doc = t ? json_parse(t) : NULL; free(t);
     JNode *w = json_get(worlds_doc, "worlds");
-    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) strip_mp(c);
+    if (w && w->t == JN_OBJ) { for (JNode *c = w->child; c; c = c->next) strip_mp(c); migrate_save_keys(w); }
 }
 static const char *world_key(const char *guid) {
     worlds_load();
@@ -652,6 +691,17 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "shot")) dsl_log("reg test: shot %s: %s", json_str(j, "path"), dsl_soft_shot(json_str(j, "path")) ? "FAILED" : "ok");
     else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }
     else if (c && !strcmp(c, "world_set")) dsl_world_set_mods(json_str(j, "guid"), ids, n);
+    else if (c && !strcmp(c, "change")) { void dsl_rows_test_change(int); dsl_rows_test_change((int)(json_get(j, "row") ? json_get(j, "row")->num : 0)); }
+    else if (c && !strcmp(c, "save_file")) {                           /* the game's own manual save (SaveFileRequested) */
+        void *k = dsl_find_class("Refactor.Main.Event", "SaveFileRequested"); void *ctor = k ? dsl_find_method(k, ".ctor", 1) : NULL;
+        void *kq = dsl_find_class("Refactor.Main", "EventQueue"); void *add = kq ? dsl_find_method(kq, "AddEvent", 1) : NULL;
+        void *kmf = dsl_find_class("Refactor.Main", "MainFlow"); int32_t oq = kmf ? dsl_field_offset(kmf, "_eventQueue") : -1;
+        Obj (*onew)(void *) = dsl_ga_sym("il2cpp_object_new"); Obj (*snew)(const char *) = dsl_ga_sym("il2cpp_string_new");
+        Obj mf = mainflow(), q = mf && oq >= 0 ? AT(mf, oq, Obj) : NULL, ev = q && ctor && add && onew ? onew(k) : NULL;
+        if (ev) { ((void (*)(Obj, Obj, const void *))dsl_method_address(ctor))(ev, snew(json_str(j, "name") ? json_str(j, "name") : "Manual"), ctor);
+                  ((void (*)(Obj, Obj, const void *))dsl_method_address(add))(q, ev, add); }
+        dsl_log("reg test: save_file %s: %s", json_str(j, "name") ? json_str(j, "name") : "Manual", ev ? "queued" : "FAILED");
+    }
     else if (c && !strcmp(c, "draft")) dsl_mods_draft(ids, json_get(j, "drop") ? -1 : n);
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");

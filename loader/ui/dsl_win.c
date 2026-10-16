@@ -318,7 +318,10 @@ static void mods_open(DSLObj root, float w, float h) {
     for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base;
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
     float lh = h - 40 - 76;
-    char hd[200]; snprintf(hd, sizeof hd, world_mode ? "Mods for %s" : "Installed mods", world_name[0] ? world_name : "this world");
+    /* the world's name, cut to fit the heading box (620 wide, size 20: about 40 characters with "Mods for ") */
+    char wn[160]; snprintf(wn, sizeof wn, "%s", world_name[0] ? world_name : "this world");
+    { int c = 0; for (char *p = wn; *p; p++) if ((*p & 0xC0) != 0x80 && ++c > 30) { *p = 0; strcat(wn, "..."); break; } }
+    char hd[200]; snprintf(hd, sizeof hd, world_mode ? "Mods for %s" : "Installed mods", wn);
     named(U->text(root, 0, 0, m_lw, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);
     U->panel(root, 0, 40, m_lw, lh, 0);
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);

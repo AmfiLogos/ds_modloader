@@ -127,7 +127,7 @@ static const char *guid_of_save(const char *name) {
 
 /* ------------------------------------------------------------------ the open list */
 #define MAXW 64
-typedef struct { uintptr_t cs; char guid[40], save[256]; DSLObj line, chg; int hid; } WRow;
+typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid; } WRow;
 static WRow W[MAXW]; static int nw;
 static uintptr_t h_slv; static uint32_t sig_last; static int list_open;
 static DSLObj band;                                     /* our toggles' strip */
@@ -147,11 +147,30 @@ static uint32_t list_sig(Obj slv) {
 static void change_click(void *ud, DSLObj w) {
     (void)w; int i = (int)(intptr_t)ud; if (i < 0 || i >= nw) return;
     dsl_log("rows: [Change] world %s", W[i].guid);
-    dsl_world_change(W[i].guid, W[i].save);
+    dsl_world_change(W[i].guid, W[i].name[0] ? W[i].name : W[i].save);   /* the world, not one of its saves (owner v13 #4) */
 }
 static void toggle_change(void *ud, DSLObj w) {
     int i = (int)(intptr_t)ud; const DSLUi *u = dsl_ui_kit(); if (!u || i < 0 || i >= nf) return;
     F[i].on = u->toggle_get(w); dsl_log("rows: filter of %s: toggle %s", F[i].owner, F[i].on ? "on" : "off"); dirty = 1;
+}
+
+/* the world's name as its row shows it ("Elven Expedition"): the row's _nameText without rich-text tags and without
+   what other modules add after two spaces (the multiplayer tag) */
+static void *m_tmp_get;
+static void world_name(Obj cs, char *out, size_t cap) {
+    out[0] = 0;
+    if (!m_tmp_get) { void *k = dsl_find_class("TMPro", "TMP_Text"); m_tmp_get = k ? dsl_find_method(k, "get_text", 0) : NULL; }
+    Obj t = AT(cs, o_title_name, Obj); if (!t || !m_tmp_get) return;
+    char raw[600]; utf8_of(((Obj (*)(Obj, const void *))dsl_method_address(m_tmp_get))(t, m_tmp_get), raw, sizeof raw);
+    size_t k = 0; int in_tag = 0;
+    for (const char *p = raw; *p && k + 1 < cap; p++) {
+        if (*p == '<') { in_tag = 1; continue; }
+        if (in_tag) { if (*p == '>') in_tag = 0; continue; }
+        if (p[0] == ' ' && p[1] == ' ') break;
+        out[k++] = *p;
+    }
+    while (k && out[k - 1] == ' ') k--;
+    out[k] = 0;
 }
 
 /* map world rows to guids through the save dictionary */
@@ -175,6 +194,7 @@ static void build_rows(Obj slv) {
             const char *g = guid_of_save(w->save); if (g) snprintf(w->guid, sizeof w->guid, "%s", g);
         }
         if (!w->guid[0]) continue;                                         /* a world row with no save (new save slot only) */
+        world_name(cs, w->name, sizeof w->name);
         w->cs = gc_new(cs, 0); nw++;
     }
 }
@@ -309,6 +329,9 @@ static void new_campaign_frame(void) {
 
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
 DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
+
+/* test only: the "Change" of world row i, as a click */
+void dsl_rows_test_change(int i) { change_click((void *)(intptr_t)i, NULL); }
 
 void dsl_rows_frame(void) {
     if (!ok) return;
