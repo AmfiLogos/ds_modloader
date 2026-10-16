@@ -22,7 +22,7 @@ Plan: ~/ds_multiplayer/research/MASTER_PLAN.md (L2 row). Contract with the loade
   world's gameplay set (dsl_world_mods; client mods as they run), button "Save for this world" -> dsl_world_set_mods,
   no restart. A normal open goes back to the running set.
 
-## Needs from L1 (sent 2026-10-15; all done by l1-core 5988e29)
+## Needs from L1 (sent 2026-10-15; all done by l1-core 6f57dd1)
 1. build.sh: compile loader/ui/dsl_win.c into dsload; call dsl_win_init() after dsl_ui_install(); frame tick ->
    dsl_win_frame(); title "Mods" button and menu_open -> dsl_win_open().
 2. dsl_busy_reason(): non-NULL in the NEW game (B) until its swap and fade-in are done (B_DONE), so the window opens
@@ -36,8 +36,8 @@ Clicks call the named control's callback (L1's uikit_test covers the kit's mouse
 soft restart frames <out>/softcap/.
 - 2026-10-15 19:18 run9 (--tab): 25/25 PASS, no guard violation. 19:24 run16 (--apply): all PASS; A gone 6.3 s after
   Apply, B runs with gcd-cdr, B opens the Mods window by itself after the swap; loading screen frames clean.
-- 19:40 run17 (--tab, L1 loader c7e510f + world mode): all PASS. 19:42 run19 (--apply, real dsl_apply_mods): all PASS;
+- 19:40 run17 (--tab, L1 loader 6fc5ead + world mode): all PASS. 19:42 run19 (--apply, real dsl_apply_mods): all PASS;
   A gone 6.4 s, B runs gcd-cdr and reopens the window after the title shows; worlds.json gets the world's set.
-- 19:48 run20 / 19:49 run21 on l1-core 5988e29: all PASS. BepInEx mark (DSLModInfo.kind "bepinex", small gold "BepInEx"
+- 19:48 run20 / 19:49 run21 on l1-core 6f57dd1: all PASS. BepInEx mark (DSLModInfo.kind "bepinex", small gold "BepInEx"
   before the description; test mod.json test/fake-bepinex). Unknown world = running set (lead). A failed restart shows the
   loader's reason from <DSL_LOG_DIR>/softrestart/handoff.json.failed. A gone 5.8 s after Apply.
