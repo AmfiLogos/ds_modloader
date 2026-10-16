@@ -178,6 +178,8 @@ def main():
     except Exception as e:
         check('run finished', False, repr(e))
     finally:
+        # no game process of this test ever came to the front or showed a window (before or after a swap)
+        check('never frontmost, never a visible window (guard)', not T.violations, T.violations)
         T.stop_guard.set()
         for p in T.game_pids():
             try: r.send(T.X, {'cmd': 'quit'}, timeout=5, connect_wait=0)
