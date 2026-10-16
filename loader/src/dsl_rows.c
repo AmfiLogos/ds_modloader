@@ -225,6 +225,13 @@ static void world_texts(const char *guid, int maxc, char *line, size_t lcap, cha
     if (k < n) { char pl[16]; snprintf(pl, sizeof pl, "  +%d", n - k); strlcat(shown, pl, sizeof shown); }
     snprintf(line, lcap, "<color=#A69085>Mods:</color> %s", shown);
 }
+/* owner item 9: a mod whose saves need the loader (mod.json "save_dependent") gets one warning line at the card's end */
+static void world_warning(const char *guid, char *all, size_t acap) {
+    int dsl_world_mods_all(const char *guid, const char **ids, int max);
+    int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
+    const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64); char wr[400];
+    if (dsl_save_warning(ids, n, wr, sizeof wr)) { strlcat(all, "\n\n<color=#EA9F3D>", acap); strlcat(all, wr, acap); strlcat(all, "</color>", acap); }
+}
 static void decorate(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
     int at_title = dsl_reg_scene() != 2;                                  /* in a world mods do not change (owner #10) */
@@ -236,6 +243,7 @@ static void decorate(void) {
             one[0] = 0; R[r].r.text(R[r].r.ud, w->guid, w->save, one, sizeof one);
             if (one[0]) { strlcat(txt, "   ", sizeof txt); strlcat(txt, one, sizeof txt); strlcat(all, "\n", sizeof all); strlcat(all, one, sizeof all); }
         }
+        world_warning(w->guid, all, sizeof all);
         Obj tr = comp_tr(cs, NULL);
         if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, txt, 14, DSL_TXT_RIGHT, 0xD9C7B0FF);
         else u->set_text(w->line, txt);
