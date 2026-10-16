@@ -14,9 +14,15 @@ def wp(p): return "Z:" + p.replace("/", "\\")
 res = []
 def check(n, ok, info=""): res.append(bool(ok)); print("PASS" if ok else "FAIL", n, info, flush=True)
 def run(exe, *a):
-    r = subprocess.run(["nice", "-n", "19", C, "--bottle", "DSMP", wp(exe)] + list(a), capture_output=True, text=True, timeout=300,
-                       env=dict(os.environ, WINEDEBUG="-all"))
-    return r.stdout + r.stderr
+    """a crash must end the process, never start the debugger (winedbg --auto would hang the shared bottle):
+    winedbg disabled for this process; on a timeout our own exe and any winedbg are killed before the lock goes back"""
+    env = dict(os.environ, WINEDEBUG="-all", WINEDLLOVERRIDES="winedbg.exe=d")
+    try:
+        r = subprocess.run(["nice", "-n", "19", C, "--bottle", "DSMP", wp(exe)] + list(a), capture_output=True, text=True, timeout=120, env=env)
+        return r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        subprocess.run(["pkill", "-9", "-f", os.path.basename(exe)]); subprocess.run(["pkill", "-9", "-f", "winedbg"])
+        return "TIMEOUT"
 
 def zips():
     b = io.BytesIO(); z = zipfile.ZipFile(b, "w", zipfile.ZIP_STORED); z.writestr("mod/mod.json", '{"id":"x"}' * 50); z.close()
@@ -60,6 +66,7 @@ try:
     o = run(EXE, "install", wp(root), wp(game))
     check("P2-8 files without the marker count as not installed: unpacked again", "BepInEx be.788 installed in" in o and "install 0 installed 1" in o, o.strip().splitlines()[-1][:120])
 finally:
+    for pat in ("bie_fail_test.exe", "winedbg"): subprocess.run(["pkill", "-9", "-f", pat])   # no leftover of ours in the bottle
     os.makedirs(f"{H}/ds_multiplayer/rig/old", exist_ok=True)
     os.replace(f"{LOCK}/owner", f"{H}/ds_multiplayer/rig/old/wine.lock.owner.crossmods-audit.{int(time.time())}"); os.rmdir(LOCK)
 print(f"{sum(res)} PASS {len(res) - sum(res)} FAIL")
