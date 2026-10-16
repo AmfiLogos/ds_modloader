@@ -347,7 +347,9 @@ def run2():
         st = wait_title(D, extra=('Multiplayer',))
         c = col(st); labels = [x[0] for x in c]
         im = labels.index('Multiplayer'); ik = labels.index('UI Kit Demo')
-        check('run2 title: "UI Kit Demo" below the multiplayer clones and the stock column (last)', ik == len(c) - 1 and ik > im, str(c))
+        imo = labels.index('Mods') if 'Mods' in labels else -1
+        # v13 (owner 2026-10-16 #2): the loader's buttons go right below "Multiplayer", by order (Mods 100, then the demo)
+        check('run2 title: "Mods" then "UI Kit Demo" right below "Multiplayer"', c[im + 1][0] == 'Mods' and c[im + 2][0] == 'UI Kit Demo' and imo == im + 1 and ik == im + 2, str(c))
         D.cap('run2_01_title')
         a, st = D.act('click', target='title:UI Kit Demo', wait=1.2)
         check('run2 our title button works with the multiplayer module loaded (before its page)', st['built'] == 1, f"n {st['n']} at {a.get('at')} under {st['w'].get('ptr_under')}")

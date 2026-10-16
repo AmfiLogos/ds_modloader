@@ -21,6 +21,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 
 typedef void *Obj;
 #define AT(o, off, T) (*(T *)((char *)(o) + (off)))
@@ -72,6 +73,7 @@ static const char *worlds_path(void) {
 /* ------------------------------------------------------------------ installed mods */
 #define MAXM 64
 static DSLModInfo MI[MAXM]; static int nmi;
+static char MI_short[MAXM][48];                         /* mod.json "short_name" (world rows), else "" */
 static int mods_scanned;
 static void mods_scan(void) {
     if (mods_scanned) return; mods_scanned = 1;
@@ -96,6 +98,7 @@ static void mods_scan(void) {
         x->description = xstrdup(json_str(m, "description"));
         const char *kd = json_str(m, "kind"); if (!kd) kd = json_str(m, "type");
         x->kind = xstrdup(kd ? kd : "code");
+        snprintf(MI_short[nmi - 1], sizeof MI_short[0], "%s", json_str(m, "short_name") ? json_str(m, "short_name") : "");
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         int on = 1;
@@ -126,6 +129,18 @@ static void mods_scan(void) {
     json_free(prof);
 }
 int dsl_mods_count(void) { mods_scan(); return nmi; }
+/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 22 characters */
+void dsl_mod_short(const char *id, char *out, size_t cap) {
+    mods_scan(); out[0] = 0;
+    for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) {
+        if (MI_short[i][0]) { snprintf(out, cap, "%s", MI_short[i]); return; }
+        snprintf(out, cap, "%s", MI[i].name);
+        if (strlen(out) > 22) { size_t c = 20; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 20; snprintf(out + c, cap - c, "..."); }
+        return;
+    }
+    snprintf(out, cap, "%s", id);
+}
+const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
 static const DSLModInfo *mod_by_id(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return &MI[i]; return NULL; }
 
@@ -335,46 +350,95 @@ static void bie_pending_set(const char *const *ids, int n, const char *env) {
     bp_n = 0; for (int i = 0; i < n && i < MAXM; i++) snprintf(bp_ids[bp_n++], 64, "%s", ids[i]);
     snprintf(bp_env, sizeof bp_env, "%s", env ? env : "");
 }
-static int apply_ids(const char *const *ids, int n, const char *env, char *why, size_t cap) {
-    const char *busy = dsl_busy_reason();
-    if (busy) { snprintf(why, cap, "%s", busy); dsl_log("reg: Apply refused: %s", busy); return -1; }
+/* soft restart (dsl_soft.c): Apply only at the title (owner 2026-10-16 #10); prewarm = a hidden new game started while
+   the Mods window has unapplied changes, so Apply only swaps */
+extern int dsl_soft_prewarm(const char *profile, const char *env_lines);
+extern void dsl_soft_prewarm_stop(void);
+extern int dsl_soft_prewarm_state(void);
+int dsl_reg_scene(void) { Obj mf = mainflow(); return mf && off_scene >= 0 ? AT(mf, off_scene, int32_t) : -1; }
+#define TITLE_ONLY "Go back to the title screen to change mods."
+/* the set to start: pending.json + the env lines for the new process. 0 = ready, 1 = its .NET host (*kind_out: BepInEx or
+   MelonLoader, src/dsl_ml.h) must be downloaded first,
+   -1 = refused (why). Apply and prewarm build both the same way, so a prewarmed game matches the Apply. */
+static int prepare(const char *const *ids, int n, const char *env, char *p, size_t pcap, char *envl, size_t ecap,
+                   char *kk, size_t kcap, int *first_out, int *kind_out, char *why, size_t cap) {
     /* keep client mods the player cannot see (hidden) as they are */
     const char *all[MAXM]; int k = 0;
     for (int i = 0; i < n && k < MAXM; i++) all[k++] = ids[i];
     for (int i = 0; i < nmi && k < MAXM; i++) if (MI[i].hidden && MI[i].enabled) { int dup = 0; for (int j = 0; j < k; j++) dup |= !strcmp(all[j], MI[i].id); if (!dup) all[k++] = MI[i].id; }
-    char p[1200]; dpath(p, sizeof p, "pending.json");
+    dpath(p, pcap, "pending.json");
     if (write_profile(p, all, k)) { snprintf(why, cap, "cannot write %s", p); return -1; }
-    char kk[512]; key_of(all, k, kk, sizeof kk);
+    key_of(all, k, kk, kcap);
     /* BepInEx plugins or MelonLoader mods of the new set (profile order; one .NET host per set, src/dsl_ml.h): install at
        first use, the host's env for the new process */
     const char *kinds[MAXM]; for (int i = 0; i < k; i++) { const DSLModInfo *m = mod_by_id(all[i]); kinds[i] = m ? m->kind : "code"; }
     int nk = dsl_net_check(kinds, k, why, cap);
-    if (nk < 0) { dsl_log("reg: Apply refused: %s", why); return -1; }
+    if (nk < 0) return -1;
+    *kind_out = nk;
     char pdirs[MAXM][1300]; const char *pd[MAXM]; int nb = 0;
     for (int i = 0; i < k; i++) if (nk && dsl_net_kind(kinds[i]) == nk) { snprintf(pdirs[nb], sizeof pdirs[nb], "%s/%s", dsl_mods_dir(), all[i]); pd[nb] = pdirs[nb]; nb++; }
     int bs = nk ? dsl_net_state(nk) : 2;
     const char *hn = dsl_net_name(nk);
     if (nb && bs < 0) { snprintf(why, cap, "%s mods need the Dungeon Settlers Modded app (no %s folder in this start)", hn, hn); return -1; }
-    if (nb && bs == 0) {                                               /* first use: download, then this Apply runs again */
+    if (nb && bs == 0) return 1;
+    char bie[4096] = ""; if (dsl_net_env(nk, pd, nb, bie, sizeof bie)) bie[0] = 0;
+    int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */
+    *first_out = first;
+    snprintf(envl, ecap, "DSML_MODSET=%s\n%s%s%s", kk, bie, first ? "DSL_SOFT_TIMEOUT=300\n" : "", env ? env : "");
+    return 0;
+}
+static int apply_ids(const char *const *ids, int n, const char *env, char *why, size_t cap) {
+    const char *busy = dsl_busy_reason();
+    if (busy) { snprintf(why, cap, "%s", busy); dsl_log("reg: Apply refused: %s", busy); return -1; }
+    if (dsl_reg_scene() != 1) { snprintf(why, cap, TITLE_ONLY); dsl_log("reg: Apply refused: not at the title (scene %d)", dsl_reg_scene()); return -1; }
+    char p[1200], envl[6000], kk[512]; int first = 0, nk = 0;
+    int r = prepare(ids, n, env, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, &nk, why, cap);
+    if (r < 0) { dsl_log("reg: Apply refused: %s", why); return -1; }
+    if (r == 1) {                                                      /* first use: download, then this Apply runs again */
+        const char *hn = dsl_net_name(nk);
         if (dsl_net_install_start(nk)) { snprintf(why, cap, "the %s download could not start", hn); return -1; }
-        bie_pending_set(all, k, env); bp_kind = nk;
+        bie_pending_set(ids, n, env); bp_kind = nk;
         const DSLUi *u = dsl_ui_kit(); char t[300];
         snprintf(t, sizeof t, "Preparing mods (first start)\nDownloading %s (%s). The game restarts with the new mods when it is ready.", hn, dsl_net_size(nk));
         if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
         dsl_log("reg: Apply waits for the %s download", hn); return 0;
     }
-    char bie[4096] = ""; if (dsl_net_env(nk, pd, nb, bie, sizeof bie)) bie[0] = 0;
-    int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */
     if (first) { setenv("DSL_SOFT_TIMEOUT", "300", 1); tip_first_run = nk; } else { unsetenv("DSL_SOFT_TIMEOUT"); tip_first_run = 0; }
-    char envl[6000]; snprintf(envl, sizeof envl, "DSML_MODSET=%s\n%s%s%s", kk, bie, first ? "DSL_SOFT_TIMEOUT=300\n" : "", env ? env : "");
-    dsl_log("reg: Apply: %d mod(s) (%s) -> soft restart", k, kk);
-    char g[40]; Obj mf = mainflow();
-    if (!env && mf && off_scene >= 0 && AT(mf, off_scene, int32_t) == 2 && world_guid(g)) {   /* in a world: it keeps the new set */
-        const char *old = world_key(g); char was[512]; snprintf(was, sizeof was, "%s", old ? old : "");
-        worlds_save(g, kk); dsl_log("reg: world %s now uses %s (was %s)", g, kk, was[0] ? was : "unregistered");
-    }
+    dsl_log("reg: Apply: %s -> soft restart%s", kk, dsl_soft_prewarm_state() ? " (a prewarmed game waits)" : "");
     if (dsl_soft_apply(p, envl)) { snprintf(why, cap, "the game cannot restart right now (loading, or a restart already runs)"); return -1; }
     return 0;
+}
+
+/* prewarm: the Mods window reports its switches (dsl_mods_draft); 1.5 s after the last change a hidden game starts
+   with that set. A newer change replaces it; the window closed without Apply, or the set back to the running one,
+   stops it. Default on (owner's choice logged in MORNING_QUESTIONS.md, v13 loaderui); DSL_PREWARM=0 turns it off. */
+static char dr_ids[MAXM][64]; static int dr_n = -1, dr_started; static double dr_t;
+static double mono_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
+void dsl_mods_draft(const char *const *ids, int n) {
+    if (n < 0) { if (dr_n >= 0 || dsl_soft_prewarm_state()) dsl_log("reg: prewarm: draft dropped"); dr_n = -1; if (dsl_soft_prewarm_state()) dsl_soft_prewarm_stop(); return; }
+    dr_n = 0; for (int i = 0; i < n && i < MAXM; i++) snprintf(dr_ids[dr_n++], 64, "%s", ids[i]);
+    dr_t = mono_s(); dr_started = 0;
+}
+static int draft_is_running(void) {
+    for (int i = 0; i < nmi; i++) {
+        if (MI[i].hidden) continue;
+        int in = 0; for (int j = 0; j < dr_n; j++) in |= !strcmp(dr_ids[j], MI[i].id);
+        if (in != (MI[i].enabled != 0)) return 0;
+    }
+    return 1;
+}
+static void prewarm_frame(void) {
+    if (dr_n < 0 || dr_started || mono_s() - dr_t < 1.5) return;
+    dr_started = 1;
+    const char *off = getenv("DSL_PREWARM"); if (off && !strcmp(off, "0")) return;
+    if (draft_is_running()) { if (dsl_soft_prewarm_state()) { dsl_log("reg: prewarm: switches back to the running set: stopped"); dsl_soft_prewarm_stop(); } return; }
+    if (dsl_busy_reason() || dsl_reg_scene() != 1) return;
+    const char *ids[MAXM]; for (int i = 0; i < dr_n; i++) ids[i] = dr_ids[i];
+    char p[1200], envl[6000], kk[512], why[300] = ""; int first = 0, nk = 0;
+    int r = prepare(ids, dr_n, NULL, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, &nk, why, sizeof why);
+    if (r != 0 || first) { dsl_log("reg: prewarm: not for this set (%s%s)", r < 0 ? why : dsl_net_name(nk), r < 0 ? "" : " prepares first"); if (dsl_soft_prewarm_state()) dsl_soft_prewarm_stop(); return; }
+    if (dsl_soft_prewarm(p, envl)) dsl_log("reg: prewarm: refused for %s", kk);
+    else dsl_log("reg: prewarm: a hidden game starts with %s", kk);
 }
 int dsl_apply_mods(const char *const *ids, int n, char *why, size_t cap) {
     char w[300] = ""; if (!why) { why = w; cap = sizeof w; }
@@ -543,10 +607,38 @@ static void world_frame(void) {
 /* ------------------------------------------------------------------ test only (DSL_SOFT_TEST=1, never in a player's start) */
 /* <log dir>/softrestart/reg_request.json: {"cmd":"k_ok"} = the "Load it with them?" box answered Load; {"cmd":"apply",
    "ids":[..]} = Mods tab Apply; {"cmd":"mods"} = the title "Mods" click; {"cmd":"world_set","guid":..,"ids":[..]} */
+/* v13 checks: {"cmd":"title"} logs the title column; {"cmd":"hover","what":"title:<label>" | "row:<i>" | "win:<control>"}
+   hovers that element (no mouse) and logs the hover card's rect and its panel's rect 20 frames later */
+DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap);
+void dsl_ui_test_hover(DSLObj target);
+int dsl_ui_test_tip(char *title, size_t cap);
+int dsl_ui_test_tip_rects(float card[4], float panel[4]);
+size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
+DSLObj dsl_rows_test_line(int i);
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
+__attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
+static int hv_wait; static char hv_what[120];
+static void hover_test(const char *what) {
+    DSLObj t = NULL; char b[2000] = "";
+    if (!strncmp(what, "title:", 6)) t = dsl_ui_test_title(what + 6, b, sizeof b);
+    else if (!strncmp(what, "row:", 4)) { t = dsl_rows_test_line(atoi(what + 4)); if (t) dsl_ui_test_label(t, b, sizeof b); }
+    else if (!strncmp(what, "win:", 4)) t = dsl_win_test_control(what + 4);
+    dsl_log("reg test: hover %s: target %s%s%s", what, t ? "found" : "MISSING", b[0] ? ", text: " : "", b);
+    if (!t) return;
+    dsl_ui_test_hover(t); hv_wait = 140; snprintf(hv_what, sizeof hv_what, "%s", what);   /* rects at 20 frames, held 2 s for a shot */
+}
+static void hover_frame(void) {
+    if (!hv_wait) return;
+    if (--hv_wait == 0) { dsl_ui_test_hover(NULL); return; }
+    if (hv_wait != 120) return;
+    float c[4], p[4]; char tt[200] = ""; int on = dsl_ui_test_tip_rects(c, p); dsl_ui_test_tip(tt, sizeof tt);
+    dsl_log("reg test: tip %s shown %d title '%s' card %.0f,%.0f,%.0f,%.0f panel %.0f,%.0f,%.0f,%.0f", hv_what, on, tt, c[0], c[1], c[2], c[3], p[0], p[1], p[2], p[3]);
+}
 static void test_frame(void) {
     static int on = -1; static unsigned f;
     if (on < 0) on = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1';
-    if (!on || ++f % 5) return;
+    if (on) hover_frame();
+    if (!on || ++f % 5 || dsl_soft_wanted()) return;                  /* a hidden B (prewarm) leaves the requests to A */
     char p[1300]; snprintf(p, sizeof p, "%s/softrestart/reg_request.json", dsl_log_dir());
     char *t = slurp(p, 1 << 16); if (!t) return;
     unlink(p);
@@ -560,6 +652,9 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "shot")) dsl_log("reg test: shot %s: %s", json_str(j, "path"), dsl_soft_shot(json_str(j, "path")) ? "FAILED" : "ok");
     else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }
     else if (c && !strcmp(c, "world_set")) dsl_world_set_mods(json_str(j, "guid"), ids, n);
+    else if (c && !strcmp(c, "draft")) dsl_mods_draft(ids, json_get(j, "drop") ? -1 : n);
+    else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
+    else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
     json_free(j);
 }
 
@@ -617,6 +712,7 @@ static void bie_frame(void) {
 void dsl_frame_hook(void) {
     commit_pending();
     bie_frame();
+    prewarm_frame();
     world_frame();
     k_frame();
     test_frame();
@@ -639,7 +735,7 @@ void dsl_reg_ready(DSLHost *h) {
     void *kmf = dsl_find_class("Refactor.Main", "MainFlow");
     if (kmf) { off_scene = dsl_field_offset(kmf, "_currentScene"); off_cd = dsl_field_offset(kmf, "_campaignData"); }
     if (h->ui && dsl_win_init) dsl_win_init();
-    if (h->ui) dsl_ui_title_add("loader", "Mods", 100, "Turn mods on or off, save mod groups, and open the mod tabs.", on_title_mods, NULL);
+    if (h->ui) dsl_ui_title_add("loader", "Mods", 100, NULL, on_title_mods, NULL);   /* no hover card (owner 2026-10-16 #1) */
     dsl_log("reg: ready (data %s, kit %s, Mods window %s)", dsl_reg_data_dir(), h->ui ? "on" : "OFF", dsl_win_open ? "on" : "not built");
 }
 /* after dsl_plugin_init of the modules: the running set is known */

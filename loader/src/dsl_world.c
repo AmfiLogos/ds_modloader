@@ -16,6 +16,9 @@
 #include "dsl_os.h"
 
 #define REFUSE_TEXT "This world uses other mods."
+/* in a world (Esc menu Load): no restart there (owner 2026-10-16 #10), flow K only from the title */
+#define REFUSE_IN_WORLD "This world uses other mods. Go back to the title screen to load it."
+int dsl_reg_scene(void);                             /* dsl_reg.c: MainFlow._currentScene, 1 title, 2 world */
 
 static void *(*orig_load)(void *self, void *name, const void *mi);
 static int (*try_header)(void *self, void *name, void *hdr, void **set, const void *mi);
@@ -61,13 +64,14 @@ static void *my_load(void *self, void *name, const void *mi) {
     if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return it; }
     if (mine && dsl_key_same(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, w->str, mine ? mine : "?");
-    dsl_world_mismatch(nm, g, w->str);                  /* asks "Load it with them?" (flow K, dsl_reg.c) */
+    int in_world = dsl_reg_scene() == 2;
+    if (!in_world) dsl_world_mismatch(nm, g, w->str);   /* asks "Load it with them?" (flow K, dsl_reg.c) */
     json_free(s);
     dsl_world_refusals++;
     if (it) *(int32_t*)((char*)it + 0x10) = -2;      /* <>1__state: MoveNext returns false at once */
     if (cancel_notice && str_new) {
         char lg[200]; snprintf(lg, sizeof lg, "dsload: world %s needs another mod set", g);
-        cancel_notice(self, str_new(REFUSE_TEXT), str_new(lg), NULL);
+        cancel_notice(self, str_new(in_world ? REFUSE_IN_WORLD : REFUSE_TEXT), str_new(lg), NULL);
     }
     return it;
 }
