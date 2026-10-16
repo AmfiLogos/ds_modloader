@@ -5,7 +5,7 @@
 # Prints "BEPINEX <dest>" on success, "ERROR <message>" + exit 1 on failure. Never touches anything outside dest's parent.
 VER=0.1.2
 URL=https://github.com/AmfiLogos/ds_multiplayer/releases/download/bepinex-mac-$VER/bepinex-mac-arm64-$VER.zip
-SHA=b5df961f81e226483e74144bfae89643b69272a8894f6640afcb9ed46d3dac3b
+SHA=e2675226b8b8b6b34d5b8683aeef9e62fcb57fe967a9b07035ac5ab9aaa8b250
 D=${1:?usage: install_bepinex.sh <dest>}
 [[ -f $D/libdoorstop.dylib && -f $D/BepInEx/core/BepInEx.Unity.IL2CPP.dll && -f $D/dotnet/libcoreclr.dylib ]] && { echo "BEPINEX $D"; exit 0; }
 P=${D:h}; mkdir -p $P || { echo "ERROR cannot create $P"; exit 1; }
