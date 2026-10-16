@@ -87,6 +87,21 @@ def run(out):
         while time.time() - t1 < 300 and 'running gameplay set ' + gid not in blog(): time.sleep(2)
         B = blog(); L = logs_all(); runs = [l for l in B.splitlines() if 'running gameplay set' in l]
         check('after Apply the new game runs ' + gid + ' (module opened and hooked)', runs and gid in runs[-1] and f'{gid} ' in B and f'{gid} SkillComponent' in B, runs[-2:] or [l for l in L.splitlines() if 'soft' in l][-6:])
+        # the same mod again while its DLL is loaded (Windows locks it): staged for the next start, the right message
+        t1 = time.time()                                               # the new game in charge (the old one answers requests until it quits)
+        while time.time() - t1 < 120 and 'B: fade in' not in blog(): time.sleep(1)
+        time.sleep(3); shutil.copy2(PKG, f'{MODS}/{zname}')
+        def blog_all(): return blog()
+        n0 = blog_all().count('reg test: pkg_refresh'); request({'cmd': 'pkg_refresh'})
+        t2 = time.time()
+        while time.time() - t2 < 60 and blog_all().count('reg test: pkg_refresh') <= n0: time.sleep(1)
+        line = [l for l in blog_all().splitlines() if 'reg test: pkg_refresh' in l][-1:]
+        check('update of a loaded mod: waits in .pending, "installs the next time the game starts"', line and 'installs the next time the game starts' in line[0]
+              and os.path.exists(f'{MODS}/.pending/{gid}/mod.json') and os.path.exists(f'{MODS}/.installed/{zname}'), line)
+        w.stop(); time.sleep(5)
+        t3 = time.time(); start(); s = title(600)
+        st = open(f'{w.PROF}/starter.log', errors='replace').read() if os.path.exists(f'{w.PROF}/starter.log') else ''
+        check('next start: the new version is installed from .pending', s and f'new version of {gid} installed (from .pending)' in st and not os.path.exists(f'{MODS}/.pending/{gid}'), st[-500:])
     except Exception as e:
         check('run finished', False, repr(e))
     finally:

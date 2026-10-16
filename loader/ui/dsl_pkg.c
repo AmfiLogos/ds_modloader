@@ -81,7 +81,9 @@ static int unzip(const char *zip, const char *dest) {
 #endif
 }
 
-/* one zip -> <um>/<id>; 1 = installed (id in id), 0 = not a mod package */
+/* one zip -> <um>/<id>. 1 = installed (id in id); 2 = staged in <um>/.pending/<id>: the running game holds the old
+   version (Windows locks a loaded DLL, so its folder cannot move), the starter swaps it in at the next start;
+   0 = not a mod package; -1 = a mod, but it could not be put in place (disk / permissions) */
 static int install_zip(const char *um, const char *name, char *id, size_t icap) {
     char zp[1400], tmp[1400], src[1500] = "", dst[1400], keep[1400], kz[1600], ts[32];
     snprintf(zp, sizeof zp, "%s/%s", um, name); snprintf(tmp, sizeof tmp, "%s/.unpack-%d", um, (int)getpid());
@@ -98,19 +100,26 @@ static int install_zip(const char *um, const char *name, char *id, size_t icap) 
         }
         if (d) closedir(d);
     }
-    ok = src[0] != 0;
-    if (ok) {
+    int is_mod = src[0] != 0, res = 0;
+    if (is_mod) {
         snprintf(dst, sizeof dst, "%s/%s", um, id);
-        ok = !(exists(dst) && retire(dst, id)) && rename(src, dst) == 0;
+        if (!(exists(dst) && retire(dst, id)) && rename(src, dst) == 0) res = 1;
+        else {                                                         /* the old version is in use: next start */
+            char pd[1400], pdst[1500]; snprintf(pd, sizeof pd, "%s/.pending", um); mkdir_(pd);
+            snprintf(pdst, sizeof pdst, "%s/%s", pd, id);
+            if (exists(pdst)) retire(pdst, "pending");
+            res = rename(src, pdst) == 0 ? 2 : -1;
+        }
     }
+    ok = res > 0;
     stamp(ts, sizeof ts);
     snprintf(keep, sizeof keep, "%s/%s", um, ok ? ".installed" : ".failed"); mkdir_(keep);
     snprintf(kz, sizeof kz, "%s/%s", keep, name);
     if (exists(kz)) retire(kz, name);
     if (rename(zp, kz)) dsl_log("pkg: cannot move %s to %s", zp, keep);
     if (exists(tmp) && rmdir(tmp)) retire(tmp, "unpack");               /* what is left of a nested zip */
-    if (!ok) id[0] = 0;
-    return ok;
+    if (res == 0) id[0] = 0;
+    return res;
 }
 
 #ifndef _WIN32
@@ -137,7 +146,7 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
     snprintf(root_dir, sizeof root_dir, "%s", um);
     { char *s = strrchr(root_dir, '/'), *b = strrchr(root_dir, '\\'); if (b > s) s = b; if (s) *s = 0; }
     mkdir_(um);
-    int changed = 0, bad = 0; char first_bad[300] = "";
+    int changed = 0, bad = 0, staged = 0, stuck = 0; char first_bad[300] = "", first_staged[300] = "", first_stuck[300] = "";
     DIR *d = opendir(um); struct dirent *e; char names[64][256]; int nz = 0;
     while (d && (e = readdir(d)) && nz < 64) {
         size_t l = strlen(e->d_name);
@@ -146,10 +155,13 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
     if (d) closedir(d);
     for (int i = 0; i < nz; i++) {
         char id[64];
-        if (install_zip(um, names[i], id, sizeof id)) {
+        int r = install_zip(um, names[i], id, sizeof id);
+        if (r == 1) {
             if (!strcmp(um, lm ? lm : "")) changed++;                     /* Mac: counted when copied into the loader below */
             dsl_log("pkg: %s installed as %s", names[i], id);
         }
+        else if (r == 2) { if (!staged++) snprintf(first_staged, sizeof first_staged, "%s", names[i]); dsl_log("pkg: %s: %s is in use, the new version waits in .pending for the next start", names[i], id); }
+        else if (r < 0) { if (!stuck++) snprintf(first_stuck, sizeof first_stuck, "%s", names[i]); dsl_log("pkg: %s (%s) could not be put in place (moved to .failed)", names[i], id); }
         else { if (!bad++) snprintf(first_bad, sizeof first_bad, "%s", names[i]); dsl_log("pkg: %s is not a mod package (moved to .failed)", names[i]); }
     }
 #ifndef _WIN32
@@ -170,7 +182,10 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
         if (d) closedir(d);
     }
 #endif
-    if (bad && fail) {
+    if (stuck && fail) snprintf(fail, fcap, "%s could not be installed (the mods folder could not be changed). It was moved to the folder mods/.failed.", first_stuck);
+    else if (staged == 1 && fail) snprintf(fail, fcap, "%s is ready. The new version installs the next time the game starts.", first_staged);
+    else if (staged > 1 && fail) snprintf(fail, fcap, "%d mods are ready. The new versions install the next time the game starts.", staged);
+    else if (bad && fail) {
         if (bad == 1) snprintf(fail, fcap, "%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.", first_bad);
         else snprintf(fail, fcap, "%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.", bad);
     }

@@ -14,6 +14,7 @@
 // DSMP_NO_DIALOG=1: no dialogs. Log: ~/Library/Logs/DungeonSettlersModded.log
 #include <mach-o/dyld.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include "../../loader/src/dsl_json.c"                 /* json_parse / json_get / json_str / json_free */
 #include <copyfile.h>
 #include <dirent.h>
 #include <dlfcn.h>
@@ -85,21 +86,12 @@ static int write_atomic(const char *p, const char *text) {
 static void trim(char *s) { size_t n = strlen(s); while (n && (s[n-1] == '\n' || s[n-1] == '\r' || s[n-1] == ' ')) s[--n] = 0; }
 
 /* "key": "value" of a flat JSON object (enough for copy.json, which this stub writes itself) */
-static int json_str(const char *j, const char *key, char *out, size_t cap) {
-    char k[128]; snprintf(k, sizeof k, "\"%s\"", key);
-    const char *p = j ? strstr(j, k) : NULL; if (!p) return 0;
-    p += strlen(k); while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-    if (*p++ != ':') return 0;
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-    if (*p++ != '"') return 0;
-    size_t n = 0;
-    for (; *p && *p != '"'; p++) {
-        char c = *p;
-        if (c == '\\' && p[1]) { p++; c = *p == 'n' ? '\n' : *p; }
-        if (n + 1 < cap) out[n++] = c;
-    }
-    out[n] = 0;
-    return *p == '"';
+/* a top-level string member of a JSON text, read with the loader's own parser (loader/src/dsl_json.c, compiled into
+   this file): the same reading as the loader and the Windows starter (a strstr found the first "id" anywhere) */
+static int jtop(const char *text, const char *key, char *out, size_t cap) {
+    JNode *j = text ? json_parse(text) : NULL; const char *v = json_str(j, key);
+    int ok = v != NULL; if (ok) snprintf(out, cap, "%s", v);
+    json_free(j); return ok;
 }
 
 static void json_esc(const char *s, char *out, size_t cap) {
@@ -207,13 +199,13 @@ static void find_mod(const char *dir, char *mdir, size_t cap, char *id, size_t i
     char mj[PATH_MAX]; id[0] = 0;
     snprintf(mj, sizeof mj, "%s/mod.json", dir);
     char *j = slurp(mj);
-    if (j) { snprintf(mdir, cap, "%s", dir); if (!json_str(j, "id", id, icap)) id[0] = 0; free(j); return; }
+    if (j) { snprintf(mdir, cap, "%s", dir); if (!jtop(j, "id", id, icap)) id[0] = 0; free(j); return; }
     DIR *d = opendir(dir); struct dirent *e;
     while (d && (e = readdir(d))) {
         if (e->d_name[0] == '.' || !strcmp(e->d_name, "__MACOSX")) continue;
         snprintf(mj, sizeof mj, "%s/%s/mod.json", dir, e->d_name);
         if (!(j = slurp(mj))) continue;
-        snprintf(mdir, cap, "%s/%s", dir, e->d_name); if (!json_str(j, "id", id, icap)) id[0] = 0; free(j); break;
+        snprintf(mdir, cap, "%s/%s", dir, e->d_name); if (!jtop(j, "id", id, icap)) id[0] = 0; free(j); break;
     }
     if (d) closedir(d);
 }
@@ -221,6 +213,17 @@ static void user_mods(const char *app, const char *root) {
     char um[PATH_MAX], lm[PATH_MAX], p[PATH_MAX], q[PATH_MAX], id[64], mdir[PATH_MAX];
     snprintf(um, sizeof um, "%s/mods", root); mkdirs(um);
     snprintf(lm, sizeof lm, "%s/loader/mods", root);
+    {   /* new versions the running game could not take (loader/ui/dsl_pkg.c): ROOT/mods/.pending/<id> -> ROOT/mods/<id> */
+        char pd[PATH_MAX]; snprintf(pd, sizeof pd, "%s/.pending", um);
+        DIR *d = opendir(pd); struct dirent *e;
+        while (d && (e = readdir(d))) {
+            if (e->d_name[0] == '.' || !valid_id(e->d_name)) continue;
+            snprintf(p, sizeof p, "%s/%s", pd, e->d_name); snprintf(q, sizeof q, "%s/%s", um, e->d_name);
+            if (exists(q) && retire(root, q, e->d_name)) continue;
+            if (rename(p, q) == 0) logf_("mods: new version of %s installed (from .pending)", e->d_name);
+        }
+        if (d) closedir(d);
+    }
     struct dirent **ents = NULL; int ne = scandir(um, &ents, NULL, alphasort);
     for (int i = 0; i < ne; i++) {                                     /* zips -> ROOT/mods/<id> */
         const char *n = ents[i]->d_name; size_t l = strlen(n);
@@ -257,7 +260,7 @@ static void user_mods(const char *app, const char *root) {
         snprintf(p, sizeof p, "%s/%s/mod.json", um, n);
         char *a = slurp(p);
         if (!a) continue;
-        if (!json_str(a, "id", id, sizeof id) || strcmp(id, n) || !valid_id(id)) { logf_("mods: %s/%s skipped (mod.json id is not the folder name)", um, n); free(a); continue; }
+        if (!jtop(a, "id", id, sizeof id) || strcmp(id, n) || !valid_id(id)) { logf_("mods: %s/%s skipped (mod.json id is not the folder name)", um, n); free(a); continue; }
         snprintf(q, sizeof q, "%s/%s/mod.json", lm, n);
         char *b = slurp(q);
         if (!b || strcmp(a, b)) {
@@ -288,7 +291,7 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
                      char *build, size_t bcap) {
     char cj[PATH_MAX]; snprintf(cj, sizeof cj, "%s/copy.json", profile);
     char *j = slurp(cj);
-    if (j && json_str(j, "build", build, bcap) && json_str(j, "app", play, pcap)) {
+    if (j && jtop(j, "build", build, bcap) && jtop(j, "app", play, pcap)) {
         char exe[PATH_MAX]; snprintf(exe, sizeof exe, "%s/Contents/MacOS/Dungeon Settlers", play);
         if (exists(exe)) { free(j); return 0; }
         logf_("remembered copy %s is gone: making a new one", play);
@@ -347,7 +350,7 @@ static void mods_state(const char *root, const char *data) {
     for (int i = 0; i < ne; i++) {
         char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, ents[i]->d_name);
         char *j = ents[i]->d_name[0] != '.' ? slurp(mj) : NULL;
-        if (j && json_str(j, "id", id, sizeof id) && *id && !strpbrk(id, "\"\\")) {
+        if (j && jtop(j, "id", id, sizeof id) && *id && !strpbrk(id, "\"\\")) {
             if (default_off(j)) off++;
             else if (strlen(ids) + strlen(id) + 4 < sizeof ids) {
                 snprintf(ids + strlen(ids), sizeof ids - strlen(ids), "%s\"%s\"", n ? "," : "", id); n++;
@@ -436,6 +439,22 @@ static void bg_notification(const char *text) {             /* non-blocking bann
    install_melon.sh -> ROOT/melonloader/mac-arm64/<ver>), Bootstrap after dsload in DYLD_INSERT_LIBRARIES. One .NET host
    per start: a profile with both kinds starts the BepInEx ones (the loader's Mods window refuses such a set). */
 #define ML_VER "0.1.0"
+/* the enabled mods of one kind ("bepinex" / "melon") in profile order, as "<mods>/<id>:..." folders; an id that is not
+   a plain mod id (a-z 0-9 . _ -, as the starters accept) is skipped, never put into a path */
+static int kind_dirs(const char *mods, const char *act, const char *kind, char *dirs, size_t cap) {
+    char *t = slurp(act); JNode *j = t ? json_parse(t) : NULL; free(t);
+    JNode *en = json_get(j, "enabled"); int n = 0; dirs[0] = 0;
+    for (JNode *c = en && en->t == JN_ARR ? en->child : NULL; c; c = c->next) {
+        if (c->t != JN_STR) continue;
+        if (!valid_id(c->str)) { logf_("mods: profile id '%s' is not a mod id: skipped", c->str); continue; }
+        char mj[PATH_MAX], k[32]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, c->str);
+        char *m = slurp(mj); int hit = m && jtop(m, "kind", k, sizeof k) && !strcmp(k, kind); free(m);
+        if (!hit) continue;
+        if (n++) strlcat(dirs, ":", cap);
+        strlcat(dirs, mods, cap); strlcat(dirs, "/", cap); strlcat(dirs, c->str, cap);
+    }
+    json_free(j); return n;
+}
 static int melon_launch(const char *root, const char *data, char *dyld, size_t cap, int allowed) {
     char mdir[PATH_MAX], script[PATH_MAX], act[PATH_MAX], mods[PATH_MAX];
     snprintf(mdir, sizeof mdir, "%s/melonloader/mac-arm64/" ML_VER, root);
@@ -443,23 +462,7 @@ static int melon_launch(const char *root, const char *data, char *dyld, size_t c
     snprintf(mods, sizeof mods, "%s/loader/mods", root);
     setenv("DSML_MELON_DIR", mdir, 1); setenv("DSML_MELON_SCRIPT", script, 1);
     snprintf(act, sizeof act, "%s/Mods/active.json", data);
-    char *j = slurp(act); if (!j) return 0;
-    char *e = strstr(j, "\"enabled\""), *lb = e ? strchr(e, '[') : NULL, *rb = lb ? strchr(lb, ']') : NULL;
-    char dirs[8192] = ""; int n = 0;
-    for (char *p = lb; p && p < rb; ) {                      /* enabled ids in profile order */
-        char *q1 = strchr(p, '"'); if (!q1 || q1 > rb) break;
-        char *q2 = strchr(q1 + 1, '"'); if (!q2 || q2 > rb) break;
-        char id[128]; snprintf(id, sizeof id, "%.*s", (int)(q2 - q1 - 1), q1 + 1); p = q2 + 1;
-        char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, id);
-        char *m = slurp(mj); if (!m) continue;
-        char *k = strstr(m, "\"kind\""); char *v = k ? strchr(k + 6, '"') : NULL;
-        int ml = v && !strncmp(v, "\"melon\"", 7);
-        free(m);
-        if (!ml) continue;
-        if (n++) strlcat(dirs, ":", sizeof dirs);
-        strlcat(dirs, mods, sizeof dirs); strlcat(dirs, "/", sizeof dirs); strlcat(dirs, id, sizeof dirs);
-    }
-    free(j);
+    char dirs[8192]; int n = kind_dirs(mods, act, "melon", dirs, sizeof dirs);
     if (!n) return 0;
     if (!allowed) { logf_("melon: %d mod(s) off this start: BepInEx mods run (one .NET host per start)", n); return 0; }
     char probe[PATH_MAX]; snprintf(probe, sizeof probe, "%s/MelonLoader.Bootstrap.dylib", mdir);
@@ -490,23 +493,7 @@ static int bepinex_launch(const char *root, const char *data, char *dyld, size_t
     snprintf(mods, sizeof mods, "%s/loader/mods", root);
     setenv("DSML_BEPINEX_DIR", bdir, 1); setenv("DSML_BEPINEX_SCRIPT", script, 1);
     snprintf(act, sizeof act, "%s/Mods/active.json", data);
-    char *j = slurp(act); if (!j) return 0;
-    char *e = strstr(j, "\"enabled\""), *lb = e ? strchr(e, '[') : NULL, *rb = lb ? strchr(lb, ']') : NULL;
-    char dirs[8192] = ""; int n = 0;
-    for (char *p = lb; p && p < rb; ) {                      /* enabled ids in profile order */
-        char *q1 = strchr(p, '"'); if (!q1 || q1 > rb) break;
-        char *q2 = strchr(q1 + 1, '"'); if (!q2 || q2 > rb) break;
-        char id[128]; snprintf(id, sizeof id, "%.*s", (int)(q2 - q1 - 1), q1 + 1); p = q2 + 1;
-        char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, id);
-        char *m = slurp(mj); if (!m) continue;
-        char *k = strstr(m, "\"kind\""); char *v = k ? strchr(k + 6, '"') : NULL;
-        int bie = v && !strncmp(v, "\"bepinex\"", 9);
-        free(m);
-        if (!bie) continue;
-        if (n++) strlcat(dirs, ":", sizeof dirs);
-        strlcat(dirs, mods, sizeof dirs); strlcat(dirs, "/", sizeof dirs); strlcat(dirs, id, sizeof dirs);
-    }
-    free(j);
+    char dirs[8192]; int n = kind_dirs(mods, act, "bepinex", dirs, sizeof dirs);
     if (!n) return 0;
     char probe[PATH_MAX]; snprintf(probe, sizeof probe, "%s/libdoorstop.dylib", bdir);
     if (!exists(probe)) {

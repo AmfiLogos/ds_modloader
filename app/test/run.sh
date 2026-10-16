@@ -91,7 +91,7 @@ with zipfile.ZipFile(z, 'w') as zf:
     for d, _, fs in os.walk(src):
         for f in fs:
             p = os.path.join(d, f); a = 'gcd-cdr/' + os.path.relpath(p, src)
-            if f == 'mod.json': m = json.load(open(p)); m['version'] = '9.9.9'; zf.writestr(a, json.dumps(m))
+            if f == 'mod.json': m = json.load(open(p)); m['version'] = '9.9.9'; m = {'credits': [{'id': 'not-the-mod'}], **m}; zf.writestr(a, json.dumps(m))   # a nested "id" first: the stub must read the top-level one
             else: zf.write(p, a)
 PY
 print -r -- "not a zip" > "$ROOT/mods/broken-1.0.zip"
