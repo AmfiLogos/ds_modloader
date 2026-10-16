@@ -1,10 +1,10 @@
 #!/bin/zsh
 # make_installer.sh [kit dir] -> loader/build/win/Dungeon-Settlers-Modded-Setup.exe (NSIS 3, built on this Mac).
 # The kit = build_win.sh's loader/build/win/kit (install.bat, uninstall.bat, README.txt, files/ with the mods).
-# Env: MAKENSIS (default ~/tools/nsis/bin/makensis, native NSIS 3.11), VER (default 0.1.18: the installer version, the release number).
+# Env: MAKENSIS (default ~/tools/nsis/bin/makensis, native NSIS 3.11), VER (default: the repo file RELEASE, the release number).
 set -e; cd "${0:A:h}"; I=$PWD; L=${I:h:h:h}
 KIT=${1:-$L/build/win/kit}; KIT=${KIT:A}; O=$L/build/win; OUT=$O/Dungeon-Settlers-Modded-Setup.exe
-MK=${MAKENSIS:-~/tools/nsis/bin/makensis}; VER=${VER:-0.1.18}
+MK=${MAKENSIS:-~/tools/nsis/bin/makensis}; VER=${VER:-$(head -1 $L/../RELEASE)}
 [[ -x $MK ]] || { echo "makensis not found: $MK" >&2; exit 1; }
 for f in install.bat files/find_game.bat files/baselib.dll "files/Dungeon Settlers Modded.exe" files/BUILD.txt files/GASIZE.txt; do
   [[ -f $KIT/$f ]] || { echo "kit $KIT: no $f (run build_win.sh first)" >&2; exit 1; }

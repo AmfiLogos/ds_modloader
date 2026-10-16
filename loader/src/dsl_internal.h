@@ -3,7 +3,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_LOADER_VERSION "3.0.0"
+#define DSL_LOADER_VERSION "3.0.0"         /* internal loader API number: mods' "requires": ["loader>=x"]. Never shown */
+#ifndef DSL_RELEASE                          /* the release number players see (repo file RELEASE, set by the builds) */
+#define DSL_RELEASE "dev"
+#endif
 #define DSL_OWNER_LOADER (-1)
 
 extern uintptr_t dsl_ga_base;            /* GameAssembly arm64 load address, 0 before it is mapped */

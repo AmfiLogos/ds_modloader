@@ -7,7 +7,7 @@
 # Nothing outside this folder is written. Never overwrites a mapped dylib (mv of a new file).
 set -e; cd "${0:A:h}"; L="$PWD"
 mkdir -p build/mods
-CF=(-O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0)
+CF=(-O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0 -DDSL_RELEASE=\"$(head -1 ../RELEASE)\")   # release number players see
 put() { codesign -f -s - "$1.tmp" 2>/dev/null; mv -f "$1.tmp" "$1"; }
 
 UISRC=(ui/*.c(N))                                   # Mods window (lane L2), when present
