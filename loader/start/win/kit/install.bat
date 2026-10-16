@@ -67,7 +67,9 @@ if %BLSIZE% GTR 1000000 (
   goto fail
 )
 
+rem DSMODDED_ROOT (the installer's chosen folder) replaces the default folder
 set "ROOT=%LOCALAPPDATA%\Dungeon Settlers Modded"
+if defined DSMODDED_ROOT set "ROOT=%DSMODDED_ROOT%"
 set "COPY=%ROOT%\game"
 if not exist "%ROOT%" mkdir "%ROOT%"
 
@@ -130,7 +132,7 @@ goto fail
 
 :copyfail
 echo.
-echo  The game could not be copied into %LOCALAPPDATA%\Dungeon Settlers Modded.
+echo  The game could not be copied into %ROOT%.
 echo  Close the game and check that the disk has 1 GB free. Then run install.bat again.
 :fail
 echo.

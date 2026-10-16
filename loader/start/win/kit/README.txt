@@ -7,16 +7,19 @@ Steam's game, your normal saves and your settings do not change. The modded game
 
 INSTALL (one time)
 1. Quit Dungeon Settlers.
-2. Right-click the zip file. Click "Extract All". Click "Extract".
-3. Open the extracted folder. Double-click install.bat.
+2. Double-click Dungeon-Settlers-Modded-Setup.exe.
    If Windows shows "Windows protected your PC": click "More info", then click "Run anyway".
-4. A black window opens. It finds the game by itself and copies it (about 700 MB, one or two minutes).
-   If it asks for the game folder:
-   4.1 In Steam, right-click Dungeon Settlers. Click Manage, then click Browse local files.
-   4.2 Click the address bar at the top of that folder window. Press Ctrl+C.
-   4.3 Click the black window. Press Ctrl+V. Press Enter.
-5. When it says "Done", press any key. The window closes.
-   You now have "Dungeon Settlers Modded" on your desktop and in the Start menu.
+   (The installer is not signed. This is why Windows shows this message.)
+3. Click Next. The installer finds the game folder of Steam by itself.
+   If the game folder box is empty:
+   3.1 In Steam, right-click Dungeon Settlers. Click Manage, then click Browse local files.
+   3.2 Click the address bar at the top of that folder window. Press Ctrl+C.
+   3.3 Click the game folder box in the installer. Press Ctrl+V. Click Next.
+4. Click Install. It copies the game (about 700 MB, one or two minutes).
+5. Click Finish. You now have "Dungeon Settlers Modded" on your desktop and in the Start menu.
+
+Without the installer (zip kit): extract the zip, open the folder, double-click install.bat.
+A black window opens and does the same steps.
 
 
 PLAY
@@ -27,8 +30,19 @@ PLAY
 To play the normal game, start it from Steam as usual. Steam starts it without mods.
 
 
+ADD A MOD
+1. Download the mod file. Its name is like gcd-cdr-2.0.0.zip. Do not extract it.
+2. Open the mods folder. Do one of these:
+   - In the game, on the title screen, click Mods. Click "Open mods folder".
+   - Press Windows+R. Paste %LOCALAPPDATA%\Dungeon Settlers Modded\mods and press Enter.
+3. Put the zip file into the mods folder.
+4. Start Dungeon Settlers Modded. It installs the mod.
+5. On the title screen, click Mods. Turn the new mod on. Click Apply.
+A new version of a mod replaces the old version. The old version goes to the "retired" folder.
+
+
 IF SOMETHING GOES WRONG
-- "The modded game copy is missing": run install.bat again.
+- "The modded game copy is missing": run the installer (or install.bat) again.
 - "Your game version is not the version this kit is for": Steam updated the game. Get the newer kit.
 - Antivirus removes baselib.dll: the mod files are not signed. Allow them in your antivirus, then run install.bat again.
 - Send these files to the person who helps you: the folder
@@ -39,5 +53,6 @@ IF SOMETHING GOES WRONG
 
 UNINSTALL
 1. Quit Dungeon Settlers.
-2. Double-click uninstall.bat in this kit folder.
+2. Open Windows Settings, Apps, Installed apps. Find "Dungeon Settlers Modded". Click Uninstall.
+   (Zip kit without the installer: double-click uninstall.bat in the kit folder.)
    Your modded saves stay in %LOCALAPPDATA%\Dungeon Settlers Modded\profiles. You can delete that folder.

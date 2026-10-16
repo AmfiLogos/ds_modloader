@@ -4,6 +4,7 @@
 //      DATA = PROFILE/data (saves), UHOME = PROFILE/home, mods state = DATA/Mods/.
 //   2. loader files: <app>/Contents/Resources/dsml/ -> ROOT/loader/ when VERSION differs (temp folder, xattr -cr,
 //      rename into place; the old folder moves to ROOT/retired/, never written over: a running game maps it).
+//   2b. the player's mods: ROOT/mods/<id> (or a <id>-<version>.zip there, unpacked) -> ROOT/loader/mods/<id>.
 //   3. game copy: PROFILE/copy.json {"build","app"} when that copy exists (pinned), else
 //      Contents/MacOS/dsml-helper prepare --root ROOT (last lines "BUILD <id>", "PLAY <path>" or "ERROR <msg>").
 //   4. first run: COPY the normal saves (read only); default DATA/Mods/active.json + worlds.json. The Mods window is
@@ -171,6 +172,115 @@ static int sync_loader(const char *app, const char *root) {
     logf_("loader %s installed (was %s)", a, b ? b : "none");
     free(a); free(b);
     return 0;
+}
+
+/* 2b. the player's mods: ROOT/mods (the Mods window's "Open mods folder"). A downloaded <id>-<version>.zip there is
+   unpacked to ROOT/mods/<id> (the zip moves to ROOT/mods/.installed/, a bad one to .failed/). Every ROOT/mods/<id>
+   whose mod.json "id" is <id> is copied into ROOT/loader/mods/<id> when its mod.json differs (marker .player_mod
+   inside the copy). A player mod taken out of ROOT/mods leaves ROOT/loader/mods too (the app's own copy of that id,
+   when it has one, comes back). Replaced folders move to ROOT/retired/. A new mod is off until the player turns it on. */
+static int valid_id(const char *s) {
+    if (!*s || *s == '.') return 0;
+    for (; *s; s++) if (!((*s >= 'a' && *s <= 'z') || (*s >= '0' && *s <= '9') || *s == '.' || *s == '_' || *s == '-')) return 0;
+    return 1;
+}
+static int retire(const char *root, const char *path, const char *label) {
+    char ret[PATH_MAX], ts[32]; stamp(ts, sizeof ts);
+    snprintf(ret, sizeof ret, "%s/retired", root); mkdirs(ret);
+    snprintf(ret, sizeof ret, "%s/retired/%s-%s-%d", root, label, ts, getpid());
+    if (rename(path, ret) == 0) return 0;
+    logf_("move %s -> %s failed (%s)", path, ret, strerror(errno)); return -1;
+}
+/* copy dir src to dst (temp + rename; quarantine cleared: dyld refuses a quarantined dylib); marker = .player_mod */
+static int copy_in(const char *root, const char *src, const char *dst, const char *label, int marker) {
+    char tmp[PATH_MAX]; snprintf(tmp, sizeof tmp, "%s.new-%d", dst, getpid());
+    if (copyfile(src, tmp, NULL, COPYFILE_ALL | COPYFILE_RECURSIVE) != 0) { logf_("copy %s -> %s failed (%s)", src, tmp, strerror(errno)); return -1; }
+    char *xav[] = { "/usr/bin/xattr", "-cr", tmp, NULL };
+    if (run_cmd(xav, NULL, 0) != 0) logf_("xattr -cr %s failed", tmp);
+    if (marker) { char m[PATH_MAX]; snprintf(m, sizeof m, "%s/.player_mod", tmp); write_atomic(m, "ROOT/mods\n"); }
+    if (exists(dst) && retire(root, dst, label)) return -1;
+    if (rename(tmp, dst) != 0) { logf_("move %s -> %s failed (%s)", tmp, dst, strerror(errno)); return -1; }
+    return 0;
+}
+/* the folder holding mod.json: dir itself or one folder down; id read into id (empty = none) */
+static void find_mod(const char *dir, char *mdir, size_t cap, char *id, size_t icap) {
+    char mj[PATH_MAX]; id[0] = 0;
+    snprintf(mj, sizeof mj, "%s/mod.json", dir);
+    char *j = slurp(mj);
+    if (j) { snprintf(mdir, cap, "%s", dir); if (!json_str(j, "id", id, icap)) id[0] = 0; free(j); return; }
+    DIR *d = opendir(dir); struct dirent *e;
+    while (d && (e = readdir(d))) {
+        if (e->d_name[0] == '.' || !strcmp(e->d_name, "__MACOSX")) continue;
+        snprintf(mj, sizeof mj, "%s/%s/mod.json", dir, e->d_name);
+        if (!(j = slurp(mj))) continue;
+        snprintf(mdir, cap, "%s/%s", dir, e->d_name); if (!json_str(j, "id", id, icap)) id[0] = 0; free(j); break;
+    }
+    if (d) closedir(d);
+}
+static void user_mods(const char *app, const char *root) {
+    char um[PATH_MAX], lm[PATH_MAX], p[PATH_MAX], q[PATH_MAX], id[64], mdir[PATH_MAX];
+    snprintf(um, sizeof um, "%s/mods", root); mkdirs(um);
+    snprintf(lm, sizeof lm, "%s/loader/mods", root);
+    struct dirent **ents = NULL; int ne = scandir(um, &ents, NULL, alphasort);
+    for (int i = 0; i < ne; i++) {                                     /* zips -> ROOT/mods/<id> */
+        const char *n = ents[i]->d_name; size_t l = strlen(n);
+        if (n[0] == '.' || l < 5 || strcasecmp(n + l - 4, ".zip")) continue;
+        char tmp[PATH_MAX]; snprintf(tmp, sizeof tmp, "%s/.unpack-%d", um, getpid());
+        snprintf(p, sizeof p, "%s/%s", um, n);
+        char *dav[] = { "/usr/bin/ditto", "-x", "-k", p, tmp, NULL };
+        int ok = run_cmd(dav, NULL, 0) == 0;
+        if (ok) find_mod(tmp, mdir, sizeof mdir, id, sizeof id);
+        ok = ok && valid_id(id);
+        if (ok) {
+            snprintf(q, sizeof q, "%s/%s", um, id);
+            ok = !(exists(q) && retire(root, q, id)) && rename(mdir, q) == 0;
+        }
+        snprintf(q, sizeof q, "%s/%s", um, ok ? ".installed" : ".failed"); mkdirs(q);
+        snprintf(q + strlen(q), sizeof q - strlen(q), "/%s", n);
+        if (exists(q)) retire(root, q, n);
+        if (rename(p, q) != 0) logf_("move %s -> %s failed (%s)", p, q, strerror(errno));
+        if (exists(tmp) && rmdir(tmp) != 0) retire(root, tmp, "unpack");     /* empty after a nested zip */
+        if (ok) logf_("mods: %s installed as mods/%s", n, id);
+        else {
+            logf_("mods: %s is not a mod package (no mod.json with a good id)", n);
+            char msg[PATH_MAX + 128];
+            snprintf(msg, sizeof msg, "%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.", n);
+            notice(msg);
+        }
+    }
+    for (int i = 0; i < ne; i++) free(ents[i]);
+    free(ents);
+    ne = scandir(um, &ents, NULL, alphasort);
+    for (int i = 0; i < ne; i++) {                                     /* ROOT/mods/<id> -> ROOT/loader/mods/<id> */
+        const char *n = ents[i]->d_name;
+        if (n[0] == '.') continue;
+        snprintf(p, sizeof p, "%s/%s/mod.json", um, n);
+        char *a = slurp(p);
+        if (!a) continue;
+        if (!json_str(a, "id", id, sizeof id) || strcmp(id, n) || !valid_id(id)) { logf_("mods: %s/%s skipped (mod.json id is not the folder name)", um, n); free(a); continue; }
+        snprintf(q, sizeof q, "%s/%s/mod.json", lm, n);
+        char *b = slurp(q);
+        if (!b || strcmp(a, b)) {
+            snprintf(p, sizeof p, "%s/%s", um, n); snprintf(q, sizeof q, "%s/%s", lm, n);
+            if (copy_in(root, p, q, n, 1) == 0) logf_("mods: player mod %s copied into the loader", n);
+        }
+        free(a); free(b);
+    }
+    for (int i = 0; i < ne; i++) free(ents[i]);
+    free(ents);
+    ne = scandir(lm, &ents, NULL, alphasort);
+    for (int i = 0; i < ne; i++) {                                     /* player mods taken out of ROOT/mods */
+        const char *n = ents[i]->d_name;
+        snprintf(p, sizeof p, "%s/%s/.player_mod", lm, n); snprintf(q, sizeof q, "%s/%s/mod.json", um, n);
+        if (n[0] == '.' || !exists(p) || exists(q)) continue;
+        snprintf(p, sizeof p, "%s/%s", lm, n);
+        if (retire(root, p, n)) continue;
+        logf_("mods: player mod %s removed", n);
+        snprintf(q, sizeof q, "%s/Contents/Resources/dsml/mods/%s", app, n);
+        if (exists(q) && copy_in(root, q, p, n, 0) == 0) logf_("mods: the app's own %s is back", n);
+    }
+    for (int i = 0; i < ne; i++) free(ents[i]);
+    free(ents);
 }
 
 /* 3. the play copy: the remembered one (pinned) or a new one made by dsml-helper */
@@ -448,6 +558,7 @@ int main(int argc, char **argv) {
                          return fail("Dungeon Settlers Modded cannot create its folder in Application Support."); }
 
     if (sync_loader(app, root)) return 1;
+    user_mods(app, root);
     char play[PATH_MAX], build[128];
     if (game_copy(app, root, profile, play, sizeof play, build, sizeof build)) return 1;
 
@@ -485,6 +596,7 @@ int main(int argc, char **argv) {
     melon_launch(root, data, v, sizeof v, nbie == 0);
     setenv("DYLD_INSERT_LIBRARIES", v, 1);
     snprintf(v, sizeof v, "%s/loader/mods", root); setenv("DSL_MODS_DIR", v, 1);
+    snprintf(v, sizeof v, "%s/mods", root); setenv("DSML_USER_MODS_DIR", v, 1);   /* the Mods window's "Open mods folder" */
     snprintf(v, sizeof v, "%s/Mods/active.json", data); setenv("DSL_PROFILE", v, 1);
     setenv("DSL_LOG_DIR", profile, 1);
     snprintf(v, sizeof v, "%s/Mods/worlds.json", data); setenv("DSML_SESSION", v, 1);
@@ -499,7 +611,7 @@ int main(int argc, char **argv) {
 
     if (dry) {
         const char *keys[] = { "SteamAppId", "SteamGameId", "CFFIXED_USER_HOME", "DSRIG_DIR", "DSRIG_LIVE", "DSRIG_FPS",
-                               "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
+                               "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSML_USER_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
                                "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
                                "DOORSTOP_ENABLED", "DOORSTOP_TARGET_ASSEMBLY", "DOORSTOP_CLR_RUNTIME_CORECLR_PATH",
                                "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS",

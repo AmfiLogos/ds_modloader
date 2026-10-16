@@ -5,6 +5,7 @@
 #   (b) stub dry run from a copy (never quarantined: macOS moved quarantined test copies to the Trash): env/argv, defaults, loader copy,
 #       pinned copy.json, loader update retires the old folder
 #   (c) an existing active.json is never changed by the stub
+#   (f) player mods folder ROOT/mods: package zip installed, bad zip set aside, removal restores the app's own copy
 # Needs app/build/Dungeon Settlers Modded.app (app/build_app.sh). Tmp ROOT under test_env/ (gitignored).
 set -u
 HERE="${0:A:h}"; REPO="${HERE:h:h}"
@@ -80,6 +81,28 @@ check "player's active.json unchanged" test "$(cat "$D/Mods/active.json")" = '{"
 print -r -- '{"enabled": [ ], "order": []}' > "$D/Mods/active.json"
 stub >/dev/null 2>&1
 check "empty list unchanged (vanilla)" test "$(cat "$D/Mods/active.json")" = '{"enabled": [ ], "order": []}'
+
+echo "== (f) player mods (ROOT/mods): a package zip is installed, a bad zip set aside, a removed one gives the app's own back"
+G="$APP/Contents/Resources/dsml/mods/gcd-cdr"
+python3 - "$G" "$ROOT/mods/gcd-cdr-9.9.9.zip" <<'PY'
+import json, os, sys, zipfile
+src, z = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(z, 'w') as zf:
+    for d, _, fs in os.walk(src):
+        for f in fs:
+            p = os.path.join(d, f); a = 'gcd-cdr/' + os.path.relpath(p, src)
+            if f == 'mod.json': m = json.load(open(p)); m['version'] = '9.9.9'; zf.writestr(a, json.dumps(m))
+            else: zf.write(p, a)
+PY
+print -r -- "not a zip" > "$ROOT/mods/broken-1.0.zip"
+OUTU=$(stub 2>&1); print -r -- "$OUTU" > "$T/dry_user.txt"
+check "env DSML_USER_MODS_DIR" grep -qxF "ENV DSML_USER_MODS_DIR=$ROOT/mods" "$T/dry_user.txt"
+check "zip unpacked to mods/gcd-cdr" test -f "$ROOT/mods/gcd-cdr/mod.json" -a -f "$ROOT/mods/.installed/gcd-cdr-9.9.9.zip"
+check "bad zip set aside" test -f "$ROOT/mods/.failed/broken-1.0.zip"
+check "player mod in the loader" sh -c "grep -q 9.9.9 '$ROOT/loader/mods/gcd-cdr/mod.json' && test -f '$ROOT/loader/mods/gcd-cdr/.player_mod'"
+mv "$ROOT/mods/gcd-cdr" "$T/gcd-cdr-player"
+stub >/dev/null 2>&1
+check "player mod taken out: the app's own back" sh -c "cmp '$ROOT/loader/mods/gcd-cdr/mod.json' '$G/mod.json' && test ! -e '$ROOT/loader/mods/gcd-cdr/.player_mod'"
 
 echo "== (e) a BepInEx mod enabled: BepInEx installed at first use (real download), Doorstop env"
 mkdir -p "$ROOT/loader/mods/fake-bie"; print -r -- '{"id":"fake-bie","version":"1.0.0","kind":"bepinex","scope":"client","platforms":{"any":{"files":{}}}}' > "$ROOT/loader/mods/fake-bie/mod.json"
