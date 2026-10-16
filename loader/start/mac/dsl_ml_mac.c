@@ -1,0 +1,100 @@
+// Mac part of MelonLoader (src/dsl_ml.h, lane melon). The app stub gives the paths:
+//   DSML_MELON_DIR    <launcher data>/melonloader/mac-arm64/<ver> (writable: MelonLoader writes UserData, interop, logs there)
+//   DSML_MELON_SCRIPT install_melon.sh (in the app; downloads our release zip, checks sha256, ditto, no quarantine)
+//   DSML_DSLOAD       dsload.dylib path (first in DYLD_INSERT_LIBRARIES, MelonLoader.Bootstrap last)
+// Our arm64 MelonLoader build (ds_multiplayer ext/melon) reads MELONLOADER_BASEDIR (the folder above) and
+// MELONLOADER_MOD_DIRS (":" list, one folder per enabled melon mod); argv stays the game's own.
+// First start per game build: <dir>/ds_ready_<build> is written once a MelonLoader start reached the title.
+#include "../../src/dsl_internal.h"
+#include "../../src/dsl_ml.h"
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+
+static const char *ml_dir(void) { const char *d = getenv("DSML_MELON_DIR"); return d && *d ? d : NULL; }
+static int ml_has(const char *d, const char *rel) { char p[1400]; struct stat st; snprintf(p, sizeof p, "%s/%s", d, rel); return stat(p, &st) == 0; }
+static void ml_ready_path(char *p, size_t n) { snprintf(p, n, "%s/ds_ready_%s", ml_dir(), dsl_build_id ? dsl_build_id : "unknown"); }
+/* MelonLoader's Bootstrap is in this process (it exports MLRealDlsym; it removes itself from DYLD_INSERT_LIBRARIES) */
+static int loaded(void) { return dlsym(RTLD_DEFAULT, "MLRealDlsym") != NULL; }
+int dsl_ml_state(void) {
+    const char *d = ml_dir(); if (!d) return -1;
+    if (!ml_has(d, "MelonLoader.Bootstrap.dylib") || !ml_has(d, "MelonLoader/net6/MelonLoader.dll") || !ml_has(d, "dotnet/host/fxr")) return 0;
+    char p[1400]; struct stat st; ml_ready_path(p, sizeof p);
+    return stat(p, &st) == 0 ? 2 : 1;
+}
+int dsl_ml_env(const char *const *md, int n, char *out, size_t cap) {
+    const char *d = ml_dir(), *dl = getenv("DSML_DSLOAD");
+    size_t k = 0; out[0] = 0;
+    if (n > 0 && !d) return -1;
+    /* DYLD: dsload first, then the other loaders the start had, minus Doorstop and MelonLoader (added again when on) */
+    char others[2048] = ""; const char *cur = getenv("DYLD_INSERT_LIBRARIES");
+    if (cur) { char *c = strdup(cur), *sv = NULL;
+        for (char *t = strtok_r(c, ":", &sv); t; t = strtok_r(NULL, ":", &sv)) {
+            if (strstr(t, "libdoorstop") || strstr(t, "MelonLoader.Bootstrap") || (dl && !strcmp(t, dl)) || strstr(t, "/dsload.dylib")) continue;
+            strlcat(others, ":", sizeof others); strlcat(others, t, sizeof others);
+        }
+        free(c); }
+    if (dl) {
+        k += (size_t)snprintf(out + k, cap - k, "DYLD_INSERT_LIBRARIES=%s%s", dl, others);
+        if (n) k += (size_t)snprintf(out + k, cap - k, ":%s/MelonLoader.Bootstrap.dylib", d);
+        k += (size_t)snprintf(out + k, cap - k, "\n");
+    }
+    if (!n) { snprintf(out + k, cap - k, "MELONLOADER_MOD_DIRS=\n"); return 0; }
+    k += (size_t)snprintf(out + k, cap - k, "DOORSTOP_ENABLED=0\nBEPINEX_PLUGIN_DIRS=\nMELONLOADER_BASEDIR=%s\nMELONLOADER_MOD_DIRS=", d);
+    for (int i = 0; i < n && k < cap; i++) k += (size_t)snprintf(out + k, cap - k, "%s%s", i ? ":" : "", md[i]);
+    if (k < cap) k += (size_t)snprintf(out + k, cap - k, "\n");
+    return k < cap ? 0 : -1;
+}
+static pid_t ml_pid; static char ml_out[1300];
+int dsl_ml_install_start(void) {
+    const char *d = ml_dir(), *sc = getenv("DSML_MELON_SCRIPT");
+    if (!d || !sc) return -1;
+    if (ml_pid > 0) return 0;
+    snprintf(ml_out, sizeof ml_out, "%s.install.log", d);
+    char b[1300]; snprintf(b, sizeof b, "%s", d);                    /* parents of the install folder (fresh start) */
+    for (char *p = b + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(b, 0755); *p = '/'; }
+    posix_spawn_file_actions_t fa; posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, 1, ml_out, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    posix_spawn_file_actions_adddup2(&fa, 1, 2);
+    char *av[] = { "/bin/zsh", (char *)sc, (char *)d, NULL };
+    int r = posix_spawn(&ml_pid, "/bin/zsh", &fa, NULL, av, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    if (r) { ml_pid = 0; dsl_log("melon: cannot start the installer (%d)", r); return -1; }
+    dsl_log("melon: installing into %s (pid %d)", d, ml_pid);
+    return 0;
+}
+int dsl_ml_install_poll(char *why, size_t cap) {
+    if (ml_pid <= 0) return dsl_ml_state() >= 1 ? 0 : -1;
+    int st; pid_t w = waitpid(ml_pid, &st, WNOHANG);
+    if (w == 0) return 1;
+    ml_pid = 0;
+    FILE *f = fopen(ml_out, "r"); char line[600] = "", last[600] = "";
+    while (f && fgets(line, sizeof line, f)) { line[strcspn(line, "\n")] = 0; if (*line) snprintf(last, sizeof last, "%s", line); }
+    if (f) fclose(f);
+    if (WIFEXITED(st) && WEXITSTATUS(st) == 0 && dsl_ml_state() >= 1) { dsl_log("melon: installed (%s)", last); return 0; }
+    snprintf(why, cap, "%s", !strncmp(last, "ERROR ", 6) ? last + 6 : "the MelonLoader install failed");
+    dsl_log("melon: install FAILED: %s", why);
+    return -1;
+}
+int dsl_ml_running_dir(const char *md) {
+    const char *e = getenv("MELONLOADER_MOD_DIRS");
+    if (!e || !*e || !loaded()) return 0;
+    size_t L = strlen(md);
+    for (const char *p = e; (p = strstr(p, md)); p += L) if ((p == e || p[-1] == ':') && (p[L] == 0 || p[L] == ':')) return 1;
+    return 0;
+}
+void dsl_ml_mark_ready(void) {
+    static int done; if (done || !ml_dir()) return; done = 1;
+    const char *e = getenv("MELONLOADER_MOD_DIRS");
+    if (!e || !*e || !loaded() || dsl_ml_state() < 1) return;
+    char p[1400]; ml_ready_path(p, sizeof p);
+    FILE *f = fopen(p, "w"); if (f) { fputs("MelonLoader reached the title with this game build\n", f); fclose(f); }
+    dsl_log("melon: first start for build %s done (%s)", dsl_build_id ? dsl_build_id : "?", p);
+}

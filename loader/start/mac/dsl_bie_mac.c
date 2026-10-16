@@ -29,11 +29,12 @@ int dsl_bie_state(void) {
 int dsl_bie_env(const char *const *pd, int n, char *out, size_t cap) {
     const char *d = dir(), *dl = getenv("DSML_DSLOAD");
     size_t k = 0; out[0] = 0;
-    /* DYLD: dsload first, then the other loaders the start had (dsload removed itself from the live value), minus Doorstop */
+    /* DYLD: dsload first, then the other loaders the start had (dsload removed itself from the live value), minus Doorstop
+       and MelonLoader (one .NET host per set: a set with melon mods gets its env from dsl_ml_mac.c) */
     char others[2048] = ""; const char *cur = getenv("DYLD_INSERT_LIBRARIES");
     if (cur) { char *c = strdup(cur), *sv = NULL;
         for (char *t = strtok_r(c, ":", &sv); t; t = strtok_r(NULL, ":", &sv)) {
-            if (strstr(t, "libdoorstop") || (dl && !strcmp(t, dl)) || strstr(t, "/dsload.dylib")) continue;
+            if (strstr(t, "libdoorstop") || strstr(t, "MelonLoader.Bootstrap") || (dl && !strcmp(t, dl)) || strstr(t, "/dsload.dylib")) continue;
             strlcat(others, ":", sizeof others); strlcat(others, t, sizeof others);
         }
         free(c); }
@@ -43,8 +44,8 @@ int dsl_bie_env(const char *const *pd, int n, char *out, size_t cap) {
         if (n) k += (size_t)snprintf(out + k, cap - k, ":%s/libdoorstop.dylib", d);
         k += (size_t)snprintf(out + k, cap - k, "\n");
     }
-    if (!n) { snprintf(out + k, cap - k, "DOORSTOP_ENABLED=0\nBEPINEX_PLUGIN_DIRS=\n"); return 0; }
-    k += (size_t)snprintf(out + k, cap - k, "DOORSTOP_ENABLED=1\nDOORSTOP_TARGET_ASSEMBLY=%s/BepInEx/core/BepInEx.Unity.IL2CPP.dll\n"
+    if (!n) { snprintf(out + k, cap - k, "DOORSTOP_ENABLED=0\nBEPINEX_PLUGIN_DIRS=\nMELONLOADER_MOD_DIRS=\n"); return 0; }
+    k += (size_t)snprintf(out + k, cap - k, "MELONLOADER_MOD_DIRS=\nDOORSTOP_ENABLED=1\nDOORSTOP_TARGET_ASSEMBLY=%s/BepInEx/core/BepInEx.Unity.IL2CPP.dll\n"
                           "DOORSTOP_CLR_RUNTIME_CORECLR_PATH=%s/dotnet/libcoreclr.dylib\nDOORSTOP_CLR_CORLIB_DIR=%s/dotnet\n"
                           "DOORSTOP_IGNORE_DISABLED_ENV=0\nBEPINEX_PLUGIN_DIRS=", d, d, d);
     for (int i = 0; i < n && k < cap; i++) k += (size_t)snprintf(out + k, cap - k, "%s%s", i ? ":" : "", pd[i]);
@@ -97,3 +98,7 @@ void dsl_bie_mark_ready(void) {
     FILE *f = fopen(p, "w"); if (f) { fputs("BepInEx reached the title with this game build\n", f); fclose(f); }
     dsl_log("bepinex: first start for build %s done (%s)", dsl_build_id ? dsl_build_id : "?", p);
 }
+
+/* MelonLoader (src/dsl_ml.h) lives in its own file; compiled with this one so every build of dsload that lists
+   dsl_bie_mac.c (build.sh, test/run_tests.sh) has it */
+#include "dsl_ml_mac.c"

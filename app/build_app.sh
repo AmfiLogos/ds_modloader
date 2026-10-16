@@ -32,6 +32,7 @@ cp "$HELPER" "$C/MacOS/dsml-helper"
 cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
 cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
 cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
+cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)
 for m in $MODS; do
   if [[ -d $REPO/loader/build/mods/$m ]]; then cp -R "$REPO/loader/build/mods/$m" "$C/Resources/dsml/mods/$m"
   else echo "WARNING: loader/build/mods/$m does not exist yet: not in this app" >&2; fi

@@ -9,6 +9,11 @@
 //     BepInEx\plugins\<id>\ holds exactly the enabled BepInEx mods (others moved out to BepInEx\plugins_off\), and
 //     DOORSTOP_DISABLE is not set.
 // Doorstop's own process variables (DOORSTOP_INITIALIZED, ...) never reach a child process (bie_env_keep).
+// MelonLoader mods (mod.json "kind": "melon", lane melon v13) the same way: the official MelonLoader 0.7.3 x64 zip
+// (pinned sha256: version.dll + MelonLoader\ in the game copy, downloaded once into <ROOT>\cache), the copy's
+// Mods\<id>\ holds exactly the enabled melon mods (with a manifest.json, MelonLoader's rule for sub-folders), and
+// UserData\Loader.cfg says "disable = true" for a start without melon mods. One .NET host per start: a profile with
+// BepInEx and melon mods keeps the BepInEx ones (DSL_ML_REASON says why the melon ones are off).
 #include "bie_win.h"
 #include "dsl_internal.h"
 #include "zlib.h"
@@ -23,6 +28,9 @@
 #define BIE_URL  L"https://builds.bepinex.dev/projects/bepinex_be/788/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.788%2B5b766a3.zip"
 #define BIE_SHA  "f4cc496bd098a0df4164b81e3737297707f13a47c2478dba2f60eefab784817a"
 #define BIE_TAG  "be.788"
+#define ML_URL   L"https://github.com/LavaGang/MelonLoader/releases/download/v0.7.3/MelonLoader.x64.zip"
+#define ML_SHA   "5b2b2f3d1cd42b59ec886c5bdc2663edae87a0097a4f4a8f58c0965a99dda416"
+#define ML_TAG   "0.7.3"
 
 static void (*logf_)(const char *fmt, ...);
 static void lg(const char *fmt, ...) {
@@ -101,24 +109,41 @@ static int installed(const char *game) {
     char q[1200]; snprintf(q, sizeof q, "%s\\winhttp.dll", game);
     return exists(p) && exists(q);
 }
-static int install(const char *root, const char *game, char *why, size_t wn) {
-    if (installed(game)) return 0;
+/* MelonLoader in the game copy: <game>\version.dll + MelonLoader\net6 */
+static int ml_installed(const char *game) {
+    char p[1200]; snprintf(p, sizeof p, "%s\\MelonLoader\\net6\\MelonLoader.dll", game);
+    char q[1200]; snprintf(q, sizeof q, "%s\\version.dll", game);
+    return exists(p) && exists(q);
+}
+/* the pinned zip (cache, else download) unpacked into the game copy */
+static int fetch_unpack(const char *root, const char *game, const wchar_t *url, const char *sha, const char *zipname,
+                        const char *what, char *why, size_t wn) {
     char cache[1200], zp[1300]; snprintf(cache, sizeof cache, "%s\\cache", root); mkdirs(cache);
-    snprintf(zp, sizeof zp, "%s\\BepInEx-%s-win-x64.zip", cache, BIE_TAG);
+    snprintf(zp, sizeof zp, "%s\\%s", cache, zipname);
     size_t n = 0; unsigned char *z = (unsigned char *)slurp(zp, &n); char h[65] = "";
-    if (!z || sha256_hex(z, n, h) || strcmp(h, BIE_SHA)) {
+    if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) {
         free(z); z = NULL;
         wchar_t wz[1300]; MultiByteToWideChar(CP_ACP, 0, zp, -1, wz, 1300);
-        lg("bepinex: downloading BepInEx %s", BIE_TAG);
-        HRESULT r = URLDownloadToFileW(NULL, BIE_URL, wz, 0, NULL);
-        if (r != S_OK) { snprintf(why, wn, "BepInEx %s could not be downloaded (error %#lx). Check the internet connection.", BIE_TAG, (unsigned long)r); return -1; }
+        lg("%s: downloading", what);
+        HRESULT r = URLDownloadToFileW(NULL, url, wz, 0, NULL);
+        if (r != S_OK) { snprintf(why, wn, "%s could not be downloaded (error %#lx). Check the internet connection.", what, (unsigned long)r); return -1; }
         z = (unsigned char *)slurp(zp, &n);
-        if (!z || sha256_hex(z, n, h) || strcmp(h, BIE_SHA)) { free(z); snprintf(why, wn, "The BepInEx %s download is not the expected file (sha256 %s).", BIE_TAG, h); return -1; }
+        if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) { free(z); snprintf(why, wn, "The %s download is not the expected file (sha256 %s).", what, h); return -1; }
     }
     int k = unzip_to(z, n, game); free(z);
-    if (k <= 0) { snprintf(why, wn, "BepInEx %s could not be unpacked into the game copy.", BIE_TAG); return -1; }
-    lg("bepinex: BepInEx %s installed in %s (%d files)", BIE_TAG, game, k);
+    if (k <= 0) { snprintf(why, wn, "%s could not be unpacked into the game copy.", what); return -1; }
+    lg("%s installed in %s (%d files)", what, game, k);
+    return 0;
+}
+static int install(const char *root, const char *game, char *why, size_t wn) {
+    if (installed(game)) return 0;
+    if (fetch_unpack(root, game, BIE_URL, BIE_SHA, "BepInEx-" BIE_TAG "-win-x64.zip", "BepInEx " BIE_TAG, why, wn)) return -1;
     return installed(game) ? 0 : -1;
+}
+static int ml_install(const char *root, const char *game, char *why, size_t wn) {
+    if (ml_installed(game)) return 0;
+    if (fetch_unpack(root, game, ML_URL, ML_SHA, "MelonLoader-" ML_TAG "-x64.zip", "MelonLoader " ML_TAG, why, wn)) return -1;
+    return ml_installed(game) ? 0 : -1;
 }
 
 /* ---- the mods: <ROOT>\mods\<id>\mod.json kind "bepinex" */
@@ -150,6 +175,22 @@ static void list_dlls(const char *dir, const char *rel, char *out, size_t cap) {
     } while (FindNextFileA(h, &fd));
     FindClose(h);
 }
+/* a MelonLoader mod DLL carries MelonLoader's attribute names (MelonInfoAttribute); a BepInEx plugin does not */
+static int has_melon_dll(const char *dir) {
+    char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", dir);
+    WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd); int r = 0;
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    do {
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, "..")) continue;
+        char p[1400]; snprintf(p, sizeof p, "%s\\%s", dir, fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { r = has_melon_dll(p); continue; }
+        size_t L = strlen(fd.cFileName); if (L < 5 || _stricmp(fd.cFileName + L - 4, ".dll")) continue;
+        size_t n = 0; char *b = slurp(p, &n);
+        for (size_t i = 0; b && !r && i + 18 <= n; i++) if (b[i] == 'M' && !memcmp(b + i, "MelonInfoAttribute", 18)) r = 1;
+        free(b);
+    } while (!r && FindNextFileA(h, &fd));
+    FindClose(h); return r;
+}
 static void wrap_loose(const char *mods) {          /* a plugin folder dropped in without mod.json */
     char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", mods);
     WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
@@ -159,20 +200,22 @@ static void wrap_loose(const char *mods) {          /* a plugin folder dropped i
         char d[1400], mj[1500]; snprintf(d, sizeof d, "%s\\%s", mods, fd.cFileName); snprintf(mj, sizeof mj, "%s\\mod.json", d);
         if (exists(mj) || !dll_count(d)) continue;
         char files[8192]; files[0] = 0; list_dlls(d, "", files, sizeof files);
+        int ml = has_melon_dll(d);
         FILE *f = fopen(mj, "w"); if (!f) continue;
         /* the shared shape (lane bepinexmac): platforms.any.files = the plugin DLLs (AnyCPU) with their sha256 */
-        fprintf(f, "{\n \"id\": \"%s\",\n \"name\": \"%s\",\n \"version\": \"0\",\n \"kind\": \"bepinex\",\n \"scope\": \"gameplay\",\n"
+        fprintf(f, "{\n \"id\": \"%s\",\n \"name\": \"%s\",\n \"version\": \"0\",\n \"kind\": \"%s\",\n \"scope\": \"gameplay\",\n"
                    " \"platforms\": {\"any\": {\"files\": {%s}}},\n"
-                   " \"description\": \"BepInEx plugin (BepInEx %s). Every multiplayer player needs it.\"\n}\n", fd.cFileName, fd.cFileName, files, BIE_TAG);
+                   " \"description\": \"%s (%s %s). Every multiplayer player needs it.\"\n}\n", fd.cFileName, fd.cFileName,
+                   ml ? "melon" : "bepinex", files, ml ? "MelonLoader mod" : "BepInEx plugin", ml ? "MelonLoader" : "BepInEx", ml ? ML_TAG : BIE_TAG);
         fclose(f);
-        lg("bepinex: %s has plugin DLLs and no mod.json: mod.json written (kind bepinex)", fd.cFileName);
+        lg("bepinex: %s has plugin DLLs and no mod.json: mod.json written (kind %s)", fd.cFileName, ml ? "melon" : "bepinex");
     } while (FindNextFileA(h, &fd));
     FindClose(h);
 }
-static int is_bepinex(const char *mods, const char *id) {
+static int is_kind(const char *mods, const char *id, const char *kind) {
     char mj[1400]; snprintf(mj, sizeof mj, "%s\\%s\\mod.json", mods, id);
     char *t = slurp(mj, NULL); JNode *m = t ? json_parse(t) : NULL; free(t);
-    const char *k = json_str(m, "kind"); int r = k && !strcmp(k, "bepinex");
+    const char *k = json_str(m, "kind"); int r = k && !strcmp(k, kind);
     json_free(m); return r;
 }
 /* copy a mod folder (without its mod.json) into dst */
@@ -203,8 +246,8 @@ static int rm_tree(const char *dir) {
     }
     return RemoveDirectoryA(dir) ? 0 : -1;
 }
-static void clean_off(const char *game) {              /* leftovers of earlier starts, once nothing uses them */
-    char off[1300], pat[1400]; snprintf(off, sizeof off, "%s\\BepInEx\\plugins_off", game); snprintf(pat, sizeof pat, "%s\\*", off);
+static void clean_off(const char *off) {               /* leftovers of earlier starts, once nothing uses them */
+    char pat[1400]; snprintf(pat, sizeof pat, "%s\\*", off);
     WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
     if (h == INVALID_HANDLE_VALUE) return;
     do { if (fd.cFileName[0] != '.' && (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { char d[1500]; snprintf(d, sizeof d, "%s\\%s", off, fd.cFileName); rm_tree(d); } }
@@ -212,12 +255,68 @@ static void clean_off(const char *game) {              /* leftovers of earlier s
     FindClose(h);
 }
 /* a plugin folder out of the way: deleted when possible; a running game still has its DLLs open, then renamed */
-static void move_out(const char *game, const char *dir, const char *name) {
-    char off[1300], to[1500]; snprintf(off, sizeof off, "%s\\BepInEx\\plugins_off", game); mkdirs(off);
+static void move_out(const char *off, const char *dir, const char *name, const char *tag) {
+    char to[1500]; mkdirs(off);
     SYSTEMTIME t; GetLocalTime(&t);
     snprintf(to, sizeof to, "%s\\%s-%04d%02d%02d-%02d%02d%02d-%lu", off, name, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, GetCurrentProcessId());
-    if (MoveFileExA(dir, to, 0)) { lg("bepinex: plugin folder %s moved out%s", name, rm_tree(to) ? " (still in use: removed at a later start)" : " and removed"); }
-    else lg("bepinex: plugin folder %s could not be moved out (error %lu): it stays loaded", name, GetLastError());
+    if (MoveFileExA(dir, to, 0)) { lg("%s: plugin folder %s moved out%s", tag, name, rm_tree(to) ? " (still in use: removed at a later start)" : " and removed"); }
+    else lg("%s: plugin folder %s could not be moved out (error %lu): it stays loaded", tag, name, GetLastError());
+}
+/* dest (BepInEx\plugins or Mods) holds exactly the wanted mod folders that this loader put there (.dsmodded) */
+static void sync_mods(const char *mods, const char *dest, const char *off, char want[][128], int nw, int manifest, const char *tag) {
+    char pat[1400]; WIN32_FIND_DATAA fd; HANDLE h;
+    clean_off(off);
+    if (is_dir(dest)) {                                      /* folders of mods that are off (or gone) leave */
+        snprintf(pat, sizeof pat, "%s\\*", dest);
+        h = FindFirstFileA(pat, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (fd.cFileName[0] == '.' || !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+                int keep = 0; for (int i = 0; i < nw; i++) if (!_stricmp(want[i], fd.cFileName)) keep = 1;
+                if (keep) continue;
+                char d[1500], mk[1600]; snprintf(d, sizeof d, "%s\\%s", dest, fd.cFileName);
+                snprintf(mk, sizeof mk, "%s\\.dsmodded", d);
+                if (!exists(mk)) continue;                    /* only folders this loader put there */
+                move_out(off, d, fd.cFileName, tag);
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+    }
+    for (int i = 0; i < nw; i++) {                          /* the enabled ones, fresh from the mod folder */
+        char s[1400], d[1500]; snprintf(s, sizeof s, "%s\\%s", mods, want[i]); snprintf(d, sizeof d, "%s\\%s", dest, want[i]);
+        if (copy_tree(s, d)) lg("%s: %s: some files could not be copied (a running game keeps the old ones)", tag, want[i]);
+        char mk[1600]; snprintf(mk, sizeof mk, "%s\\.dsmodded", d);
+        FILE *f = fopen(mk, "w"); if (f) { fputs("copied from the loader's mods folder; replaced at every start\n", f); fclose(f); }
+        if (manifest) {                                      /* MelonLoader loads a Mods sub-folder only with a manifest.json */
+            snprintf(mk, sizeof mk, "%s\\manifest.json", d);
+            if (!exists(mk) && (f = fopen(mk, "w"))) { fprintf(f, "{\"name\": \"%s\"}\n", want[i]); fclose(f); }
+        }
+    }
+}
+#ifdef DSL_ML_GUARD
+#include "ml_guard.h"                                   /* DSMelonGuard.dll bytes (build_win.sh, ds_multiplayer ext/melon/plugin) */
+#endif
+/* our MelonLoader plugin (Plugins\DSMelonGuard.dll): native mods keep il2cpp's null for an icall the game stripped
+   (MelonLoader's managed stand-in kills the game when C code calls it) */
+static void ml_guard(const char *game) {
+#ifdef DSL_ML_GUARD
+    char d[1300], p[1400]; snprintf(d, sizeof d, "%s\\Plugins", game); mkdirs(d); snprintf(p, sizeof p, "%s\\DSMelonGuard.dll", d);
+    size_t n = 0; char *old = slurp(p, &n);
+    int same = old && n == sizeof ml_guard_dll && !memcmp(old, ml_guard_dll, n); free(old);
+    if (same) return;
+    FILE *f = fopen(p, "wb"); if (!f) { lg("melon: cannot write %s", p); return; }
+    fwrite(ml_guard_dll, 1, sizeof ml_guard_dll, f); fclose(f);
+    lg("melon: guard plugin written (%u bytes)", (unsigned)sizeof ml_guard_dll);
+#else
+    (void)game; lg("melon: built without the guard plugin");
+#endif
+}
+/* MelonLoader on or off for the next start: its own setting file (it reads it once, at its start) */
+static void ml_config(const char *game, int on) {
+    char d[1300], p[1400]; snprintf(d, sizeof d, "%s\\UserData", game); mkdirs(d); snprintf(p, sizeof p, "%s\\Loader.cfg", d);
+    FILE *f = fopen(p, "w"); if (!f) { lg("melon: cannot write %s", p); return; }
+    fprintf(f, "[loader]\ndisable = %s\ndisable_start_screen = true\n\n[console]\nhide_console = true\n", on ? "false" : "true");
+    fclose(f);
 }
 
 int bie_prepare(const char *root, const char *game, const char *profile, int *any, char *why, size_t wn) {
@@ -226,46 +325,39 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
     wrap_loose(mods);
     char *pt = profile ? slurp(profile, NULL) : NULL; JNode *prof = pt ? json_parse(pt) : NULL; free(pt);
     JNode *en = json_get(prof, "enabled");
-    char want[64][128]; int nw = 0;
+    char want[64][128], mwant[64][128]; int nw = 0, nm = 0;
     char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", mods);
     WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
     if (h != INVALID_HANDLE_VALUE) {
         do {
-            if (fd.cFileName[0] == '.' || !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || nw >= 64) continue;
-            if (!is_bepinex(mods, fd.cFileName)) continue;
+            if (fd.cFileName[0] == '.' || !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || nw >= 64 || nm >= 64) continue;
+            int b = is_kind(mods, fd.cFileName, "bepinex"), m = !b && is_kind(mods, fd.cFileName, "melon");
+            if (!b && !m) continue;
             int on = 1;                                       /* no profile = every installed mod on (the loader's rule) */
             if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, fd.cFileName)) on = 1; }
-            if (on) snprintf(want[nw++], 128, "%s", fd.cFileName);
+            if (on && b) snprintf(want[nw++], 128, "%s", fd.cFileName);
+            if (on && m) snprintf(mwant[nm++], 128, "%s", fd.cFileName);
         } while (FindNextFileA(h, &fd));
         FindClose(h);
     }
     json_free(prof);
+    /* MelonLoader mods: one .NET host per start (BepInEx wins), installed at first use, off through its setting file */
+    char mwhy[600] = "";
+    if (nm && nw) { snprintf(mwhy, sizeof mwhy, "BepInEx mods and MelonLoader mods cannot run together: the MelonLoader mods are off this time."); nm = 0; }
+    if (nm && ml_install(root, game, mwhy, sizeof mwhy)) nm = 0;
+    if (mwhy[0]) lg("melon: OFF: %s", mwhy);
+    SetEnvironmentVariableA("DSL_ML_REASON", mwhy[0] ? mwhy : NULL);   /* the Mods window's "Not running: <reason>" */
+    if (ml_installed(game)) {
+        char mdir[1300], moff[1300]; snprintf(mdir, sizeof mdir, "%s\\Mods", game); snprintf(moff, sizeof moff, "%s\\Mods_off", game);
+        sync_mods(mods, mdir, moff, mwant, nm, 1, "melon");
+        ml_config(game, nm > 0);
+        ml_guard(game);
+        lg("melon: %d MelonLoader mod(s) on%s", nm, nm ? "" : " (MelonLoader off for this start)");
+    }
     *any = nw > 0;
-    char plugins[1300]; snprintf(plugins, sizeof plugins, "%s\\BepInEx\\plugins", game);
-    clean_off(game);
-    if (nw && install(root, game, why, wn)) { *any = 0; lg("bepinex: OFF: %s", why); return -1; }
-    if (is_dir(plugins)) {                                   /* folders of mods that are off (or gone) leave */
-        snprintf(pat, sizeof pat, "%s\\*", plugins);
-        h = FindFirstFileA(pat, &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                if (fd.cFileName[0] == '.' || !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
-                int keep = 0; for (int i = 0; i < nw; i++) if (!_stricmp(want[i], fd.cFileName)) keep = 1;
-                if (keep) continue;
-                char d[1500], mk[1600]; snprintf(d, sizeof d, "%s\\%s", plugins, fd.cFileName);
-                snprintf(mk, sizeof mk, "%s\\.dsmodded", d);
-                if (!exists(mk)) continue;                    /* only folders this loader put there */
-                move_out(game, d, fd.cFileName);
-            } while (FindNextFileA(h, &fd));
-            FindClose(h);
-        }
-    }
-    for (int i = 0; i < nw; i++) {                          /* the enabled ones, fresh from the mod folder */
-        char s[1400], d[1500]; snprintf(s, sizeof s, "%s\\%s", mods, want[i]); snprintf(d, sizeof d, "%s\\%s", plugins, want[i]);
-        if (copy_tree(s, d)) lg("bepinex: %s: some files could not be copied (a running game keeps the old ones)", want[i]);
-        char mk[1600]; snprintf(mk, sizeof mk, "%s\\.dsmodded", d);
-        FILE *f = fopen(mk, "w"); if (f) { fputs("copied from the loader's mods folder; replaced at every start\n", f); fclose(f); }
-    }
+    char plugins[1300], poff[1300]; snprintf(plugins, sizeof plugins, "%s\\BepInEx\\plugins", game); snprintf(poff, sizeof poff, "%s\\BepInEx\\plugins_off", game);
+    if (nw && install(root, game, why, wn)) { *any = 0; clean_off(poff); lg("bepinex: OFF: %s", why); return -1; }
+    sync_mods(mods, plugins, poff, want, nw, 0, "bepinex");
     lg("bepinex: %d plugin mod(s) on%s", nw, nw ? "" : " (Doorstop off for this start)");
     return 0;
 }
@@ -276,3 +368,6 @@ int bie_env_keep(const wchar_t *line) { return _wcsnicmp(line, L"DOORSTOP_", 9) 
 /* for dsl_bie_win.c (the core's BepInEx calls) */
 int bie_installed(const char *game) { return installed(game); }
 int bie_install_now(const char *root, const char *game, char *why, size_t wn) { return install(root, game, why, wn); }
+/* for dsl_ml_win.c (the core's MelonLoader calls) */
+int bie_ml_installed(const char *game) { return ml_installed(game); }
+int bie_ml_install_now(const char *root, const char *game, char *why, size_t wn) { return ml_install(root, game, why, wn); }

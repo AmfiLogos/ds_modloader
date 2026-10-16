@@ -5,7 +5,7 @@
    gcd-cdr+multiplayer. Checks: kit + reg + rows ready, title "Mods" button, Load list rows with "Mods: ..." lines.
 2. Flow K: load that save -> refused -> "This world uses: ... Load it with them?" -> Load (test request) -> soft
    restart straight into the save with gcd-cdr + multiplayer; pending.json -> active.json in B.
-3. Flow J in a world: B applies multiplayer only -> same world, world re-registered with the new set.
+3. In a world: Apply is refused (v13: mods change only at the title), no new process.
 Output: <out>/ (logs, screenshots, summary.json).
 """
 import json, os, shutil, signal, subprocess, sys, threading, time, glob
@@ -201,22 +201,11 @@ def main():
         act = json.load(open(os.path.join(MODS, 'active.json')))
         check('pending -> active.json', 'gcd-cdr' in act.get('enabled', []), act)
         time.sleep(3); shot('4_in_world_B')
-        # flow J in a world
-        clear_flags()
-        r.send(X, {'cmd': 'set_speed', 'speed': 2}); time.sleep(1.5)
-        t_req = time.time(); request({'cmd': 'apply', 'ids': ['multiplayer']})
-        dt2, c = wait_swap(b, t_req, 2)
-        summary['flowJ_world_seconds'] = round(dt2, 2)
-        st = wait(lambda s: s.get('scene') == 2 and not s.get('busy'), 'C in the world', 60)
-        L = dlog()
-        check('C runs multiplayer only', 'reg: running gameplay set vanilla' in L)
-        check('C world check allowed (world re-registered)', 'uses this mod set: allowed' in L)
-        w = json.load(open(os.path.join(MODS, 'worlds.json')))
-        check('worlds.json: world now multiplayer only (key vanilla)', w.get('worlds', {}).get(GUID) == 'vanilla', w)
-        act = json.load(open(os.path.join(MODS, 'active.json')))
-        check('active.json multiplayer only', act.get('enabled') == ['multiplayer'], act)
-        summary['C_status'] = {k: st.get(k) for k in ('scene', 'map', 'tick', 'speed')}
-        time.sleep(2); shot('5_in_world_C')
+        # in a world: no restart (owner 2026-10-16 #10): Apply is refused, the game stays as it is
+        mark = len(dlog()); pids0 = set(game_pids())
+        request({'cmd': 'apply', 'ids': ['multiplayer']}); time.sleep(4)
+        check('world: Apply refused (mods change only at the title)', 'reg: Apply refused: not at the title' in dlog()[mark:], dlog()[mark:][-300:])
+        check('world: no new game process, still in the world', set(game_pids()) == pids0 and status().get('scene') == 2)
     except Exception as e:
         check('run finished', False, e)
     finally:
