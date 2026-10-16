@@ -17,3 +17,6 @@ test_env/
 loader/test/bie/*/obj/
 loader/test/bie/*/bin/
 loader/build/cmpin/
+
+# Unit Builder icons: game art, extracted from the installed game (builder/gen/extract_icons.py)
+ui/bicons/
