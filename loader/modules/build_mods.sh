@@ -68,7 +68,7 @@ simple() {   # id src
   mkdir -p $OUT/mac/$id/rva $OUT/win/$id/rva
   nice -n 19 clang $CFM -dynamiclib -install_name @rpath/$id.dylib -o $OUT/mac/$id/$id.dylib.tmp $MD/$id/$src
   codesign -f -s - $OUT/mac/$id/$id.dylib.tmp 2>/dev/null; mv -f $OUT/mac/$id/$id.dylib.tmp $OUT/mac/$id/$id.dylib
-  nice -n 19 $TC $CFW -shared -o $OUT/win/$id/$id.dll.tmp $MD/$id/$src -Wl,--export-all-symbols -static -static-libgcc
+  nice -n 19 $TC $CFW -shared -Wl,--no-insert-timestamp -o $OUT/win/$id/$id.dll.tmp $MD/$id/$src -Wl,--export-all-symbols -static -static-libgcc
   mv -f $OUT/win/$id/$id.dll.tmp $OUT/win/$id/$id.dll
   cp $MD/$id/rva/*_mac*.tsv $OUT/mac/$id/rva/; cp $MD/$id/rva/*_win*.tsv $OUT/win/$id/rva/
   cp $MD/$id/mod.json $OUT/mac/$id/; cp $MD/$id/mod.json $OUT/win/$id/
