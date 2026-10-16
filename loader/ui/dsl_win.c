@@ -21,8 +21,13 @@
 #include <time.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
+#include <shellapi.h>
 #define mkdir_(p) _mkdir(p)
 #else
+#include <spawn.h>
+#include <sys/wait.h>
+extern char **environ;
 #define mkdir_(p) mkdir(p, 0755)
 #endif
 
@@ -279,6 +284,19 @@ static void fsave_click(void *ud, DSLObj w) {
     naming_show(0);
     groups_build(); mods_sync();
 }
+/* "Open mods folder": the player's mods folder (Mac: ROOT/mods from the app, Windows: the loader's mods folder) */
+static void folder_click(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    const char *d = getenv("DSML_USER_MODS_DIR"); if (!d || !*d) d = dsl_mods_dir();
+    if (!d || !*d) return;
+    mkdir_(d); dsl_log("win: open mods folder %s", d);
+#ifdef _WIN32
+    ShellExecuteA(NULL, "open", d, NULL, NULL, SW_SHOWNORMAL);
+#else
+    pid_t pid; int st; char *av[] = { "/usr/bin/open", (char *)d, NULL };
+    if (posix_spawn(&pid, av[0], NULL, NULL, av, environ) == 0) waitpid(pid, &st, 0);
+#endif
+}
 static void undo_click(void *ud, DSLObj w) { (void)ud; (void)w; for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base; m_note[0] = 0; mods_sync(); draft(); }
 static void apply_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
@@ -320,6 +338,10 @@ static void mods_open(DSLObj root, float w, float h) {
     float lh = h - 40 - 76;
     char hd[200]; snprintf(hd, sizeof hd, world_mode ? "Mods for %s" : "Installed mods", world_name[0] ? world_name : "this world");
     named(U->text(root, 0, 0, m_lw, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);
+    if (!world_mode) {
+        DSLObj of = named(U->button(root, m_lw - 200, 0, 200, 34, "Open mods folder", folder_click, NULL), 0, "mods-folder", folder_click, NULL, "Open mods folder");
+        U->tooltip(of, "Open mods folder", "Put a downloaded mod (its .zip file) into this folder. Restart the game, then turn the mod on here.");
+    }
     U->panel(root, 0, 40, m_lw, lh, 0);
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
     float y = 0, rh = 74;
