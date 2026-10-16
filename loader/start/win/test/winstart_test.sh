@@ -6,6 +6,7 @@
 #   normal    DllMain only arms (loader lock held), start() runs once on the first il2cpp_init call with the lock free,
 #             save folder redirected, modules started
 #   redirfail DSL_TEST_REDIRECT_FAIL=1, data folder of its own: every module off, status file inactive, no module hook
+#   nonascii  game exe started directly with DSRIG_DIR under "JoséTest": the game writes into that folder (UTF-8 path)
 #   late      late_ga_test.exe: baselib.dll loaded before GameAssembly.dll: armed from the DLL notification
 set -u; T="${0:A:h}"; L="${T:h:h:h}"; D=${DSMP_ROOT:-~/ds_multiplayer}; W=$D/win
 C=~/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin
@@ -37,11 +38,20 @@ check "normal: DllMain armed with the loader lock held" 'has "armed thread .* lo
 check "normal: start on the first il2cpp_init, loader lock free" 'has "start thread .* via il2cpp_init.*loader lock held: no"'
 check "normal: start ran once" '[[ $(print -r -- "$LOG" | grep -c "start order: start thread") == 1 ]]'
 check "normal: save folder redirected" 'has "save folder: .*profiles/modded/data"'
-check "normal: module started, game at the title" 'has "modules: 1 loaded of 1 opened" && [[ $TITLE == True ]]'
+check "normal: every module started, game at the title" 'print -r -- "$LOG" | command grep -qE "modules: ([1-9][0-9]*) loaded of \1 opened" && [[ $TITLE == True ]]'
 
 run redirfail DSL_TEST_REDIRECT_FAIL=1
 check "redirfail: mods off before any module hook" 'has "START CONDITION FAILED" && ! has "hooked .* for multiplayer" && ! has "early start done"'
 check "redirfail: status file inactive with the message" 'print -r -- "$STATUS" | grep -q "\"active\":false,\"reason\":\"start_condition_failed\".*normal saves"'
+
+BL=${P:h:h:h}; J="$BL/JoséTest"; [[ -d $J ]] && mkdir -p $L/build/win/old && mv "$J" $L/build/win/old/JoséTest.$(date +%s)
+mkdir -p "$J/prof"; JW='C:\users\crossover\AppData\Local\JoséTest\prof'
+env DSRIG_DIR="$JW" DSL_LOG_DIR="$JW" DSL_MODS_DIR="$WP\\mods" DSRIG_LIVE=1 DSL_NO_ALERT=1 SteamAppId=2798330 SteamGameId=2798330 \
+    WINEDLLOVERRIDES="winhttp=n,b" nice -n 19 $C/wine --bottle DSMP --workdir "$WP\\game" --no-wait "$WP\\game\\DungeonSettlers.exe" -batchmode -nographics >/dev/null 2>&1
+for i in {1..30}; do sleep 3; [[ -f "$J/prof/data/ErrorLog.txt" ]] && break; done
+sleep 5; for p in $(ps -axo pid=,command= | command grep "DungeonSettlers.exe" | command grep -v grep | awk '{print $1}'); do kill -9 $p; done
+check "nonascii: save folder logged as UTF-8" 'command grep -aq "save folder: C:/users/crossover/AppData/Local/JoséTest/prof/data" "$J/prof/dsload.log"'
+check "nonascii: the game wrote into that folder" '[[ -f "$J/prof/data/ErrorLog.txt" ]]'
 
 ~/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang -O2 -Wall $T/late_ga_test.c -o $L/build/win/late_ga_test.exe || exit 1
 out=$(cd $L/build/win && nice -n 19 $C/wine --bottle DSMP "Z:${PWD//\//\\}\\late_ga_test.exe" "$WP\\game" 2>/dev/null)
