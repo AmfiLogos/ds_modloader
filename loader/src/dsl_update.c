@@ -1,27 +1,25 @@
 // dsl_update.c - auto-update of the loader kit and its mods (owner 2026-10-16: "auto-updates for the mod loader and its
 // mods, switchable on the title screen, top-right corner").
 //
-// Check (a thread, once per cold start; never in B of a soft restart): GitHub releases of AmfiLogos/ds_multiplayer
-// (the kit: tag v<N.N>, asset Dungeon-Settlers-Modded-Mac.zip / .dmg / -Windows.zip, dsl_uos_kit_asset) and of every
-// installed mod's repo (asset <id>-<version>.zip, the packages of loader/modules/package_mods.sh). Newer than the
-// installed release (ROOT RELEASE file) / the mod.json version, not rolled back before (ROOT/update/bad.txt).
+// Check (a thread, once per cold start; never in B of a soft restart): GitHub releases of AmfiLogos/ds_modloader
+// (the loader kit: tag v0.1.N, asset Dungeon-Settlers-Modded-Mac.dmg / .zip / -Windows.zip, dsl_uos_kit_asset) and of
+// every installed mod's own repo (tag <id>-v0.1.N, asset <id>-0.1.N.zip, the packages of loader/modules/package_mods.sh).
+// research/version_table.md (ds_multiplayer): each component has its own number. Newer than the installed release
+// (RELEASE file) / the mod.json version, not rolled back before (ROOT/update/bad.txt).
 // Every download is checked against its sha256: the asset's GitHub "digest", else a "<asset>.sha256" asset; none = no
 // install. Network failure, rate limit, bad JSON: silent (log line), next start tries again.
 // Title corner (top right, only at the title while its menu shows): "Auto-update" switch (default on; ROOT/update/
-// settings.json, per machine) and one short line or an "Update to v13.x" button.
-//   On:  download at once; at the title with nothing busy (no world, no multiplayer session, no restart) a prompt
-//        "v13.x is ready. Install and restart now?" [Install and restart] [Later]. Install: the files, then the hidden
-//        soft restart (dsl_reg_restart_same); B shows "Updated to v13.x". Later: the button stays in the corner, the
-//        prompt comes again next start (the download is kept). Nothing installs without the player's click.
-//   Off: no download; the button downloads and installs on click.
-// Install = dsl_uos_kit_install / dsl_uos_mod_install: the old files move into ROOT/update/backup-<from>-<time>/, the
-// move list is ROOT/update/pending.txt. B confirms at the title (pending.txt -> update/old/). A soft restart that fails
-// (B never ready): A moves everything back, the version goes into bad.txt. A cold start that finds pending.txt (the
-// last update never reached the title): the starter (Mac stub / Windows exe) rolls back the same way. Saves are never
-// touched (they are in PROFILE/data, outside every installed folder).
+// settings.json, per machine) and one short line or an "Update to 0.1.N" button.
+//   On:  download while the game runs (sha256 checked), then ROOT/update/ready.txt; the next start installs it in the
+//        starter before the game opens (start/dsl_update_start.c: a small window with a progress bar, no prompt).
+//   Off: no download; the button downloads and marks it (ready.txt CONSENT, want.txt): installed at the next start.
+// Nothing here moves an installed file. A start that runs a just-installed update has DSML_UPDATE=<label> (the
+// starter): at the title it confirms (ROOT/update/pending.txt -> update/old) and shows "Updated to 0.1.N"; an update
+// that never gets there is rolled back by the starter after a second try. ROOT/update/notice.txt (the starter's one
+// line: an install failed, a rollback) is shown in the corner once.
 // Kit first: a kit update carries the mods; mod updates wait for the next start.
 // Test only: DSL_UPDATE_API=<base URL> (a local release server instead of https://api.github.com), DSL_UPDATE=0 (off),
-// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button, test_install / test_later = the prompt's buttons).
+// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include "dsl_update_os.h"
@@ -33,13 +31,11 @@
 #include <time.h>
 
 int dsl_reg_scene(void);                                   /* dsl_reg.c: 1 title, 2 world */
-int dsl_reg_restart_same(const char *env, char *why, size_t cap);
 int dsl_soft_wanted(void);
-int dsl_soft_last_failed(void);                            /* dsl_soft.c: the last restart of this process failed */
 int dsl_ui_title_shown(void);                              /* dsl_ui.c: title menu column on screen */
 void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h);
 
-#define KIT_REPO "AmfiLogos/ds_multiplayer"
+#define KIT_REPO "AmfiLogos/ds_modloader"
 static const struct { const char *id, *repo; } MOD_REPOS[] = {
     { "multiplayer", "AmfiLogos/ds_multiplayer" }, { "custom-modes", "AmfiLogos/ds_custommodes" },
     { "gcd-cdr", "AmfiLogos/ds_modloader" }, { "hell-difficulty", "AmfiLogos/ds_modloader" },
@@ -58,12 +54,10 @@ static struct {
 } S;
 static int auto_on = 1, enabled, thread_on;
 static char root[1024], udir[1100];
-static char line[200];                                     /* the corner's one short line */
-static int restarting;                                     /* A: our update restart runs */
-static char confirm_label[64];                             /* B: DSML_UPDATE of this start */
-static int busy_install;
-static int consent;                                        /* the player clicked Install (prompt or button) */
-static int asked, later;                                   /* On: the prompt was shown this start / answered Later */
+static char line[400];                                     /* the corner's one short line */
+static char confirm_label[200];                            /* DSML_UPDATE of this start (the starter installed it) */
+static int consent;                                        /* the player clicked "Update to" */
+static char ready_line[200];                               /* set by the download thread: "0.1.N installs ..." */
 
 /* ------------------------------------------------------------------ small helpers */
 static void upath(char *out, size_t n, const char *f) { snprintf(out, n, "%s/%s", udir, f); }
@@ -79,7 +73,7 @@ static int write_file(const char *p, const char *s) {
     fputs(s, f); fclose(f); remove(p);
     return dsl_uos_move(t, p);
 }
-/* "v13.2", "13.2.1", "0.10.0-test" -> numbers; compare */
+/* "v0.1.7", "0.1.10", "0.1.3-test" -> numbers; compare */
 static int vparse(const char *s, long v[6]) {
     int n = 0; memset(v, 0, 6 * sizeof *v);
     while (*s && (*s < '0' || *s > '9')) s++;
@@ -91,18 +85,15 @@ static int vcmp(const char *a, const char *b) {
     for (int i = 0; i < 6; i++) if (x[i] != y[i]) return x[i] < y[i] ? -1 : 1;
     return 0;
 }
-static void vclean(const char *s, char *out, size_t n) {         /* "v13.2" -> "13.2" */
+static void vclean(const char *s, char *out, size_t n) {         /* "v0.1.7" -> "0.1.7" */
     while (*s && (*s < '0' || *s > '9')) s++;
     size_t k = 0; while (s[k] && ((s[k] >= '0' && s[k] <= '9') || s[k] == '.') && k + 1 < n) { out[k] = s[k]; k++; }
     out[k] = 0;
 }
-static int is_bad(const char *key) {                             /* key "kit 13.3" / "custom-modes 0.12.0" */
+static int is_bad(const char *key) {                             /* key "kit 0.1.7" / "custom-modes 0.1.4" */
     char p[1200]; upath(p, sizeof p, "bad.txt"); char *b = slurp_(p, 1 << 16); if (!b) return 0;
     int hit = 0; for (char *l = strtok(b, "\n"); l && !hit; l = strtok(NULL, "\n")) hit = !strcmp(l, key);
     free(b); return hit;
-}
-static void add_bad(const char *key) {
-    char p[1200]; upath(p, sizeof p, "bad.txt"); FILE *f = fopen(p, "ab"); if (f) { fprintf(f, "%s\n", key); fclose(f); }
 }
 static void settings_load(void) {
     char p[1200]; upath(p, sizeof p, "settings.json"); char *b = slurp_(p, 4096);
@@ -222,134 +213,112 @@ static int download(const char *url, const char *asset, const char *sha, char *o
     dsl_log("update: %s downloaded, sha256 ok", asset);
     return 0;
 }
+/* what the starter installs at the next start (start/dsl_update_start.c reads it) */
+static void ready_write(void) {
+    char b[8192]; size_t k = 0; int c = consent || S.dl_wanted;
+    if (S.kit_ver[0]) {
+        k += (size_t)snprintf(b + k, sizeof b - k, "KIND\tkit\nLABEL\tv%s\nKEY\tkit %s\n%sKIT\t%s\t%s\t%s\n", S.kit_ver, S.kit_ver,
+                              c ? "CONSENT\t1\n" : "", S.kit_ver, S.kit_file, S.kit_sha);
+    } else {
+        char names[300] = "", key[400] = "";
+        for (int i = 0; i < S.nmods; i++) if (S.mods[i].ver[0] && S.mods[i].file[0]) {
+            size_t n = strlen(names), m = strlen(key);
+            snprintf(names + n, sizeof names - n, "%s%s %s", n ? ", " : "", S.mods[i].name, S.mods[i].ver);
+            snprintf(key + m, sizeof key - m, "%s%s %s", m ? "," : "", S.mods[i].id, S.mods[i].ver);
+        }
+        k += (size_t)snprintf(b + k, sizeof b - k, "KIND\tmods\nLABEL\tmods:%s\nKEY\t%s\n%s", names, key, c ? "CONSENT\t1\n" : "");
+        for (int i = 0; i < S.nmods && k < sizeof b; i++) if (S.mods[i].ver[0] && S.mods[i].file[0])
+            k += (size_t)snprintf(b + k, sizeof b - k, "MOD\t%s\t%s\t%s\t%s\n", S.mods[i].id, S.mods[i].ver, S.mods[i].file, S.mods[i].sha);
+    }
+    char p[1200]; upath(p, sizeof p, "ready.txt");
+    if (write_file(p, b)) { dsl_log("update: cannot write %s", p); return; }
+    pthread_mutex_lock(&mu);
+    if (S.kit_ver[0]) snprintf(ready_line, sizeof ready_line, "%s installs the next time you start the game.", S.kit_ver);
+    else snprintf(ready_line, sizeof ready_line, "Mod updates install the next time you start the game.");
+    pthread_mutex_unlock(&mu);
+    dsl_log("update: ready.txt written (%s%s): installed at the next start", S.kit_ver[0] ? S.kit_ver : "mods", c ? ", Update clicked" : "");
+}
+/* the update's key ("kit 0.1.5" / "multiplayer 0.1.5,custom-modes 0.1.3"): the "Update to" click is kept in want.txt */
+static void update_key(char *out, size_t n) {
+    out[0] = 0;
+    if (S.kit_ver[0]) { snprintf(out, n, "kit %s", S.kit_ver); return; }
+    for (int i = 0; i < S.nmods; i++) if (S.mods[i].ver[0]) { size_t k = strlen(out); snprintf(out + k, n - k, "%s%s %s", k ? "," : "", S.mods[i].id, S.mods[i].ver); }
+}
 static void download_all(void) {
     pthread_mutex_lock(&mu); S.dl = 1; pthread_mutex_unlock(&mu);
     int bad = 0, any = 0;
     if (S.kit_ver[0]) { any = 1; bad |= download(S.kit_url, S.kit_asset, S.kit_sha, S.kit_file, sizeof S.kit_file) != 0; }
     else for (int i = 0; i < S.nmods; i++) if (S.mods[i].ver[0]) {
         any = 1;
-        if (download(S.mods[i].url, S.mods[i].asset, S.mods[i].sha, S.mods[i].file, sizeof S.mods[i].file)) { bad = 1; S.mods[i].ver[0] = 0; }
+        if (download(S.mods[i].url, S.mods[i].asset, S.mods[i].sha, S.mods[i].file, sizeof S.mods[i].file)) { bad = 1; S.mods[i].file[0] = 0; }
     }
-    int got = 0; if (!S.kit_ver[0]) for (int i = 0; i < S.nmods; i++) got += S.mods[i].ver[0] != 0;   /* mods: the good ones go on */
-    pthread_mutex_lock(&mu); S.dl = !any ? 0 : S.kit_ver[0] ? (bad ? -1 : 2) : (got ? 2 : -1); pthread_mutex_unlock(&mu);
+    int got = 0; if (!S.kit_ver[0]) for (int i = 0; i < S.nmods; i++) got += S.mods[i].ver[0] && S.mods[i].file[0];   /* mods: the good ones go on */
+    int st = !any ? 0 : S.kit_ver[0] ? (bad ? -1 : 2) : (got ? 2 : -1);
+    if (st == 2) ready_write();
+    pthread_mutex_lock(&mu); S.dl = st; pthread_mutex_unlock(&mu);
 }
 static void *check_thread(void *arg) {
     (void)arg;
     check_kit();
     if (!S.kit_ver[0]) check_mods();
-    pthread_mutex_lock(&mu); S.checked = 1; int want = S.dl_wanted || auto_on; pthread_mutex_unlock(&mu);
-    if (want) download_all();
+    char key[400], p[1200]; update_key(key, sizeof key); upath(p, sizeof p, "want.txt");
+    char *w = slurp_(p, 4096); int wanted = w && key[0] && !strncmp(w, key, strlen(key)) && (w[strlen(key)] == '\n' || !w[strlen(key)]); free(w);
+    pthread_mutex_lock(&mu); S.checked = 1; if (wanted) { S.dl_wanted = 1; consent = 1; } int want = S.dl_wanted || auto_on; pthread_mutex_unlock(&mu);
+    if (wanted) dsl_log("update: %s: Update was clicked before: downloading", key);
+    if (want && key[0]) download_all();
     thread_on = 0;
     return NULL;
 }
 static void *dl_thread(void *arg) { (void)arg; download_all(); thread_on = 0; return NULL; }
 static int any_update(void) { if (S.kit_ver[0]) return 1; for (int i = 0; i < S.nmods; i++) if (S.mods[i].ver[0]) return 1; return 0; }
+static void start_dl(void) { pthread_t t; thread_on = 1; if (pthread_create(&t, NULL, dl_thread, NULL)) thread_on = 0; else pthread_detach(t); }
 
-/* ------------------------------------------------------------------ pending / rollback */
-static void rollback(const DslMoves *mv, const char *why_dir) {
-    char ts[32], fdir[1300]; stamp(ts, sizeof ts); snprintf(fdir, sizeof fdir, "%s/retired/update-failed-%s", root, ts);
-    for (int i = mv->n - 1; i >= 0; i--) {
-        char dst[1500]; snprintf(dst, sizeof dst, "%s/%d", fdir, i);
-        if (dsl_uos_exists(mv->path[i]) && dsl_uos_move(mv->path[i], dst)) dsl_log("update: rollback: cannot move %s away", mv->path[i]);
-        if (mv->backup[i][0] && dsl_uos_move(mv->backup[i], mv->path[i])) dsl_log("update: rollback: cannot put back %s", mv->path[i]);
-    }
-    dsl_log("update: rolled back %d change(s) (%s)", mv->n, why_dir);
-}
-static int pending_write(const char *label, const char *key, const DslMoves *mv) {
-    size_t cap = 4096 + (size_t)mv->n * 2200; char *b = malloc(cap); if (!b) return -1;
-    size_t k = (size_t)snprintf(b, cap, "LABEL\t%s\nKEY\t%s\nFROM\t%s\n", label, key, S.have);
-    for (int i = 0; i < mv->n && k < cap; i++) k += (size_t)snprintf(b + k, cap - k, "MOVE\t%s\t%s\n", mv->path[i], mv->backup[i]);
-    char p[1200]; upath(p, sizeof p, "pending.txt"); int r = write_file(p, b); free(b); return r;
-}
-static int pending_read(DslMoves *mv, char *label, size_t ln, char *key, size_t kn) {
-    char p[1200]; upath(p, sizeof p, "pending.txt"); char *b = slurp_(p, 1 << 20); if (!b) return -1;
-    mv->n = 0; label[0] = key[0] = 0;
-    for (char *l = strtok(b, "\n"); l; l = strtok(NULL, "\n")) {
-        char *t1 = strchr(l, '\t'); if (!t1) continue; *t1++ = 0;
-        if (!strcmp(l, "LABEL")) snprintf(label, ln, "%s", t1);
-        else if (!strcmp(l, "KEY")) snprintf(key, kn, "%s", t1);
-        else if (!strcmp(l, "MOVE") && mv->n < DSL_UMOVES) {
-            char *t2 = strchr(t1, '\t'); if (t2) *t2++ = 0;
-            snprintf(mv->path[mv->n], sizeof mv->path[0], "%s", t1); snprintf(mv->backup[mv->n], sizeof mv->backup[0], "%s", t2 ? t2 : ""); mv->n++;
-        }
-    }
-    free(b); return 0;
-}
-static void pending_done(const char *why) {
-    char p[1200], q[1300], ts[32]; upath(p, sizeof p, "pending.txt"); stamp(ts, sizeof ts);
-    snprintf(q, sizeof q, "%s/old/pending-%s-%s.txt", udir, why, ts);
+/* ------------------------------------------------------------------ the starter's results (title) */
+static void moved_old(const char *file, const char *why) {
+    char p[1200], q[1400], ts[32]; upath(p, sizeof p, file); stamp(ts, sizeof ts);
+    snprintf(q, sizeof q, "%s/old/%s-%s-%s", udir, why, ts, file);
     if (dsl_uos_move(p, q)) dsl_log("update: cannot move %s", p);
 }
-
-/* ------------------------------------------------------------------ install (main thread, title, nothing busy) */
-static void install_now(void) {
-    pthread_mutex_lock(&mu); int ok = S.dl == 2; pthread_mutex_unlock(&mu);
-    if (!ok) return;
-    DslMoves *mv = calloc(1, sizeof *mv); if (!mv) return;
-    char ts[32], bdir[1300], why[300] = "", label[64], key[160];
-    stamp(ts, sizeof ts); snprintf(bdir, sizeof bdir, "%s/backup-%s-%s", udir, S.have[0] ? S.have : "old", ts);
-    int r = 0; char names[160] = "";
-    if (S.kit_ver[0]) {
-        snprintf(label, sizeof label, "v%s", S.kit_ver); snprintf(key, sizeof key, "kit %s", S.kit_ver);
-        r = dsl_uos_kit_install(S.kit_file, bdir, mv, why, sizeof why);
-    } else {
-        snprintf(label, sizeof label, "mods"); key[0] = 0;
-        for (int i = 0; i < S.nmods && !r; i++) if (S.mods[i].ver[0] && S.mods[i].file[0]) {
-            char mb[1500]; snprintf(mb, sizeof mb, "%s/%s", bdir, S.mods[i].id);
-            r = dsl_uos_mod_install(S.mods[i].file, S.mods[i].id, mb, mv, why, sizeof why);
-            if (!r) { size_t k = strlen(key); snprintf(key + k, sizeof key - k, "%s%s %s", k ? "," : "", S.mods[i].id, S.mods[i].ver);
-                      k = strlen(names); snprintf(names + k, sizeof names - k, "%s%s %s", k ? ", " : "", S.mods[i].name, S.mods[i].ver); }
-        }
+static void title_results(void) {
+    char p[1200]; char *b;
+    if (confirm_label[0]) {                                  /* the update this start runs reached the title */
+        upath(p, sizeof p, "pending.txt"); b = slurp_(p, 1 << 20);
+        char label[200] = ""; const char *l = b ? strstr(b, "LABEL\t") : NULL;
+        if (l) { l += 6; size_t k = strcspn(l, "\r\n"); snprintf(label, sizeof label, "%.*s", (int)(k < sizeof label ? k : sizeof label - 1), l); }
+        free(b);
+        if (label[0] && !strcmp(label, confirm_label)) {
+            moved_old("pending.txt", "ok");
+            if (!strncmp(label, "mods:", 5)) snprintf(line, sizeof line, "Updated: %s", label + 5);
+            else snprintf(line, sizeof line, "Updated to %s", label[0] == 'v' ? label + 1 : label);
+            dsl_log("update: %s confirmed at the title", label);
+        } else dsl_log("update: DSML_UPDATE=%s but pending.txt says \"%s\": nothing to confirm", confirm_label, label);
+        confirm_label[0] = 0;
     }
-    pthread_mutex_lock(&mu); S.dl = 0; pthread_mutex_unlock(&mu);
-    if (r) {
-        rollback(mv, "install failed");
-        dsl_log("update: install of %s failed: %s", label, why);
-        snprintf(line, sizeof line, "The update could not be installed. The game tries again next time.");
-        free(mv); return;
+    upath(p, sizeof p, "notice.txt");
+    if ((b = slurp_(p, 2000))) {                             /* the starter's one line (install failed, rollback) */
+        b[strcspn(b, "\r\n")] = 0;
+        if (b[0]) { snprintf(line, sizeof line, "%s", b); dsl_log("update: starter notice shown: %s", b); }
+        free(b); moved_old("notice.txt", "shown");
     }
-    if (!S.kit_ver[0]) snprintf(label, sizeof label, "mods:%s", names);
-    if (pending_write(label, key, mv)) { rollback(mv, "no pending file"); free(mv); return; }
-    char envl[200]; snprintf(envl, sizeof envl, "DSML_UPDATE=%s\n", S.kit_ver[0] ? S.kit_ver : "mods");
-    dsl_log("update: %s installed (%d change(s), old files in %s); restarting", label, mv->n, bdir);
-    if (dsl_reg_restart_same(envl, why, sizeof why)) {
-        dsl_log("update: restart refused (%s): rolling back", why);
-        rollback(mv, "restart refused"); pending_done("refused");
-        free(mv); return;
-    }
-    free(mv); restarting = 1;
-}
-
-/* ------------------------------------------------------------------ On: ask before installing (owner 2026-10-16) */
-static void prompt_ok(void *ud, DSLObj w) { (void)ud; (void)w; consent = 1; dsl_log("update: prompt: Install and restart"); }
-static void prompt_later(void *ud, DSLObj w) { (void)ud; (void)w; later = 1; dsl_log("update: prompt: Later (asked again next start; the download stays)"); }
-static void prompt(void) {
-    const DSLUi *u = dsl_ui_kit(); if (!u) return;
-    asked = 1; char t[300], names[200] = "";
-    if (S.kit_ver[0]) snprintf(t, sizeof t, "v%s is ready. Install and restart now?", S.kit_ver);
-    else {
-        for (int i = 0; i < S.nmods; i++) if (S.mods[i].ver[0] && S.mods[i].file[0]) { size_t k = strlen(names);
-            snprintf(names + k, sizeof names - k, "%s%s %s", k ? ", " : "", S.mods[i].name, S.mods[i].ver); }
-        snprintf(t, sizeof t, "Mod updates are ready (%s). Install and restart now?", names);
-    }
-    u->notice(t, "Install and restart", "Later", prompt_ok, prompt_later, NULL);
-    dsl_log("update: prompt shown: %s", t);
 }
 
 /* ------------------------------------------------------------------ title corner */
 static uintptr_t c_tog, c_txt, c_btn;                      /* DSLObj kept as plain pointers (re-made when gone) */
-static int c_btn_on; static char c_last_line[200], c_btn_label[64];
+static int c_btn_on; static char c_last_line[400], c_btn_label[64];
 static void toggle_change(void *ud, DSLObj w) {
     (void)ud; const DSLUi *u = dsl_ui_kit(); if (!u) return;
     auto_on = u->toggle_get(w) != 0; settings_save();
     dsl_log("update: auto-update %s", auto_on ? "ON" : "OFF");
-    if (auto_on && S.checked && any_update() && S.dl == 0 && !thread_on) { pthread_t t; thread_on = 1; if (pthread_create(&t, NULL, dl_thread, NULL)) thread_on = 0; else pthread_detach(t); }
+    if (auto_on && S.checked && any_update() && S.dl == 0 && !thread_on) start_dl();
 }
 static void button_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
-    pthread_mutex_lock(&mu); int st = S.dl; S.dl_wanted = 1; pthread_mutex_unlock(&mu); consent = 1;
-    dsl_log("update: \"%s\" clicked", c_btn_label);
-    if (st == 0 || st == -1) { pthread_t t; thread_on = 1; if (pthread_create(&t, NULL, dl_thread, NULL)) thread_on = 0; else pthread_detach(t); }
+    char key[400], p[1200], t[500]; update_key(key, sizeof key); upath(p, sizeof p, "want.txt"); snprintf(t, sizeof t, "%s\n", key);
+    if (write_file(p, t)) dsl_log("update: cannot write %s", p);
+    pthread_mutex_lock(&mu); int st = S.dl; S.dl_wanted = 1; consent = 1; pthread_mutex_unlock(&mu);
+    dsl_log("update: \"%s\" clicked: installed at the next start", c_btn_label);
+    if (st == 2) ready_write();                               /* downloaded while it was on: mark it */
+    else if ((st == 0 || st == -1) && !thread_on) start_dl();
 }
 static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
@@ -358,25 +327,30 @@ static void corner_frame(void) {
     if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
     if (!tog) {
         tog = u->toggle(NULL, 0, 0, 260, "Auto-update", auto_on, toggle_change, NULL);
-        txt = u->text(NULL, 0, 0, 420, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
+        txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 220, 40, "Update", button_click, NULL);
         if (!tog || !txt || !btn) return;
-        dsl_ui_place_tr(tog, 24, 56, 260, 40); dsl_ui_place_tr(txt, 24, 100, 420, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
-        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods download by themselves. The game asks before it installs them.\nOff: nothing downloads until you click Update.");
+        dsl_ui_place_tr(tog, 24, 56, 260, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
+        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods download while you play. They install the next time you start the game.\nOff: nothing downloads until you click Update.");
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
     u->set_active(tog, 1);
-    /* the button: Off with an update not yet downloading */
-    pthread_mutex_lock(&mu); int st = S.dl, avail = S.checked && any_update(); char kv[32]; snprintf(kv, sizeof kv, "%s", S.kit_ver); pthread_mutex_unlock(&mu);
-    int want_btn = (!auto_on || later) && avail && st != 1 && !consent && !S.dl_wanted && !line[0];
-    char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, "Update to v%s", kv); else snprintf(bl, sizeof bl, "Update mods");
+    /* the button: Off, an update found, not clicked yet */
+    pthread_mutex_lock(&mu);
+    int st = S.dl, avail = S.checked && any_update(), clicked = consent || S.dl_wanted; char kv[32], rl[200];
+    snprintf(kv, sizeof kv, "%s", S.kit_ver); snprintf(rl, sizeof rl, "%s", ready_line);
+    pthread_mutex_unlock(&mu);
+    int want_btn = !auto_on && avail && !clicked && st != 1 && !line[0];
+    char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, "Update to %s", kv); else snprintf(bl, sizeof bl, "Update mods");
     if (want_btn && strcmp(bl, c_btn_label)) { snprintf(c_btn_label, sizeof c_btn_label, "%s", bl); u->set_text(btn, bl); }
     if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
-    char l[200] = "";
+    char l[400] = "";
     if (line[0]) snprintf(l, sizeof l, "%s", line);
-    else if (st == 1 && (!auto_on || S.dl_wanted)) snprintf(l, sizeof l, kv[0] ? "Downloading v%s..." : "Downloading mod updates...", kv);
-    if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); }
+    else if (st == 1 && clicked) snprintf(l, sizeof l, kv[0] ? "Downloading %s..." : "Downloading mod updates...", kv);
+    else if (st == 2 && (auto_on || clicked)) snprintf(l, sizeof l, "%s", rl);
+    else if (st == -1 && clicked) snprintf(l, sizeof l, "The download failed. The game tries again next time.");
+    if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
     u->set_active(txt, l[0] != 0 && !want_btn);
 }
 
@@ -389,10 +363,10 @@ void dsl_update_start(void) {
     settings_load();
     if (dsl_uos_release(S.have, sizeof S.have)) S.have[0] = 0;
     if (S.have[0]) setenv("DSML_RELEASE", S.have, 1);            /* the multiplayer mod names it when the mod sets differ */
-    { const char *e = getenv("DSML_UPDATE"); if (e && *e && dsl_soft_wanted()) snprintf(confirm_label, sizeof confirm_label, "%s", e); }
+    { const char *e = getenv("DSML_UPDATE"); if (e && *e) snprintf(confirm_label, sizeof confirm_label, "%s", e); }
     enabled = 1;
     dsl_log("update: release %s, auto-update %s, ROOT %s%s", S.have[0] ? S.have : "unknown", auto_on ? "on" : "off", root,
-            confirm_label[0] ? " (this start follows an update)" : "");
+            confirm_label[0] ? " (this start runs a new update)" : "");
     if (off && !strcmp(off, "0")) { dsl_log("update: DSL_UPDATE=0: no check"); return; }
     if (dsl_soft_wanted()) return;                         /* B of a soft restart: A checked already */
     for (int i = 0; i < dsl_mods_count() && S.nmods < MAXU; i++) {
@@ -410,41 +384,11 @@ void dsl_update_start(void) {
 }
 void dsl_update_frame(void) {
     if (!enabled) return;
-    int at_title = dsl_reg_scene() == 1;
-    if (confirm_label[0] && at_title && !dsl_soft_busy()) {          /* B: the update reached the title */
-        DslMoves *mv = calloc(1, sizeof *mv); char label[200], key[160];
-        if (mv && !pending_read(mv, label, sizeof label, key, sizeof key)) {
-            pending_done("ok");
-            if (!strncmp(label, "mods:", 5)) snprintf(line, sizeof line, "Updated: %s", label + 5);
-            else snprintf(line, sizeof line, "Updated to %s", label);
-            dsl_log("update: %s confirmed at the title", label);
-        }
-        free(mv); confirm_label[0] = 0;
-    }
-    if (restarting && dsl_soft_last_failed()) {                       /* A: B never got ready */
-        DslMoves *mv = calloc(1, sizeof *mv); char label[200], key[160];
-        if (mv && !pending_read(mv, label, sizeof label, key, sizeof key)) {
-            rollback(mv, "the new version did not start"); pending_done("failed");
-            for (char *k = strtok(key, ","); k; k = strtok(NULL, ",")) add_bad(k);
-            snprintf(line, sizeof line, "The update did not start. You still have v%s.", S.have[0] ? S.have : "the old version");
-            if (!strncmp(label, "mods:", 5)) snprintf(line, sizeof line, "The mod update did not start. The old mods stay.");
-        }
-        free(mv); restarting = 0;
-    }
-    if (at_title && !restarting && !busy_install && !dsl_busy_reason() && !dsl_soft_busy()) {
-        pthread_mutex_lock(&mu); int ready = S.dl == 2, go = ready && consent; pthread_mutex_unlock(&mu);
-        if (go) { busy_install = 1; install_now(); busy_install = 0; }
-        else if (ready && auto_on && !asked && dsl_ui_title_shown()) prompt();
-    }
+    static int results_done;
+    if (!results_done && dsl_reg_scene() == 1 && !dsl_soft_busy()) { results_done = 1; title_results(); }
     corner_frame();
     { const char *t = getenv("DSL_UPDATE_TEST"); static int tick;                       /* test: click the button by file */
       if (t && *t == '1' && ++tick % 30 == 0 && c_btn_on == 1) {
           char p[1200]; upath(p, sizeof p, "test_click");
-          if (dsl_uos_exists(p)) { char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q); button_click(NULL, NULL); } }
-      if (t && *t == '1' && asked && !consent && !later && tick % 30 == 0) {                /* test: answer the prompt by file */
-          const DSLUi *u = dsl_ui_kit(); char p[1200], q[1300];
-          upath(p, sizeof p, "test_install"); snprintf(q, sizeof q, "%s.done", p);
-          if (dsl_uos_exists(p)) { remove(q); dsl_uos_move(p, q); if (u && u->notice_close) u->notice_close(); prompt_ok(NULL, NULL); }
-          upath(p, sizeof p, "test_later"); snprintf(q, sizeof q, "%s.done", p);
-          if (dsl_uos_exists(p)) { remove(q); dsl_uos_move(p, q); if (u && u->notice_close) u->notice_close(); prompt_later(NULL, NULL); } } }
+          if (dsl_uos_exists(p)) { char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q); button_click(NULL, NULL); } } }
 }

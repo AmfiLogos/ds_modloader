@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Windows start part of the mod loader, cross-built on this Mac with ~/tools/llvm-mingw. Output (loader/build/win/):
 #   baselib.dll                      the loader: proxy of the game's baselib.dll + loader core (src/) + MinHook engine
-#   Dungeon Settlers Modded.exe      the starter (Steam, first-start save copy, environment, game start)
+#   Dungeon Settlers Modded.exe      the starter (update install, Steam, first-start save copy, environment, game start)
 #   kit/                             the friend kit: install.bat, uninstall.bat, README.txt, files/ (+ mods/ when given)
 # Mods (built in their own repos) are put into kit/files/mods/<id>/ by MODS="<dir> <dir> ..." (each a module folder
 # with mod.json and its .dll), e.g. MODS=~/ds_multiplayer/win/build/mods/multiplayer.
@@ -37,7 +37,7 @@ echo "built $O/baselib.dll"
 $B/x86_64-w64-mingw32-windres ds_modded_win.rc -O coff -o $OBJ/ds_modded_res.res.o
 ZL=$D/win/third_party/zlib; ZO=(); mkdir -p $OBJ/zl
 for f in $ZL/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC $PM -O2 -w -c $f -o $OBJ/zl/${f:t:r}.o; ZO+=($OBJ/zl/${f:t:r}.o); done
-nice -n 19 $TC $PM -Wl,--no-insert-timestamp -O2 -Wall -municode -mwindows -I$L/src -I$ZL $MLGF ds_modded_win.c bie_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
+nice -n 19 $TC $PM -Wl,--no-insert-timestamp -O2 -Wall -municode -mwindows -I$L/src -I$ZL $MLGF ds_modded_win.c bie_win.c ../dsl_update_start.c dsl_update_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
 mv -f "$O/Dungeon Settlers Modded.exe.tmp" "$O/Dungeon Settlers Modded.exe"
 echo "built $O/Dungeon Settlers Modded.exe"
 

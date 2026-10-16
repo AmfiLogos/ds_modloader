@@ -425,7 +425,6 @@ static void pw_tick(void) {
 
 /* ------------------------------------------------------------------ apply (A) */
 int dsl_soft_wanted(void) { return role_b; }
-int dsl_soft_last_failed(void) { return a_state == A_FAILED; }        /* dsl_update.c: its restart did not get ready */
 int dsl_soft_busy(void) { return role_b || (a_state != A_IDLE && a_state != A_FAILED); }    /* a waiting prewarm B is not "busy" for A */
 void *dsl_soft_mainflow(void) { return mf; }
 int dsl_soft_apply(const char *profile, const char *env_lines) {

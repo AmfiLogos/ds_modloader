@@ -50,7 +50,7 @@ const char *json_str(const JNode *obj, const char *key);  /* NULL if missing / n
 
 /* auto-update (dsl_update.c) */
 void dsl_update_start(void);                 /* after the modules' init: check thread */
-void dsl_update_frame(void);                 /* every frame (title corner, install, confirm, rollback) */
+void dsl_update_frame(void);                 /* every frame (title corner, confirm, the starter's notice) */
 /* soft restart (dsl_soft.c) */
 void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is edited */
 void dsl_soft_install(void);                 /* after il2cpp_init */

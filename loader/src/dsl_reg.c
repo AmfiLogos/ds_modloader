@@ -487,13 +487,6 @@ static int apply_ids(const char *const *ids, int n, const char *env, char *why, 
     return 0;
 }
 
-/* auto-update (dsl_update.c): the same mods again, through the soft restart (the new loader / mod files load in B) */
-int dsl_reg_restart_same(const char *env, char *why, size_t cap) {
-    mods_scan(); const char *ids[MAXM]; int n = 0;
-    for (int i = 0; i < nmi; i++) if (MI[i].enabled && !MI[i].hidden) ids[n++] = MI[i].id;
-    return apply_ids(ids, n, env, why, cap);
-}
-
 /* prewarm: the Mods window reports its switches (dsl_mods_draft); 1.5 s after the last change a hidden game starts
    with that set. A newer change replaces it; the window closed without Apply, or the set back to the running one,
    stops it. Default on (owner's choice logged in MORNING_QUESTIONS.md, v13 loaderui); DSL_PREWARM=0 turns it off. */

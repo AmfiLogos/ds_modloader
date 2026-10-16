@@ -53,14 +53,15 @@ On the title screen, click Mods to turn mods on or off.
 
 At the title screen, the switch "Auto-update" is in the top-right corner. It is on by default.
 
-- On: when a new version is out, the game downloads it and checks it. At the title screen it asks: "v13.x is ready.
-  Install and restart now?" Click "Install and restart": the game restarts behind a loading screen and shows
-  "Updated to v13.x". Click "Later": the game asks again next start, and the "Update to v13.x" button stays.
-- Off: nothing is downloaded. A button "Update to v13.x" shows instead. Click it to update.
+- On: while you play, the game downloads a new version and checks it. The next time you start the game, a small
+  window "Updating Dungeon Settlers Modded to 0.1.N" shows for a few seconds, then the game starts as usual. No
+  question, no restart.
+- Off: nothing is downloaded. A button "Update to 0.1.N" shows instead. Click it: the update installs the next time
+  you start the game.
 
-The game never updates in a world or in a multiplayer game. If the new version does not start, the old version comes
-back and that version is not offered again. Your saves are not changed. Without internet the game starts as usual and
-checks again next time.
+Nothing installs while the game runs. If the new version does not reach the title screen twice in a row, the old
+version comes back and that version is not offered again. Your saves are not changed. Without internet the game starts
+as usual and checks again next time.
 
 ## Add a mod
 
@@ -118,10 +119,12 @@ Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.
 
 See [BUILDING.md](BUILDING.md). The license files that ship with each release are in [licenses/](licenses/).
 
-Releases for auto-update: tag `v<N.N>` in ds_multiplayer with the assets `Dungeon-Settlers-Modded-Mac.zip` (or the
-`.dmg`) and `Dungeon-Settlers-Modded-Windows.zip` (the kit zip; the Setup.exe alone is not enough), built with the same
-number in `loader/RELEASE` (or `DSM_RELEASE`). Mod zips `<id>-<version>.zip` in their own repos. GitHub's asset digest
-is the checksum (a `<asset>.sha256` file also works). Tests: `loader/test/update/` (local release server).
+Releases for auto-update: tag `v0.1.N` in ds_modloader with the assets `Dungeon-Settlers-Modded-Mac.dmg` (or the
+`.zip`) and `Dungeon-Settlers-Modded-Windows.zip` (the kit zip; the Setup.exe alone is not enough), built with the same
+number in `loader/RELEASE` (or `DSM_RELEASE`): a kit whose RELEASE is not the tag's number is refused. Mod zips
+`<id>-0.1.N.zip` (tag `<id>-v0.1.N`) in their own repos, the same number as their mod.json. GitHub's asset digest is
+the checksum (a `<asset>.sha256` file also works). Tests: `loader/test/update/` (Mac, local release server) and
+`loader/start/win/test/update_test.sh` (wine).
 
 ## Mod Launcher (step 1, Mac; older design notes)
 

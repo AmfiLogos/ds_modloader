@@ -2,6 +2,8 @@
 // No window of its own. Flow:
 //   1. ROOT = $DSMODDED_ROOT or ~/Library/Application Support/DSModLauncher; PROFILE = ROOT/profiles/modded;
 //      DATA = PROFILE/data (saves), UHOME = PROFILE/home, mods state = DATA/Mods/.
+//   1b. auto-update (loader start/dsl_update_start.c, #included): a downloaded update is installed here, before the game,
+//      with a small window (this binary again: --update-window); a new kit = this stub execs the new app's stub.
 //   2. loader files: <app>/Contents/Resources/dsml/ -> ROOT/loader/ when VERSION differs (temp folder, xattr -cr,
 //      rename into place; the old folder moves to ROOT/retired/, never written over: a running game maps it).
 //   2b. the player's mods: ROOT/mods/<id> (or a <id>-<version>.zip there, unpacked) -> ROOT/loader/mods/<id>.
@@ -11,7 +13,8 @@
 //      part of the loader itself (not a module), so no entry of active.json can switch it off.
 //   5. Steam (start it in the background when closed), env, execv of the play copy's game binary, cwd = PROFILE.
 // DSMODDED_DRY_RUN=1: everything except ensure_steam and execv; prints the env and argv instead (tests).
-// DSMP_NO_DIALOG=1: no dialogs. Log: ~/Library/Logs/DungeonSettlersModded.log
+// DSMP_NO_DIALOG=1: no dialogs. DSMODDED_NO_STEAM=1 (tests): Steam not checked. DSL_UPDATE_WINDOW=hidden (tests): the
+// update window is made but never visible. Log: ~/Library/Logs/DungeonSettlersModded.log
 #include <mach-o/dyld.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <copyfile.h>
@@ -27,12 +30,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
-static char home[PATH_MAX], logpath[PATH_MAX];
+static char home[PATH_MAX], logpath[PATH_MAX], self_exe[PATH_MAX];
 extern char **environ;
 
 static void logf_(const char *fmt, ...) {
@@ -42,6 +46,19 @@ static void logf_(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
     fputc('\n', f); fclose(f);
 }
+
+/* the loader's auto-update parts built into this stub (they log through dsl_log) */
+#include "../../loader/src/dsl_internal.h"
+void dsl_log(const char *fmt, ...) {
+    FILE *f = fopen(logpath, "a"); if (!f) return;
+    time_t t = time(NULL); char ts[32]; strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", localtime(&t));
+    fprintf(f, "%s [%d] ", ts, getpid());
+    va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
+    fputc('\n', f); fclose(f);
+}
+#include "../../loader/src/dsl_json.c"
+#include "../../loader/start/mac/dsl_update_mac.c"
+#include "../../loader/start/dsl_update_start.c"
 
 static void mkdirs(const char *path) {
     char b[PATH_MAX]; snprintf(b, sizeof b, "%s", path);
@@ -85,7 +102,7 @@ static int write_atomic(const char *p, const char *text) {
 static void trim(char *s) { size_t n = strlen(s); while (n && (s[n-1] == '\n' || s[n-1] == '\r' || s[n-1] == ' ')) s[--n] = 0; }
 
 /* "key": "value" of a flat JSON object (enough for copy.json, which this stub writes itself) */
-static int json_str(const char *j, const char *key, char *out, size_t cap) {
+static int flat_str(const char *j, const char *key, char *out, size_t cap) {
     char k[128]; snprintf(k, sizeof k, "\"%s\"", key);
     const char *p = j ? strstr(j, k) : NULL; if (!p) return 0;
     p += strlen(k); while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
@@ -174,35 +191,91 @@ static int sync_loader(const char *app, const char *root) {
     return 0;
 }
 
-/* 2a. auto-update (loader src/dsl_update.c): ROOT/update/pending.txt still there = the last update never reached the
-   title. Its MOVE lines (installed path, backup) are walked backwards: the new file goes to ROOT/retired, the old one
-   comes back; its KEY items go into update/bad.txt (not offered again). Same steps as rollback() in dsl_update.c. */
-static void cold_rollback(const char *root) {
-    char pp[PATH_MAX]; snprintf(pp, sizeof pp, "%s/update/pending.txt", root);
-    char *b = slurp(pp); if (!b) return;
-    char *mv[160][2]; int n = 0; char *key = NULL, *label = NULL;
-    for (char *l = strtok(b, "\n"); l; l = strtok(NULL, "\n")) {
-        char *t = strchr(l, '\t'); if (!t) continue; *t++ = 0;
-        if (!strcmp(l, "KEY")) key = t; else if (!strcmp(l, "LABEL")) label = t;
-        else if (!strcmp(l, "MOVE") && n < 160) { char *t2 = strchr(t, '\t'); if (t2) *t2++ = 0; mv[n][0] = t; mv[n][1] = t2 ? t2 : ""; n++; }
+/* 1b. the update window: this binary again, `DS Modded --update-window <title>`, a child process (the stub itself never
+   touches AppKit: it becomes the game by execv). Lines on its stdin: "P <0..100>" moves the bar, "Q" or EOF closes it.
+   AppKit through the Objective-C runtime (dlsym), so the stub links only CoreFoundation. */
+typedef struct { double x, y, w, h; } URect;
+static void *(*o_cls)(const char *), *(*o_sel)(const char *), *o_send;
+#define OMSG(ret, ...) ((ret (*)(void *, void *, ##__VA_ARGS__))o_send)
+static void *nsstr(const char *s) { return OMSG(void *, const char *)(o_cls("NSString"), o_sel("stringWithUTF8String:"), s); }
+static void *uw_bar;
+static void uw_tick(CFRunLoopTimerRef t, void *info) {
+    (void)t; (void)info; static char buf[256]; static size_t n;
+    for (;;) {
+        ssize_t k = read(0, buf + n, sizeof buf - 1 - n);
+        if (k == 0) exit(0);                                  /* the stub is gone */
+        if (k < 0) return;                                    /* nothing yet (non-blocking) */
+        n += (size_t)k; buf[n] = 0;
+        char *nl;
+        while ((nl = strchr(buf, '\n'))) {
+            *nl = 0;
+            if (buf[0] == 'Q') exit(0);
+            if (buf[0] == 'P') OMSG(void, double)(uw_bar, o_sel("setDoubleValue:"), atof(buf + 1));
+            memmove(buf, nl + 1, strlen(nl + 1) + 1); n = strlen(buf);
+        }
+        if (n >= sizeof buf - 1) n = 0;
     }
-    char ts[32]; stamp(ts, sizeof ts);
-    logf_("update: %s never reached the title: rolling back %d change(s)", label ? label : "the last update", n);
-    for (int i = n - 1; i >= 0; i--) {
-        char dst[PATH_MAX]; snprintf(dst, sizeof dst, "%s/retired/update-failed-%s/%d", root, ts, i);
-        char par[PATH_MAX]; snprintf(par, sizeof par, "%s/retired/update-failed-%s", root, ts); mkdirs(par);
-        if (exists(mv[i][0]) && rename(mv[i][0], dst) != 0) logf_("update: cannot move %s away (%s)", mv[i][0], strerror(errno));
-        if (mv[i][1][0] && rename(mv[i][1], mv[i][0]) != 0) logf_("update: cannot put back %s (%s)", mv[i][0], strerror(errno));
-    }
-    if (key && *key) {
-        char bp[PATH_MAX]; snprintf(bp, sizeof bp, "%s/update/bad.txt", root); FILE *f = fopen(bp, "a");
-        if (f) { for (char *k = strtok(key, ","); k; k = strtok(NULL, ",")) fprintf(f, "%s\n", k); fclose(f); }
-    }
-    char od[PATH_MAX], q[PATH_MAX]; snprintf(od, sizeof od, "%s/update/old", root); mkdirs(od);
-    snprintf(q, sizeof q, "%s/pending-coldrollback-%s.txt", od, ts);
-    if (rename(pp, q) != 0) logf_("update: cannot move %s (%s)", pp, strerror(errno));
-    free(b);
 }
+static int update_window(const char *title) {
+    if (!dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", RTLD_NOW)) { logf_("update window: no AppKit"); return 1; }
+    o_cls = (void *(*)(const char *))dlsym(RTLD_DEFAULT, "objc_getClass"); o_sel = (void *(*)(const char *))dlsym(RTLD_DEFAULT, "sel_registerName");
+    o_send = dlsym(RTLD_DEFAULT, "objc_msgSend");
+    if (!o_cls || !o_sel || !o_send) { logf_("update window: no Objective-C runtime"); return 1; }
+    const char *hm = getenv("DSL_UPDATE_WINDOW"); int hidden = hm && !strcmp(hm, "hidden");
+    fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK);
+    void *app = OMSG(void *)(o_cls("NSApplication"), o_sel("sharedApplication"));
+    OMSG(void, long)(app, o_sel("setActivationPolicy:"), 1);                         /* accessory: no second Dock icon */
+    void *w = OMSG(void *)(o_cls("NSWindow"), o_sel("alloc"));
+    w = OMSG(void *, URect, unsigned long, unsigned long, signed char)(w, o_sel("initWithContentRect:styleMask:backing:defer:"),
+                                                                    (URect){ 0, 0, 440, 110 }, 1 /* titled */, 2, 0);
+    OMSG(void, void *)(w, o_sel("setTitle:"), nsstr("Dungeon Settlers Modded"));
+    void *cv = OMSG(void *)(w, o_sel("contentView"));
+    void *lab = OMSG(void *, void *)(o_cls("NSTextField"), o_sel("labelWithString:"), nsstr(title));
+    OMSG(void, URect)(lab, o_sel("setFrame:"), (URect){ 24, 60, 392, 22 });
+    OMSG(void, void *)(cv, o_sel("addSubview:"), lab);
+    uw_bar = OMSG(void *)(o_cls("NSProgressIndicator"), o_sel("alloc"));
+    uw_bar = OMSG(void *, URect)(uw_bar, o_sel("initWithFrame:"), (URect){ 24, 26, 392, 20 });
+    OMSG(void, unsigned long)(uw_bar, o_sel("setStyle:"), 0);                          /* bar */
+    OMSG(void, signed char)(uw_bar, o_sel("setIndeterminate:"), 0);
+    OMSG(void, double)(uw_bar, o_sel("setMinValue:"), 0); OMSG(void, double)(uw_bar, o_sel("setMaxValue:"), 100);
+    OMSG(void, double)(uw_bar, o_sel("setDoubleValue:"), 3);
+    OMSG(void, void *)(cv, o_sel("addSubview:"), uw_bar);
+    if (hidden) {                                                                       /* tests: made, never visible */
+        OMSG(void, double)(w, o_sel("setAlphaValue:"), 0.0);
+        OMSG(void, signed char)(w, o_sel("setIgnoresMouseEvents:"), 1);
+        OMSG(void, void *)(w, o_sel("orderBack:"), NULL);
+    } else {
+        OMSG(void)(w, o_sel("center"));
+        OMSG(void, void *)(w, o_sel("makeKeyAndOrderFront:"), NULL);
+        OMSG(void, signed char)(app, o_sel("activateIgnoringOtherApps:"), 1);
+    }
+    logf_("update window up%s: %s", hidden ? " (hidden)" : "", title);
+    CFRunLoopTimerRef t = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.05, 0.05, 0, 0, uw_tick, NULL);
+    CFRunLoopAddTimer(CFRunLoopGetMain(), t, kCFRunLoopCommonModes);
+    OMSG(void)(app, o_sel("run"));
+    return 0;
+}
+/* the stub's side of the window */
+static pid_t uw_pid; static int uw_fd = -1;
+static void uw_open(const char *title) {
+    int pfd[2]; if (pipe(pfd)) return;
+    posix_spawn_file_actions_t fa; posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_adddup2(&fa, pfd[0], 0); posix_spawn_file_actions_addclose(&fa, pfd[1]);
+    char *av[] = { self_exe, "--update-window", (char *)title, NULL };
+    int r = posix_spawn(&uw_pid, self_exe, &fa, NULL, av, environ);
+    posix_spawn_file_actions_destroy(&fa); close(pfd[0]);
+    if (r) { close(pfd[1]); uw_pid = 0; logf_("update window: cannot start (%s)", strerror(r)); return; }
+    signal(SIGPIPE, SIG_IGN); uw_fd = pfd[1];
+}
+static void uw_progress(int pct) { if (uw_fd >= 0) dprintf(uw_fd, "P %d\n", pct); }
+static void uw_close(void) {
+    if (uw_fd < 0) return;
+    dprintf(uw_fd, "Q\n"); close(uw_fd); uw_fd = -1;
+    for (int i = 0; i < 60; i++) { if (waitpid(uw_pid, NULL, WNOHANG) == uw_pid) { uw_pid = 0; break; } usleep(50000); }
+    if (uw_pid) { kill(uw_pid, SIGKILL); waitpid(uw_pid, NULL, 0); uw_pid = 0; }
+    signal(SIGPIPE, SIG_DFL);                                /* the game must not inherit SIG_IGN */
+}
+
 /* "2.0.0" < "2.1.0" (numbers, a leading v ignored); -1 / 0 / 1 */
 static int vcmp(const char *a, const char *b) {
     for (;;) {
@@ -250,13 +323,13 @@ static void find_mod(const char *dir, char *mdir, size_t cap, char *id, size_t i
     char mj[PATH_MAX]; id[0] = 0;
     snprintf(mj, sizeof mj, "%s/mod.json", dir);
     char *j = slurp(mj);
-    if (j) { snprintf(mdir, cap, "%s", dir); if (!json_str(j, "id", id, icap)) id[0] = 0; free(j); return; }
+    if (j) { snprintf(mdir, cap, "%s", dir); if (!flat_str(j, "id", id, icap)) id[0] = 0; free(j); return; }
     DIR *d = opendir(dir); struct dirent *e;
     while (d && (e = readdir(d))) {
         if (e->d_name[0] == '.' || !strcmp(e->d_name, "__MACOSX")) continue;
         snprintf(mj, sizeof mj, "%s/%s/mod.json", dir, e->d_name);
         if (!(j = slurp(mj))) continue;
-        snprintf(mdir, cap, "%s/%s", dir, e->d_name); if (!json_str(j, "id", id, icap)) id[0] = 0; free(j); break;
+        snprintf(mdir, cap, "%s/%s", dir, e->d_name); if (!flat_str(j, "id", id, icap)) id[0] = 0; free(j); break;
     }
     if (d) closedir(d);
 }
@@ -300,11 +373,11 @@ static void user_mods(const char *app, const char *root) {
         snprintf(p, sizeof p, "%s/%s/mod.json", um, n);
         char *a = slurp(p);
         if (!a) continue;
-        if (!json_str(a, "id", id, sizeof id) || strcmp(id, n) || !valid_id(id)) { logf_("mods: %s/%s skipped (mod.json id is not the folder name)", um, n); free(a); continue; }
+        if (!flat_str(a, "id", id, sizeof id) || strcmp(id, n) || !valid_id(id)) { logf_("mods: %s/%s skipped (mod.json id is not the folder name)", um, n); free(a); continue; }
         snprintf(q, sizeof q, "%s/%s/mod.json", lm, n);
         char *b = slurp(q);
         char va[32] = "", vb[32] = "";
-        if (b && json_str(a, "version", va, sizeof va) && json_str(b, "version", vb, sizeof vb) && vcmp(va, vb) < 0) {
+        if (b && flat_str(a, "version", va, sizeof va) && flat_str(b, "version", vb, sizeof vb) && vcmp(va, vb) < 0) {
             logf_("mods: player mod %s %s is older than the loader's %s (auto-update): not copied", n, va, vb); free(a); free(b); continue;
         }
         if (!b || strcmp(a, b)) {
@@ -335,7 +408,7 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
                      char *build, size_t bcap) {
     char cj[PATH_MAX]; snprintf(cj, sizeof cj, "%s/copy.json", profile);
     char *j = slurp(cj);
-    if (j && json_str(j, "build", build, bcap) && json_str(j, "app", play, pcap)) {
+    if (j && flat_str(j, "build", build, bcap) && flat_str(j, "app", play, pcap)) {
         char exe[PATH_MAX]; snprintf(exe, sizeof exe, "%s/Contents/MacOS/Dungeon Settlers", play);
         if (exists(exe)) { free(j); return 0; }
         logf_("remembered copy %s is gone: making a new one", play);
@@ -394,7 +467,7 @@ static void mods_state(const char *root, const char *data) {
     for (int i = 0; i < ne; i++) {
         char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, ents[i]->d_name);
         char *j = ents[i]->d_name[0] != '.' ? slurp(mj) : NULL;
-        if (j && json_str(j, "id", id, sizeof id) && *id && !strpbrk(id, "\"\\")) {
+        if (j && flat_str(j, "id", id, sizeof id) && *id && !strpbrk(id, "\"\\")) {
             if (default_off(j)) off++;
             else if (strlen(ids) + strlen(id) + 4 < sizeof ids) {
                 snprintf(ids + strlen(ids), sizeof ids - strlen(ids), "%s\"%s\"", n ? "," : "", id); n++;
@@ -591,6 +664,8 @@ int main(int argc, char **argv) {
     /* real app path: <app>/Contents/MacOS/<stub> */
     char exe[PATH_MAX], real[PATH_MAX]; uint32_t sz = sizeof exe;
     if (_NSGetExecutablePath(exe, &sz) != 0 || !realpath(exe, real)) { logf_("cannot resolve own path"); return 1; }
+    snprintf(self_exe, sizeof self_exe, "%s", real);
+    if (argc >= 3 && !strcmp(argv[1], "--update-window")) return update_window(argv[2]);
     char app[PATH_MAX]; snprintf(app, sizeof app, "%s", real); dirname_n(app, 3);
 
     char root[PATH_MAX], profile[PATH_MAX], data[PATH_MAX], uhome[PATH_MAX];
@@ -604,7 +679,22 @@ int main(int argc, char **argv) {
     if (!exists(data)) { logf_("cannot create %s (%s)", data, strerror(errno));
                          return fail("Dungeon Settlers Modded cannot create its folder in Application Support."); }
 
-    cold_rollback(root);
+    /* 1b. auto-update. ROOT/update/run.lock: the game of this install holds it (this fd stays open through execv) */
+    setenv("DSML_ROOT", root, 1); setenv("DSML_APP", app, 1);
+    { char up[PATH_MAX]; snprintf(up, sizeof up, "%s/update", root); mkdirs(up); }
+    char lk[PATH_MAX]; snprintf(lk, sizeof lk, "%s/update/run.lock", root);
+    int lfd = open(lk, O_RDWR | O_CREAT, 0644), running = lfd >= 0 && flock(lfd, LOCK_EX | LOCK_NB) != 0;
+    if (running) { logf_("update: a game of this install runs"); close(lfd); lfd = -1; }
+    DslUpdWin uw = { uw_open, uw_progress, uw_close };
+    char ulabel[200];
+    if (dsl_update_starter(root, running, &uw, ulabel, sizeof ulabel)) {
+        logf_("update: new kit installed: starting the new app's stub");
+        if (lfd >= 0) close(lfd);                            /* the new stub takes the lock itself */
+        execv(real, argv);
+        logf_("exec %s failed (%s)", real, strerror(errno));
+        return fail("Dungeon Settlers Modded was updated but could not start. Open it again.");
+    }
+    if (ulabel[0]) setenv("DSML_UPDATE", ulabel, 1); else unsetenv("DSML_UPDATE");
     if (sync_loader(app, root)) return 1;
     user_mods(app, root);
     char play[PATH_MAX], build[128];
@@ -629,7 +719,7 @@ int main(int argc, char **argv) {
     if (chdir(profile) != 0) logf_("chdir %s failed (%s)", profile, strerror(errno));
     { FILE *f = fopen("steam_appid.txt", "w"); if (f) { fputs("2798330\n", f); fclose(f); } }
     setenv("SteamAppId", "2798330", 1); setenv("SteamGameId", "2798330", 1);
-    if (!dry && ensure_steam(play)) return 1;
+    if (!dry && !getenv("DSMODDED_NO_STEAM") && ensure_steam(play)) return 1;
 
     char game[PATH_MAX], plog[PATH_MAX], v[PATH_MAX];
     snprintf(game, sizeof game, "%s/Contents/MacOS/Dungeon Settlers", play);
@@ -653,7 +743,6 @@ int main(int argc, char **argv) {
     setenv("DSML_DATA", data, 1);
     snprintf(v, sizeof v, "%s/Library/Application Support/CanOpener/Dungeon Settlers/Saves", home);
     setenv("DSML_GAME_SAVES", v, 1);                         /* the title's "Import a save" copies worlds from there */
-    setenv("DSML_ROOT", root, 1);                           /* auto-update (loader src/dsl_update.c) */
 
     char **av = calloc((size_t)argc + 4, sizeof *av); int k = 0;
     av[k++] = game; av[k++] = "-logFile"; av[k++] = plog;
