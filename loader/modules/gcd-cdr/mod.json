@@ -30,6 +30,6 @@
  "conflicts": [
   "gcd-cdr-patch"
  ],
- "description": "Global cooldown is divided by (1 + cooldown reduction / 100), like skill cooldowns. Runtime hook; the old byte patch (~/ds_skill_truth/patch_gcd_cdr.py) as a code module.",
+ "description": "Cooldown reduction also shortens the global cooldown, the same way it shortens skill cooldowns.",
  "scope": "gameplay"
 }

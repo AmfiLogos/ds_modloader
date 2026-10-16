@@ -229,8 +229,8 @@ int dsl_plugin_index(DSLPlugin *self) { return self ? self->idx : -1; }
 const char *dsl_plugin_name(DSLPlugin *self) { return self ? self->id : "loader"; }
 int dsl_mod_state(const char *id, const char **why) {
     struct DSLPlugin *p = find_mod_early(id);
-    if (why) *why = !p ? "not loaded (data mod, or not for this game build)" : p->state == 2 ? "failed to start (see dsload.log)"
-                  : p->state == 3 ? "not loaded (game build, requirement, conflict or crash guard: see dsload.log)" : "";
+    if (why) *why = !p ? "not loaded: not made for this game version or this computer" : p->state == 2 ? "it crashed while starting"
+                  : p->state == 3 ? "not loaded: it needs another mod, clashes with one, or crashed last time" : "";
     return p ? p->state : 0;
 }
 
@@ -698,8 +698,8 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
 
 /* The mapped GameAssembly is not the file the build came from (start part's check): mods stay off. */
 void dsl_core_ga_differs(const char *ga_id, const char *found_build) {
-    snprintf(status_why, sizeof status_why, "The game loaded a different GameAssembly (%s) than the one checked at start (build %s). Mods stay off.",
-             ga_id, dsl_build_id ? dsl_build_id : "?");
+    dsl_log("mapped GameAssembly %s differs from the one checked at start (build %s)", ga_id, dsl_build_id ? dsl_build_id : "?");
+    snprintf(status_why, sizeof status_why, "The game files changed after the start check. Mods stay off. Restart the game.");
     build_refused("mapped_image_differs", ga_id, found_build, dsl_build_id);
 }
 
@@ -737,13 +737,12 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     dsl_build_id = build;
     const char *pin = launcher_pin();
     if (!dsl_build_id) {
-        snprintf(status_why, sizeof status_why, "The game was updated (GameAssembly %s is not a build this loader knows%s%s). "
-                 "Mods stay off until they are updated for this game version.", ga_id, pin ? "; the launcher pinned build " : "", pin ? pin : "");
-        dsl_log("unknown GameAssembly build (%s): loader inactive, the game runs without code mods", ga_id);
+        snprintf(status_why, sizeof status_why, "The game was updated. Mods stay off until they are updated for this game version.");
+        dsl_log("unknown GameAssembly build (%s%s%s): loader inactive, the game runs without code mods", ga_id, pin ? "; the launcher pinned build " : "", pin ? pin : "");
         build_refused("unknown_build", ga_id, NULL, pin); return -1;
     }
     if (pin && strcmp(pin, dsl_build_id)) {
-        snprintf(status_why, sizeof status_why, "This copy of the game is build %s, but the launcher pinned build %s for this world. "
+        snprintf(status_why, sizeof status_why, "This game is build %s, but the launcher started this world for build %s. "
                  "Mods stay off. Start the world from the launcher again.", dsl_build_id, pin);
         build_refused("not_pinned_build", ga_id, dsl_build_id, pin); return -1;
     }

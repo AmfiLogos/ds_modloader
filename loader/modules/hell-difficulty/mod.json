@@ -34,5 +34,5 @@
   "loader>=2.0.0"
  ],
  "conflicts": [],
- "description": "Hell, a sixth difficulty after Devastation. Code half (in-memory patches + recruit staff strip) and table half (the Hell table bundle, rebuilt at start from your own game files and a small delta; your game files are not changed)."
+ "description": "Adds Hell, a sixth difficulty above Devastation. On Hell, recruits arrive without their starting staff. Your game files are not changed."
 }

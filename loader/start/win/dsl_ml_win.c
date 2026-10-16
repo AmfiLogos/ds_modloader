@@ -37,7 +37,7 @@ int dsl_ml_install_start(void) {
     if (job == 1) return 0;
     InterlockedExchange(&job, 1); job_why[0] = 0;
     HANDLE h = CreateThread(NULL, 0, job_run, NULL, 0, NULL);
-    if (!h) { InterlockedExchange(&job, -1); snprintf(job_why, sizeof job_why, "no thread for the download"); return -1; }
+    if (!h) { InterlockedExchange(&job, -1); snprintf(job_why, sizeof job_why, "the download could not start"); return -1; }
     CloseHandle(h); return 0;
 }
 int dsl_ml_install_poll(char *why, size_t cap) {
