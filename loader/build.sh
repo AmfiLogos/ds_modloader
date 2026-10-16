@@ -52,9 +52,14 @@ cp $DR $M/det_ranges.tsv.tmp; mv -f $M/det_ranges.tsv.tmp $M/det_ranges.tsv
 cp modules/multiplayer/mod.json $M/mod.json
 print -r -- "$SHA" > $M/PINNED_COMMIT
 echo "built $M from ds_multiplayer $SHA (${#mpsrc} files)"
-# custom-modes: built from the same pinned tree once it has one (MASTER_PLAN M4: ds_multiplayer/custom)
-if [[ -f $V/custom/build_module.sh ]]; then OUT=$PWD/build/mods/custom-modes SDK=$PWD/sdk zsh $V/custom/build_module.sh && echo "built build/mods/custom-modes"
-else echo "custom-modes: not in ds_multiplayer $SHA yet (M4 split): skipped"; fi
+# custom-modes: its own repo (github.com/AmfiLogos/ds_custommodes), ONE pinned commit (cm_pin.txt, or CM_PIN=<commit/tag>),
+# exported read-only into build/cmpin/<sha>/; headers from the multiplayer pin above (MP_SRC). CM_REPO = a local clone.
+CM_REPO=${CM_REPO:-$HOME/ds_custommodes}; CM_PIN=${CM_PIN:-$(head -1 cm_pin.txt)}
+CSHA=$(git -C $CM_REPO rev-parse --verify "$CM_PIN^{commit}") || { echo "cm pin $CM_PIN not found in $CM_REPO" >&2; exit 1; }
+CV=build/cmpin/$CSHA
+if [[ ! -f $CV/build_module.sh ]]; then mkdir -p $CV.tmp; git -C $CM_REPO archive $CSHA | tar -x -C $CV.tmp; mv $CV.tmp $CV; fi
+OUT=$PWD/build/mods/custom-modes SDK=$PWD/sdk MP_SRC=$PWD/$V/src zsh $CV/build_module.sh
+echo "built build/mods/custom-modes from ds_custommodes $CSHA"
 
 # gcd-cdr
 G=build/mods/gcd-cdr; mkdir -p $G/rva

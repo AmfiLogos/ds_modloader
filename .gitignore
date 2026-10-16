@@ -16,3 +16,4 @@ test_env/
 .DS_Store
 loader/test/bie/*/obj/
 loader/test/bie/*/bin/
+loader/build/cmpin/

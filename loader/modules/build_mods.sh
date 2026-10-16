@@ -7,8 +7,9 @@
 #   build_mods.sh                 build all (Mac part through ../build.sh; Windows with ~/tools/llvm-mingw)
 #   build_mods.sh --check [dir]   check a built set (default build/mods_all): every module lists mac-arm64 + win-x64,
 #                                 entry files exist, listed sha256s match, both copies have the same mod.json. Exit 1 = bad.
-# Env: MP_PIN (default ../mp_pin.txt) = the ds_multiplayer commit for multiplayer + custom-modes on both platforms;
-#      MP_WIN_TREE = a ds_multiplayer checkout to build the Windows multiplayer / custom-modes from instead of the pin
+# Env: MP_PIN (default ../mp_pin.txt) = the ds_multiplayer commit for multiplayer (and the headers Custom Modes uses);
+#      CM_PIN (default ../cm_pin.txt) = the ds_custommodes commit for custom-modes on both platforms, CM_REPO its clone;
+#      MP_WIN_TREE = a ds_multiplayer checkout to build the Windows multiplayer from instead of the pin
 #      (development); SKIP_MAC=1 = reuse ../build/mods (no ../build.sh run).
 #      Game files for the Hell delta: HELL_STOCK_WIN / HELL_STOCK_MAC (stock table bundles; read only).
 set -e; cd "${0:A:h}"; MD=$PWD; L=${MD:h}
@@ -96,6 +97,15 @@ else
     mkdir -p $WT.tmp; git -C $MP_REPO archive $SHA | tar -x -C $WT.tmp; mv $WT.tmp $WT
   fi
   [[ -e $WT/win/25846389 ]] || ln -s $MP_REPO/win/25846389 $WT/win/25846389    # game files + dump: local only, never in git
+fi
+# Custom Modes from its own pin (cm_pin.txt), not the multiplayer tree's custom/: the ds_custommodes tree replaces
+# $WT/custom (same folder as before: the Windows DLLs keep quickjs' __FILE__ paths, so the bytes do not change)
+CM_REPO=${CM_REPO:-$HOME/ds_custommodes}; CM_PIN=${CM_PIN:-$(head -1 $L/cm_pin.txt)}
+CSHA=$(git -C $CM_REPO rev-parse --verify "$CM_PIN^{commit}") || { echo "cm pin $CM_PIN not found in $CM_REPO" >&2; exit 1; }
+if [[ -z $MP_WIN_TREE && $(cat $WT/CM_PINNED 2>/dev/null) != $CSHA ]]; then
+  mkdir -p $L/build/old; [[ -d $WT/custom ]] && mv $WT/custom $L/build/old/custom-$(date +%Y%m%d-%H%M%S)
+  mkdir -p $WT/custom.tmp; git -C $CM_REPO archive $CSHA | tar -x -C $WT/custom.tmp; mv $WT/custom.tmp $WT/custom
+  print -r -- $CSHA > $WT/CM_PINNED
 fi
 DSMP_TARGET=module DSL_SDK=$L/sdk DSL_MODJSON=$MD/multiplayer/mod.json CM_MODJSON=${CM_MODJSON:-} nice -n 19 zsh $WT/win/build_win.sh | grep -v "^ABI \|^warning" | tail -6
 cp -R $WT/win/build/mods/multiplayer $OUT/win/
