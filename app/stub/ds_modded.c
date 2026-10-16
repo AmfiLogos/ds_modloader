@@ -603,6 +603,8 @@ int main(int argc, char **argv) {
     setenv("DSML_BUILD", build, 1);
     setenv("DSML_APP", app, 1);
     setenv("DSML_DATA", data, 1);
+    snprintf(v, sizeof v, "%s/Library/Application Support/CanOpener/Dungeon Settlers/Saves", home);
+    setenv("DSML_GAME_SAVES", v, 1);                         /* the Mods window's "Saves" tab copies worlds from there */
 
     char **av = calloc((size_t)argc + 4, sizeof *av); int k = 0;
     av[k++] = game; av[k++] = "-logFile"; av[k++] = plog;
@@ -612,7 +614,7 @@ int main(int argc, char **argv) {
     if (dry) {
         const char *keys[] = { "SteamAppId", "SteamGameId", "CFFIXED_USER_HOME", "DSRIG_DIR", "DSRIG_LIVE", "DSRIG_FPS",
                                "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSML_USER_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
-                               "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
+                               "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_GAME_SAVES", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
                                "DOORSTOP_ENABLED", "DOORSTOP_TARGET_ASSEMBLY", "DOORSTOP_CLR_RUNTIME_CORECLR_PATH",
                                "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS",
                                "DSML_MELON_DIR", "DSML_MELON_SCRIPT", "MELONLOADER_BASEDIR", "MELONLOADER_MOD_DIRS" };
