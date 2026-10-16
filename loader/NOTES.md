@@ -341,7 +341,7 @@ Windows untested (names only, should port).
 ### Proof (copy S, lease AB, windows on a stage far off every display, guard: 0 violations in every run)
 | Test | Result |
 |---|---|
-| `test/l1_test.py` (run5, MP from pinned main e61565f, 150 hooks, none refused) | 15/15: title "Mods"; Load list "Mods: ... Change"; flow K 15.0 s request -> on screen, B runs gcd-cdr+multiplayer, pending -> active.json; flow J in a world 14.6 s, world re-registered, active.json multiplayer |
+| `test/l1_test.py` (run5, MP from pinned main 6e65e66, 150 hooks, none refused) | 15/15: title "Mods"; Load list "Mods: ... Change"; flow K 15.0 s request -> on screen, B runs gcd-cdr+multiplayer, pending -> active.json; flow J in a world 14.6 s, world re-registered, active.json multiplayer |
 | `test/l1_rows_test.py` (rows3, test module rows-demo) | 8/8: module API 3 calls, tab, filter hides / toggle shows, row text, Apply refused while busy |
 | `test/run_tests.sh` host | 31/31 |
 Frames: `~/ds_launcher/loader/test_env/l1_out/{run5,rows3}/*.png`.
