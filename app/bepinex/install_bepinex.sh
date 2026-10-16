@@ -4,9 +4,9 @@
 # sha256, unzip with ditto (never sets quarantine), move into place. Already there = exit 0 at once.
 # DSML_BEPINEX_ZIP=<local zip> replaces the download (tests); the sha256 check stays. DSML_LOCK_WAIT=<s> (default 300).
 # Prints "BEPINEX <dest>" on success, "ERROR <message>" + exit 1 on failure. Never touches anything outside dest's parent.
-VER=0.1.2
+VER=0.1.3
 URL=https://github.com/AmfiLogos/ds_multiplayer/releases/download/bepinex-mac-$VER/bepinex-mac-arm64-$VER.zip
-SHA=e2675226b8b8b6b34d5b8683aeef9e62fcb57fe967a9b07035ac5ab9aaa8b250
+SHA=64f949bc87d6e1da8e230c356ff8780eacf06b0bc3563b0cf2245ba07c8c8890
 D=${1:?usage: install_bepinex.sh <dest>}
 [[ -f $D/libdoorstop.dylib && -f $D/BepInEx/core/BepInEx.Unity.IL2CPP.dll && -f $D/dotnet/libcoreclr.dylib ]] && { echo "BEPINEX $D"; exit 0; }
 P=${D:h}; mkdir -p $P || { echo "ERROR cannot create $P"; exit 1; }
