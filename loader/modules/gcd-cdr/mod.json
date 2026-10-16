@@ -1,6 +1,7 @@
 {
  "id": "gcd-cdr",
  "name": "Global cooldown uses cooldown reduction",
+ "short_name": "Global cooldown",
  "version": "2.0.0",
  "author": "AmfiLogos",
  "kind": "code",

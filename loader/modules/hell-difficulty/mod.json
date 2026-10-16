@@ -1,6 +1,7 @@
 {
  "id": "hell-difficulty",
  "name": "Hell difficulty",
+ "short_name": "Hell",
  "version": "2.0.0",
  "author": "AmfiLogos",
  "kind": "code",
