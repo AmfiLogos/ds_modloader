@@ -425,14 +425,18 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   it (flow K); a second save of the world written in game (CampaignSaveLoader.Save; this seed world is Ironman, so the
   game takes only the autosave kind) has the same world and the same set.
 
-## Window mode at start (owner v13.3 "the game you start starts in full screen"; branch screenmode, 2026-10-16)
-- Unity reads its window (Screenmanager keys) from the play copy's preferences domain before any game code runs. The
-  owner's app domain com.CanOpener.Dungeon-Settlers.Modded reads windowed (mode 3) at 3456x2112 today; the plain game
-  windowed at 3456x2234 (read only). com.CanOpener.Dungeon-Settlers.mp* domains (mode 1 on mpZ) belong to test copies.
-- dsl_start_mac.c: at every start of the app (DSML_APP set by the stub) the loader copies the plain game's window keys
-  (mode, size, position, monitor) into the play copy's domain when they differ, before Unity starts. The plain game's
-  domain is only read. A soft-restart B does not copy; it takes A's live window mode (handoff "fsmode",
-  Screen.fullScreenMode icalls) and A's frame. Tests: DSL_SCREEN_FROM=<test domain>.
-- Proof `test/l1_screen_test.py` (copy S, screen2): 6/6, 0 guard violations; copy S set full screen 3456x2234 -> after
-  the start windowed 960x540 from the test domain; handoff fsmode; B does not copy; plain game plist bytes unchanged.
-- Not found: a full-screen setting in the owner's app domain today. Windows: not changed (registry prefs per exe).
+## Test copies never full screen (owner v13.3; branch testwin, 2026-10-16)
+- Owner: a test copy that opened full screen switched his screen / Space (the installed app may stay as it is).
+  mpZ (a test copy domain, update / crossmods tests) read FullScreenWindow at 3456x2234.
+- dsload (start/mac/dsl_start_mac.c): an app with LSBackgroundOnly (every test copy, never a player's copy) gets its own
+  preferences domain set windowed 960x540 before Unity reads it, and stops at once if it still says full screen;
+  DSL_NOTCH=0 unless set. The owner's domains (com.CanOpener.Dungeon-Settlers, .Modded) are never written.
+- lrig.py: require_windowed() refuses a start whose prefs still say full screen; DSL_NOTCH=0 by default (notch_test
+  sets 1). l1_test.start_a the same. MP rig/rig.py: the same refusal (ds_multiplayer branch testwin).
+- Test stage (dsl_soft_mac.c): staged windows are transparent, ignore the mouse and stay out of Spaces / Mission
+  Control at all times, so a move the stage does not catch (2 guard kills today: 20:29 at an apply, 20:48 at a quit;
+  cause not found, likely the system placing an off-display window back on a display) shows nothing.
+- The soft-restart B takes A's live window mode (handoff "fsmode").
+- Proof `test/l1_screen_test.py` (screen3): 6/6, 0 guard violations: full-screen prefs -> refused; with the python check
+  skipped dsload sets 960x540 windowed, DSL_NOTCH=0; handoff fsmode; owner's domains byte-identical. l1_v13_test 18/18
+  with the transparent stage (shots still render).

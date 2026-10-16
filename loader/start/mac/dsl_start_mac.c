@@ -188,40 +188,34 @@ static void note_other_loaders(void) {
     }
 }
 
-/* window mode and size (owner v13.3: "the game you start starts in full screen"): Unity reads its window from the
-   app's own preferences (Screenmanager keys of the play copy's bundle id) before any game code runs. Every start of
-   the Dungeon Settlers Modded app copies the player's choice from the plain game's preferences into the play copy's
-   domain when it differs (read only on the plain game's domain). A soft-restart B is skipped: it takes A's window
-   (dsl_soft.c). Test copies: only with DSL_SCREEN_FROM=<domain> (a test domain). */
-static void screen_prefs(void) {
-    const char *from = getenv("DSL_SCREEN_FROM");
-    if (!(from && *from) && getenv("DSML_APP") && *getenv("DSML_APP")) from = "com.CanOpener.Dungeon-Settlers";
-    if (!(from && *from) || dsl_soft_wanted()) return;                  /* after dsl_soft_snapshot (it clears DSL_SOFT_HANDOFF) */
-    CFBundleRef mb = CFBundleGetMainBundle(); CFStringRef tgt = mb ? CFBundleGetIdentifier(mb) : NULL;
-    CFStringRef src = CFStringCreateWithCString(NULL, from, kCFStringEncodingUTF8);
-    if (!tgt || !src || CFStringCompare(tgt, src, 0) == kCFCompareEqualTo) { if (src) CFRelease(src); return; }
-    static const char *const keys[] = { "Screenmanager Fullscreen mode", "Screenmanager Resolution Width", "Screenmanager Resolution Height",
-        "Screenmanager Resolution Use Native", "Screenmanager Window Position X", "Screenmanager Window Position Y", "UnitySelectMonitor" };
-    int changed = 0, found = 0; char what[400] = "";
-    for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) {
-        CFStringRef k = CFStringCreateWithCString(NULL, keys[i], kCFStringEncodingUTF8);
-        CFPropertyListRef v = CFPreferencesCopyAppValue(k, src), cur = v ? CFPreferencesCopyAppValue(k, tgt) : NULL;
-        if (v) {
-            found++;
-            if (!cur || !CFEqual(v, cur)) {
-                CFPreferencesSetAppValue(k, v, tgt); changed++;
-                long n = 0; if (CFGetTypeID(v) == CFNumberGetTypeID()) CFNumberGetValue((CFNumberRef)v, kCFNumberLongType, &n);
-                size_t o = strlen(what); snprintf(what + o, sizeof what - o, "%s%s=%ld", o ? ", " : "", keys[i] + (strncmp(keys[i], "Screenmanager ", 14) ? 0 : 14), n);
-            }
-        }
-        if (cur) CFRelease(cur);
-        if (v) CFRelease(v);
-        CFRelease(k);
+/* test copies never take the owner's screen (owner v13.3: a test copy that opened full screen switched his Space).
+   A test copy = an app whose Info.plist has LSBackgroundOnly (the rule for every test copy; a player's copy never has
+   it). Before Unity reads its window settings: the copy's own preferences domain is set windowed 960x540; a copy whose
+   domain still says full screen after that is stopped here. DSL_NOTCH=0 (the notch fix makes the game cover the whole
+   screen) unless the caller set it (notch_test). The owner's own domains are never written. */
+static void test_copy_window(void) {
+    CFBundleRef mb = CFBundleGetMainBundle(); if (!mb) return;
+    CFTypeRef bo = CFBundleGetValueForInfoDictionaryKey(mb, CFSTR("LSBackgroundOnly"));
+    int bg = bo && ((CFGetTypeID(bo) == CFBooleanGetTypeID() && CFBooleanGetValue((CFBooleanRef)bo)) ||
+                    (CFGetTypeID(bo) == CFStringGetTypeID() && CFStringCompare((CFStringRef)bo, CFSTR("1"), 0) == kCFCompareEqualTo));
+    if (!bg) return;
+    CFStringRef dom = CFBundleGetIdentifier(mb); if (!dom) return;
+    char db[200] = ""; CFStringGetCString(dom, db, sizeof db, kCFStringEncodingUTF8);
+    if (!strcmp(db, "com.CanOpener.Dungeon-Settlers") || !strcmp(db, "com.CanOpener.Dungeon-Settlers.Modded")) { dsl_log("screen: test copy with the owner's bundle id %s: its settings are not touched", db); return; }
+    setenv("DSL_NOTCH", "0", 0);
+    static const struct { const char *k; int v; } W[] = { { "Screenmanager Fullscreen mode", 3 }, { "Screenmanager Resolution Width", 960 },
+        { "Screenmanager Resolution Height", 540 }, { "Screenmanager Resolution Use Native", 0 } };
+    for (size_t i = 0; i < sizeof W / sizeof W[0]; i++) {
+        CFStringRef k = CFStringCreateWithCString(NULL, W[i].k, kCFStringEncodingUTF8); int v = W[i].v;
+        CFNumberRef n = CFNumberCreate(NULL, kCFNumberIntType, &v);
+        CFPreferencesSetAppValue(k, n, dom); CFRelease(n); CFRelease(k);
     }
-    if (changed) CFPreferencesAppSynchronize(tgt);
-    char tb[200] = ""; CFStringGetCString(tgt, tb, sizeof tb, kCFStringEncodingUTF8);
-    dsl_log("screen: window settings of %s -> %s: %s", from, tb, !found ? "none in the source (kept)" : changed ? what : "already the same");
-    CFRelease(src);
+    CFPreferencesAppSynchronize(dom);
+    CFPropertyListRef m = CFPreferencesCopyAppValue(CFSTR("Screenmanager Fullscreen mode"), dom); long mode = -1;
+    if (m && CFGetTypeID(m) == CFNumberGetTypeID()) CFNumberGetValue((CFNumberRef)m, kCFNumberLongType, &mode);
+    if (m) CFRelease(m);
+    if (mode == 0 || mode == 1) { dsl_log("screen: test copy %s: its settings still say full screen (mode %ld): this copy does not start", db, mode); _exit(3); }
+    dsl_log("screen: test copy %s: windowed 960x540 (mode %ld), DSL_NOTCH=%s", db, mode, getenv("DSL_NOTCH"));
 }
 
 __attribute__((constructor)) static void dsl_init(void) {
@@ -240,7 +234,7 @@ __attribute__((constructor)) static void dsl_init(void) {
     if (dsl_core_log_open(defdir, self_path)) return;
     if (scwd_r != 1) dsl_log("DSL_SOFT_CWD %s: chdir %s", scwd, scwd_r == 0 ? "ok" : "failed");
     dsl_soft_snapshot(dsl_core_logdir());
-    screen_prefs();
+    test_copy_window();
     pass_through_env();
 
     /* main executable -> app; GameAssembly file -> build */
