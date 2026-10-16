@@ -8,6 +8,8 @@
 // Steps: Steam not running -> steam.exe -silent, wait up to 90 s for a signed-in user (the game starts in every case;
 // DSL_STEAM=0 tells the proxy to turn the game's Steam check off) -> first start: COPY the normal game's saves (read
 // only, never overwrite) -> environment -> start ROOT\game\DungeonSettlers.exe -> exit.
+// First start (no DATA\Mods\active.json yet): the default mod profile = every mod in ROOT\mods except those whose mod.json
+// says "default_on": false (Hell difficulty ships off by default, PLAN_V13 section 7). The Mods window owns the file after.
 // Log: PROFILE\starter.log. --dry: print the environment and the command line instead of starting the game.
 #include <windows.h>
 #include <shellapi.h>
@@ -16,6 +18,7 @@
 #include <stdarg.h>
 #include <wchar.h>
 #include "bie_win.h"
+#include "dsl_internal.h"
 
 #define APPID L"2798330"
 static wchar_t root[MAX_PATH], game[MAX_PATH], profile[MAX_PATH], data[MAX_PATH];
@@ -108,6 +111,36 @@ static void copy_saves(void) {
     logf_("first run: saves copied from %ls", src);
 }
 
+/* ---- first start: default mod profile (never overwrites the player's choice) */
+static void default_profile(void) {
+    wchar_t ap[MAX_PATH], md[MAX_PATH], pat[MAX_PATH];
+    _snwprintf(ap, MAX_PATH, L"%ls\\Mods\\active.json", data);
+    if (exists(ap)) return;
+    _snwprintf(md, MAX_PATH, L"%ls\\mods", root); _snwprintf(pat, MAX_PATH, L"%ls\\*", md);
+    char ids[64][64]; int n = 0, off = 0;
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.' || n >= 64) continue;
+        wchar_t mp[MAX_PATH]; _snwprintf(mp, MAX_PATH, L"%ls\\%ls\\mod.json", md, fd.cFileName);
+        FILE *f = _wfopen(mp, L"rb"); if (!f) continue;
+        static char txt[1 << 16]; size_t k = fread(txt, 1, sizeof txt - 1, f); fclose(f); txt[k] = 0;
+        JNode *m = json_parse(txt); const char *id = json_str(m, "id"); JNode *d = json_get(m, "default_on");
+        if (id && strlen(id) < 64 && !strpbrk(id, "\"\\")) {
+            if (d && d->t == JN_BOOL && !d->b) off++;
+            else snprintf(ids[n++], 64, "%s", id);
+        }
+        json_free(m);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    wchar_t dir[MAX_PATH]; _snwprintf(dir, MAX_PATH, L"%ls\\Mods", data); mkdirs(dir);
+    FILE *f = _wfopen(ap, L"wb"); if (!f) { logf_("default profile: cannot write %ls", ap); return; }
+    fputs("{\"enabled\":[", f); for (int i = 0; i < n; i++) fprintf(f, "%s\"%s\"", i ? "," : "", ids[i]);
+    fputs("],\"order\":[", f); for (int i = 0; i < n; i++) fprintf(f, "%s\"%s\"", i ? "," : "", ids[i]);
+    fputs("]}\n", f); fclose(f);
+    logf_("first start: default mod profile, %d mod(s) on, %d off by default", n, off);
+}
+
 static void env(const wchar_t *k, const wchar_t *v) { SetEnvironmentVariableW(k, v); }
 
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
@@ -137,6 +170,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     wchar_t wbuild[64]; MultiByteToWideChar(CP_UTF8, 0, build, -1, wbuild, 64);
 
     copy_saves();
+    default_profile();
     int steam = dry ? steam_user() : ensure_steam();
 
     /* BepInEx plugins of the profile the game starts with (bie_win.c): Doorstop on only when one is enabled */

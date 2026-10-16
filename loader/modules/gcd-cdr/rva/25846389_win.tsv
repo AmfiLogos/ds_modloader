@@ -1,0 +1,6 @@
+# Per-build table, GameAssembly.dll x64 build 25846389 (Windows). name <TAB> rva.
+# Windows twins of rva/25846389_mac.tsv from ~/ds_multiplayer/win/win_map.tsv (method / metadata / internal rows; the
+# internal one 149/150 caller votes). SetGlobalCooldown() 0xAE56B0 has 2 direct callers on Windows (not inlined).
+EntityExtensions.GetComponent<object>	0x1221D80
+slot.GetComponent<StatusReader>	0x4F35D98
+il2cpp_codegen_initialize_runtime_metadata	0x443AF0
