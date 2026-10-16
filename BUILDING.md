@@ -109,4 +109,4 @@ python3 builder/gen/extract_icons.py
 - The script finds the game in your Steam libraries. If it does not, add `--game <folder>` or set `DS_GAME_DIR`.
   The folder can be the Steam folder `Dungeon Settlers`, the `.app`, or the game's Data folder.
 - It writes 876 icons, then `ui/bicons/manifest.txt`. One icon (`stats/Talent_DontKnow.png`) is not in this game build.
-- Without `ui/bicons/manifest.txt`, `cargo build -p ds-mod-launcher` and `src-tauri/tests/ui_smoke.py` stop and tell you to run the script.
+- Without `ui/bicons/manifest.txt`, `cargo build -p ds-mod-launcher` warns and `src-tauri/tests/ui_smoke.py` stops. Both tell you to run the script.
