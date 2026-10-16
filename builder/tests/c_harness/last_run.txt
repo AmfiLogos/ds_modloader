@@ -1,4 +1,4 @@
-cases 671 (units built 648, refused 70), identical 671, differences 0
+cases 671 (units built 651, refused 67), identical 671, differences 0
 
 
 OK   random 0: E {"closure":{"fe_closure":1,"unit":{"guid":"7d6e13b6-8c85-4639-8efa-821086d0c00f","side":"Base","components":[{"Type":0,"Data":{"$type":"Re
@@ -661,9 +661,9 @@ OK   skill outside the trees 11: ERR unit 1: SKILL_Anchor is not in one of this 
 OK   over budget 11: ERR unit 1: main skills cost 162 points, the unit has 10
 OK   level 24: ERR unit 1: level 24 is outside 1..12
 OK   notes 11: E {"closure":{"fe_closure":1,"unit":{"guid":"7d6e13b6-8c85-4639-8efa-821086d0c00f","side":"Base","components":[{"Type":0,"Data":{"$type":"Re
-OK   race with no look AFFECTER_Dwarf: ERR unit 1: race AFFECTER_Dwarf has no look (portraits) in this game build
-OK   race with no look AFFECTER_Tal: ERR unit 1: race AFFECTER_Tal has no look (portraits) in this game build
-OK   race with no look AFFECTER_WhiteDemon: ERR unit 1: race AFFECTER_WhiteDemon has no look (portraits) in this game build
+OK   race with no look AFFECTER_Dwarf: E {"closure":{"fe_closure":1,"unit":{"guid":"7d6e13b6-8c85-4639-8efa-821086d0c00f","side":"Base","components":[{"Type":0,"Data":{"$type":"Re
+OK   race with no look AFFECTER_Tal: E {"closure":{"fe_closure":1,"unit":{"guid":"7d6e13b6-8c85-4639-8efa-821086d0c00f","side":"Base","components":[{"Type":0,"Data":{"$type":"Re
+OK   race with no look AFFECTER_WhiteDemon: E {"closure":{"fe_closure":1,"unit":{"guid":"7d6e13b6-8c85-4639-8efa-821086d0c00f","side":"Base","components":[{"Type":0,"Data":{"$type":"Re
 OK   fingerprint mismatch: ERR this link was made with other wiki data (another game version): make it again on the wiki
 OK   cut short: ERR link cut short (corrupted or truncated)
 OK   nine units: ERR 9 units in the link (1 to 8)
