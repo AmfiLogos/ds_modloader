@@ -6,7 +6,7 @@
 # Prints "MELON <dest>" on success, "ERROR <message>" + exit 1 on failure. Never touches anything outside dest's parent.
 VER=0.1.0
 URL=https://github.com/AmfiLogos/ds_multiplayer/releases/download/melonloader-mac-$VER/melonloader-mac-arm64-$VER.zip
-SHA=b7a87649bf86aa2a023d650d4655d62427951945e3c45b9553235c0e7dc06074
+SHA=f0f2a6e6d13736a96ea66376bdf98badc874ec269b091dd5ca6e9501c1a4643e
 D=${1:?usage: install_melon.sh <dest>}
 ok() { [[ -f $D/MelonLoader.Bootstrap.dylib && -f $D/MelonLoader/net6/MelonLoader.dll && -d $D/dotnet/host/fxr ]]; }
 ok && { echo "MELON $D"; exit 0; }
