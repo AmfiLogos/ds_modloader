@@ -14,7 +14,7 @@ void dsl_sos_set_hidden(int on);
 int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_lines);  /* start B; 0 = ok */
 long dsl_sos_child_pid(void);
 int dsl_sos_child_exited(void);             /* 1 = B ended */
-void dsl_sos_child_kill(void);
+void dsl_sos_child_kill(void);             /* B killed, reaped later without blocking; child_pid() is 0 after */
 int dsl_sos_pid_alive(long pid);
 int dsl_sos_game_frame(double f[4]);        /* game window x, y, w, h (OS units); 0 = none */
 void dsl_sos_yield(void);                   /* A: let B take the foreground (B asks for it at the swap) */
