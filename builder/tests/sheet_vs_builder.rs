@@ -1,7 +1,8 @@
 //! The engine against the wiki builder itself: builder.js (site/builder) runs in node (tests/node/builder_ref.js)
 //! on the same random builds, and every number must be the SAME double (no tolerance). Also the share links both
 //! ways (Rust codes byte-equal to the builder's, each side decodes the other's) and validate().
-//! Needs node and ~/dungeonsettlersdb/site/builder (DSB_DIR overrides); skipped with a note when missing.
+//! Needs node and the wiki builder ($HOME/dungeonsettlersdb/site/builder, DSB_DIR overrides): a missing one is a
+//! visible REF SKIP line, or a failure with DS_REQUIRE_REFS=1 (tests/common/mod.rs, tests/REFERENCES.md).
 //! Builds: 400 random (tests/node/builder_ref.js gen: legal and illegal picks, imports, typed stats, elixirs,
 //! needs, stacking passives, rolls...). Set DSB_CASES=N for more.
 use ds_unit_builder::codec;
@@ -12,19 +13,23 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-fn node_ok() -> bool {
-    let dir = std::env::var("DSB_DIR").map(PathBuf::from).unwrap_or_else(|_| {
-        PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("dungeonsettlersdb/site/builder")
-    });
+mod common;
+
+/// the wiki builder and node are there (else a REF SKIP line, or a failure with DS_REQUIRE_REFS=1)
+fn refs_ok(name: &str) -> bool {
+    let dir = common::dsb_dir();
     if !dir.join("builder.js").exists() {
-        eprintln!("SKIP: no wiki builder at {}", dir.display());
+        common::skip(name, &format!("no wiki builder at {} (DSB_DIR)", dir.display()));
         return false;
     }
-    if Command::new("node").arg("--version").output().is_err() {
-        eprintln!("SKIP: node not found");
+    if let Err(e) = common::node_ok() {
+        common::skip(name, &e);
         return false;
     }
     true
+}
+fn ref_name() -> String {
+    format!("wiki builder {} ({})", common::git_head(&common::dsb_dir()), common::dsb_dir().display())
 }
 fn node(args: &[&str], input: &str) -> Vec<Value> {
     // input through a file, not a pipe: test threads spawn in parallel and a pipe end can leak into a sibling child
@@ -113,7 +118,7 @@ fn rust_sheet(b: &Build) -> Value {
 
 #[test]
 fn sheet_matches_builder() {
-    if !node_ok() {
+    if !refs_ok("sheet_matches_builder") {
         return;
     }
     let cs = cases();
@@ -143,6 +148,7 @@ fn sheet_matches_builder() {
     for r in report.iter().take(10) {
         eprintln!("{r}");
     }
+    common::ran("sheet_matches_builder", &format!("{} builds, {} numbers, {} with a difference; {}", cs.len(), nums, bad, ref_name()));
     assert_eq!(bad, 0);
 }
 
@@ -157,7 +163,7 @@ fn count_nums(v: &Value) -> usize {
 
 #[test]
 fn links_match_builder() {
-    if !node_ok() {
+    if !refs_ok("links_match_builder") {
         return;
     }
     let cs = cases();
@@ -219,6 +225,7 @@ fn links_match_builder() {
         teams += 1;
     }
     eprintln!("links: {} builds and {} teams, {} difference(s)", cs.len(), teams, bad.len());
+    common::ran("links_match_builder", &format!("{} builds and {} teams, {} difference(s); {}", cs.len(), teams, bad.len(), ref_name()));
     for r in bad.iter().take(10) {
         eprintln!("{r}");
     }
@@ -227,7 +234,7 @@ fn links_match_builder() {
 
 #[test]
 fn validate_matches_builder() {
-    if !node_ok() {
+    if !refs_ok("validate_matches_builder") {
         return;
     }
     let cs = cases();
@@ -256,6 +263,7 @@ fn validate_matches_builder() {
         }
     }
     eprintln!("validate: {} builds, {} with a difference", cs.len(), bad.len());
+    common::ran("validate_matches_builder", &format!("{} builds, {} with a difference; {}", cs.len(), bad.len(), ref_name()));
     for r in bad.iter().take(8) {
         eprintln!("{r}");
     }
