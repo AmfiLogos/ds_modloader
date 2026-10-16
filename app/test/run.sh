@@ -57,7 +57,8 @@ check "cwd = PROFILE" sh -c "grep -qxF 'CWD $P' '$T/dry1.txt'"
 ARGS=$(print -r -- "$OUT" | sed -n 's/^ARGV //p' | tr '\n' '|')
 check "argv (game, -logFile, args minus -psn_)" test "$ARGS" = "$PLAY/Contents/MacOS/Dungeon Settlers|-logFile|$P/player.log|-foo|"
 check "steam_appid.txt" test "$(cat "$P/steam_appid.txt")" = 2798330
-check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["multiplayer"],"order":["multiplayer"]}'
+# default = every shipped mod (name order) except "default_on": false (Hell), as the Windows starter writes it
+check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["custom-modes","gcd-cdr","multiplayer"],"order":["custom-modes","gcd-cdr","multiplayer"]}'
 check "worlds.json default" test "$(cat "$D/Mods/worlds.json")" = '{"worlds":{}}'
 check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY'''} else 1)"
 check "loader VERSION copied" cmp "$ROOT/loader/VERSION" "$APP/Contents/Resources/dsml/VERSION"

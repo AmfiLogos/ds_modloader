@@ -4,11 +4,12 @@
 #   Contents/MacOS/DS Modded        stub (app/stub/ds_modded.c)
 #   Contents/MacOS/dsml-helper      core crate, release, arm64
 #   Contents/Resources/AppIcon.icns app/icon/AppIcon.icns (make_icon.py)
-#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,gcd-cdr,custom-modes} + VERSION
+#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,custom-modes,gcd-cdr,hell-difficulty} + VERSION
+#                                   (mods from loader/build/mods_all/mac: run loader/modules/build_mods.sh first)
 set -e
 HERE="${0:A:h}"; REPO="${HERE:h}"
 OUTDIR="$HERE/build"; NAME="Dungeon Settlers Modded"; APP="$OUTDIR/$NAME.app"
-MODS=(multiplayer gcd-cdr custom-modes)
+MODS=(multiplayer custom-modes gcd-cdr hell-difficulty)
 die() { echo "ERROR: $*" >&2; exit 1; }
 [[ -f $REPO/loader/build/dsload.dylib ]] || die "no loader/build/dsload.dylib (build the loader first)"
 [[ -f $HERE/icon/AppIcon.icns ]] || die "no app/icon/AppIcon.icns (run app/icon/make_icon.py)"
@@ -17,9 +18,12 @@ mkdir -p "$OUTDIR"
 # 1. binaries
 clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation \
   -o "$OUTDIR/ds_modded" "$HERE/stub/ds_modded.c"
-(cd "$REPO" && nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
+# no build-machine paths in the shipped binary (panic locations hold the cargo registry and source paths)
+(cd "$REPO" && RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry/src=crates --remap-path-prefix=$HOME/.rustup=rustup --remap-path-prefix=$REPO=dsml" \
+  nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
 HELPER="$REPO/target/release/dsml-helper"
 [[ -f $HELPER ]] || die "dsml-helper was not built"
+python3 -c "import sys; sys.exit(sys.argv[2].encode() in open(sys.argv[1],'rb').read())" "$HELPER" "$HOME" || die "dsml-helper holds $HOME paths"
 [[ $(lipo -archs "$HELPER") == arm64 ]] || die "dsml-helper is not arm64 (build on an Apple silicon Mac)"
 
 # 2. bundle in a temp folder, then moved into place (old build -> app/old/)
@@ -33,9 +37,9 @@ cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
 cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
 cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
 cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)
-for m in $MODS; do
-  if [[ -d $REPO/loader/build/mods/$m ]]; then cp -R "$REPO/loader/build/mods/$m" "$C/Resources/dsml/mods/$m"
-  else echo "WARNING: loader/build/mods/$m does not exist yet: not in this app" >&2; fi
+for m in $MODS; do   # every shipped mod is required (one mod.json per module, mac-arm64 + win-x64 sha256s)
+  [[ -d $REPO/loader/build/mods_all/mac/$m ]] || die "no loader/build/mods_all/mac/$m (run loader/modules/build_mods.sh)"
+  cp -R "$REPO/loader/build/mods_all/mac/$m" "$C/Resources/dsml/mods/$m"
 done
 
 # every Mach-O: minimum macOS 12.0 or lower (dyld refuses a library newer than the running macOS)
