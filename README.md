@@ -1,5 +1,7 @@
 # Dungeon Settlers Mod Launcher (step 1, Mac)
 
+**Roadmap:** what we work on now and next, and where you can help: [ROADMAP.md](ROADMAP.md).
+
 Plan: `~/ds_multiplayer/research/plan_launcher.md`. Owner decisions: `~/ds_multiplayer/PLAN.md`, section "Launcher".
 
 - `core/` (Rust crate `dsml-core`): Steam detection + build id (`steam.rs`), signed index + checksums
