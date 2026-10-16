@@ -7,6 +7,7 @@
  "api": 2,
  "scope": "gameplay",
  "sim": true,
+ "default_on": false,
  "difficulty": {
   "value": 5,
   "name": "Hell"
