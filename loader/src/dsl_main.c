@@ -12,6 +12,8 @@
 #include "dsl_internal.h"
 #include "dsl_os.h"
 #include "../sdk/dsl_sdk.h"
+#include "dsl_bie.h"
+#include "dsl_ml.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -522,6 +524,34 @@ static int listed_hashes(const JNode *mf, char *out, size_t cap, int json) {
     for (int i = 0; i < n; i++) { if (i) strlcat(out, ",", cap); strlcat(out, ent[i], cap); }
     return n;
 }
+/* .NET mod hosts for dsl_reg.c (src/dsl_ml.h): BepInEx (dsl_bie_*) or MelonLoader (dsl_ml_*), one per mod set */
+int dsl_net_kind(const char *kind) { return !kind ? 0 : !strcmp(kind, "bepinex") ? DSL_NET_BIE : !strcmp(kind, "melon") ? DSL_NET_ML : 0; }
+const char *dsl_net_name(int k) { return k == DSL_NET_ML ? "MelonLoader" : "BepInEx"; }
+const char *dsl_net_size(int k) {
+#ifdef _WIN32
+    return k == DSL_NET_ML ? "20 MB" : "30 MB";
+#else
+    return k == DSL_NET_ML ? "52 MB" : "31 MB";
+#endif
+}
+int dsl_net_check(const char *const *kinds, int n, char *why, size_t cap) {
+    int b = 0, m = 0;
+    for (int i = 0; i < n; i++) { int k = dsl_net_kind(kinds[i]); b |= k == DSL_NET_BIE; m |= k == DSL_NET_ML; }
+    if (b && m) {
+        if (why && cap) snprintf(why, cap, "BepInEx mods and MelonLoader mods cannot run together. Turn off the mods of one of them.");
+        return -1;
+    }
+    return b ? DSL_NET_BIE : m ? DSL_NET_ML : 0;
+}
+int dsl_net_state(int k) { return k == DSL_NET_ML ? dsl_ml_state() : dsl_bie_state(); }
+int dsl_net_env(int k, const char *const *dirs, int n, char *out, size_t cap) {
+    return k == DSL_NET_ML ? dsl_ml_env(dirs, n, out, cap) : dsl_bie_env(dirs, k ? n : 0, out, cap);
+}
+int dsl_net_install_start(int k) { return k == DSL_NET_ML ? dsl_ml_install_start() : dsl_bie_install_start(); }
+int dsl_net_install_poll(int k, char *why, size_t cap) { return k == DSL_NET_ML ? dsl_ml_install_poll(why, cap) : dsl_bie_install_poll(why, cap); }
+int dsl_net_running_dir(int k, const char *d) { return k == DSL_NET_ML ? dsl_ml_running_dir(d) : k == DSL_NET_BIE ? dsl_bie_running_dir(d) : 0; }
+void dsl_net_mark_ready(void) { dsl_bie_mark_ready(); dsl_ml_mark_ready(); }
+
 /* for dsl_reg.c: "<sorted shas>" of a mod folder's mod.json (every platform); "" when it lists none */
 int dsl_mod_hashes(const char *id, char *out, size_t cap) {
     char mp[1300]; snprintf(mp, sizeof mp, "%s/%s/mod.json", modsdir, id);
@@ -574,17 +604,16 @@ static void write_modset(void) {
         struct DSLPlugin *o = find_mod(id);
         if (o && o->state != 1) { diffs++; dsl_log("mod set: the launcher lists %s but it is not running (%s)", l->str, o->state == 2 ? "failed" : "skipped"); }
     }
-    /* BepInEx plugins (mod.json kind "bepinex"; started outside dlopen: start/win/bie_win.c, the Mac launcher) that the
-       profile enables: in the set like a code module, with the same every-platform hashes */
+    /* BepInEx plugins and MelonLoader mods (mod.json kind "bepinex" / "melon"; started outside dlopen: start/win,
+       the Mac launcher) that the profile enables: in the set like a code module, with the same every-platform hashes */
     for (int pass = 0; pass < 2; pass++) {
-        sb(&b, "%s", pass ? "" : "],\"bepinex\":[");
+        sb(&b, "%s", pass ? "],\"melon\":[" : "],\"bepinex\":[");
         int f1 = 1;
-        if (pass == 1) break;
         for (int i = 0; i < nprovided; i++) {
             char mp[1300]; snprintf(mp, sizeof mp, "%s/%s/mod.json", modsdir, provided[i]);
             char *t = read_file(mp, 1 << 20); JNode *m = t ? json_parse(t) : NULL; free(t);
             const char *k = json_str(m, "kind");
-            if (k && !strcmp(k, "bepinex")) {
+            if (k && !strcmp(k, pass ? "melon" : "bepinex")) {
                 static char all[16384]; listed_hashes(m, all, sizeof all, 1);
                 const char *sc = json_str(m, "scope");
                 sb(&b, "%s{\"id\":\"%s\",\"version\":\"%s\",\"scope\":\"%s\",\"files\":{%s}}", f1 ? "" : ",", provided[i],

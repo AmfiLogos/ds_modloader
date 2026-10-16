@@ -9,3 +9,5 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
 int bie_env_keep(const wchar_t *env_line);   /* 0 = a Doorstop process variable: not passed to a child game */
 int bie_installed(const char *game);
 int bie_install_now(const char *root, const char *game, char *why, size_t wn);   /* download (once) + unpack; 0 = ok */
+int bie_ml_installed(const char *game);
+int bie_ml_install_now(const char *root, const char *game, char *why, size_t wn);   /* MelonLoader 0.7.3 (once) */

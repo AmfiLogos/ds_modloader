@@ -3,9 +3,9 @@
 # BepInEx 6 IL2CPP for Apple chips (lane bepinexmac), first use only: download our GitHub release zip, check its
 # sha256, unzip with ditto (never sets quarantine), move into place. Already there = exit 0 at once.
 # Prints "BEPINEX <dest>" on success, "ERROR <message>" + exit 1 on failure. Never touches anything outside dest's parent.
-VER=0.1.0
+VER=0.1.2
 URL=https://github.com/AmfiLogos/ds_multiplayer/releases/download/bepinex-mac-$VER/bepinex-mac-arm64-$VER.zip
-SHA=168301f7ab483a9dd93240bdf28ae9d7efb300eb6340779102b71c2cbc232da8
+SHA=b5df961f81e226483e74144bfae89643b69272a8894f6640afcb9ed46d3dac3b
 D=${1:?usage: install_bepinex.sh <dest>}
 [[ -f $D/libdoorstop.dylib && -f $D/BepInEx/core/BepInEx.Unity.IL2CPP.dll && -f $D/dotnet/libcoreclr.dylib ]] && { echo "BEPINEX $D"; exit 0; }
 P=${D:h}; mkdir -p $P || { echo "ERROR cannot create $P"; exit 1; }

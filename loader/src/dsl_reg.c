@@ -13,6 +13,7 @@
 #include "dsl_os.h"
 #include "dsl_menu.h"
 #include "dsl_bie.h"
+#include "dsl_ml.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -115,6 +116,11 @@ static void mods_scan(void) {
             st = dsl_bie_running_dir(pd) ? 1 : 0;
             why = dsl_bie_state() < 0 ? "BepInEx is not available in this start" : "BepInEx plugin: not running in this start";
 #endif
+        } else if (dsl_net_kind(x->kind) == DSL_NET_ML) {               /* MelonLoader mod (lane melon): run by the OS start part */
+            char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);
+            const char *mr = getenv("DSL_ML_REASON");
+            st = dsl_ml_running_dir(pd) ? 1 : 0;
+            why = mr && *mr ? mr : dsl_ml_state() < 0 ? "MelonLoader is not available in this start" : "MelonLoader mod: not running in this start";
         }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
         x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "not loaded (see dsload.log)"));
@@ -339,7 +345,7 @@ static int write_profile(const char *path, const char *const *ids, int n) {
     int r = put_file(path, b); free(b); return r;
 }
 static int tip_first_run;
-static char bp_ids[MAXM][64], bp_env[700]; static int bp_n = -1;
+static char bp_ids[MAXM][64], bp_env[700]; static int bp_n = -1, bp_kind;   /* bp_kind: the .NET host being installed */
 static void bie_pending_set(const char *const *ids, int n, const char *env) {
     bp_n = 0; for (int i = 0; i < n && i < MAXM; i++) snprintf(bp_ids[bp_n++], 64, "%s", ids[i]);
     snprintf(bp_env, sizeof bp_env, "%s", env ? env : "");
@@ -351,10 +357,11 @@ extern void dsl_soft_prewarm_stop(void);
 extern int dsl_soft_prewarm_state(void);
 int dsl_reg_scene(void) { Obj mf = mainflow(); return mf && off_scene >= 0 ? AT(mf, off_scene, int32_t) : -1; }
 #define TITLE_ONLY "Go back to the title screen to change mods."
-/* the set to start: pending.json + the env lines for the new process. 0 = ready, 1 = BepInEx must be downloaded first,
+/* the set to start: pending.json + the env lines for the new process. 0 = ready, 1 = its .NET host (*kind_out: BepInEx or
+   MelonLoader, src/dsl_ml.h) must be downloaded first,
    -1 = refused (why). Apply and prewarm build both the same way, so a prewarmed game matches the Apply. */
 static int prepare(const char *const *ids, int n, const char *env, char *p, size_t pcap, char *envl, size_t ecap,
-                   char *kk, size_t kcap, int *first_out, char *why, size_t cap) {
+                   char *kk, size_t kcap, int *first_out, int *kind_out, char *why, size_t cap) {
     /* keep client mods the player cannot see (hidden) as they are */
     const char *all[MAXM]; int k = 0;
     for (int i = 0; i < n && k < MAXM; i++) all[k++] = ids[i];
@@ -362,13 +369,19 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     dpath(p, pcap, "pending.json");
     if (write_profile(p, all, k)) { snprintf(why, cap, "cannot write %s", p); return -1; }
     key_of(all, k, kk, kcap);
-    /* BepInEx plugins of the new set (profile order): install at first use, Doorstop env for the new process */
+    /* BepInEx plugins or MelonLoader mods of the new set (profile order; one .NET host per set, src/dsl_ml.h): install at
+       first use, the host's env for the new process */
+    const char *kinds[MAXM]; for (int i = 0; i < k; i++) { const DSLModInfo *m = mod_by_id(all[i]); kinds[i] = m ? m->kind : "code"; }
+    int nk = dsl_net_check(kinds, k, why, cap);
+    if (nk < 0) return -1;
+    *kind_out = nk;
     char pdirs[MAXM][1300]; const char *pd[MAXM]; int nb = 0;
-    for (int i = 0; i < k; i++) { const DSLModInfo *m = mod_by_id(all[i]); if (m && !strcmp(m->kind, "bepinex")) { snprintf(pdirs[nb], sizeof pdirs[nb], "%s/%s", dsl_mods_dir(), all[i]); pd[nb] = pdirs[nb]; nb++; } }
-    int bs = dsl_bie_state();
-    if (nb && bs < 0) { snprintf(why, cap, "BepInEx mods need the Dungeon Settlers Modded app (no BepInEx folder in this start)"); return -1; }
+    for (int i = 0; i < k; i++) if (nk && dsl_net_kind(kinds[i]) == nk) { snprintf(pdirs[nb], sizeof pdirs[nb], "%s/%s", dsl_mods_dir(), all[i]); pd[nb] = pdirs[nb]; nb++; }
+    int bs = nk ? dsl_net_state(nk) : 2;
+    const char *hn = dsl_net_name(nk);
+    if (nb && bs < 0) { snprintf(why, cap, "%s mods need the Dungeon Settlers Modded app (no %s folder in this start)", hn, hn); return -1; }
     if (nb && bs == 0) return 1;
-    char bie[4096] = ""; if (dsl_bie_env(pd, nb, bie, sizeof bie)) bie[0] = 0;
+    char bie[4096] = ""; if (dsl_net_env(nk, pd, nb, bie, sizeof bie)) bie[0] = 0;
     int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */
     *first_out = first;
     snprintf(envl, ecap, "DSML_MODSET=%s\n%s%s%s", kk, bie, first ? "DSL_SOFT_TIMEOUT=300\n" : "", env ? env : "");
@@ -378,17 +391,19 @@ static int apply_ids(const char *const *ids, int n, const char *env, char *why, 
     const char *busy = dsl_busy_reason();
     if (busy) { snprintf(why, cap, "%s", busy); dsl_log("reg: Apply refused: %s", busy); return -1; }
     if (dsl_reg_scene() != 1) { snprintf(why, cap, TITLE_ONLY); dsl_log("reg: Apply refused: not at the title (scene %d)", dsl_reg_scene()); return -1; }
-    char p[1200], envl[6000], kk[512]; int first = 0;
-    int r = prepare(ids, n, env, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, why, cap);
-    if (r < 0) return -1;
+    char p[1200], envl[6000], kk[512]; int first = 0, nk = 0;
+    int r = prepare(ids, n, env, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, &nk, why, cap);
+    if (r < 0) { dsl_log("reg: Apply refused: %s", why); return -1; }
     if (r == 1) {                                                      /* first use: download, then this Apply runs again */
-        if (dsl_bie_install_start()) { snprintf(why, cap, "the BepInEx download could not start"); return -1; }
-        bie_pending_set(ids, n, env);
-        const DSLUi *u = dsl_ui_kit();
-        if (u) u->notice("Preparing mods (first start)\nDownloading BepInEx (31 MB). The game restarts with the new mods when it is ready.", "OK", NULL, NULL, NULL, NULL);
-        dsl_log("reg: Apply waits for the BepInEx download"); return 0;
+        const char *hn = dsl_net_name(nk);
+        if (dsl_net_install_start(nk)) { snprintf(why, cap, "the %s download could not start", hn); return -1; }
+        bie_pending_set(ids, n, env); bp_kind = nk;
+        const DSLUi *u = dsl_ui_kit(); char t[300];
+        snprintf(t, sizeof t, "Preparing mods (first start)\nDownloading %s (%s). The game restarts with the new mods when it is ready.", hn, dsl_net_size(nk));
+        if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+        dsl_log("reg: Apply waits for the %s download", hn); return 0;
     }
-    if (first) { setenv("DSL_SOFT_TIMEOUT", "300", 1); tip_first_run = 1; } else { unsetenv("DSL_SOFT_TIMEOUT"); tip_first_run = 0; }
+    if (first) { setenv("DSL_SOFT_TIMEOUT", "300", 1); tip_first_run = nk; } else { unsetenv("DSL_SOFT_TIMEOUT"); tip_first_run = 0; }
     dsl_log("reg: Apply: %s -> soft restart%s", kk, dsl_soft_prewarm_state() ? " (a prewarmed game waits)" : "");
     if (dsl_soft_apply(p, envl)) { snprintf(why, cap, "the game cannot restart right now (loading, or a restart already runs)"); return -1; }
     return 0;
@@ -419,9 +434,9 @@ static void prewarm_frame(void) {
     if (draft_is_running()) { if (dsl_soft_prewarm_state()) { dsl_log("reg: prewarm: switches back to the running set: stopped"); dsl_soft_prewarm_stop(); } return; }
     if (dsl_busy_reason() || dsl_reg_scene() != 1) return;
     const char *ids[MAXM]; for (int i = 0; i < dr_n; i++) ids[i] = dr_ids[i];
-    char p[1200], envl[6000], kk[512], why[300] = ""; int first = 0;
-    int r = prepare(ids, dr_n, NULL, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, why, sizeof why);
-    if (r != 0 || first) { dsl_log("reg: prewarm: not for this set (%s)", r < 0 ? why : "BepInEx prepares first"); if (dsl_soft_prewarm_state()) dsl_soft_prewarm_stop(); return; }
+    char p[1200], envl[6000], kk[512], why[300] = ""; int first = 0, nk = 0;
+    int r = prepare(ids, dr_n, NULL, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, &nk, why, sizeof why);
+    if (r != 0 || first) { dsl_log("reg: prewarm: not for this set (%s%s)", r < 0 ? why : dsl_net_name(nk), r < 0 ? "" : " prepares first"); if (dsl_soft_prewarm_state()) dsl_soft_prewarm_stop(); return; }
     if (dsl_soft_prewarm(p, envl)) dsl_log("reg: prewarm: refused for %s", kk);
     else dsl_log("reg: prewarm: a hidden game starts with %s", kk);
 }
@@ -671,25 +686,27 @@ static void loading_tip(const char *text) {
 static void bie_frame(void) {
     static unsigned f; ++f;
     if (bp_n >= 0 && f % 15 == 0) {
-        char why[300] = ""; int r = dsl_bie_install_poll(why, sizeof why);
+        char why[300] = ""; int r = dsl_net_install_poll(bp_kind, why, sizeof why);
         if (r == 0) {
             const char *ids[MAXM]; for (int i = 0; i < bp_n; i++) ids[i] = bp_ids[i];
             int n = bp_n; bp_n = -1; char w2[300] = "";
-            dsl_log("reg: BepInEx ready: the waiting Apply runs");
+            dsl_log("reg: %s ready: the waiting Apply runs", dsl_net_name(bp_kind));
             { const DSLUi *u = dsl_ui_kit(); if (u && u->notice_close) u->notice_close(); }   /* the "Downloading" box */
             if (apply_ids(ids, n, bp_env[0] ? bp_env : NULL, w2, sizeof w2)) {
                 const DSLUi *u = dsl_ui_kit(); char t[500]; snprintf(t, sizeof t, "The mods could not be applied: %s", w2);
                 if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
             }
         } else if (r < 0) {
-            bp_n = -1; const DSLUi *u = dsl_ui_kit(); char t[500]; if (u && u->notice_close) u->notice_close(); snprintf(t, sizeof t, "BepInEx could not be installed: %s\nThe mods stay as they were.", why);
+            bp_n = -1; const DSLUi *u = dsl_ui_kit(); char t[500]; if (u && u->notice_close) u->notice_close(); snprintf(t, sizeof t, "%s could not be installed: %s\nThe mods stay as they were.", dsl_net_name(bp_kind), why);
             if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
         }
     }
-    if (tip_first_run && dsl_soft_busy() && f % 30 == 0)
-        loading_tip("Preparing mods (first start): BepInEx prepares its files for this game version. This takes about 2 minutes, once.");
+    if (tip_first_run && dsl_soft_busy() && f % 30 == 0) {
+        char t[300]; snprintf(t, sizeof t, "Preparing mods (first start): %s prepares its files for this game version. This takes about 2 minutes, once.", dsl_net_name(tip_first_run));
+        loading_tip(t);
+    }
     Obj mf = mainflow();
-    if (f % 60 == 0 && mf && off_scene >= 0 && AT(mf, off_scene, int32_t) == 1 && !dsl_soft_wanted()) dsl_bie_mark_ready();
+    if (f % 60 == 0 && mf && off_scene >= 0 && AT(mf, off_scene, int32_t) == 1 && !dsl_soft_wanted()) dsl_net_mark_ready();
 }
 
 void dsl_frame_hook(void) {
@@ -733,6 +750,7 @@ void dsl_reg_after_init(void) {
     { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
       /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
       if (!(given && *given) && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
-    int nb = 0; for (int i = 0; i < nmi; i++) nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1;
-    dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d)", run_key, nmi, nb, dsl_bie_state());
+    int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
+    dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
+            run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());
 }

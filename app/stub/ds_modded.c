@@ -295,6 +295,57 @@ static void bg_notification(const char *text) {             /* non-blocking bann
     char *av[] = { "/usr/bin/osascript", "-e", sc, NULL }; pid_t pid;
     if (posix_spawn(&pid, av[0], NULL, NULL, av, environ) == 0) logf_("notification: %s", text);
 }
+/* MelonLoader (kind "melon" mods, lane melon v13): the same way, our arm64 MelonLoader build (app Resources/dsml/
+   install_melon.sh -> ROOT/melonloader/mac-arm64/<ver>), Bootstrap after dsload in DYLD_INSERT_LIBRARIES. One .NET host
+   per start: a profile with both kinds starts the BepInEx ones (the loader's Mods window refuses such a set). */
+#define ML_VER "0.1.0"
+static int melon_launch(const char *root, const char *data, char *dyld, size_t cap, int allowed) {
+    char mdir[PATH_MAX], script[PATH_MAX], act[PATH_MAX], mods[PATH_MAX];
+    snprintf(mdir, sizeof mdir, "%s/melonloader/mac-arm64/" ML_VER, root);
+    snprintf(script, sizeof script, "%s/loader/install_melon.sh", root);
+    snprintf(mods, sizeof mods, "%s/loader/mods", root);
+    setenv("DSML_MELON_DIR", mdir, 1); setenv("DSML_MELON_SCRIPT", script, 1);
+    snprintf(act, sizeof act, "%s/Mods/active.json", data);
+    char *j = slurp(act); if (!j) return 0;
+    char *e = strstr(j, "\"enabled\""), *lb = e ? strchr(e, '[') : NULL, *rb = lb ? strchr(lb, ']') : NULL;
+    char dirs[8192] = ""; int n = 0;
+    for (char *p = lb; p && p < rb; ) {                      /* enabled ids in profile order */
+        char *q1 = strchr(p, '"'); if (!q1 || q1 > rb) break;
+        char *q2 = strchr(q1 + 1, '"'); if (!q2 || q2 > rb) break;
+        char id[128]; snprintf(id, sizeof id, "%.*s", (int)(q2 - q1 - 1), q1 + 1); p = q2 + 1;
+        char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, id);
+        char *m = slurp(mj); if (!m) continue;
+        char *k = strstr(m, "\"kind\""); char *v = k ? strchr(k + 6, '"') : NULL;
+        int ml = v && !strncmp(v, "\"melon\"", 7);
+        free(m);
+        if (!ml) continue;
+        if (n++) strlcat(dirs, ":", sizeof dirs);
+        strlcat(dirs, mods, sizeof dirs); strlcat(dirs, "/", sizeof dirs); strlcat(dirs, id, sizeof dirs);
+    }
+    free(j);
+    if (!n) return 0;
+    if (!allowed) { logf_("melon: %d mod(s) off this start: BepInEx mods run (one .NET host per start)", n); return 0; }
+    char probe[PATH_MAX]; snprintf(probe, sizeof probe, "%s/MelonLoader.Bootstrap.dylib", mdir);
+    if (!exists(probe)) {
+        bg_notification("Preparing mods (first start): downloading MelonLoader (52 MB).");
+        char out[2048] = ""; char *av[] = { "/bin/zsh", script, mdir, NULL };
+        int r = run_cmd(av, out, sizeof out);
+        if (r != 0) {
+            char *er = strstr(out, "ERROR "); char msg[900];
+            snprintf(msg, sizeof msg, "MelonLoader could not be installed (%s). The game starts without the MelonLoader mods.", er ? er + 6 : "unknown error");
+            for (char *c = msg; *c; c++) if (*c == '\n') *c = ' ';
+            logf_("melon install failed: %s", out); notice(msg); return 0;
+        }
+        logf_("melon installed into %s", mdir);
+    }
+    char ready[PATH_MAX]; snprintf(ready, sizeof ready, "%s/ds_ready_%s", mdir, getenv("DSML_BUILD") ? getenv("DSML_BUILD") : "");
+    if (!exists(ready)) bg_notification("Preparing mods (first start): MelonLoader prepares its files for this game version. About 2 minutes, once.");
+    snprintf(dyld + strlen(dyld), cap - strlen(dyld), ":%s/MelonLoader.Bootstrap.dylib", mdir);
+    setenv("MELONLOADER_BASEDIR", mdir, 1);
+    setenv("MELONLOADER_MOD_DIRS", dirs, 1);
+    logf_("melon: %d mod folder(s): %s", n, dirs);
+    return n;
+}
 static int bepinex_launch(const char *root, const char *data, char *dyld, size_t cap) {
     char bdir[PATH_MAX], script[PATH_MAX], act[PATH_MAX], mods[PATH_MAX];
     snprintf(bdir, sizeof bdir, "%s/bepinex/mac-arm64/" BIE_VER, root);
@@ -403,7 +454,8 @@ int main(int argc, char **argv) {
     if (!getenv("DSRIG_FPS")) setenv("DSRIG_FPS", "60", 1);
     snprintf(v, sizeof v, "%s/loader/dsload.dylib", root); setenv("DSML_DSLOAD", v, 1);
     setenv("DSML_BUILD", build, 1);                          /* bepinex_launch reads it (first-start marker) */
-    bepinex_launch(root, data, v, sizeof v);
+    int nbie = bepinex_launch(root, data, v, sizeof v);
+    melon_launch(root, data, v, sizeof v, nbie == 0);
     setenv("DYLD_INSERT_LIBRARIES", v, 1);
     snprintf(v, sizeof v, "%s/loader/mods", root); setenv("DSL_MODS_DIR", v, 1);
     snprintf(v, sizeof v, "%s/Mods/active.json", data); setenv("DSL_PROFILE", v, 1);
@@ -423,7 +475,8 @@ int main(int argc, char **argv) {
                                "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
                                "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
                                "DOORSTOP_ENABLED", "DOORSTOP_TARGET_ASSEMBLY", "DOORSTOP_CLR_RUNTIME_CORECLR_PATH",
-                               "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS" };
+                               "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS",
+                               "DSML_MELON_DIR", "DSML_MELON_SCRIPT", "MELONLOADER_BASEDIR", "MELONLOADER_MOD_DIRS" };
         for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) if (getenv(keys[i])) printf("ENV %s=%s\n", keys[i], getenv(keys[i]));
         char cwd[PATH_MAX]; printf("CWD %s\n", getcwd(cwd, sizeof cwd) ? cwd : "?");
         for (int i = 0; i < k; i++) printf("ARGV %s\n", av[i]);
