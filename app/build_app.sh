@@ -4,11 +4,12 @@
 #   Contents/MacOS/DS Modded        stub (app/stub/ds_modded.c)
 #   Contents/MacOS/dsml-helper      core crate, release, arm64
 #   Contents/Resources/AppIcon.icns app/icon/AppIcon.icns (make_icon.py)
-#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,gcd-cdr,custom-modes} + VERSION
+#   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,custom-modes,gcd-cdr,hell-difficulty} + VERSION
+#                                   (mods from loader/build/mods_all/mac: run loader/modules/build_mods.sh first)
 set -e
 HERE="${0:A:h}"; REPO="${HERE:h}"
 OUTDIR="$HERE/build"; NAME="Dungeon Settlers Modded"; APP="$OUTDIR/$NAME.app"
-MODS=(multiplayer gcd-cdr custom-modes)
+MODS=(multiplayer custom-modes gcd-cdr hell-difficulty)
 die() { echo "ERROR: $*" >&2; exit 1; }
 [[ -f $REPO/loader/build/dsload.dylib ]] || die "no loader/build/dsload.dylib (build the loader first)"
 [[ -f $HERE/icon/AppIcon.icns ]] || die "no app/icon/AppIcon.icns (run app/icon/make_icon.py)"
@@ -33,9 +34,9 @@ cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
 cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
 cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
 cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)
-for m in $MODS; do
-  if [[ -d $REPO/loader/build/mods/$m ]]; then cp -R "$REPO/loader/build/mods/$m" "$C/Resources/dsml/mods/$m"
-  else echo "WARNING: loader/build/mods/$m does not exist yet: not in this app" >&2; fi
+for m in $MODS; do   # every shipped mod is required (one mod.json per module, mac-arm64 + win-x64 sha256s)
+  [[ -d $REPO/loader/build/mods_all/mac/$m ]] || die "no loader/build/mods_all/mac/$m (run loader/modules/build_mods.sh)"
+  cp -R "$REPO/loader/build/mods_all/mac/$m" "$C/Resources/dsml/mods/$m"
 done
 
 # every Mach-O: minimum macOS 12.0 or lower (dyld refuses a library newer than the running macOS)

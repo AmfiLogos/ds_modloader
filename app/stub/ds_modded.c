@@ -14,6 +14,7 @@
 #include <mach-o/dyld.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <copyfile.h>
+#include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -213,15 +214,41 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
     return 0;
 }
 
-/* 4. mods state: defaults only; an existing active.json is the player's choice and stays as it is */
-static void mods_state(const char *data) {
+/* 4. mods state: defaults only; an existing active.json is the player's choice and stays as it is.
+   Default profile = every mod in ROOT/loader/mods (name order) except those whose mod.json says "default_on": false
+   (Hell difficulty ships off), the same list the Windows starter writes (same mod set on both for multiplayer). */
+static int default_off(const char *j) {
+    const char *p = j ? strstr(j, "\"default_on\"") : NULL; if (!p) return 0;
+    p += 12; while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p++ != ':') return 0;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    return !strncmp(p, "false", 5);
+}
+static void mods_state(const char *root, const char *data) {
     char md[PATH_MAX], act[PATH_MAX], wl[PATH_MAX];
     snprintf(md, sizeof md, "%s/Mods", data); mkdirs(md);
     snprintf(act, sizeof act, "%s/active.json", md);
     snprintf(wl, sizeof wl, "%s/worlds.json", md);
     if (!exists(wl) && write_atomic(wl, "{\"worlds\":{}}\n") != 0) logf_("cannot write %s", wl);
-    if (!exists(act) && write_atomic(act, "{\"enabled\":[\"multiplayer\"],\"order\":[\"multiplayer\"]}\n") != 0)
-        logf_("cannot write %s", act);
+    if (exists(act)) return;
+    char mods[PATH_MAX], ids[4096] = "", id[64]; int n = 0, off = 0;
+    snprintf(mods, sizeof mods, "%s/loader/mods", root);
+    struct dirent **ents = NULL; int ne = scandir(mods, &ents, NULL, alphasort);
+    for (int i = 0; i < ne; i++) {
+        char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, ents[i]->d_name);
+        char *j = ents[i]->d_name[0] != '.' ? slurp(mj) : NULL;
+        if (j && json_str(j, "id", id, sizeof id) && *id && !strpbrk(id, "\"\\")) {
+            if (default_off(j)) off++;
+            else if (strlen(ids) + strlen(id) + 4 < sizeof ids) {
+                snprintf(ids + strlen(ids), sizeof ids - strlen(ids), "%s\"%s\"", n ? "," : "", id); n++;
+            }
+        }
+        free(j); free(ents[i]);
+    }
+    free(ents);
+    char txt[sizeof ids * 2 + 64]; snprintf(txt, sizeof txt, "{\"enabled\":[%s],\"order\":[%s]}\n", ids, ids);
+    if (write_atomic(act, txt) != 0) logf_("cannot write %s", act);
+    else logf_("first start: default mod profile, %d mod(s) on, %d off by default", n, off);
 }
 
 /* Asks the game's own libsteam_api in a child process (this process later becomes the game: it must not
@@ -438,7 +465,7 @@ int main(int argc, char **argv) {
         FILE *f = fopen(flag, "w"); if (f) { time_t t = time(NULL); fputs(ctime(&t), f); fclose(f); }
         logf_("first run: saves copied from %s", src);
     }
-    mods_state(data);
+    mods_state(root, data);
 
     if (chdir(profile) != 0) logf_("chdir %s failed (%s)", profile, strerror(errno));
     { FILE *f = fopen("steam_appid.txt", "w"); if (f) { fputs("2798330\n", f); fclose(f); } }
