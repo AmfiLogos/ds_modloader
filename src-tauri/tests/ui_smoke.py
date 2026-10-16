@@ -10,6 +10,10 @@ save to My units, bring (team link). Screenshots of every step go to the shots f
 import json, sys, os
 from playwright.sync_api import sync_playwright
 
+if not os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ui", "bicons", "manifest.txt")):
+    sys.exit("ui/bicons/ is missing: the Unit Builder icons are game art and are not in git. "
+             "Run: python3 builder/gen/extract_icons.py (see BUILDING.md, Unit Builder icons)")
+
 port = sys.argv[1] if len(sys.argv) > 1 else "18931"
 shots = sys.argv[2] if len(sys.argv) > 2 else "builder/shots"
 os.makedirs(shots, exist_ok=True)

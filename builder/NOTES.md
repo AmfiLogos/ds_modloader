@@ -93,7 +93,8 @@ WhiteDemon, 1 to 8 units, wrong data fingerprint).
 
 App commands, not a plugin. Wired into the launcher (2026-10-14): root workspace member, `src-tauri/src/main.rs`
 handler list + managed state; the UI is `ui/builder.js` / `ui/builder.css` (Unit Builder + My Units tabs), icons
-copied by `gen/copy_icons.sh` into `ui/bicons/`. Tests: `cargo test -p ds-mod-launcher --test builder_cmds` (the
+extracted from the installed game by `gen/extract_icons.py` into `ui/bicons/` (game art, not in git; the
+`src-tauri` build and `ui_smoke.py` stop with a message when the folder is missing). Tests: `cargo test -p ds-mod-launcher --test builder_cmds` (the
 commands through the mock IPC), headless UI: `src-tauri/tests/ui_smoke.py` against `examples/ui_bridge.rs`.
 The wiring steps were:
 1. `src-tauri/Cargo.toml`: `ds-unit-builder = { path = "../builder", features = ["tauri"] }`; remove the
@@ -113,6 +114,7 @@ skill costs, quick bar, stacking passives). Errors are `Err(String)` written for
 ```
 node gen/gen_tables.js                                  # data/dsb.json from site/builder/data.js
 node gen/gen_unit_tables.js > data/unit_tables.json     # export tables (game tables + builder link order)
+python3 gen/extract_icons.py                            # ../ui/bicons/ from the installed game (UnityPy, Pillow)
 nice -n 19 cargo test --release -j 4
 ```
 The link fingerprint changes with the data: old links then say "made with other wiki data". Units in

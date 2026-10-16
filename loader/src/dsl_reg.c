@@ -74,6 +74,7 @@ static const char *worlds_path(void) {
 #define MAXM 64
 static DSLModInfo MI[MAXM]; static int nmi;
 static char MI_short[MAXM][48];                         /* mod.json "short_name" (world rows), else "" */
+static int MI_savedep[MAXM];                            /* mod.json "save_dependent": saves need the loader (owner item 9) */
 static int mods_scanned;
 static void mods_scan(void) {
     if (mods_scanned) return; mods_scanned = 1;
@@ -101,6 +102,7 @@ static void mods_scan(void) {
         snprintf(MI_short[nmi - 1], sizeof MI_short[0], "%s", json_str(m, "short_name") ? json_str(m, "short_name") : "");
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
+        JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         int on = 1;
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
@@ -147,6 +149,24 @@ void dsl_mod_short(const char *id, char *out, size_t cap) {
         return;
     }
     snprintf(out, cap, "%s", id);
+}
+/* mod.json "save_dependent": true = a save made with this mod on may not work in the game started without the loader */
+int dsl_mod_save_dependent(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI_savedep[i]; return 0; }
+/* the player's warning for these mods (owner item 9): "Saves made with A and B may not work without the mod loader."
+   out = "" and 0 when none of them is save_dependent; else the number of such mods */
+const char *dsl_mod_name(const char *id);
+int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap) {
+    const char *v[MAXM]; int k = 0;
+    for (int i = 0; i < n && k < MAXM; i++) if (dsl_mod_save_dependent(ids[i])) v[k++] = ids[i];
+    out[0] = 0; if (!k) return 0;
+    strlcat(out, "Saves made with ", cap);
+    for (int i = 0; i < k; i++) {
+        const char *nm = dsl_mod_name(v[i]);
+        if (i) strlcat(out, i + 1 == k ? " and " : ", ", cap);
+        strlcat(out, nm ? nm : v[i], cap);
+    }
+    strlcat(out, " may not work without the mod loader.", cap);
+    return k;
 }
 const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
@@ -674,6 +694,8 @@ int dsl_ui_test_tip_rects(float card[4], float panel[4]);
 void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_progress.c gives the real one */
+__attribute__((weak)) void dsl_progress_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
 __attribute__((weak)) int dsl_pkg_refresh(char *fail, size_t fcap) { if (fail && fcap) fail[0] = 0; return -2; }
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
@@ -798,6 +820,7 @@ void dsl_frame_hook(void) {
     test_frame();
     dsl_rows_frame();
     if (dsl_win_frame) dsl_win_frame();
+    dsl_progress_frame();
 }
 
 static const char *data_dir_get(void) { return dsl_reg_data_dir(); }
@@ -830,6 +853,12 @@ void dsl_reg_after_init(void) {
     { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
       /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
       if (!(given && *given) && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
+    if (dsl_soft_wanted()) {                                           /* the new game of a soft restart: its first progress step */
+        extern void dsl_soft_progress(int pct, const char *text);
+        char t[300] = "Loading "; int k = 0;
+        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[64]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
+        dsl_soft_progress(10, k ? t : "Loading the game");
+    }
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
             run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());

@@ -78,7 +78,7 @@ static struct {
 static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy, *m_obj_find, *m_obj_finds, *m_res_findall,
     *m_comp_go, *m_comp_tr, *m_comp_get, *m_comp_inparent,
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
-    *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child,
+    *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
     *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_corners,
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
@@ -252,9 +252,13 @@ static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat;
 static int64_t frames, scan_last = -100000; static int scans, scan_done, kit_used;
 static Obj ui_prefab(int type);
 static void prefab_touch(int type) { (void)ui_prefab(type); }
+static double clock_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
 static void assets_scan(int force) {
-    if (scan_done || (!force && (!kit_used || frames - scan_last < 300 || scans >= 30))) return;
-    scan_last = frames; scans++;
+    /* at most once a second as well: a hidden soft-restart game runs uncapped (thousands of frames a second) and
+       300 frames went by in 0.2 s, so it scanned every sprite 30 times during its boot */
+    static double scan_t;
+    if (scan_done || (!force && (!kit_used || frames - scan_last < 300 || scans >= 30 || clock_s() - scan_t < 1.0))) return;
+    scan_last = frames; scans++; scan_t = clock_s();
     prefab_touch(8); prefab_touch(2); prefab_touch(13); prefab_touch(5);   /* load popup prefabs: their sprites too (as mpmenu) */
     Obj arr = find_all(K.Sprite); int n = arr_n(arr), found = 0;
     for (int i = 0; i < n; i++) {
@@ -822,6 +826,17 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
     e->target = target; e->h = hnew(target);
     snprintf(e->title, sizeof e->title, "%s", title ? title : ""); snprintf(e->body, sizeof e->body, "%s", body);
 }
+/* a kit panel as a flat colour (no frame sprite), no click target: bars, lines */
+void dsl_ui_flat(DSLObj o, uint32_t rgba) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj im = r ? comp_get(r, K.Image) : NULL; if (im) img_set(im, NULL, rgba_col(rgba, C_WHITE), 0); }
+/* a kit widget as a square of side `size` centred at (cx, cy) of its parent (top-left units), turned by deg degrees
+   (45 = a diamond) */
+void dsl_ui_turned(DSLObj o, float cx, float cy, float size, float deg) {
+    W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj t = tr_of(r); if (!t) return;
+    rt_set(t, (V2){ 0, 1 }, (V2){ 0, 1 }, (V2){ 0.5f, 0.5f }, (V2){ size, size }, (V2){ cx, -cy });
+    if (m_tr_euler) CALL(m_tr_euler, void, Obj, V3)(t, (V3){ 0, 0, deg }, m_tr_euler);
+}
+/* a kit widget drawn above the game's own views (loading screen, notices): its own canvas, sorting order `order` */
+void dsl_ui_raise(DSLObj o, int order) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; if (r) raise_view(r, order); }
 /* test only: hover this target instead of the mouse (NULL = the mouse) */
 __attribute__((visibility("default"))) void dsl_ui_test_hover(DSLObj target) { tip_test_target = target; }
 /* test only: the shown card's body text as drawn */
@@ -1170,6 +1185,7 @@ void dsl_ui_install(void) {
     m_go_layer = OPT(K.GameObject, "set_layer", 1);
     m_tr_parent = MTH(K.Transform, "get_parent", 0); m_tr_setparent = MSIG(K.Transform, "SetParent", 2, "UnityEngine.Transform,System.Boolean");
     m_tr_sib = MTH(K.Transform, "GetSiblingIndex", 0); m_tr_setsib = MTH(K.Transform, "SetSiblingIndex", 1);
+    m_tr_euler = OPT(K.Transform, "set_localEulerAngles", 1);
     m_tr_count = MTH(K.Transform, "get_childCount", 0); m_tr_child = MTH(K.Transform, "GetChild", 1);
     m_rt_amin = MTH(K.RectTransform, "set_anchorMin", 1); m_rt_amax = MTH(K.RectTransform, "set_anchorMax", 1);
     m_rt_pivot = MTH(K.RectTransform, "set_pivot", 1); m_rt_size = MTH(K.RectTransform, "set_sizeDelta", 1);

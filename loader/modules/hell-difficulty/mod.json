@@ -8,6 +8,7 @@
  "api": 2,
  "scope": "gameplay",
  "sim": true,
+ "save_dependent": true,
  "default_on": false,
  "difficulty": {
   "value": 5,

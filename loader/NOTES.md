@@ -424,3 +424,41 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   Expedition"; "Save for this world" -> world set; set unchanged after an Apply (soft restart); the autosave loads with
   it (flow K); a second save of the world written in game (CampaignSaveLoader.Save; this seed world is Ironman, so the
   game takes only the autosave kind) has the same world and the same set.
+
+## Test copies never full screen (owner v13.3; branch testwin, 2026-10-16)
+- Owner: a test copy that opened full screen switched his screen / Space (the installed app may stay as it is).
+  mpZ (a test copy domain, update / crossmods tests) read FullScreenWindow at 3456x2234.
+- dsload (start/mac/dsl_start_mac.c): an app with LSBackgroundOnly (every test copy, never a player's copy) gets its own
+  preferences domain set windowed 960x540 before Unity reads it, and stops at once if it still says full screen;
+  DSL_NOTCH=0 unless set. The owner's domains (com.CanOpener.Dungeon-Settlers, .Modded) are never written.
+- lrig.py: require_windowed() refuses a start whose prefs still say full screen; DSL_NOTCH=0 by default (notch_test
+  sets 1). l1_test.start_a the same. MP rig/rig.py: the same refusal (ds_multiplayer branch testwin).
+- Test stage (dsl_soft_mac.c): staged windows are transparent, ignore the mouse and stay out of Spaces / Mission
+  Control at all times, so a move the stage does not catch (2 guard kills today: 20:29 at an apply, 20:48 at a quit;
+  cause not found, likely the system placing an off-display window back on a display) shows nothing.
+- The soft-restart B takes A's live window mode (handoff "fsmode").
+- Proof `test/l1_screen_test.py` (screen3): 6/6, 0 guard violations: full-screen prefs -> refused; with the python check
+  skipped dsload sets 960x540 windowed, DSL_NOTCH=0; handoff fsmode; owner's domains byte-identical. l1_v13_test 18/18
+  with the transparent stage (shots still render).
+
+## Soft restart progress bar (owner v13.3; branch softprogress, 2026-10-16)
+- Designs "Reload" B (bottom strip on the game's NOW LOADING screen, Apply at the title) and A (centered framed panel,
+  flow K into a world). Drawn by `ui/dsl_progress.c` with the kit (game fonts), above the loading screen (own canvas 32100).
+- Real steps only (src/dsl_soft.c): A: "Starting the game with the new mods" (cold) / "Switching to the new mods"
+  (prewarmed, 95 % when ready); B writes <handoff>.progress at each step: "Loading <mods>" (modules loaded), the game's
+  boot coroutines (LoadSheets "Loading game data", LoadFont "Loading fonts", LoadCursor/LoadTiles, LoadUIPrefabs "Loading
+  menus"), "Opening the title screen", flow K "Opening your world" with the game's own LoadingUI percent (50-95 %),
+  "Done". Flow K: the boot is the first half. A reads the file every 0.1 s; never backwards.
+- The boot coroutine hooks are now installed in every B (logging still only with DSL_SOFT_BOOTLOG); MainFlow.Start only
+  with the log. Kit sprite scan also at most once a second (a hidden B is uncapped: it scanned 30 times in its boot).
+- Proof `test/l1_progress_test.py` (copy S, prog3): 8/8, 0 guard violations; cold Apply 6.42 s, flow K 14.57 s (as before);
+  shots `~/ds_launcher/loader/test_env/l1_out/prog3/shot_{1_strip_low,2_strip_mid,3_panel_world}.png`.
+  Windows (DSMP bottle, w_pkg_test run, -nographics so no picture): dsload.log "progress: bottom strip shown", 0 -> 10
+  (mods) -> 20 -> 30 % until the test stops.
+- Owner change: Apply at the title shows design B (strip) or C (ornament bar: title, thin bar between two copper
+  diamonds, "Step n of 7 · <step>", a plate in the loading screen's colour over its tip) at random: the parity of the
+  apply second, read by A and by B from the handoff, so both draw the same. Test-only DSL_PROGRESS_DESIGN=strip|ornament.
+  Proof: l1_progress_test DESIGN=strip 8/8, DESIGN=ornament 8/8 (prog_ornament2); shots in
+  ~/ds_launcher/loader/test_env/l1_out/prog_strip/ and prog_ornament2/ (shot_*_low, shot_*_mid, shot_3_panel_world).
+- Trap: with DSL_SOFT_CAPTURE on, one run (prog1) had A's staged window moved on screen at the apply (guard kill in
+  0.5 s). Not seen without the capture (prog2, prog3); the test takes its pictures with the "shot" request instead.

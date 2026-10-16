@@ -66,13 +66,26 @@ A zip of a mod you already have replaces that mod. A file that is not a mod move
 ## Where your saves are
 
 The modded game plays on its own copy of your saves. On its first start it copies your normal saves once (it only
-reads them). After that the two sets are separate: progress in the modded game does not change your normal saves.
+reads them). After that the two sets are separate. Progress in the modded game does not change your normal saves,
+and modded saves do not show in the normal game's Load list.
+
+To bring in a world later, click "Import a save" on the title screen (under Mods). It shows the worlds of your
+normal saves one at a time. Click Import to copy that world into the modded saves, or "Next world". The normal
+save does not change.
+
 The modded saves are in the `data/Saves` folder of:
 
 - Mac: `~/Library/Application Support/DSModLauncher/profiles/modded`
 - Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded` (or the folder you chose in the installer)
 
 Uninstalling keeps this folder.
+
+Steam Cloud backup: the mod loader also copies the modded saves to your own Steam Cloud, as files named
+`dsmodded_<save file>`. It uploads only while plenty of space stays free for the game's own cloud saves (at least
+1 GB, or 20 times what the game uses, whichever is bigger). If space is short, it pauses and says so in the Import
+window. On a new computer, the modded game downloads the saves it does not have. If one save changed on two
+computers, the newest one wins and the other copy goes to `data/Mods/cloud_backups/`. When you delete a world in
+the modded game, its cloud copy goes too. The game's own cloud saves never change.
 
 ## Known limits
 
@@ -107,7 +120,8 @@ Plan: `research/plan_launcher.md` in ds_multiplayer. Owner decisions: ds_multipl
 - `src-tauri/`: UNUSED PROTOTYPE, not shipped (see `src-tauri/README.md`). Tauri 2 shell (commands: status,
   refresh_index, set_enabled, play, remove_copy).
 - `ui/`: the prototype's pages: plain HTML/CSS/JS, game palette, Cinzel + Lora (OFL, `ui/fonts/OFL-*.txt`).
-  `ui/bicons/` holds game art (see `ui/bicons/NOTICE.md`).
+  `ui/bicons/` holds game art. It is not in git: `builder/gen/extract_icons.py` extracts it from your installed
+  game (see BUILDING.md, Unit Builder icons).
 - `dev_keys/`: DEV ONLY test key pair (see its README).
 
 Tests:

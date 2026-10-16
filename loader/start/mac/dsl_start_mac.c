@@ -188,6 +188,36 @@ static void note_other_loaders(void) {
     }
 }
 
+/* test copies never take the owner's screen (owner v13.3: a test copy that opened full screen switched his Space).
+   A test copy = an app whose Info.plist has LSBackgroundOnly (the rule for every test copy; a player's copy never has
+   it). Before Unity reads its window settings: the copy's own preferences domain is set windowed 960x540; a copy whose
+   domain still says full screen after that is stopped here. DSL_NOTCH=0 (the notch fix makes the game cover the whole
+   screen) unless the caller set it (notch_test). The owner's own domains are never written. */
+static void test_copy_window(void) {
+    CFBundleRef mb = CFBundleGetMainBundle(); if (!mb) return;
+    CFTypeRef bo = CFBundleGetValueForInfoDictionaryKey(mb, CFSTR("LSBackgroundOnly"));
+    int bg = bo && ((CFGetTypeID(bo) == CFBooleanGetTypeID() && CFBooleanGetValue((CFBooleanRef)bo)) ||
+                    (CFGetTypeID(bo) == CFStringGetTypeID() && CFStringCompare((CFStringRef)bo, CFSTR("1"), 0) == kCFCompareEqualTo));
+    if (!bg) return;
+    CFStringRef dom = CFBundleGetIdentifier(mb); if (!dom) return;
+    char db[200] = ""; CFStringGetCString(dom, db, sizeof db, kCFStringEncodingUTF8);
+    if (!strcmp(db, "com.CanOpener.Dungeon-Settlers") || !strcmp(db, "com.CanOpener.Dungeon-Settlers.Modded")) { dsl_log("screen: test copy with the owner's bundle id %s: its settings are not touched", db); return; }
+    setenv("DSL_NOTCH", "0", 0);
+    static const struct { const char *k; int v; } W[] = { { "Screenmanager Fullscreen mode", 3 }, { "Screenmanager Resolution Width", 960 },
+        { "Screenmanager Resolution Height", 540 }, { "Screenmanager Resolution Use Native", 0 } };
+    for (size_t i = 0; i < sizeof W / sizeof W[0]; i++) {
+        CFStringRef k = CFStringCreateWithCString(NULL, W[i].k, kCFStringEncodingUTF8); int v = W[i].v;
+        CFNumberRef n = CFNumberCreate(NULL, kCFNumberIntType, &v);
+        CFPreferencesSetAppValue(k, n, dom); CFRelease(n); CFRelease(k);
+    }
+    CFPreferencesAppSynchronize(dom);
+    CFPropertyListRef m = CFPreferencesCopyAppValue(CFSTR("Screenmanager Fullscreen mode"), dom); long mode = -1;
+    if (m && CFGetTypeID(m) == CFNumberGetTypeID()) CFNumberGetValue((CFNumberRef)m, kCFNumberLongType, &mode);
+    if (m) CFRelease(m);
+    if (mode == 0 || mode == 1) { dsl_log("screen: test copy %s: its settings still say full screen (mode %ld): this copy does not start", db, mode); _exit(3); }
+    dsl_log("screen: test copy %s: windowed 960x540 (mode %ld), DSL_NOTCH=%s", db, mode, getenv("DSL_NOTCH"));
+}
+
 __attribute__((constructor)) static void dsl_init(void) {
 #if !defined(__arm64__)
     return;
@@ -204,6 +234,7 @@ __attribute__((constructor)) static void dsl_init(void) {
     if (dsl_core_log_open(defdir, self_path)) return;
     if (scwd_r != 1) dsl_log("DSL_SOFT_CWD %s: chdir %s", scwd, scwd_r == 0 ? "ok" : "failed");
     dsl_soft_snapshot(dsl_core_logdir());
+    test_copy_window();
     pass_through_env();
     { extern void dsl_notch_start(void); dsl_notch_start(); }      /* built-in notch fix (dsl_notch_mac.m), any game build */
 
