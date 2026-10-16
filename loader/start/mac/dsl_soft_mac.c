@@ -1,4 +1,4 @@
-// Mac OS part of the soft restart (src/dsl_soft_os.h). Moved unchanged from src/dsl_soft.c when it became OS-neutral.
+// Mac OS part of the soft restart (src/dsl_soft_os.h).
 // B: from its first NSWindow on, every window is invisible (alpha 0, lowest level, no mouse, never key/main), the app
 // never activates and has no Dock icon (Accessory policy). At "go": window on A's frame, normal level, alpha 1, front,
 // Regular policy, activate. A: yields activation to B, orders its windows out.
@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
+#include <errno.h>
 
 extern char **environ;
 #define MSG(ret, ...) ((ret (*)(__VA_ARGS__))objc_msgSend)
@@ -193,7 +194,9 @@ int dsl_sos_game_frame(double fr[4]) {
 }
 
 /* ------------------------------------------------------------------ B process */
+static void reap(void);
 int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_lines) {
+    reap();
     /* environment = the one this process started with, with DSL_PROFILE and DSL_SOFT_HANDOFF replaced */
     int n = 0; while (env0 && env0[n]) n++;
     char **env = calloc((size_t)n + 4, sizeof *env); int k = 0;
@@ -224,13 +227,24 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     free(env); free(extra); free(ov);
     return 0;
 }
+/* killed children (a replaced prewarm B, a failed B) are reaped later without blocking the game's main thread */
+static pid_t dead[16]; static int ndead;
+static void reap(void) {
+    for (int i = 0; i < ndead; i++) { int st; pid_t r = waitpid(dead[i], &st, WNOHANG); if (r == dead[i] || (r < 0 && errno == ECHILD)) dead[i--] = dead[--ndead]; }
+}
 long dsl_sos_child_pid(void) { return b_pid; }
 int dsl_sos_child_exited(void) {
+    reap();
     if (b_pid <= 0) return 0;
     int st; if (waitpid(b_pid, &st, WNOHANG) == b_pid) { b_pid = 0; return 1; }
     return 0;
 }
-void dsl_sos_child_kill(void) { if (b_pid > 0) { kill(b_pid, SIGKILL); dsl_log("soft: A: B pid %d killed", b_pid); } }
+void dsl_sos_child_kill(void) {
+    if (b_pid <= 0) return;
+    kill(b_pid, SIGKILL); dsl_log("soft: A: B pid %d killed", b_pid);
+    int st; if (waitpid(b_pid, &st, WNOHANG) != b_pid && ndead < 16) dead[ndead++] = b_pid;
+    b_pid = 0; reap();
+}
 int dsl_sos_pid_alive(long pid) { return pid > 0 && kill((pid_t)pid, 0) == 0; }
 
 void dsl_sos_yield(void) {                 /* macOS 14+: activation is given, not taken */
@@ -249,7 +263,14 @@ void dsl_sos_show(const double *fr, int activate) {
     }
     hidden = 0;
     if (activate && !no_activate_g) set_policy(0);
-    if (w) { show_window(w); MSG(void, id, SEL, id)(w, SEL_("orderFrontRegardless"), nil); }
+    /* test stage without activation: the window goes to the back of the window list. On top (orderFrontRegardless,
+       or the level change from hidden to normal) the system picked this copy as the front app for a moment when
+       focus moved between other apps (test guard kills, 2026-10-16) */
+    if (w) {
+        show_window(w);
+        if (activate || !stage_on) MSG(void, id, SEL, id)(w, SEL_("orderFrontRegardless"), nil);
+        else MSG(void, id, SEL, id)(w, SEL_("orderBack:"), nil);
+    }
     if (activate && !no_activate_g) {
         id a = app();
         if (a && class_respondsToSelector(object_getClass(a), SEL_("activate"))) ((void (*)(id, SEL))o_act0)(a, SEL_("activate"));
