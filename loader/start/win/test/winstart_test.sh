@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Windows start part (review F1 + F2) in the CrossOver bottle DSMP (wine, not real Windows): graphics and audio off,
 # one wine copy at a time (ds_multiplayer win/wloader.py). Needs the kit of build_win.sh (MODS=<multiplayer module>)
-# installs it itself (wloader.py install). Holds ~/ds_multiplayer/rig/wine.lock (the shared one-wine-copy lock) for the
+# installs it itself (wloader.py install). Holds the shared one-wine-copy lock (rig/wine_lease.py) for the
 # whole run; refuses when wine runs or the lock is taken. Cases:
 #   normal    DllMain only arms (loader lock held), start() runs once on the first il2cpp_init call with the lock free,
 #             save folder redirected, modules started
@@ -13,10 +13,8 @@ C=~/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin
 P=~/"Library/Application Support/CrossOver/Bottles/DSMP/drive_c/users/crossover/AppData/Local/Dungeon Settlers Modded/profiles/modded"
 WP='C:\users\crossover\AppData\Local\Dungeon Settlers Modded'
 fails=0
-LOCK=$D/rig/wine.lock
-[[ -z $(ps -axo etime=,comm= | command grep -iE 'wine|\.exe$' | command grep -ve '-[0-9][0-9]:') ]] && mkdir $LOCK 2>/dev/null || { print "wine busy or $LOCK taken"; exit 2; }
-print winstart > $LOCK/owner
-unlock() { mkdir -p $D/rig/old; mv $LOCK/owner $D/rig/old/wine.lock.owner.winstart.$(date +%s) 2>/dev/null; rmdir $LOCK }
+python3 $D/rig/wine_lease.py take winstart --pid $$ || { print "wine busy or the wine lock is taken"; exit 2; }
+unlock() { python3 $D/rig/wine_lease.py release winstart >/dev/null }
 trap unlock EXIT
 python3 $W/wloader.py install $L/build/win/kit | tail -1
 check() { if eval "$2"; then print "PASS $1"; else print "FAIL $1"; fails=$((fails+1)); fi }

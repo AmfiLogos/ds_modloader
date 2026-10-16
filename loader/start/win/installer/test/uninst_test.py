@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """uninst_test.py <setup.exe> <kit dir>: the installer never mixes with other files and the uninstaller removes only what
-it installed (DSMP CrossOver bottle, silent runs, one wine copy: ~/ds_multiplayer/rig/wine.lock).
+it installed (DSMP CrossOver bottle, silent runs, one wine copy: ~/ds_multiplayer/rig/wine_lease.py).
   1 /D=C:\\USERDIR (holds other files)  -> installs into C:\\USERDIR\\Dungeon Settlers Modded, the other files stay
   2 /D=<folder named like ours that holds other files, no marker> -> refused, nothing changed
   3 a second Setup without /D           -> the same folder as before (InstallDirRegKey)
@@ -10,7 +10,7 @@ import os, signal, subprocess, sys, time
 H = os.path.expanduser("~")
 sys.path.insert(0, f"{H}/ds_multiplayer/win"); import wloader as w
 C, BOTTLE, DRIVE = w.C, "DSMP", w.DRIVE
-LOCK = f"{H}/ds_multiplayer/rig/wine.lock"
+WL = f"{H}/ds_multiplayer/rig/wine_lease.py"
 NAME = "Dungeon Settlers Modded"
 setup, kit = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
 U, F, F2 = f"{DRIVE}/USERDIR", f"{DRIVE}/FULLDIR/{NAME}", f"{DRIVE}/FULLDIR2"
@@ -20,14 +20,7 @@ def check(n, ok, info=""): res.append(ok); print(("PASS" if ok else "FAIL"), n, 
 def wine(args, **kw): return subprocess.run(["nice", "-n", "19", f"{C}/wine", "--bottle", BOTTLE] + args, capture_output=True, text=True, **kw)
 def put(p, s="user file\n"): os.makedirs(os.path.dirname(p), exist_ok=True); open(p, "w").write(s)
 
-t0 = time.time()
-while True:
-    if not w.other_wine() and not os.path.exists(LOCK):
-        try: os.mkdir(LOCK); break
-        except FileExistsError: pass
-    if time.time() - t0 > 540: print("wine busy / locked after 9 min"); sys.exit(3)
-    time.sleep(20)
-open(f"{LOCK}/owner", "w").write("uninstfix\n")
+if subprocess.run([sys.executable, WL, "take", "uninstfix", "--pid", str(os.getpid()), "--wait", "540"]).returncode: print("wine busy / locked after 9 min"); sys.exit(3)
 try:
     if not w.bottle_silent(): sys.exit(4)
     old = f"{DRIVE}/old_uninstfix/{int(time.time())}"
@@ -67,7 +60,5 @@ finally:
         if "USERDIR" in c or "FULLDIR" in c:
             try: os.kill(pid, signal.SIGKILL)
             except Exception: pass
-    os.makedirs(f"{H}/ds_multiplayer/rig/old", exist_ok=True)
-    if os.path.exists(f"{LOCK}/owner"): os.replace(f"{LOCK}/owner", f"{H}/ds_multiplayer/rig/old/wine.lock.owner.uninstfix.{int(time.time())}")
-    os.rmdir(LOCK)
+    subprocess.run([sys.executable, WL, "release", "uninstfix"])
 print(f"RESULT {sum(res)}/{len(res)} pass")
