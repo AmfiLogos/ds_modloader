@@ -8,9 +8,11 @@ A local release server (relserver.py) stands in for GitHub. Tests (default all):
 import glob, json, os, shutil, signal, subprocess, sys, time
 
 W, APPS, INST_APP = (os.path.abspath(a) for a in sys.argv[1:4])
-TESTS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['on', 'off', 'rollback', 'cold']
+TESTS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['on', 'picker', 'off', 'rollback', 'cold']
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 7999
+BACKUP = os.path.expanduser('~/ds_multiplayer/backup_prefs_2026-10-12')       # read only (test settings source)
+SEED = os.path.expanduser('~/DungeonSettlers_SaveBackups/2026-10-11-1827')
 NAME = 'Dungeon Settlers Modded.app'
 results = []
 
@@ -37,7 +39,7 @@ def release_dir(srv, tag, src_app, flags=()):
 
 
 class Run:
-    def __init__(self, name, srv_tags, auto=True):
+    def __init__(self, name, srv_tags, auto=True, seed=True):
         self.d = os.path.join(W, name); os.makedirs(self.d)
         self.root = os.path.join(self.d, 'root'); self.apps = os.path.join(self.d, 'Applications'); self.i = os.path.join(self.d, 'inst')
         self.app = os.path.join(self.apps, NAME)
@@ -52,6 +54,23 @@ class Run:
         json.dump({'enabled': ['gcd-cdr'], 'order': ['gcd-cdr']}, open(os.path.join(self.i, 'data/Mods/active.json'), 'w'))
         json.dump({'worlds': {}}, open(os.path.join(self.i, 'data/Mods/worlds.json'), 'w'))
         open(os.path.join(self.i, 'steam_appid.txt'), 'w').write('2798330\n')
+        if seed:                                             # language chosen, sound off, small window (as lrig.prepare_data)
+            us = json.load(open(os.path.join(BACKUP, 'UserSetting.json')))
+            for k in list(us['SoundSettingData']):
+                if k.endswith('Percent'):
+                    us['SoundSettingData'][k] = 0.0
+                if k.endswith('Mute'):
+                    us['SoundSettingData'][k] = True
+            g = us['GraphicSettingData']; g['VSyncEnabled'] = False; g['SaveCurrentScreenType'] = 1
+            for a, b in (('ResolutionWidth', 'ResolutionHeight'), ('WindowedResolutionWidth', 'WindowedResolutionHeight'),
+                         ('FullScreenResolutionWidth', 'FullScreenResolutionHeight')):
+                g[a], g[b] = 960, 540
+            us['GeneralSettingData']['IsKeyboardEnvironmentNoticeAcknowledged'] = True
+            # the game's own data folder under the test HOME (no multiplayer mod here to redirect it to inst/data)
+            for dd in (os.path.join(self.i, 'data'), os.path.join(self.i, 'home/Library/Application Support/CanOpener/Dungeon Settlers')):
+                os.makedirs(dd, exist_ok=True)
+                json.dump(us, open(os.path.join(dd, 'UserSetting.json'), 'w'), indent=1)
+                shutil.copy2(os.path.join(SEED, 'OutGame.json'), os.path.join(dd, 'OutGame.json'))
         self.srv = os.path.join(self.d, 'srv')
         for tag, src, flags in srv_tags:
             release_dir(self.srv, tag, os.path.join(APPS, src, NAME), flags)
@@ -137,6 +156,18 @@ if 'on' in TESTS:
         bk = glob.glob(os.path.join(r.root, 'update', 'backup-13.3-*', 'app', NAME, 'Contents/Resources/dsml/RELEASE'))
         check('on: old app kept in the backup folder', bool(bk) and open(bk[0]).read().strip() == '13.3', bk[0] if bk else 'none')
         check('on: no quarantine on the new app', 'com.apple.quarantine' not in subprocess.run(['/usr/bin/xattr', '-lr', r.app], capture_output=True, text=True).stdout)
+    finally:
+        r.stop()
+
+if 'picker' in TESTS:
+    r = Run('picker', [('v13.4', '13.4', ())], seed=False)                     # first start: the Language picker is up
+    try:
+        r.start()
+        dl = r.wait('Dungeon-Settlers-Modded-Mac.zip downloaded, sha256 ok', 240)
+        time.sleep(20)
+        t = r.logtext()
+        check('picker: downloaded, but no corner and no prompt over the Language picker',
+              dl and 'update: title corner shown' not in t and 'update: prompt shown' not in t)
     finally:
         r.stop()
 

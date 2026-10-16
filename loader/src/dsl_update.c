@@ -361,7 +361,7 @@ static void corner_frame(void) {
         txt = u->text(NULL, 0, 0, 420, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 220, 40, "Update", button_click, NULL);
         if (!tog || !txt || !btn) return;
-        dsl_ui_place_tr(tog, 24, 20, 260, 40); dsl_ui_place_tr(txt, 24, 64, 420, 30); dsl_ui_place_tr(btn, 24, 64, 220, 40);
+        dsl_ui_place_tr(tog, 24, 56, 260, 40); dsl_ui_place_tr(txt, 24, 100, 420, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
         u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods download by themselves. The game asks before it installs them.\nOff: nothing downloads until you click Update.");
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
