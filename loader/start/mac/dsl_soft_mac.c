@@ -1,4 +1,4 @@
-// Mac OS part of the soft restart (src/dsl_soft_os.h). Moved unchanged from src/dsl_soft.c when it became OS-neutral.
+// Mac OS part of the soft restart (src/dsl_soft_os.h).
 // B: from its first NSWindow on, every window is invisible (alpha 0, lowest level, no mouse, never key/main), the app
 // never activates and has no Dock icon (Accessory policy). At "go": window on A's frame, normal level, alpha 1, front,
 // Regular policy, activate. A: yields activation to B, orders its windows out.
@@ -21,6 +21,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
+#include <dispatch/dispatch.h>
+#include <errno.h>
 
 extern char **environ;
 #define MSG(ret, ...) ((ret (*)(__VA_ARGS__))objc_msgSend)
@@ -29,7 +31,7 @@ extern char **environ;
 static char **env0; static char exe0[1024], cwd0[1024];
 static char **argv0; static int argc0;
 static int hidden, stage_on; static double stage_x, stage_y;
-static pid_t b_pid;
+static pid_t b_pid; static int b_ls;                 /* b_ls: B started by LaunchServices (not our child) */
 
 double dsl_sos_proc_start(void) {
     struct kinfo_proc kp; size_t n = sizeof kp; int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
@@ -193,7 +195,58 @@ int dsl_sos_game_frame(double fr[4]) {
 }
 
 /* ------------------------------------------------------------------ B process */
+static void reap(void);
+/* B goes through LaunchServices (a new app instance, its own launchd job), not posix_spawn. A posix_spawn child stays in
+   A's launchd job, so the XPC helpers macOS starts for B (AutoFill: com.apple.SafariPlatformSupport.Helper) are booked
+   on A's app. When A quits, A's Dock tile then "runs in the background" as long as B lives, and macOS 27 shows
+   "App Running in Background: DungeonSettlers ..." about 30 s later (proof: app/stub/NOTES_bg.md).
+   LaunchServices starts apps in "/": DSL_SOFT_CWD carries A's start folder (dsl_start_mac.c goes there). */
+extern void *objc_autoreleasePoolPush(void);
+extern void objc_autoreleasePoolPop(void *);
+static id nsstr(const char *s) { return MSG(id, Class, SEL, const char *)(objc_getClass("NSString"), SEL_("stringWithUTF8String:"), s); }
+static volatile pid_t ls_pid;
+static pid_t ls_launch(const char *exe, char **env, char **argv) {
+    char appp[1024]; snprintf(appp, sizeof appp, "%s", exe);
+    char *m = strstr(appp, "/Contents/MacOS/"); if (!m) return -1;
+    *m = 0;
+    Class ws_c = objc_getClass("NSWorkspace"), cf_c = objc_getClass("NSWorkspaceOpenConfiguration");   /* macOS 10.15+ */
+    if (!ws_c || !cf_c) return -1;
+    void *pool = objc_autoreleasePoolPush();
+    id cfg = MSG(id, Class, SEL)(cf_c, SEL_("configuration"));
+    MSG(void, id, SEL, BOOL)(cfg, SEL_("setCreatesNewApplicationInstance:"), YES);
+    MSG(void, id, SEL, BOOL)(cfg, SEL_("setActivates:"), NO);
+    MSG(void, id, SEL, BOOL)(cfg, SEL_("setAddsToRecentItems:"), NO);
+    MSG(void, id, SEL, BOOL)(cfg, SEL_("setPromptsUserIfNeeded:"), NO);
+    id args = MSG(id, Class, SEL)(objc_getClass("NSMutableArray"), SEL_("array"));
+    for (int i = 1; argv && argv[i]; i++) MSG(void, id, SEL, id)(args, SEL_("addObject:"), nsstr(argv[i]));
+    id envd = MSG(id, Class, SEL)(objc_getClass("NSMutableDictionary"), SEL_("dictionary"));
+    for (int i = 0; env[i]; i++) {
+        const char *eq = strchr(env[i], '='); if (!eq || eq == env[i]) continue;
+        char key[512]; snprintf(key, sizeof key, "%.*s", (int)(eq - env[i]), env[i]);
+        id v = nsstr(eq + 1), kk = nsstr(key);
+        if (v && kk) MSG(void, id, SEL, id, id)(envd, SEL_("setObject:forKey:"), v, kk);
+    }
+    MSG(void, id, SEL, id)(cfg, SEL_("setArguments:"), args);
+    MSG(void, id, SEL, id)(cfg, SEL_("setEnvironment:"), envd);
+    id url = MSG(id, Class, SEL, id)(objc_getClass("NSURL"), SEL_("fileURLWithPath:"), nsstr(appp));
+    static dispatch_semaphore_t sem; if (!sem) sem = dispatch_semaphore_create(0);
+    while (dispatch_semaphore_wait(sem, DISPATCH_TIME_NOW) == 0) {}          /* a late answer of an earlier call */
+    ls_pid = -1;
+    void (^done)(id, id) = ^(id ra, id err) {                                 /* AppKit calls it on a concurrent queue */
+        ls_pid = ra ? (pid_t)MSG(int, id, SEL)(ra, SEL_("processIdentifier")) : -1;
+        if (!ra && err) { id d = MSG(id, id, SEL)(err, SEL_("description")); dsl_log("soft: A: LaunchServices: %s", d ? MSG(const char *, id, SEL)(d, SEL_("UTF8String")) : "?"); }
+        dispatch_semaphore_signal(sem);
+    };
+    id ws = MSG(id, Class, SEL)(ws_c, SEL_("sharedWorkspace"));
+    MSG(void, id, SEL, id, id, id)(ws, SEL_("openApplicationAtURL:configuration:completionHandler:"), url, cfg, (id)done);
+    long w = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+    objc_autoreleasePoolPop(pool);
+    if (w) { dsl_log("soft: A: LaunchServices gave no answer in 10 s"); return -1; }
+    return ls_pid;
+}
+
 int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_lines) {
+    reap();
     /* environment = the one this process started with, with DSL_PROFILE and DSL_SOFT_HANDOFF replaced */
     int n = 0; while (env0 && env0[n]) n++;
     char **env = calloc((size_t)n + 4, sizeof *env); int k = 0;
@@ -208,8 +261,11 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
         for (int i = 0; i < k; i++) if (!strncmp(env[i], l, kl)) { env[i] = env[--k]; i--; }
         extra[ne++] = l;
     }
-    env = realloc(env, ((size_t)k + (size_t)ne + 1) * sizeof *env);
+    env = realloc(env, ((size_t)k + (size_t)ne + 2) * sizeof *env);
     for (int i = 0; i < ne; i++) env[k++] = extra[i];
+    char e3[1100]; snprintf(e3, sizeof e3, "DSL_SOFT_CWD=%s", cwd0);
+    for (int i = 0; i < k; i++) if (!strncmp(env[i], "DSL_SOFT_CWD=", 13)) { env[i] = env[--k]; i--; }
+    if (cwd0[0]) env[k++] = e3;
     env[k] = NULL;
     posix_spawnattr_t at; posix_spawnattr_init(&at);
     posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSID);
@@ -217,6 +273,16 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     if (cwd0[0]) posix_spawn_file_actions_addchdir_np(&fa, cwd0);       /* B starts in A's start folder */
     const char *exe = exe0;                                               /* DSL_SOFT_EXE=<path>: the new set's own play copy */
     for (int i = 0; env[i]; i++) if (!strncmp(env[i], "DSL_SOFT_EXE=", 13) && env[i][13]) exe = env[i] + 13;
+    pid_t lp = ls_launch(exe, env, argv0);
+    if (lp > 0) {
+        b_pid = lp; b_ls = 1;
+        posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
+        dsl_log("soft: A: B started by LaunchServices, pid %d (%s, profile %s)", b_pid, exe, profile);
+        free(env); free(extra); free(ov);
+        return 0;
+    }
+    dsl_log("soft: A: LaunchServices could not start B: posix_spawn instead (macOS may then show \"running in background\")");
+    b_ls = 0;
     int r = posix_spawn(&b_pid, exe, &fa, &at, argv0, env);
     posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
     if (r) { dsl_log("soft: A: posix_spawn %s failed (%d)", exe, r); b_pid = 0; free(env); free(extra); free(ov); return -1; }
@@ -224,13 +290,25 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     free(env); free(extra); free(ov);
     return 0;
 }
+/* killed children (a replaced prewarm B, a failed B) are reaped later without blocking the game's main thread */
+static pid_t dead[16]; static int ndead;
+static void reap(void) {
+    for (int i = 0; i < ndead; i++) { int st; pid_t r = waitpid(dead[i], &st, WNOHANG); if (r == dead[i] || (r < 0 && errno == ECHILD)) dead[i--] = dead[--ndead]; }
+}
 long dsl_sos_child_pid(void) { return b_pid; }
 int dsl_sos_child_exited(void) {
+    reap();
     if (b_pid <= 0) return 0;
+    if (b_ls) { if (kill(b_pid, 0) != 0 && errno == ESRCH) { b_pid = 0; return 1; } return 0; }
     int st; if (waitpid(b_pid, &st, WNOHANG) == b_pid) { b_pid = 0; return 1; }
     return 0;
 }
-void dsl_sos_child_kill(void) { if (b_pid > 0) { kill(b_pid, SIGKILL); dsl_log("soft: A: B pid %d killed", b_pid); } }
+void dsl_sos_child_kill(void) {
+    if (b_pid <= 0) return;
+    kill(b_pid, SIGKILL); dsl_log("soft: A: B pid %d killed", b_pid);
+    int st; if (waitpid(b_pid, &st, WNOHANG) != b_pid && ndead < 16) dead[ndead++] = b_pid;
+    b_pid = 0; reap();
+}
 int dsl_sos_pid_alive(long pid) { return pid > 0 && kill((pid_t)pid, 0) == 0; }
 
 void dsl_sos_yield(void) {                 /* macOS 14+: activation is given, not taken */
@@ -249,7 +327,14 @@ void dsl_sos_show(const double *fr, int activate) {
     }
     hidden = 0;
     if (activate && !no_activate_g) set_policy(0);
-    if (w) { show_window(w); MSG(void, id, SEL, id)(w, SEL_("orderFrontRegardless"), nil); }
+    /* test stage without activation: the window goes to the back of the window list. On top (orderFrontRegardless,
+       or the level change from hidden to normal) the system picked this copy as the front app for a moment when
+       focus moved between other apps (test guard kills, 2026-10-16) */
+    if (w) {
+        show_window(w);
+        if (activate || !stage_on) MSG(void, id, SEL, id)(w, SEL_("orderFrontRegardless"), nil);
+        else MSG(void, id, SEL, id)(w, SEL_("orderBack:"), nil);
+    }
     if (activate && !no_activate_g) {
         id a = app();
         if (a && class_respondsToSelector(object_getClass(a), SEL_("activate"))) ((void (*)(id, SEL))o_act0)(a, SEL_("activate"));
