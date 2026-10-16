@@ -498,7 +498,7 @@ static void a_tick(void) {
 }
 
 /* what to draw now: 1 = show (pct 0..100, step text, panel 1 = centered panel for flow K, 0 = bottom strip) */
-int dsl_soft_progress_view(int *pct, char *text, size_t cap, int *panel) {
+int dsl_soft_progress_view(int *pct, char *text, size_t cap, int *panel, long *seed) {
     double t = since(); int on = 0, fk = 0;
     if (!role_b && (a_state == A_WAIT_READY || a_state == A_WAIT_SHOWN || a_state == A_QUITTING)) { on = 1; fk = a_scene == 2; }
     else if (hand) {                                                    /* B: from its loading screen until just after the fade in */
@@ -507,6 +507,9 @@ int dsl_soft_progress_view(int *pct, char *text, size_t cap, int *panel) {
     }
     if (!on) return 0;
     *pct = pg_pct < 0 ? 0 : pg_pct > 100 ? 100 : pg_pct; snprintf(text, cap, "%s", pg_text); *panel = fk;
+    /* the same number in A and B (the apply time in the handoff): both draw the same design */
+    JNode *aa = role_b ? json_get(hand, "apply_at") : NULL;
+    *seed = role_b ? (long)(aa ? aa->num : 0) : (long)(t_start + a_t0);
     return 1;
 }
 

@@ -78,7 +78,7 @@ static struct {
 static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy, *m_obj_find, *m_obj_finds, *m_res_findall,
     *m_comp_go, *m_comp_tr, *m_comp_get, *m_comp_inparent,
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
-    *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child,
+    *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
     *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_corners,
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
@@ -828,6 +828,13 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
 }
 /* a kit panel as a flat colour (no frame sprite), no click target: bars, lines */
 void dsl_ui_flat(DSLObj o, uint32_t rgba) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj im = r ? comp_get(r, K.Image) : NULL; if (im) img_set(im, NULL, rgba_col(rgba, C_WHITE), 0); }
+/* a kit widget as a square of side `size` centred at (cx, cy) of its parent (top-left units), turned by deg degrees
+   (45 = a diamond) */
+void dsl_ui_turned(DSLObj o, float cx, float cy, float size, float deg) {
+    W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj t = tr_of(r); if (!t) return;
+    rt_set(t, (V2){ 0, 1 }, (V2){ 0, 1 }, (V2){ 0.5f, 0.5f }, (V2){ size, size }, (V2){ cx, -cy });
+    if (m_tr_euler) CALL(m_tr_euler, void, Obj, V3)(t, (V3){ 0, 0, deg }, m_tr_euler);
+}
 /* a kit widget drawn above the game's own views (loading screen, notices): its own canvas, sorting order `order` */
 void dsl_ui_raise(DSLObj o, int order) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; if (r) raise_view(r, order); }
 /* test only: hover this target instead of the mouse (NULL = the mouse) */
@@ -1178,6 +1185,7 @@ void dsl_ui_install(void) {
     m_go_layer = OPT(K.GameObject, "set_layer", 1);
     m_tr_parent = MTH(K.Transform, "get_parent", 0); m_tr_setparent = MSIG(K.Transform, "SetParent", 2, "UnityEngine.Transform,System.Boolean");
     m_tr_sib = MTH(K.Transform, "GetSiblingIndex", 0); m_tr_setsib = MTH(K.Transform, "SetSiblingIndex", 1);
+    m_tr_euler = OPT(K.Transform, "set_localEulerAngles", 1);
     m_tr_count = MTH(K.Transform, "get_childCount", 0); m_tr_child = MTH(K.Transform, "GetChild", 1);
     m_rt_amin = MTH(K.RectTransform, "set_anchorMin", 1); m_rt_amax = MTH(K.RectTransform, "set_anchorMax", 1);
     m_rt_pivot = MTH(K.RectTransform, "set_pivot", 1); m_rt_size = MTH(K.RectTransform, "set_sizeDelta", 1);

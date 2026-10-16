@@ -439,5 +439,10 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   shots `~/ds_launcher/loader/test_env/l1_out/prog3/shot_{1_strip_low,2_strip_mid,3_panel_world}.png`.
   Windows (DSMP bottle, w_pkg_test run, -nographics so no picture): dsload.log "progress: bottom strip shown", 0 -> 10
   (mods) -> 20 -> 30 % until the test stops.
+- Owner change: Apply at the title shows design B (strip) or C (ornament bar: title, thin bar between two copper
+  diamonds, "Step n of 7 · <step>", a plate in the loading screen's colour over its tip) at random: the parity of the
+  apply second, read by A and by B from the handoff, so both draw the same. Test-only DSL_PROGRESS_DESIGN=strip|ornament.
+  Proof: l1_progress_test DESIGN=strip 8/8, DESIGN=ornament 8/8 (prog_ornament2); shots in
+  ~/ds_launcher/loader/test_env/l1_out/prog_strip/ and prog_ornament2/ (shot_*_low, shot_*_mid, shot_3_panel_world).
 - Trap: with DSL_SOFT_CAPTURE on, one run (prog1) had A's staged window moved on screen at the apply (guard kill in
   0.5 s). Not seen without the capture (prog2, prog3); the test takes its pictures with the "shot" request instead.

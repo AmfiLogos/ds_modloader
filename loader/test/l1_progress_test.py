@@ -12,6 +12,7 @@ r = T.r
 OUT = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/ds_launcher/loader/test_env/l1_out/progress')
 os.makedirs(OUT, exist_ok=True); T.OUT = OUT; V.OUT = OUT
 CAP = os.path.join(OUT, 'cap'); os.makedirs(CAP, exist_ok=True)
+DESIGN = os.environ.get('DESIGN', 'strip')                      # the title design to show: strip (B) or ornament (C)
 check, log = T.check, T.log
 
 
@@ -57,16 +58,16 @@ def main():
     g = threading.Thread(target=T.guard, daemon=True); g.start()
     S = {'violations': T.violations, 'checks': T.checks}
     try:
-        a = T.start_a()
+        a = T.start_a(extra_env={'DSL_PROGRESS_DESIGN': DESIGN})
         T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'A title'); time.sleep(3)
         # 1 Apply at the title
         T.clear_flags(); t_req = time.time(); T.request({'cmd': 'apply', 'ids': ['multiplayer', 'gcd-cdr']})
-        S['shot_1_strip_low'] = shoot_when('1_strip_low', lambda p, s: 0 < p <= 20)
-        S['shot_2_strip_mid'] = shoot_when('2_strip_mid', lambda p, s: 30 <= p < 90)
+        S['shot_1_strip_low'] = shoot_when(DESIGN + '_low', lambda p, s: 0 < p <= 20)
+        S['shot_2_strip_mid'] = shoot_when(DESIGN + '_mid', lambda p, s: 30 <= p < 90)
         dt, b = T.wait_swap(a, t_req, 1); S['apply_seconds'] = round(dt, 2)
         T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'B title', 60); time.sleep(2)
         L1 = round_logs(1); st1 = sorted(steps(L1)); S['steps_apply'] = [(round(x - st1[0][0], 2), p, s) for x, p, s in st1] if st1 else []
-        check('apply: bottom strip shown', 'progress: bottom strip shown' in L1)
+        check('apply: design shown (' + DESIGN + ')', ('progress: bottom strip shown' if DESIGN == 'strip' else 'progress: ornament bar shown') in L1)
         check('apply: steps only go up, end at 100', st1 and all(st1[i][1] <= st1[i + 1][1] for i in range(len(st1) - 1)) and st1[-1][1] == 100, S['steps_apply'])
         names = {s for _, _, s in st1}
         check('apply: real steps (start, mods, game data, fonts, done)', {'Starting the game with the new mods', 'Loading fonts', 'Done'} <= names and any(s.startswith('Loading Global cooldown') for s in names), sorted(names))
@@ -82,7 +83,7 @@ def main():
         wp = [p for _, p, s in st2 if s == 'Opening your world']
         check('flow K: "Opening your world" with the game percent (50..95)', wp and min(wp) >= 50 and max(wp) <= 95 and len(set(wp)) >= 2, wp)
         check('flow K: steps only go up, end at 100', st2 and all(st2[i][1] <= st2[i + 1][1] for i in range(len(st2) - 1)) and st2[-1][1] == 100, S['steps_flowk'])
-        check('three frames saved', all(os.path.exists(os.path.join(OUT, f'shot_{n}.png')) for n in ('1_strip_low', '2_strip_mid', '3_panel_world')))
+        check('three frames saved', all(os.path.exists(os.path.join(OUT, f'shot_{n}.png')) for n in (DESIGN + '_low', DESIGN + '_mid', '3_panel_world')))
     except Exception as e:
         check('run finished', False, repr(e))
     finally:
