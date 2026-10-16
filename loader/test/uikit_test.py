@@ -235,8 +235,8 @@ def widgets(D, tag):
     a, st = D.act('api', op='value_set', a=1, wait=0.3)
     check(f'{tag} value_set / value_get (no callback)', st['value'] == 1 and W(st, 'value')['text'] == 'Normal' and st['n']['value'] == 3, f"{st['value']} {st['n']['value']}")
     a, st = D.act('click', target='field', wait=0.8)
-    a, st = D.act('type', text='The owner 1', wait=0.5)          # Event.KeyboardEvent key names: lower case
-    check(f'{tag} field: typed text (TMP_InputField.ProcessEvent)', st['field'] == 'The owner 1', f"rc {a['rc']} field '{st['field']}'")
+    a, st = D.act('type', text='owner 1', wait=0.5)          # Event.KeyboardEvent key names: lower case
+    check(f'{tag} field: typed text (TMP_InputField.ProcessEvent)', st['field'] == 'owner 1', f"rc {a['rc']} field '{st['field']}'")
     a, st = D.act('key', code=36, wait=0.8)
     check(f'{tag} field: Enter (real key event) = submit callback', st['n']['submit'] == 1, str(st['n']))
     D.cap(f'{tag}_04_field')
