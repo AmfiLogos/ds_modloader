@@ -18,9 +18,12 @@ mkdir -p "$OUTDIR"
 # 1. binaries
 clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation \
   -o "$OUTDIR/ds_modded" "$HERE/stub/ds_modded.c"
-(cd "$REPO" && nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
+# no build-machine paths in the shipped binary (panic locations hold the cargo registry and source paths)
+(cd "$REPO" && RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry/src=crates --remap-path-prefix=$HOME/.rustup=rustup --remap-path-prefix=$REPO=dsml" \
+  nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
 HELPER="$REPO/target/release/dsml-helper"
 [[ -f $HELPER ]] || die "dsml-helper was not built"
+python3 -c "import sys; sys.exit(sys.argv[2].encode() in open(sys.argv[1],'rb').read())" "$HELPER" "$HOME" || die "dsml-helper holds $HOME paths"
 [[ $(lipo -archs "$HELPER") == arm64 ]] || die "dsml-helper is not arm64 (build on an Apple silicon Mac)"
 
 # 2. bundle in a temp folder, then moved into place (old build -> app/old/)
