@@ -9,12 +9,15 @@ RequestExecutionLevel user
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "TextFunc.nsh"
 
 !define NAME "Dungeon Settlers Modded"
 !define UKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DungeonSettlersModded"
 Name "${NAME}"
 OutFile "${OUT}"
 InstallDir "$LOCALAPPDATA\${NAME}"
+; the next Setup offers the folder of the last install
+InstallDirRegKey HKCU "${UKEY}" "InstallLocation"
 ShowInstDetails show
 ShowUninstDetails show
 BrandingText "${NAME} ${VER}"
@@ -44,6 +47,8 @@ Var GameDir
 
 !define MUI_PAGE_HEADER_TEXT "Install folder"
 !define MUI_PAGE_HEADER_SUBTEXT "Where the modded copy of the game goes (about 1 GB)."
+!define MUI_DIRECTORYPAGE_TEXT_TOP "${NAME} goes into its own folder named $\"${NAME}$\" (added to the folder you choose when its name is different). That folder must be new, empty or an earlier ${NAME} install."
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE InstDirLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${NAME}.exe"
@@ -92,7 +97,59 @@ Function GameDirLeave
   ${EndIf}
 FunctionEnd
 
+; the install always goes into its own folder: "<chosen>\${NAME}" unless the chosen folder already has that name.
+; A folder that holds other files (no marker of ours) is refused: the uninstall then never meets a file it did not put there.
+Function OwnFolder
+  ${GetFileName} "$INSTDIR" $0
+  ${If} $0 != "${NAME}"
+    StrCpy $INSTDIR "$INSTDIR\${NAME}"
+  ${EndIf}
+  StrCpy $1 0                                 ; 1 = ours
+  ${If} ${FileExists} "$INSTDIR\dsmodded_install.txt"
+    StrCpy $1 1
+  ${ElseIf} ${FileExists} "$INSTDIR\game\dsmodded_build.txt"
+  ${AndIf} ${FileExists} "$INSTDIR\${NAME}.exe"
+    StrCpy $1 1                               ; an install of an older kit (no marker yet)
+  ${EndIf}
+  StrCpy $2 0                                 ; 1 = holds anything
+  ${If} $1 == 0
+    FindFirst $3 $4 "$INSTDIR\*.*"
+    ${DoWhile} $4 != ""
+      ${If} $4 != "."
+      ${AndIf} $4 != ".."
+        StrCpy $2 1
+        ${Break}
+      ${EndIf}
+      FindNext $3 $4
+    ${Loop}
+    FindClose $3
+  ${EndIf}
+  ${If} $1 == 0
+  ${AndIf} $2 == 1
+    Push 0
+  ${Else}
+    Push 1
+  ${EndIf}
+FunctionEnd
+
+Function InstDirLeave
+  Call OwnFolder
+  Pop $0
+  ${If} $0 == 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$INSTDIR already holds other files.$\r$\nChoose another folder: ${NAME} needs a new or empty folder of its own."
+    Abort
+  ${EndIf}
+FunctionEnd
+
 Section "Install"
+  Call OwnFolder                              ; also for /S /D=... (no pages in a silent install)
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "$INSTDIR already holds other files. Nothing was changed."
+    MessageBox MB_OK|MB_ICONSTOP "$INSTDIR already holds other files. Nothing was changed. Choose a new or empty folder." /SD IDOK
+    SetErrorLevel 3
+    Abort
+  ${EndIf}
   SetOutPath "$PLUGINSDIR\kit"
   File /r "${KIT}\*"
   CreateDirectory "$INSTDIR"
@@ -136,12 +193,36 @@ Section "Uninstall"
     SetErrorLevel 1
     Abort
   ${EndIf}
-  ; the game copy, the mods, the starter and the downloads go; saves and logs (profiles\) stay
-  RMDir /r "$INSTDIR\game"
-  RMDir /r "$INSTDIR\mods"
-  RMDir /r "$INSTDIR\retired"
-  RMDir /r "$INSTDIR\cache"
-  Delete "$INSTDIR\${NAME}.exe"
+  ; only what the install put there: the files of install_files.log (inside this folder only), then the empty folders
+  ; of install_dirs.log (deepest first). Saves (profiles\), player mods and any other file stay. Never RMDir /r.
+  ${IfNot} ${FileExists} "$INSTDIR\install_files.log"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "This folder has no install file list. Nothing was removed." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
+  StrLen $5 "$INSTDIR\"
+  ClearErrors
+  FileOpen $6 "$INSTDIR\install_files.log" r
+  ${Do}
+    FileRead $6 $7
+    ${If} ${Errors}
+      ${Break}
+    ${EndIf}
+    ${un.TrimNewLines} $7 $7
+    StrCpy $8 $7 $5
+    ${If} $8 == "$INSTDIR\"
+      Delete "$7"
+    ${EndIf}
+  ${Loop}
+  FileClose $6
+  ${If} ${FileExists} "$INSTDIR\install_dirs.log"
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c for /f "delims=" %d in ('sort /r "$INSTDIR\install_dirs.log"') do @rd "%d" 2>nul`
+    Pop $0
+  ${EndIf}
+  Delete "$INSTDIR\install_files.log"
+  Delete "$INSTDIR\install_files.prev.log"
+  Delete "$INSTDIR\install_dirs.log"
+  Delete "$INSTDIR\dsmodded_install.txt"
   Delete "$INSTDIR\uninstall.bat"
   Delete "$DESKTOP\${NAME}.lnk"
   Delete "$DESKTOP\${NAME}.bat"
@@ -149,7 +230,7 @@ Section "Uninstall"
   DeleteRegKey HKCU "${UKEY}"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
-  ${If} ${FileExists} "$INSTDIR\game\*.*"
+  ${If} ${FileExists} "$INSTDIR\game\GameAssembly.dll"
     MessageBox MB_OK|MB_ICONEXCLAMATION "Some files could not be removed. Close the game, then uninstall again." /SD IDOK
     SetErrorLevel 1
   ${ElseIf} ${FileExists} "$INSTDIR\profiles\*.*"

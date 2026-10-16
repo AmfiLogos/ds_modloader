@@ -71,7 +71,16 @@ rem DSMODDED_ROOT (the installer's chosen folder) replaces the default folder
 set "ROOT=%LOCALAPPDATA%\Dungeon Settlers Modded"
 if defined DSMODDED_ROOT set "ROOT=%DSMODDED_ROOT%"
 set "COPY=%ROOT%\game"
+rem only into a new folder, an empty one or our own (marker file, or the game copy of an older kit): never mixed with
+rem other files, so the uninstall can never touch anything it did not put there
+set "OURS="
+if exist "%ROOT%\dsmodded_install.txt" set "OURS=1"
+if exist "%COPY%\dsmodded_build.txt" if exist "%ROOT%\Dungeon Settlers Modded.exe" set "OURS=1"
+if not defined OURS if exist "%ROOT%\" (
+  dir /b /a "%ROOT%" 2>nul | findstr "^" >nul && goto notours
+)
 if not exist "%ROOT%" mkdir "%ROOT%"
+> "%ROOT%\dsmodded_install.txt" echo Dungeon Settlers Modded install folder. The uninstall removes only the files listed in install_files.log.
 
 rem one full copy of the game (about 700 MB). Not again when the copy is already this build.
 set "HAVE="
@@ -80,9 +89,13 @@ if "%HAVE%"=="%BUILD%" (
   echo  The game copy is already there ^(build %BUILD%^).
   goto files
 )
-rem an older or unfinished copy holds only game files and mod files (saves live in profiles\): replaced
+rem an older or unfinished copy of ours (marker files) holds only game files and mod files (saves live in profiles\):
+rem replaced. A "game" folder without our marker is never removed.
+if exist "%COPY%\" if not exist "%COPY%\dsmodded_build.txt" if not exist "%COPY%\dsmodded_copy.txt" goto notours
 if exist "%COPY%" rd /s /q "%COPY%"
 if exist "%COPY%" goto copyfail
+mkdir "%COPY%"
+> "%COPY%\dsmodded_copy.txt" echo Dungeon Settlers Modded game copy
 echo  Copying the game ^(about 700 MB, this takes a minute or two^) ...
 rem xcopy (in every Windows): the files of an older multiplayer kit in Steam's folder are left out (files\copy_exclude.txt)
 xcopy "%GAME%" "%COPY%\" /E /I /H /Q /Y /EXCLUDE:files\copy_exclude.txt >nul
@@ -100,6 +113,13 @@ copy /y "uninstall.bat" "%ROOT%\uninstall.bat" >nul
 if not exist "%ROOT%\mods" mkdir "%ROOT%\mods"
 xcopy "files\mods" "%ROOT%\mods\" /E /I /Q /Y >nul
 if errorlevel 2 goto copyfail
+rem what this install put there (the uninstall deletes exactly these files, then the empty folders in the list)
+if exist "%ROOT%\install_files.log" copy /y "%ROOT%\install_files.log" "%ROOT%\install_files.prev.log" >nul
+(
+  dir /s /b /a-d "%COPY%" "%ROOT%\mods"
+  echo %ROOT%\Dungeon Settlers Modded.exe
+) > "%ROOT%\install_files.log"
+dir /s /b /ad "%COPY%" "%ROOT%\mods" > "%ROOT%\install_dirs.log"
 
 rem shortcuts "Dungeon Settlers Modded" on the desktop and in the Start menu
 set "LNKTARGET=%ROOT%\Dungeon Settlers Modded.exe"
@@ -128,6 +148,12 @@ exit /b 0
 echo  The kit files are missing.
 echo  Right-click the zip file, click "Extract All", then open the extracted folder
 echo  and double-click install.bat there.
+goto fail
+
+:notours
+echo.
+echo  The folder %ROOT% already holds other files.
+echo  Nothing was changed. Choose an empty folder, or a new one.
 goto fail
 
 :copyfail

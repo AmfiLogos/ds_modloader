@@ -15,17 +15,23 @@ if not errorlevel 1 (
   echo  Dungeon Settlers is running. Close the game, then run the uninstall again.
   goto fail
 )
-rem the game copy, the mods and the starter go. Saves and logs (profiles\) stay.
-if exist "%ROOT%\game" rd /s /q "%ROOT%\game"
-if exist "%ROOT%\mods" rd /s /q "%ROOT%\mods"
-if exist "%ROOT%\Dungeon Settlers Modded.exe" del /q "%ROOT%\Dungeon Settlers Modded.exe"
+rem only what the install put there (install_files.log), then its empty folders (install_dirs.log, deepest first).
+rem Saves and logs (profiles\), player mods and any other file stay.
+if not exist "%ROOT%\install_files.log" (
+  echo  This install has no file list ^(an older kit^). Nothing was removed.
+  echo  Install this kit once over it, then uninstall again.
+  goto fail
+)
+for /f "usebackq delims=" %%f in ("%ROOT%\install_files.log") do if exist "%%f" del /f /q "%%f"
+if exist "%ROOT%\install_dirs.log" for /f "delims=" %%d in ('sort /r "%ROOT%\install_dirs.log"') do rd "%%d" 2>nul
+for %%f in (install_files.log install_files.prev.log install_dirs.log dsmodded_install.txt) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"
 set "DESK="
 for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul') do set "DESK=%%b"
 if not defined DESK set "DESK=%USERPROFILE%\Desktop"
 for %%f in (lnk bat) do if exist "%DESK%\Dungeon Settlers Modded.%%f" del /q "%DESK%\Dungeon Settlers Modded.%%f"
 set "STARTM=%APPDATA%\Microsoft\Windows\Start Menu\Programs"
 if exist "%STARTM%\Dungeon Settlers Modded.lnk" del /q "%STARTM%\Dungeon Settlers Modded.lnk"
-if exist "%ROOT%\game" (
+if exist "%ROOT%\game\GameAssembly.dll" (
   echo  Some files could not be removed. Close the game, then run the uninstall again.
   goto fail
 )
