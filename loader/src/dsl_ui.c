@@ -1044,6 +1044,9 @@ static void tick(void) {
     frames++;
     if (frames % 60 == 0) w_sweep();
     assets_scan(0);
+    /* templates at the first title seen, even hidden (a soft restart B goes from its title straight into a world; the
+       kit could not build widgets there before: Mods window and rows after flow K) */
+    if (!hget(h_tpl_btn) && frames % 30 == 0) templates_ready();
     if (ntbs) title_frame();
     run_queue();
     fields_frame();

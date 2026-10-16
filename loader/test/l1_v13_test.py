@@ -55,6 +55,22 @@ def since(mark):
     return T.dlog()[mark:]
 
 
+def logs_all():                                                   # B moves A's dsload.log to dsload.prev.log
+    t = ''
+    for f in ('dsload.prev.log', 'dsload.log'):
+        try: t += open(os.path.join(T.I, f), errors='replace').read()
+        except OSError: pass
+    return t
+
+
+def wait_count(s, n0, limit):
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        if logs_all().count(s) > n0: return True
+        time.sleep(0.2)
+    return False
+
+
 def wait_line(rx, mark, limit=30):
     t0 = time.time()
     while time.time() - t0 < limit:
@@ -116,11 +132,11 @@ def main():
         # 4 prewarm through the Mods window
         T.clear_flags()
         ui('open'); time.sleep(1.5)
-        mark = len(T.dlog()); ui('click', target='mod:gcd-cdr')
-        m = wait_line(r'reg: prewarm: a hidden game starts', mark, 10)
-        check('prewarm starts 1.5 s after the change', m is not None, since(mark)[-400:])
-        m = wait_line(r'prewarm B ready and waiting', mark, 120)
-        check('prewarm B ready (hidden)', m is not None)
+        n1, n2 = logs_all().count('reg: prewarm: a hidden game starts'), logs_all().count('prewarm B ready and waiting')
+        t_ch = time.time(); ui('click', target='mod:gcd-cdr')
+        check('prewarm starts 1.5 s after the change', wait_count('reg: prewarm: a hidden game starts', n1, 10))
+        S['prewarm_start_after_change'] = round(time.time() - t_ch, 2)
+        check('prewarm B ready (hidden)', wait_count('prewarm B ready and waiting', n2, 120))
         time.sleep(1)
         t_req = time.time(); ui('click', target='apply')
         dt, b = T.wait_swap(a, t_req, 1)
@@ -141,7 +157,10 @@ def main():
         T.wait(lambda s: s.get('scene') == 2 and not s.get('busy'), 'C in the world', 90); time.sleep(3)
         L = T.dlog(); check('flow K: C in the world without gcd-cdr', 'reg: running gameplay set vanilla' in L and 'uses this mod set: allowed' in L)
         # 6 in the world: read-only window, Apply refused
-        ui('open'); time.sleep(1.5); st = ui('state')
+        ui('open'); st = {}
+        for _ in range(20):
+            time.sleep(1); st = ui('state')
+            if st.get('open'): break
         status = [c for c in st.get('controls', []) if c['name'] == 'status']
         check('world: Mods window says go back to the title', status and 'Go back to the title screen to change mods.' in status[0]['text'], status)
         T.shot('6_world_modswin'); ui('close')
