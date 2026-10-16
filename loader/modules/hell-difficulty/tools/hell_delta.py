@@ -1,6 +1,6 @@
 #!/usr/local/bin/python3
-"""Hell data half as a delta (no game file is shipped): the owner's table edits (~/DungeonSettlers_HellDifficulty/
-b25846389/apply_hell.py edit_tables) on a stock table bundle, written uncompressed, stored as COPY / ADD operations
+"""Hell data half as a delta (no game file is shipped): the owner's table edits (apply_hell.py edit_tables, next to
+this file) on a stock table bundle, written uncompressed, stored as COPY / ADD operations
 against the stock bundle's DECOMPRESSED data. The module (hell.c) rebuilds the Hell bundle from the player's own stock
 file at start and loads it instead of the stock one (AssetBundle.LoadFromFileAsync_Internal path redirect, crc 0).
 
@@ -12,7 +12,7 @@ u8 1 COPY u64 offset u32 length | u8 2 ADD u32 length + bytes | u8 0 end."""
 import hashlib, struct, sys
 from pathlib import Path
 import lz4.block
-sys.path.insert(0, str(Path.home() / "DungeonSettlers_HellDifficulty/b25846389"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import apply_hell as ah
 
 

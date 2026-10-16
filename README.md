@@ -8,9 +8,9 @@ It is made for Steam build 25846389 of Dungeon Settlers. Other game builds are n
 ## The three repositories
 
 - ds_modloader (this repo): the mod loader, the Mac app, the Windows installer, and two small mods
-  (Global cooldown, Hell difficulty).
-- [ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer): the Multiplayer mod. Its releases page has the
-  installers (`Dungeon-Settlers-Modded-Mac.dmg`, `Dungeon-Settlers-Modded-Setup.exe`).
+  (Global cooldown, Hell difficulty). Its releases page has the installers (`Dungeon-Settlers-Modded-Mac.dmg`,
+  `Dungeon-Settlers-Modded-Setup.exe`).
+- [ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer): the Multiplayer mod.
 - [ds_custommodes](https://github.com/AmfiLogos/ds_custommodes): the Custom Modes mod (My Units, Unit Builder,
   Gallery, Test Fights, Foreign Expedition, PvP).
 
@@ -24,8 +24,8 @@ The installers hold the loader and all four mods. You only need the separate mod
 
 ## Download and install
 
-Get the installers from the latest release on the
-[ds_multiplayer releases page](https://github.com/AmfiLogos/ds_multiplayer/releases).
+Get the installers from the latest release on this repo's [releases page](https://github.com/AmfiLogos/ds_modloader/releases).
+A release named `v0.1.N` is the installer release. Its number is the mod loader's version.
 
 ### Mac
 
@@ -51,7 +51,7 @@ On the title screen, click Mods to turn mods on or off.
 
 ## Add a mod
 
-Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-2.0.0.zip`). One file works on Mac and Windows.
+Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-0.1.2.zip`). One file works on Mac and Windows.
 
 1. Download the zip. Do not unzip it.
 2. Start the game, click Mods, then click "Open mods folder". Put the zip into that folder.
@@ -66,13 +66,26 @@ A zip of a mod you already have replaces that mod. A file that is not a mod move
 ## Where your saves are
 
 The modded game plays on its own copy of your saves. On its first start it copies your normal saves once (it only
-reads them). After that the two sets are separate: progress in the modded game does not change your normal saves.
+reads them). After that the two sets are separate. Progress in the modded game does not change your normal saves,
+and modded saves do not show in the normal game's Load list.
+
+To bring in a world later, click "Import a save" on the title screen (under Mods). It shows the worlds of your
+normal saves one at a time. Click Import to copy that world into the modded saves, or "Next world". The normal
+save does not change.
+
 The modded saves are in the `data/Saves` folder of:
 
 - Mac: `~/Library/Application Support/DSModLauncher/profiles/modded`
 - Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded` (or the folder you chose in the installer)
 
 Uninstalling keeps this folder.
+
+Steam Cloud backup: the mod loader also copies the modded saves to your own Steam Cloud, as files named
+`dsmodded_<save file>`. It uploads only while plenty of space stays free for the game's own cloud saves (at least
+1 GB, or 20 times what the game uses, whichever is bigger). If space is short, it pauses and says so in the Import
+window. On a new computer, the modded game downloads the saves it does not have. If one save changed on two
+computers, the newest one wins and the other copy goes to `data/Mods/cloud_backups/`. When you delete a world in
+the modded game, its cloud copy goes too. The game's own cloud saves never change.
 
 ## Known limits
 
@@ -83,7 +96,7 @@ Uninstalling keeps this folder.
 
 ## Report a bug
 
-Open an issue on this repo's Issues page. Say your system (Mac or Windows), the release (for example v13.2) and
+Open an issue on this repo's Issues page. Say your system (Mac or Windows), the installer release (for example v0.1.7) and
 what you did. Attach the `.log` files from this folder (not the `data` folder, which holds your saves):
 Mac: `~/Library/Application Support/DSModLauncher/profiles/modded` (and `~/Library/Logs/DungeonSettlersModded.log`).
 Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.
@@ -107,7 +120,8 @@ Plan: `research/plan_launcher.md` in ds_multiplayer. Owner decisions: ds_multipl
 - `src-tauri/`: UNUSED PROTOTYPE, not shipped (see `src-tauri/README.md`). Tauri 2 shell (commands: status,
   refresh_index, set_enabled, play, remove_copy).
 - `ui/`: the prototype's pages: plain HTML/CSS/JS, game palette, Cinzel + Lora (OFL, `ui/fonts/OFL-*.txt`).
-  `ui/bicons/` holds game art (see `ui/bicons/NOTICE.md`).
+  `ui/bicons/` holds game art. It is not in git: `builder/gen/extract_icons.py` extracts it from your installed
+  game (see BUILDING.md, Unit Builder icons).
 - `dev_keys/`: DEV ONLY test key pair (see its README).
 
 Tests:

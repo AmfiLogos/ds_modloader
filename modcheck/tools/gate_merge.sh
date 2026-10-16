@@ -22,3 +22,4 @@ PAIR=$(python3 rig.py lease launcher_gate 2>/dev/null | tail -1)
 pr=$(python3 rig.py check-prefs)
 echo "gate_launcher $T: smoke $s/3; mp2 $p PASS, $f FAIL, tb $tb; left_prompt $lp PASS, $lf FAIL, tb $ltb; prefs $pr"
 grep " FAIL " ${L}_mp2.log | cut -c1-200; grep "FAIL" ${L}_leftprompt.log | cut -c1-200
+(( s==3 && p>0 && f==0 && tb==0 && lp>0 && lf==0 && ltb==0 ))   # verdict: exit 1 on any FAIL, crash or missing pass

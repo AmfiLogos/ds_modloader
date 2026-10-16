@@ -4,9 +4,9 @@
 # GitHub release zip, check its sha256, unzip with ditto (never sets quarantine), move into place. Already there = exit 0.
 # DSML_MELON_ZIP=<local zip> replaces the download (tests); the sha256 check stays. DSML_LOCK_WAIT=<s> (default 300).
 # Prints "MELON <dest>" on success, "ERROR <message>" + exit 1 on failure. Never touches anything outside dest's parent.
-VER=0.1.0
+VER=0.1.1
 URL=https://github.com/AmfiLogos/ds_multiplayer/releases/download/melonloader-mac-$VER/melonloader-mac-arm64-$VER.zip
-SHA=f0f2a6e6d13736a96ea66376bdf98badc874ec269b091dd5ca6e9501c1a4643e
+SHA=1144594148246ed966b51d9165111bbbe40e335c4552215c47f1cc9d87bf45d7
 D=${1:?usage: install_melon.sh <dest>}
 ok() { [[ -f $D/MelonLoader.Bootstrap.dylib && -f $D/MelonLoader/net6/MelonLoader.dll && -d $D/dotnet/host/fxr ]]; }
 ok && { echo "MELON $D"; exit 0; }

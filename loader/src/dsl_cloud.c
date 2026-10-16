@@ -83,10 +83,11 @@ static char *read_all(const char *p, long *n) {
     *n = k; return b;
 }
 static int write_all(const char *p, const void *b, long n, int64_t mtime) {
-    char t[1300]; snprintf(t, sizeof t, "%s.dsl-tmp", p);
+    char t[1300]; snprintf(t, sizeof t, "%s.dsl-tmp-%d", p, (int)getpid());   /* unique: two game processes */
     FILE *f = fopen(t, "wb"); if (!f) return -1;
     size_t w = fwrite(b, 1, (size_t)n, f);
-    if (fclose(f) != 0 || (long)w != n) return -1;
+    int bad = fflush(f) != 0 || fsync(fileno(f)) != 0; bad |= fclose(f) != 0;
+    if (bad || (long)w != n) { remove(t); return -1; }
     if (mtime > 0) { struct utimbuf u = { (time_t)mtime, (time_t)mtime }; utime(t, &u); }
     return rename(t, p);
 }
@@ -96,14 +97,19 @@ static int copy_file(const char *s, const char *d) {
     int r = write_all(d, b, n, mt); free(b); return r;
 }
 static void stamp(char *o, size_t n) { time_t t = time(NULL); strftime(o, n, "%Y%m%d-%H%M%S", localtime(&t)); }
-/* keep a copy of `src` (a file) or of `data` in cloud_backups/<stem>-<why>-<time>.json */
-static void backup(const char *name, const char *why, const char *src, const void *data, long n) {
+/* keep a copy of `src` (a file) or of `data` in cloud_backups/<stem>-<why>-<tag>.json. tag NULL = the time now; a tag
+   (the version's time) makes it one file per version: already there = kept before, nothing written. 0 = the copy exists. */
+static int backup(const char *name, const char *why, const char *tag, const char *src, const void *data, long n) {
     mkdir(backups_d, 0755);
-    char ts[32], p[1500]; stamp(ts, sizeof ts);
+    char ts[32], p[1500];
+    if (tag) snprintf(ts, sizeof ts, "%s", tag); else stamp(ts, sizeof ts);
     snprintf(p, sizeof p, "%s/%.*s-%s-%s.json", backups_d, (int)(strlen(name) - 5), name, why, ts);
+    struct stat st0; if (tag && !stat(p, &st0)) return 0;
     int r = src ? copy_file(src, p) : write_all(p, data, n, 0);
     dsl_log("cloud: kept %s (%s)", p, r ? "FAILED" : "ok");
+    return r ? -1 : 0;
 }
+const char *dsl_cloud_backups_dir(void) { return backups_d; }
 
 /* ------------------------------------------------------------------ state */
 typedef struct { char name[256]; int64_t lm, ls, rts; int seen; } St;
@@ -119,12 +125,16 @@ static void state_load(void) {
     fclose(f);
 }
 static void state_save(void) {
-    char t[1300]; snprintf(t, sizeof t, "%s.tmp", state_p);
-    FILE *f = fopen(t, "w"); if (!f) return;
-    for (int i = 0; i < nst; i++) if (st[i].name[0]) fprintf(f, "%s\t%lld\t%lld\t%lld\n", st[i].name, (long long)st[i].lm, (long long)st[i].ls, (long long)st[i].rts);
-    fclose(f); rename(t, state_p);
+    char t[1300]; snprintf(t, sizeof t, "%s.tmp-%d", state_p, (int)getpid());
+    FILE *f = fopen(t, "w"); if (!f) { dsl_log("cloud: cannot write %s", t); return; }
+    int bad = 0;
+    for (int i = 0; i < nst; i++) if (st[i].name[0]) bad |= fprintf(f, "%s\t%lld\t%lld\t%lld\n", st[i].name, (long long)st[i].lm, (long long)st[i].ls, (long long)st[i].rts) < 0;
+    bad |= fflush(f) != 0; bad |= fsync(fileno(f)) != 0; bad |= fclose(f) != 0;
+    if (bad) { dsl_log("cloud: state write failed: the old %s stays", state_p); remove(t); return; }
+    rename(t, state_p);
 }
-static St *state_get(const char *n) { for (int i = 0; i < nst; i++) if (st[i].name[0] && !strcmp(st[i].name, n)) return &st[i]; return NULL; }
+/* names compare without case: Steam Cloud and the Mac / Windows file systems may change or ignore it */
+static St *state_get(const char *n) { for (int i = 0; i < nst; i++) if (st[i].name[0] && !strcasecmp(st[i].name, n)) return &st[i]; return NULL; }
 static void state_set(const char *n, int64_t lm, int64_t ls, int64_t rts) {
     St *s = state_get(n);
     if (!s && nst < MAXF) { s = &st[nst++]; snprintf(s->name, sizeof s->name, "%s", n); }
@@ -136,7 +146,7 @@ static void state_drop(const char *n) { St *s = state_get(n); if (s) s->name[0] 
 typedef struct { char name[256]; int64_t mtime, size, rts, rsize; int here, there; } Ent;
 static Ent E[MAXF]; static int nE;
 static Ent *ent(const char *n) {
-    for (int i = 0; i < nE; i++) if (!strcmp(E[i].name, n)) return &E[i];
+    for (int i = 0; i < nE; i++) if (!strcasecmp(E[i].name, n)) return &E[i];
     if (nE >= MAXF) return NULL;
     Ent *e = &E[nE++]; memset(e, 0, sizeof *e); snprintf(e->name, sizeof e->name, "%s", n); return e;
 }
@@ -179,8 +189,39 @@ static int same_content(void *rs, Ent *e) {
     free(a); free(b); return same;
 }
 
-/* 0 = pass done, 1 = not possible now (status says why) */
+/* one pass at a time across game processes (a soft restart's hidden B runs beside A): <Mods>/cloud.lock, held for
+   the pass, freed by the OS if the process dies */
+#ifdef _WIN32
+static HANDLE lock_take(void) {
+    char p[1300]; snprintf(p, sizeof p, "%s/cloud.lock", mods_d);
+    HANDLE h = CreateFileA(p, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    return h;
+}
+static int lock_ok(HANDLE h) { return h != INVALID_HANDLE_VALUE; }
+static void lock_drop(HANDLE h) { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+static int lock_take(void) {
+    char p[1300]; snprintf(p, sizeof p, "%s/cloud.lock", mods_d);
+    int fd = open(p, O_CREAT | O_RDWR, 0644); if (fd < 0) return -1;
+    if (flock(fd, LOCK_EX | LOCK_NB)) { close(fd); return -1; }
+    return fd;
+}
+static int lock_ok(int fd) { return fd >= 0; }
+static void lock_drop(int fd) { if (fd >= 0) close(fd); }
+#endif
+int dsl_cloud_lock_busy;
+static int pass_locked(void);
+/* 0 = pass done, 1 = not possible now (status says why or another game process is in a pass) */
 int dsl_cloud_pass(void) {
+    __typeof__(lock_take()) lk = lock_take();
+    if (!lock_ok(lk)) { dsl_cloud_lock_busy++; dsl_log("cloud: another game process is syncing: pass skipped"); return 1; }
+    int r = pass_locked();
+    lock_drop(lk);
+    return r;
+}
+static int pass_locked(void) {
     void *rs = A.get ? A.get() : NULL;
     if (!rs) { set_status("Cloud backup is waiting for Steam."); return 1; }
     if (!A.acc(rs) || !A.app(rs)) { set_status("Cloud backup is off: Steam Cloud is turned off for this game or this account."); return 1; }
@@ -229,10 +270,16 @@ int dsl_cloud_pass(void) {
             if (e->mtime >= e->rts) {                                            /* this computer's copy is newer */
                 char rn[300]; snprintf(rn, sizeof rn, PFX "%s", e->name);
                 int32_t n = A.size(rs, rn); char *b = n > 0 ? malloc((size_t)n) : NULL;
-                if (b && A.read(rs, rn, b, n) == n) backup(e->name, "cloud", NULL, b, n);
+                char tag[32]; snprintf(tag, sizeof tag, "%lld", (long long)e->rts);      /* one copy per cloud version */
+                int kept = b && A.read(rs, rn, b, n) == n && !backup(e->name, "cloud", tag, NULL, b, n);
                 free(b);
+                if (!kept) { fails++; continue; }                                   /* never overwrite without the copy */
                 int r = upload(rs, e, &ours_n, &ours_bytes); fails += r < 0; space += r == 1;
-            } else { backup(e->name, "this-computer", p, NULL, 0); fails += download(rs, e) != 0; }
+            } else {
+                char tag[32]; snprintf(tag, sizeof tag, "%lld", (long long)e->mtime);   /* one copy per local version */
+                if (backup(e->name, "this-computer", tag, p, NULL, 0)) { fails++; continue; }
+                fails += download(rs, e) != 0;
+            }
         } else if (e->here) {
             int r = upload(rs, e, &ours_n, &ours_bytes); fails += r < 0; space += r == 1;
         } else if (e->there) {
@@ -245,7 +292,7 @@ int dsl_cloud_pass(void) {
         }
     }
     for (int i = 0; i < nst; i++) if (st[i].name[0]) {                       /* gone on both sides */
-        Ent *e = NULL; for (int k = 0; k < nE && !e; k++) if (!strcmp(E[k].name, st[i].name)) e = &E[k];
+        Ent *e = NULL; for (int k = 0; k < nE && !e; k++) if (!strcasecmp(E[k].name, st[i].name)) e = &E[k];
         if (!e) st[i].name[0] = 0;
     }
     state_save();
@@ -323,21 +370,38 @@ static void scan_game(void) {
     }
     closedir(d);
 }
-/* copy every save of world g from the game's folder into the modded saves; returns files copied (-1 = error) */
-int dsl_cloud_import(const char *g) {
+/* copy every save of world g from the game's folder into the modded saves. A modded save of the same name that
+   differs (the world played modded) is never overwritten unless replace = 1; then it is first kept in cloud_backups/
+   (a failed copy stops the import before any write). Returns files copied, -2 = the modded world differs (ask),
+   -1 = error. mwhen (optional) = the modded save's "SaveTime". */
+int dsl_cloud_import(const char *g, int replace, char *mwhen, size_t mcap) {
+    char names[64][256]; int nn = 0, differ = 0, n = 0, bad = 0;
     DIR *d = game_saves[0] ? opendir(game_saves) : NULL; struct dirent *de; if (!d) return -1;
-    int n = 0, bad = 0; mkdir(saves_d, 0755);
-    while ((de = readdir(d))) {
+    if (mwhen && mcap) mwhen[0] = 0;
+    while ((de = readdir(d)) && nn < 64) {
         if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
         char fg[40], c[64], w[24]; if (!file_header(game_saves, de->d_name, fg, c, w) || strcmp(fg, g)) continue;
-        char s[1400], t[1400]; snprintf(s, sizeof s, "%s/%s", game_saves, de->d_name); snprintf(t, sizeof t, "%s/%s", saves_d, de->d_name);
-        long a, b; char *x = read_all(s, &a), *y = read_all(t, &b);
-        int same = x && y && a == b && !memcmp(x, y, (size_t)a);
-        if (y && !same) backup(de->d_name, "before-import", t, NULL, 0);
-        if (x && !same) { struct stat ss; int64_t mt = stat(s, &ss) ? 0 : (int64_t)ss.st_mtime; if (write_all(t, x, a, mt)) bad++; else n++; }
-        free(x); free(y);
+        snprintf(names[nn++], 256, "%s", de->d_name);
     }
     closedir(d);
+    mkdir(saves_d, 0755);
+    for (int pass = 0; pass < 3; pass++) {                                   /* 0 compare, 1 keep copies, 2 write */
+      if (pass == 1 && differ && !replace) { dsl_log("cloud: import of world %s: %d modded save(s) differ: asking first, nothing written", g, differ); return -2; }
+      if (pass == 2 && bad) { dsl_log("cloud: import of world %s stopped: a copy of the modded save could not be kept, nothing replaced", g); return -1; }
+      for (int i = 0; i < nn; i++) {
+        char s[1400], t[1400]; snprintf(s, sizeof s, "%s/%s", game_saves, names[i]); snprintf(t, sizeof t, "%s/%s", saves_d, names[i]);
+        long a, b; char *x = read_all(s, &a), *y = read_all(t, &b);
+        int same = x && y && a == b && !memcmp(x, y, (size_t)a);
+        if (pass == 0 && y && !same) {
+            differ++;
+            if (mwhen && mcap && !mwhen[0]) { char fg[40], c[64]; file_header(saves_d, names[i], fg, c, mwhen); }
+        }
+        if (pass == 1 && y && !same && backup(names[i], "before-import", NULL, t, NULL, 0)) bad++;
+        if (pass == 2 && x && !same) { if (write_all(t, x, a, 0)) bad++; else n++; }
+        free(x); free(y);
+        if (!x && pass == 0) bad++;
+      }
+    }
     dsl_log("cloud: import of world %s: %d save(s) copied, %d failed (the game's own files are unchanged)", g, n, bad);
     return bad ? -1 : n;
 }
@@ -345,15 +409,27 @@ int dsl_cloud_import(const char *g) {
 /* title button "Import a save" -> the game's notice box, one world at a time: Import / Next (Close on the last) */
 static int cur;
 static void ask(void);
+static void on_replace(void *ud, DSLObj w);
 static void done_box(const char *msg) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(msg, "OK", NULL, NULL, NULL, NULL); }
-static void on_import(void *ud, DSLObj w) {
-    (void)ud; (void)w; if (cur < 0 || cur >= nW) return;
-    int n = dsl_cloud_import(W[cur].guid);
+static void import_now(int replace) {
+    char mw[24];
+    int n = dsl_cloud_import(W[cur].guid, replace, mw, sizeof mw);
+    if (n == -2) {
+        const DSLUi *u = dsl_ui_kit(); if (!u) return;
+        char t[900];
+        snprintf(t, sizeof t, "Your modded saves already have %s (last saved %s), with its own progress. Replace it with the "
+                 "game's %s (last saved %s)?\n\nYour modded %s is kept as a copy in:\n%s",
+                 W[cur].clan, mw[0] ? mw : "?", W[cur].clan, W[cur].when, W[cur].clan, backups_d);
+        u->notice(t, "Replace", "Keep mine", on_replace, NULL, NULL);
+        return;
+    }
     if (n < 0) snprintf(import_msg, sizeof import_msg, "Could not import %s. The details are in dsload.log.", W[cur].clan);
     else if (n == 0) snprintf(import_msg, sizeof import_msg, "%s is already in your modded saves.", W[cur].clan);
     else snprintf(import_msg, sizeof import_msg, "%s imported (%d save%s). You can open it from Load Campaign.", W[cur].clan, n, n == 1 ? "" : "s");
     done_box(import_msg);
 }
+static void on_replace(void *ud, DSLObj w) { (void)ud; (void)w; if (cur >= 0 && cur < nW) import_now(1); }
+static void on_import(void *ud, DSLObj w) { (void)ud; (void)w; if (cur >= 0 && cur < nW) import_now(0); }
 static void on_next(void *ud, DSLObj w) { (void)ud; (void)w; if (++cur < nW) ask(); }
 static void ask(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || cur >= nW) return;

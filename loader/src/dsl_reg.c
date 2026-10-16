@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
@@ -31,10 +33,12 @@ static char *slurp(const char *p, size_t max) {
     FILE *f = fopen(p, "rb"); if (!f) return NULL;
     char *b = malloc(max + 1); size_t n = fread(b, 1, max, f); fclose(f); b[n] = 0; return b;
 }
+/* temp (unique per process) + every write checked + fsync + rename: a failed write never replaces the old file */
 static int put_file(const char *path, const char *text) {
-    char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp-%d", path, (int)getpid());
     FILE *f = fopen(tmp, "w"); if (!f) return -1;
-    fputs(text, f); fflush(f); fsync(fileno(f)); fclose(f);
+    int bad = fputs(text, f) < 0; bad |= fflush(f) != 0; bad |= fsync(fileno(f)) != 0; bad |= fclose(f) != 0;
+    if (bad) { dsl_log("reg: write of %s failed: the old file stays", path); remove(tmp); return -1; }
     return rename(tmp, path);
 }
 static void jesc(char *out, size_t n, const char *s) {
@@ -74,6 +78,7 @@ static const char *worlds_path(void) {
 #define MAXM 64
 static DSLModInfo MI[MAXM]; static int nmi;
 static char MI_short[MAXM][48];                         /* mod.json "short_name" (world rows), else "" */
+static int MI_savedep[MAXM];                            /* mod.json "save_dependent": saves need the loader (owner item 9) */
 static int mods_scanned;
 static void mods_scan(void) {
     if (mods_scanned) return; mods_scanned = 1;
@@ -101,6 +106,7 @@ static void mods_scan(void) {
         snprintf(MI_short[nmi - 1], sizeof MI_short[0], "%s", json_str(m, "short_name") ? json_str(m, "short_name") : "");
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
+        JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         int on = 1;
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
@@ -147,6 +153,24 @@ void dsl_mod_short(const char *id, char *out, size_t cap) {
         return;
     }
     snprintf(out, cap, "%s", id);
+}
+/* mod.json "save_dependent": true = a save made with this mod on may not work in the game started without the loader */
+int dsl_mod_save_dependent(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI_savedep[i]; return 0; }
+/* the player's warning for these mods (owner item 9): "Saves made with A and B may not work without the mod loader."
+   out = "" and 0 when none of them is save_dependent; else the number of such mods */
+const char *dsl_mod_name(const char *id);
+int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap) {
+    const char *v[MAXM]; int k = 0;
+    for (int i = 0; i < n && k < MAXM; i++) if (dsl_mod_save_dependent(ids[i])) v[k++] = ids[i];
+    out[0] = 0; if (!k) return 0;
+    strlcat(out, "Saves made with ", cap);
+    for (int i = 0; i < k; i++) {
+        const char *nm = dsl_mod_name(v[i]);
+        if (i) strlcat(out, i + 1 == k ? " and " : ", ", cap);
+        strlcat(out, nm ? nm : v[i], cap);
+    }
+    strlcat(out, " may not work without the mod loader.", cap);
+    return k;
 }
 const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
@@ -274,9 +298,24 @@ static void migrate_save_keys(JNode *w) {
         worlds_migrated = 1;
     }
 }
+/* worlds.json there but not readable / not JSON: never rewritten this session (the mod sets of the worlds would be lost);
+   a corrupt one is kept as worlds.json.bad-<time>; loads are refused with a message (dsl_world.c) */
+static int worlds_bad; static char worlds_bad_path[1300];
+int dsl_worlds_bad(const char **kept) { if (kept) *kept = worlds_bad_path; return worlds_bad; }
 static void worlds_load(void) {
-    if (worlds_doc) return;
-    char *t = slurp(worlds_path(), 8 << 20); worlds_doc = t ? json_parse(t) : NULL; free(t);
+    if (worlds_doc || worlds_bad) return;
+    const char *wp = worlds_path();
+    char *t = slurp(wp, 8 << 20); worlds_doc = t ? json_parse(t) : NULL;
+    if (!worlds_doc && !access(wp, 0)) {
+        worlds_bad = 1;
+        if (t) {                                                        /* read but not JSON: set it aside, keep it */
+            char ts[32]; time_t now = time(NULL); strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", localtime(&now));
+            snprintf(worlds_bad_path, sizeof worlds_bad_path, "%s.bad-%s", wp, ts);
+            if (rename(wp, worlds_bad_path)) snprintf(worlds_bad_path, sizeof worlds_bad_path, "%s", wp);
+        } else snprintf(worlds_bad_path, sizeof worlds_bad_path, "%s", wp);
+        dsl_log("worlds: %s could not be %s: kept as %s; not written this session, loads refused", wp, t ? "parsed" : "read", worlds_bad_path);
+    }
+    free(t);
     JNode *w = json_get(worlds_doc, "worlds");
     if (w && w->t == JN_OBJ) { for (JNode *c = w->child; c; c = c->next) strip_mp(c); migrate_save_keys(w); }
 }
@@ -305,6 +344,7 @@ static void set_lines(char *out, size_t cap, char ms[65]) {
 }
 static void worlds_save(const char *add_guid, const char *add_key) {
     worlds_load();
+    if (worlds_bad) { dsl_log("worlds: not saved (worlds.json could not be read at start)"); return; }
     size_t cap = 1 << 16, n = 0; char *b = malloc(cap); char e1[600], e2[600];
 #define PUT(...) do { if (cap - n < 4096) { cap *= 2; b = realloc(b, cap); } int k_ = snprintf(b + n, cap - n, __VA_ARGS__); if (k_ > 0) n += (size_t)k_; } while (0)
     JNode *st = worlds_doc;
@@ -442,7 +482,7 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     char bie[4096] = ""; if (dsl_net_env(nk, pd, nb, bie, sizeof bie)) bie[0] = 0;
     int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */
     *first_out = first;
-    snprintf(envl, ecap, "DSML_MODSET=%s\n%s%s%s", kk, bie, first ? "DSL_SOFT_TIMEOUT=300\n" : "", env ? env : "");
+    snprintf(envl, ecap, "DSML_MODSET=%s\nDSL_MODSET_OWN=1\n%s%s%s", kk, bie, first ? "DSL_SOFT_TIMEOUT=300\n" : "", env ? env : "");
     return 0;
 }
 static int apply_ids(const char *const *ids, int n, const char *env, char *why, size_t cap) {
@@ -674,6 +714,8 @@ int dsl_ui_test_tip_rects(float card[4], float panel[4]);
 void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_progress.c gives the real one */
+__attribute__((weak)) void dsl_progress_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
 __attribute__((weak)) int dsl_pkg_refresh(char *fail, size_t fcap) { if (fail && fcap) fail[0] = 0; return -2; }
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
@@ -798,6 +840,7 @@ void dsl_frame_hook(void) {
     test_frame();
     dsl_rows_frame();
     if (dsl_win_frame) dsl_win_frame();
+    dsl_progress_frame();
 }
 
 static const char *data_dir_get(void) { return dsl_reg_data_dir(); }
@@ -829,7 +872,14 @@ void dsl_reg_after_init(void) {
     const char *old = json_str(worlds_doc, "modset");
     { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
       /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
-      if (!(given && *given) && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
+      int own = !(given && *given) || (getenv("DSL_MODSET_OWN") && !strcmp(getenv("DSL_MODSET_OWN"), "1"));   /* B of our soft restart */
+      if (own && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
+    if (dsl_soft_wanted()) {                                           /* the new game of a soft restart: its first progress step */
+        extern void dsl_soft_progress(int pct, const char *text);
+        char t[300] = "Loading "; int k = 0;
+        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[64]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
+        dsl_soft_progress(10, k ? t : "Loading the game");
+    }
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
             run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());

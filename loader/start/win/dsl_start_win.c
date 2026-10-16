@@ -12,7 +12,7 @@
 //   module hook), il2cpp_init hook, dsl_module_early (RVA hooks) -> the Steam check below.
 //   il2cpp_init returned (the core's hook): dsl_plugin_init.
 // Own hooks (the start part's jobs, not the mods'): the save folder (Application.persistentDataPath -> <DSRIG_DIR>/data,
-// the same folder the Mac copy uses; since the save switch a junction to the game's own save folder) and, when the
+// the same folder the Mac copy uses; never the game's own save folder) and, when the
 // starter found no signed-in Steam (DSL_STEAM=0), the game's Steam check off (StoreRuntimeHandler.Start -> Disabled).
 // Not our copy (no DSL_MODS_DIR and no dsmodded_build.txt next to the exe): does nothing, the game runs stock.
 #include "dsl_internal.h"
@@ -32,7 +32,7 @@ static const struct { uint32_t ts, size; const char *build; } WIN_BUILDS[] = {
 #define W_STRING_NEW      0x49E320        /* il2cpp_string_new (export) */
 #define W_STORE_START     0xA3F240        /* Refactor.Main.StoreRuntimeHandler$$Start (Steam gate) */
 
-static char data_dir[1100];
+static char data_dir[3300];                 /* UTF-8 */
 static HMODULE self_mod;
 
 static void env_default(const char *k, const char *v) { if (!getenv(k) || !*getenv(k)) { _putenv_s(k, v); SetEnvironmentVariableA(k, v); } }
@@ -93,56 +93,26 @@ static int my_store_start(Obj self, Obj on_signal, void *mi) {
     return 0;
 }
 
-/* the game's own save folder (Unity: LocalLow\<company>\<product>; the starter's save switch uses the same path) */
-static int game_save_dir(wchar_t *out, size_t n) {
-    const wchar_t *e = _wgetenv(L"DSMODDED_GAME_DATA");                         /* tests: another folder (starter too) */
-    if (e && *e) { _snwprintf(out, n, L"%ls", e); return 0; }
-    HMODULE sh = LoadLibraryA("shell32.dll"), ole = LoadLibraryA("ole32.dll");   /* not imported: not in GameAssembly's load */
-    HRESULT (WINAPI *kfp)(const GUID *, DWORD, HANDLE, PWSTR *) = sh ? (void *)GetProcAddress(sh, "SHGetKnownFolderPath") : NULL;
-    void (WINAPI *ctf)(void *) = ole ? (void *)GetProcAddress(ole, "CoTaskMemFree") : NULL;
-    static const GUID low = { 0xA520A1A4, 0x1780, 0x4FF6, { 0xBD, 0x18, 0x16, 0x73, 0x43, 0xC5, 0xAF, 0x16 } };   /* LocalAppDataLow */
-    wchar_t *p = NULL;
-    if (!kfp || kfp(&low, 0, NULL, &p) != S_OK || !p) return -1;
-    _snwprintf(out, n, L"%ls\\CanOpener\\Dungeon Settlers", p);
-    if (ctf) ctf(p);
-    return 0;
-}
-/* a and b are the same folder (a junction counts as its target) */
-static int same_dir(const wchar_t *a, const wchar_t *b) {
-    BY_HANDLE_FILE_INFORMATION ia, ib; int same = 0;
-    HANDLE ha = CreateFileW(a, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    HANDLE hb = CreateFileW(b, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    if (ha != INVALID_HANDLE_VALUE && hb != INVALID_HANDLE_VALUE && GetFileInformationByHandle(ha, &ia) && GetFileInformationByHandle(hb, &ib))
-        same = ia.dwVolumeSerialNumber == ib.dwVolumeSerialNumber && ia.nFileIndexHigh == ib.nFileIndexHigh && ia.nFileIndexLow == ib.nFileIndexLow;
-    if (ha != INVALID_HANDLE_VALUE) CloseHandle(ha);
-    if (hb != INVALID_HANDLE_VALUE) CloseHandle(hb);
-    return same;
-}
-
-/* dsl_core_prereq: the save folder, before any module hook. Not redirected while <DSRIG_DIR>/data is a folder of its
-   own (the starter could not switch: game running, backup or junction failed) = modded play would land in the normal
-   saves, never backed up: every module off. Not redirected while it IS the game's own folder (junction): the game
-   writes the same folder anyway, so mods stay on. DSL_TEST_REDIRECT_FAIL=1 = the hook is not tried (test). */
+/* dsl_core_prereq: the save folder, before any module hook. <DSRIG_DIR>/data is always a folder of its own (owner
+   2026-10-16: modded saves never live in the game's LocalLow folder), so not redirected = modded play would write the
+   normal saves: every module off. DSL_TEST_REDIRECT_FAIL=1 = the hook is not tried (test). */
 static int save_folder(char *why, size_t n) {
-    const char *rd = getenv("DSRIG_DIR");
-    if (!rd || !*rd) { dsl_log("save folder: no DSRIG_DIR: the game's own save folder"); return 0; }
-    snprintf(data_dir, sizeof data_dir, "%s/data", rd);
+    /* il2cpp_string_new reads UTF-8; getenv gives the ANSI code page (a user name like José breaks the path): the
+       folder comes from the wide environment, UTF-8 for the game, wide for the folder itself */
+    wchar_t wd[1100] = L"";
+    DWORD wn = GetEnvironmentVariableW(L"DSRIG_DIR", wd, 1090);
+    if (wn >= 1090) wn = 0;
+    if (wn) { wcscat(wd, L"\\data"); CreateDirectoryW(wd, NULL); }
+    else { wd[0] = 0; dsl_log("save folder: no DSRIG_DIR"); }
+    if (!WideCharToMultiByte(CP_UTF8, 0, wd, -1, data_dir, sizeof data_dir, NULL, NULL)) { data_dir[0] = 0; wn = 0; }
     for (char *p = data_dir; *p; p++) if (*p == '\\') *p = '/';
-    CreateDirectoryA(data_dir, NULL);
     int test = getenv("DSL_TEST_REDIRECT_FAIL") && *getenv("DSL_TEST_REDIRECT_FAIL") == '1';
     if (test) dsl_log("DSL_TEST_REDIRECT_FAIL=1: save folder hook not tried");
-    if (!test && !dsl_hook(DSL_OWNER_LOADER, (void *)(dsl_ga_base + W_PERSISTENT_PATH), (void *)my_pdp, (void **)&o_pdp, "Application.get_persistentDataPath")) {
+    if (!test && wn && !dsl_hook(DSL_OWNER_LOADER, (void *)(dsl_ga_base + W_PERSISTENT_PATH), (void *)my_pdp, (void **)&o_pdp, "Application.get_persistentDataPath")) {
         dsl_log("save folder: %s", data_dir);
         return 0;
     }
-    wchar_t wd[1100], gd[MAX_PATH + 64];
-    MultiByteToWideChar(CP_UTF8, 0, data_dir, -1, wd, 1100);
-    for (wchar_t *p = wd; *p; p++) if (*p == L'/') *p = L'\\';
-    if (!game_save_dir(gd, MAX_PATH + 64) && same_dir(wd, gd)) {
-        dsl_log("save folder NOT redirected, but %s is the game's own save folder (%ls): same saves, mods stay on", data_dir, gd);
-        return 0;
-    }
-    dsl_log("save folder NOT redirected and %s is a folder of its own: modded play would write the normal saves", data_dir);
+    dsl_log("save folder NOT redirected to %s: modded play would write the normal saves", data_dir);
     snprintf(why, n, "The mod loader could not point the game to the Dungeon Settlers Modded save folder, so mods are off. "
              "This session runs the normal game with your normal saves, as if started from Steam. Close the game and "
              "start Dungeon Settlers Modded again to play with mods.");

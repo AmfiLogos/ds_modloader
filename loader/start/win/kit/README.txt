@@ -31,7 +31,7 @@ To play the normal game, start it from Steam as usual. Steam starts it without m
 
 
 ADD A MOD
-1. Download the mod file. Its name is like gcd-cdr-2.0.0.zip. Do not extract it.
+1. Download the mod file. Its name is like gcd-cdr-0.1.2.zip. Do not extract it.
 2. Open the mods folder. Do one of these:
    - In the game, on the title screen, click Mods. Click "Open mods folder".
    - Press Windows+R. Paste %LOCALAPPDATA%\Dungeon Settlers Modded\mods and press Enter.

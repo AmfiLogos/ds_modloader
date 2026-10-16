@@ -154,7 +154,7 @@ static void unreg_all(void) { nreg = 0; }
 
 /* ---------------------------------------------------------------- the Mods tab */
 #define NM 64
-static struct { const DSLModInfo *m; int on, base; DSLObj row; } mods[NM]; static int nmods;   /* base: running set, or the world's */
+static struct { const DSLModInfo *m; int on, base; DSLObj row, warn; } mods[NM]; static int nmods;   /* base: running set, or the world's; warn: save warning line (owner item 9) */
 static int world_mode; static char world_guid[80], world_name[120];   /* Mods tab bound to one world (Load list "Change") */
 static DSLObj m_status, m_apply, m_undo, m_save, m_field, m_fsave, m_fcancel, m_glist, m_gmark, m_gnone;
 static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applying_seen_busy;
@@ -183,7 +183,15 @@ static int group_is_current(int g) {
     return 1;
 }
 static void mods_sync(void) {
-    for (int i = 0; i < nmods; i++) U->toggle_set(mods[i].row, mods[i].on);
+    for (int i = 0; i < nmods; i++) {
+        U->toggle_set(mods[i].row, mods[i].on);
+        if (!mods[i].warn) continue;
+        U->set_active(mods[i].warn, mods[i].on);                       /* test state: the line's text only while it shows */
+        for (int k = 0; k < nreg; k++) if (reg[k].w == mods[i].warn) {
+            if (!mods[i].on) reg[k].text[0] = 0;
+            else { const char *one = mods[i].m->id; int dsl_save_warning(const char *const *, int, char *, size_t); dsl_save_warning(&one, 1, reg[k].text, sizeof reg[k].text); }
+        }
+    }
     const char *busy = dsl_busy_reason();
     int ch = changed();
     char s[600];
@@ -343,7 +351,7 @@ static void mods_open(DSLObj root, float w, float h) {
     for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
         const DSLModInfo *m = dsl_mods_at(i);
         if (!m || m->hidden) continue;
-        mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = NULL; nmods++;
+        mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++;
     }
     if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
         const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
@@ -375,6 +383,7 @@ static void mods_open(DSLObj root, float w, float h) {
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
     float y = 0, rh = 74;
     for (int i = 0; i < nmods; i++, y += rh) {
+        rh = 74;
         const DSLModInfo *m = mods[i].m;
         char lb[160], nm[100];
         snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
@@ -390,6 +399,15 @@ static void mods_open(DSLObj root, float w, float h) {
         DSLObj t = U->text(list, mk ? 16 + mw : 12, y + 38, m_lw - (mk ? 60 + mw : 56), rh - 40, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
         snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
         if (m->description && strlen(m->description) > 150) U->tooltip(mods[i].row, m->name, m->description);
+        /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent"): one orange line under the
+           description while it is switched on */
+        int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
+        char wr[300]; const char *one = m->id;
+        if (dsl_save_warning(&one, 1, wr, sizeof wr)) {
+            mods[i].warn = U->text(list, 12, y + 74, m_lw - 56, 20, wr, 14, DSL_TXT_LEFT, WARN);
+            snprintf(nm, sizeof nm, "savewarn:%s", m->id); named(mods[i].warn, 3, nm, NULL, NULL, wr);
+            rh = 96;
+        }
     }
     if (!nmods) U->text(list, 12, 8, m_lw - 56, 40, "No mods are installed.", 16, DSL_TXT_LEFT, SUB);
     U->scroll_height(list, y);

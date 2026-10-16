@@ -73,7 +73,11 @@ static void show_window(id w) {
     MSG(void, id, SEL, long)(w, SEL_("setLevel:"), 0L);
     MSG(void, id, SEL, BOOL)(w, SEL_("setIgnoresMouseEvents:"), NO);
     MSG(void, id, SEL, BOOL)(w, SEL_("setHasShadow:"), YES);
-    ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 1.0);
+    ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), stage_on ? 0.0 : 1.0);
+    if (stage_on) {                                  /* shown, but still not on any display, Space or the mouse */
+        MSG(void, id, SEL, BOOL)(w, SEL_("setIgnoresMouseEvents:"), YES);
+        MSG(void, id, SEL, unsigned long)(w, SEL_("setCollectionBehavior:"), (1u << 3) | (1u << 6) | (1u << 4));
+    }
 }
 static int no_activate_g;
 static id my_init4(id self, SEL s, CGRect r, unsigned long st, unsigned long b, BOOL d) {
@@ -82,7 +86,10 @@ static id my_init4(id self, SEL s, CGRect r, unsigned long st, unsigned long b, 
 static id my_init5(id self, SEL s, CGRect r, unsigned long st, unsigned long b, BOOL d, id sc) {
     id w = o_init5(self, s, r, st, b, d, sc); if (hidden) hide_window(w); if (stage_on) stage_window(w); return w;
 }
-static void my_alpha(id self, SEL s, double a) { ((void (*)(id, SEL, double))o_alpha)(self, s, hidden ? 0.0 : a); }
+/* test stage: the window is also fully transparent and out of Spaces / Mission Control, so that even a move the
+   stage does not see (the system placing an off-display window back on a display: 2 guard kills on 2026-10-16) shows
+   nothing on the owner's screen. The game still renders (shots use ScreenCapture). */
+static void my_alpha(id self, SEL s, double a) { ((void (*)(id, SEL, double))o_alpha)(self, s, hidden || stage_on ? 0.0 : a); }
 static void my_mkkey(id self, SEL s) { if (!hidden) ((void (*)(id, SEL))o_mkkey)(self, s); }
 static void my_mkmain(id self, SEL s) { if (!hidden) ((void (*)(id, SEL))o_mkmain)(self, s); }
 static BOOL my_cankey(id self, SEL s) { return hidden ? NO : ((BOOL (*)(id, SEL))o_cankey)(self, s); }
@@ -96,6 +103,9 @@ static void my_setframe(id self, SEL s, CGRect r, BOOL d) { if (stage_on) { r.or
 static void my_setorigin(id self, SEL s, CGPoint p) { if (stage_on) { p.x = stage_x; p.y = stage_y; } ((void (*)(id, SEL, CGPoint))o_setorigin)(self, s, p); }
 static CGRect my_constrain(id self, SEL s, CGRect r, id sc) { return stage_on ? r : ((CGRect (*)(id, SEL, CGRect, id))o_constrain)(self, s, r, sc); }
 static void stage_window(id w) {
+    ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 0.0);
+    MSG(void, id, SEL, BOOL)(w, SEL_("setIgnoresMouseEvents:"), YES);
+    MSG(void, id, SEL, unsigned long)(w, SEL_("setCollectionBehavior:"), (1u << 3) | (1u << 6) | (1u << 4));
     CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
     f.origin.x = stage_x; f.origin.y = stage_y;
     ((void (*)(id, SEL, CGRect, BOOL))o_setframe)(w, SEL_("setFrame:display:"), f, NO);
@@ -179,9 +189,9 @@ void dsl_sos_stage_check(void) {
     unsigned long n; id ws = windows(&n);
     for (unsigned long i = 0; i < n; i++) {
         id w = win_at(ws, i); CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
-        if ((f.origin.x != stage_x || f.origin.y != stage_y) && MSG(double, id, SEL)(w, SEL_("alphaValue")) > 0) {
+        if (f.origin.x != stage_x || f.origin.y != stage_y) {
             ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 0.0); stage_window(w);
-            if (!hidden) ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 1.0);
+            /* stays transparent (test stage) */
             dsl_log("soft test: window off the stage (%.0f,%.0f): alpha 0, moved back", f.origin.x, f.origin.y);
         }
     }

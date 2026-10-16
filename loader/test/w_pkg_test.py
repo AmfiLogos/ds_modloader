@@ -102,4 +102,6 @@ if __name__ == '__main__':
     if a[0] == 'lock': lock()
     elif a[0] == 'unlock': unlock()
     elif a[0] == 'install': sys.exit(install())
-    elif a[0] == 'run': run(os.path.expanduser(a[1]))
+    elif a[0] == 'run':
+        run(os.path.expanduser(a[1]))
+        sys.exit(1 if not all(c['ok'] for c in checks) or not checks else 0)   # any FAIL or no check: exit 1
