@@ -15,8 +15,11 @@ OUT = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/ds_launcher/lo
 t.OUT = OUT; os.makedirs(OUT, exist_ok=True)
 APP = os.path.join(t.I, 'DungeonSettlers.app'); MD = os.path.join(APP, 'Contents/Resources/mods')
 TM = os.path.expanduser('~/ds_launcher_l1core/loader/build/test_mods')
-BDIR = os.path.join(t.I, 'bepinex_test', time.strftime('%H%M%S'), 'mac-arm64', '0.1.0')
-ENV = {'DSML_BEPINEX_DIR': BDIR, 'DSML_BEPINEX_SCRIPT': os.path.expanduser('~/ds_launcher_l1core/app/bepinex/install_bepinex.sh'),
+# the repo's own installer and the BepInEx version it pins (an old worktree's script pointed at a deleted release)
+SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'app', 'bepinex', 'install_bepinex.sh')
+VER = next(l.split('=', 1)[1].strip() for l in open(SCRIPT) if l.startswith('VER='))
+BDIR = os.path.join(t.I, 'bepinex_test', time.strftime('%H%M%S'), 'mac-arm64', VER)
+ENV = {'DSML_BEPINEX_DIR': BDIR, 'DSML_BEPINEX_SCRIPT': SCRIPT,
        'DSML_DSLOAD': os.path.join(APP, 'Contents/Frameworks/dsload.dylib')}
 
 
