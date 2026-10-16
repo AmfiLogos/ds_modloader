@@ -424,3 +424,15 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   Expedition"; "Save for this world" -> world set; set unchanged after an Apply (soft restart); the autosave loads with
   it (flow K); a second save of the world written in game (CampaignSaveLoader.Save; this seed world is Ironman, so the
   game takes only the autosave kind) has the same world and the same set.
+
+## Window mode at start (owner v13.3 "the game you start starts in full screen"; branch screenmode, 2026-10-16)
+- Unity reads its window (Screenmanager keys) from the play copy's preferences domain before any game code runs. The
+  owner's app domain com.CanOpener.Dungeon-Settlers.Modded reads windowed (mode 3) at 3456x2112 today; the plain game
+  windowed at 3456x2234 (read only). com.CanOpener.Dungeon-Settlers.mp* domains (mode 1 on mpZ) belong to test copies.
+- dsl_start_mac.c: at every start of the app (DSML_APP set by the stub) the loader copies the plain game's window keys
+  (mode, size, position, monitor) into the play copy's domain when they differ, before Unity starts. The plain game's
+  domain is only read. A soft-restart B does not copy; it takes A's live window mode (handoff "fsmode",
+  Screen.fullScreenMode icalls) and A's frame. Tests: DSL_SCREEN_FROM=<test domain>.
+- Proof `test/l1_screen_test.py` (copy S, screen2): 6/6, 0 guard violations; copy S set full screen 3456x2234 -> after
+  the start windowed 960x540 from the test domain; handoff fsmode; B does not copy; plain game plist bytes unchanged.
+- Not found: a full-screen setting in the owner's app domain today. Windows: not changed (registry prefs per exe).

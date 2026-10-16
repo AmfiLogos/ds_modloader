@@ -188,6 +188,42 @@ static void note_other_loaders(void) {
     }
 }
 
+/* window mode and size (owner v13.3: "the game you start starts in full screen"): Unity reads its window from the
+   app's own preferences (Screenmanager keys of the play copy's bundle id) before any game code runs. Every start of
+   the Dungeon Settlers Modded app copies the player's choice from the plain game's preferences into the play copy's
+   domain when it differs (read only on the plain game's domain). A soft-restart B is skipped: it takes A's window
+   (dsl_soft.c). Test copies: only with DSL_SCREEN_FROM=<domain> (a test domain). */
+static void screen_prefs(void) {
+    const char *from = getenv("DSL_SCREEN_FROM");
+    if (!(from && *from) && getenv("DSML_APP") && *getenv("DSML_APP")) from = "com.CanOpener.Dungeon-Settlers";
+    if (!(from && *from) || dsl_soft_wanted()) return;                  /* after dsl_soft_snapshot (it clears DSL_SOFT_HANDOFF) */
+    CFBundleRef mb = CFBundleGetMainBundle(); CFStringRef tgt = mb ? CFBundleGetIdentifier(mb) : NULL;
+    CFStringRef src = CFStringCreateWithCString(NULL, from, kCFStringEncodingUTF8);
+    if (!tgt || !src || CFStringCompare(tgt, src, 0) == kCFCompareEqualTo) { if (src) CFRelease(src); return; }
+    static const char *const keys[] = { "Screenmanager Fullscreen mode", "Screenmanager Resolution Width", "Screenmanager Resolution Height",
+        "Screenmanager Resolution Use Native", "Screenmanager Window Position X", "Screenmanager Window Position Y", "UnitySelectMonitor" };
+    int changed = 0, found = 0; char what[400] = "";
+    for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) {
+        CFStringRef k = CFStringCreateWithCString(NULL, keys[i], kCFStringEncodingUTF8);
+        CFPropertyListRef v = CFPreferencesCopyAppValue(k, src), cur = v ? CFPreferencesCopyAppValue(k, tgt) : NULL;
+        if (v) {
+            found++;
+            if (!cur || !CFEqual(v, cur)) {
+                CFPreferencesSetAppValue(k, v, tgt); changed++;
+                long n = 0; if (CFGetTypeID(v) == CFNumberGetTypeID()) CFNumberGetValue((CFNumberRef)v, kCFNumberLongType, &n);
+                size_t o = strlen(what); snprintf(what + o, sizeof what - o, "%s%s=%ld", o ? ", " : "", keys[i] + (strncmp(keys[i], "Screenmanager ", 14) ? 0 : 14), n);
+            }
+        }
+        if (cur) CFRelease(cur);
+        if (v) CFRelease(v);
+        CFRelease(k);
+    }
+    if (changed) CFPreferencesAppSynchronize(tgt);
+    char tb[200] = ""; CFStringGetCString(tgt, tb, sizeof tb, kCFStringEncodingUTF8);
+    dsl_log("screen: window settings of %s -> %s: %s", from, tb, !found ? "none in the source (kept)" : changed ? what : "already the same");
+    CFRelease(src);
+}
+
 __attribute__((constructor)) static void dsl_init(void) {
 #if !defined(__arm64__)
     return;
@@ -204,6 +240,7 @@ __attribute__((constructor)) static void dsl_init(void) {
     if (dsl_core_log_open(defdir, self_path)) return;
     if (scwd_r != 1) dsl_log("DSL_SOFT_CWD %s: chdir %s", scwd, scwd_r == 0 ? "ok" : "failed");
     dsl_soft_snapshot(dsl_core_logdir());
+    screen_prefs();
     pass_through_env();
 
     /* main executable -> app; GameAssembly file -> build */
