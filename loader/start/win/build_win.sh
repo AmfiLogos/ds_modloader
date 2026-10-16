@@ -17,7 +17,7 @@ python3 gen_def.py $GAME/baselib.dll $O/baselib_exports.def
 PM=(-ffile-prefix-map=$HOME=/src)                               # no build path (user name) in what ships (gate G12)
 PM+=(-ffile-prefix-map=$L=/loader -ffile-prefix-map=${D:A}=/mp)  # any build folder: the same debug info, so the same .buildid hash
 # links: -Wl,--no-insert-timestamp = no build time in the PE headers (the same bytes from every build)
-CF=($PM -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/src -I$L/sdk -I$MH/include)
+CF=($PM -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -DDSL_RELEASE=\"$(head -1 $L/../RELEASE)\" -I$L/src -I$L/sdk -I$MH/include)
 # MelonLoader guard plugin (kind "melon" mods): its DLL is embedded into bie_win.c (starter + baselib.dll)
 MLG=${ML_GUARD_DLL:-$D/ext/melon/plugin/DSMelonGuard/bin/Release/net6.0/DSMelonGuard.dll}; MLGF=()
 if [[ -f $MLG ]]; then
@@ -48,7 +48,7 @@ cp kit/install.bat kit/uninstall.bat kit/README.txt $K/
 cp kit/find_game.bat kit/copy_exclude.txt $K/files/
 cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
 print 25846389 > $K/files/BUILD.txt
-print ${DSM_RELEASE:-$(head -1 $L/RELEASE)} > $K/files/RELEASE        # the kit release (auto-update compares it)
+print ${DSM_RELEASE:-$(head -1 $L/../RELEASE)} > $K/files/RELEASE     # the kit release (auto-update compares it)
 stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done
 ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $K/files/baselib.dll "$K/files/Dungeon Settlers Modded.exe"   # no build paths

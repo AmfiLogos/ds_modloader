@@ -56,3 +56,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    sys.exit(1 if not all(c['ok'] for c in t.checks) or t.violations or not t.checks else 0)   # any FAIL, guard violation or no check: exit 1

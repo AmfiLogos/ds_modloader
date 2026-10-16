@@ -8,9 +8,9 @@ It is made for Steam build 25846389 of Dungeon Settlers. Other game builds are n
 ## The three repositories
 
 - ds_modloader (this repo): the mod loader, the Mac app, the Windows installer, and two small mods
-  (Global cooldown, Hell difficulty).
-- [ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer): the Multiplayer mod. Its releases page has the
-  installers (`Dungeon-Settlers-Modded-Mac.dmg`, `Dungeon-Settlers-Modded-Setup.exe`).
+  (Global cooldown, Hell difficulty). Its releases page has the installers (`Dungeon-Settlers-Modded-Mac.dmg`,
+  `Dungeon-Settlers-Modded-Setup.exe`).
+- [ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer): the Multiplayer mod.
 - [ds_custommodes](https://github.com/AmfiLogos/ds_custommodes): the Custom Modes mod (My Units, Unit Builder,
   Gallery, Test Fights, Foreign Expedition, PvP).
 
@@ -24,8 +24,8 @@ The installers hold the loader and all four mods. You only need the separate mod
 
 ## Download and install
 
-Get the installers from the latest release on the
-[ds_multiplayer releases page](https://github.com/AmfiLogos/ds_multiplayer/releases).
+Get the installers from the latest release on this repo's [releases page](https://github.com/AmfiLogos/ds_modloader/releases).
+A release named `v0.1.N` is the installer release. Its number is the mod loader's version.
 
 ### Mac
 
@@ -65,7 +65,7 @@ as usual and checks again next time.
 
 ## Add a mod
 
-Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-2.0.0.zip`). One file works on Mac and Windows.
+Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-0.1.2.zip`). One file works on Mac and Windows.
 
 1. Download the zip. Do not unzip it.
 2. Start the game, click Mods, then click "Open mods folder". Put the zip into that folder.
@@ -110,7 +110,7 @@ the modded game, its cloud copy goes too. The game's own cloud saves never chang
 
 ## Report a bug
 
-Open an issue on this repo's Issues page. Say your system (Mac or Windows), the release (for example v13.2) and
+Open an issue on this repo's Issues page. Say your system (Mac or Windows), the installer release (for example v0.1.7) and
 what you did. Attach the `.log` files from this folder (not the `data` folder, which holds your saves):
 Mac: `~/Library/Application Support/DSModLauncher/profiles/modded` (and `~/Library/Logs/DungeonSettlersModded.log`).
 Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.
@@ -121,7 +121,7 @@ See [BUILDING.md](BUILDING.md). The license files that ship with each release ar
 
 Releases for auto-update: tag `v0.1.N` in ds_modloader with the assets `Dungeon-Settlers-Modded-Mac.dmg` (or the
 `.zip`) and `Dungeon-Settlers-Modded-Windows.zip` (the kit zip; the Setup.exe alone is not enough), built with the same
-number in `loader/RELEASE` (or `DSM_RELEASE`): a kit whose RELEASE is not the tag's number is refused. Mod zips
+number in `RELEASE` (or `DSM_RELEASE`): a kit whose RELEASE is not the tag's number is refused. Mod zips
 `<id>-0.1.N.zip` (tag `<id>-v0.1.N`) in their own repos, the same number as their mod.json. GitHub's asset digest is
 the checksum (a `<asset>.sha256` file also works). Tests: `loader/test/update/` (Mac, local release server) and
 `loader/start/win/test/update_test.sh` (wine).
