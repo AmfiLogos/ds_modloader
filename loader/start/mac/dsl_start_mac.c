@@ -192,12 +192,17 @@ __attribute__((constructor)) static void dsl_init(void) {
 #if !defined(__arm64__)
     return;
 #endif
+    /* soft restart B started by LaunchServices (dsl_soft_mac.c): LaunchServices starts every app in "/", so A passes
+       its start folder (the profile folder with steam_appid.txt). Before the soft snapshot: B's own B starts there too. */
+    const char *scwd = getenv("DSL_SOFT_CWD");
+    int scwd_r = (scwd && *scwd) ? chdir(scwd) : 1;
     Dl_info di;
     if (dladdr((void*)dsl_init, &di) && di.dli_fname) snprintf(self_path, sizeof self_path, "%s", di.dli_fname);
     const char *home = getenv("HOME");
     char defdir[1024] = "";
     if (home) snprintf(defdir, sizeof defdir, "%s/Library/Application Support/CanOpener/Dungeon Settlers", home);
     if (dsl_core_log_open(defdir, self_path)) return;
+    if (scwd_r != 1) dsl_log("DSL_SOFT_CWD %s: chdir %s", scwd, scwd_r == 0 ? "ok" : "failed");
     dsl_soft_snapshot(dsl_core_logdir());
     pass_through_env();
 
