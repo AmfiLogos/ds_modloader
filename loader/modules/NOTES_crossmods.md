@@ -40,3 +40,15 @@ running process holds the bundle open, so a file swap cannot follow the Mods win
   game copy and ~/DungeonSettlers_HellDifficulty/b25846389/stock). Read only.
 
 ## Tests (results: ds_multiplayer ext/crossmods13/NOTES.md)
+2026-10-16 (all hidden, muted; wine bottle DSMP, graphics/audio off; one lease each):
+- Windows kit through the loader, `ext/crossmods13/win_mods_test.py`: 12 PASS 0 FAIL. Title; gcd-cdr loaded by name lookups
+  + Windows table; in a world 8 "global cooldown #n" lines, all with cooldown reduction (5.000 s, CDR 2.8 -> 4.866 s); Hell
+  23/23 code patches; Hell bundle built from the stock one and loaded instead of it; staff strip: CombatDifficulty 5 kit
+  [ClothArmor, ClothCoif], difficulty 1 kit keeps the NatureWoodStaff; Custom Modes its own module with FE + PvP on; the Mods
+  window lists multiplayer, custom-modes, gcd-cdr, hell-difficulty.
+- Mac loader copy Z, `mac_mods_test.py`: 8 PASS 0 FAIL (same checks; Hell 20/20; Mac delta).
+- Mac host + Windows guest, both through the loader with multiplayer + custom-modes + gcd-cdr, `xplay_loader.py`
+  (rig/mp2_test.py): 19 PASS 0 FAIL; the HELLO mod-set check passed (same mod.json lines on both). No global cooldown fired in
+  that fight (0 gcd lines on both), so the effect itself is proven by the single-copy runs above.
+- loader test/run_tests.sh: 31 passed. `build_mods.sh --check`: OK (4 modules).
+Windows starter: first start writes the default profile (mods with "default_on": false start off: Hell).
