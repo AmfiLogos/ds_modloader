@@ -205,7 +205,8 @@ void dsl_mod_short(const char *id, char *out, size_t cap);
 const char *dsl_mod_name(const char *id);
 int dsl_reg_scene(void);
 static void world_texts(const char *guid, int maxc, char *line, size_t lcap, char *all, size_t acap) {
-    const char *ids[64]; int n = dsl_world_mods(guid, ids, 64);
+    int dsl_world_mods_all(const char *guid, const char **ids, int max);
+    const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64);
     all[0] = 0; line[0] = 0;
     if (!n) { snprintf(line, lcap, "<color=#A69085>Mods:</color> none"); snprintf(all, acap, "No mods."); return; }
     int used = 6, k = 0;                                                  /* "Mods: " */

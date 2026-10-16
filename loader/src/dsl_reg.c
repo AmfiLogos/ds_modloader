@@ -129,13 +129,13 @@ static void mods_scan(void) {
     json_free(prof);
 }
 int dsl_mods_count(void) { mods_scan(); return nmi; }
-/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 22 characters */
+/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 characters */
 void dsl_mod_short(const char *id, char *out, size_t cap) {
     mods_scan(); out[0] = 0;
     for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) {
         if (MI_short[i][0]) { snprintf(out, cap, "%s", MI_short[i]); return; }
         snprintf(out, cap, "%s", MI[i].name);
-        if (strlen(out) > 22) { size_t c = 20; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 20; snprintf(out + c, cap - c, "..."); }
+        if (strlen(out) > 18) { size_t c = 16; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 16; snprintf(out + c, cap - c, "..."); }
         return;
     }
     snprintf(out, cap, "%s", id);
@@ -339,6 +339,17 @@ int dsl_world_mods(const char *guid, const char **ids, int max) {
     if (!strcmp(k, "vanilla")) return 0;
     snprintf(world_ids_buf, sizeof world_ids_buf, "%s", k); int n = 0;
     for (char *sv = NULL, *t = strtok_r(world_ids_buf, "+", &sv); t && n < max; t = strtok_r(NULL, "+", &sv)) ids[n++] = t;
+    return n;
+}
+/* every mod that is on when this world plays (owner v13 #5): its gameplay set, plus the mods the set leaves out
+   because they load with any world (multiplayer, client mods), when they are on */
+int dsl_world_mods_all(const char *guid, const char **ids, int max) {
+    int n = dsl_world_mods(guid, ids, max);
+    for (int i = 0; i < nmi && n < max; i++) {
+        if (!MI[i].enabled || (strcmp(MI[i].id, "multiplayer") && strcmp(MI[i].scope, "client"))) continue;
+        int dup = 0; for (int j = 0; j < n; j++) dup |= !strcmp(ids[j], MI[i].id);
+        if (!dup) ids[n++] = MI[i].id;
+    }
     return n;
 }
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
@@ -652,6 +663,7 @@ DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap);
 void dsl_ui_test_hover(DSLObj target);
 int dsl_ui_test_tip(char *title, size_t cap);
 int dsl_ui_test_tip_rects(float card[4], float panel[4]);
+void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
@@ -671,6 +683,8 @@ static void hover_frame(void) {
     if (--hv_wait == 0) { dsl_ui_test_hover(NULL); return; }
     if (hv_wait != 120) return;
     float c[4], p[4]; char tt[200] = ""; int on = dsl_ui_test_tip_rects(c, p); dsl_ui_test_tip(tt, sizeof tt);
+    { char bd[1400]; dsl_ui_test_tip_body(bd, sizeof bd); for (char *q = bd; *q; q++) if (*q == '\n') *q = '|';
+      dsl_log("reg test: tip %s body '%s'", hv_what, bd); }
     dsl_log("reg test: tip %s shown %d title '%s' card %.0f,%.0f,%.0f,%.0f panel %.0f,%.0f,%.0f,%.0f", hv_what, on, tt, c[0], c[1], c[2], c[3], p[0], p[1], p[2], p[3]);
 }
 static void test_frame(void) {

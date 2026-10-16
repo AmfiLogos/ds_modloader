@@ -824,6 +824,11 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
 }
 /* test only: hover this target instead of the mouse (NULL = the mouse) */
 __attribute__((visibility("default"))) void dsl_ui_test_hover(DSLObj target) { tip_test_target = target; }
+/* test only: the shown card's body text as drawn */
+__attribute__((visibility("default"))) void dsl_ui_test_tip_body(char *out, size_t cap) {
+    Obj etc = hget(h_tip_etc); out[0] = 0;
+    if (tip_shown && etc) utf8_of(tmp_get(AT(etc, f_etc_desc, Obj)), out, cap);
+}
 /* test only: the shown card's screen rect and the panel it was placed against (x0, y0, x1, y1) */
 __attribute__((visibility("default"))) int dsl_ui_test_tip_rects(float card[4], float panel[4]) {
     tip_card_rect(card); memcpy(panel, tip_panel, sizeof tip_panel); return tip_shown;
