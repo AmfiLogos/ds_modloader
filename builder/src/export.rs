@@ -829,7 +829,13 @@ fn dec_build(r: &mut Rd, e: &mut Errs) -> Option<WireBuild> {
         e.fail(format!("race index {race} outside the table"));
         return None;
     }
-    b.race = race as i32;
+    // as builder.js dsbDecBuild: a retired race comes back as Human
+    let ret = &crate::data::dsb().retired;
+    b.race = if ret.races.contains_key(&t.race[race as usize]) {
+        t.race.iter().position(|k| k == "AFFECTER_Human").unwrap_or(race as usize) as i32
+    } else {
+        race as i32
+    };
     let bg = r.ru();
     if bg != 0 {
         if (bg as i32).wrapping_sub(1) >= t.bg.len() as i32 || (bg as i32) < 0 {
@@ -865,7 +871,9 @@ fn dec_build(r: &mut Rd, e: &mut Errs) -> Option<WireBuild> {
         b.roll = 1
     }
     let bit = |n: u32| (fl >> n) & 1 == 1;
-    b.inds = read_list(r, e, t.ind.len(), "traits");
+    // retired traits (the designers' test rows, D.retired) are dropped, as builder.js dsbDecBuild dropGone
+    let drop_retired = |v: Vec<i32>| -> Vec<i32> { v.into_iter().filter(|i| !ret.ind.contains_key(&t.ind[*i as usize])).collect() };
+    b.inds = drop_retired(read_list(r, e, t.ind.len(), "traits"));
     b.trees = read_list(r, e, t.tree.len(), "skill trees");
     b.learned = read_list(r, e, t.skill.len(), "skills");
     b.insc = read_list(r, e, t.insc.len(), "inscriptions");
@@ -969,7 +977,7 @@ fn dec_build(r: &mut Rd, e: &mut Errs) -> Option<WireBuild> {
         b.souls = read_list(r, e, t.soul.len(), "souls")
     }
     if bit(12) {
-        b.saved_inds = read_list(r, e, t.ind.len(), "saved traits")
+        b.saved_inds = drop_retired(read_list(r, e, t.ind.len(), "saved traits"))
     }
     if bit(13) {
         b.saved_insc = read_list(r, e, t.insc.len(), "saved inscriptions")
