@@ -27,7 +27,7 @@ if [[ -f $MLG ]]; then
 # the core = every src/*.c except the arm64 engine (dsl_engine_win.c replaces it) + the Mods window (loader/ui, lane L2)
 CORE=($L/src/*.c(N) $L/ui/*.c(N)); CORE=(${CORE:#*/dsl_engine.c})
 for f in $CORE; do nice -n 19 $TC $CF -include compat/dsl_compat_win.h -c $f -o $OBJ/${f:t:r}.o; done
-for f in dsl_start_win.c dsl_engine_win.c dsl_os_win.c dsl_soft_win.c bie_win.c dsl_bie_win.c dsl_ml_win.c; do nice -n 19 $TC $CF $MLGF -I$D/win/third_party/zlib -c $f -o $OBJ/${f:t:r}.o; done
+for f in dsl_start_win.c dsl_engine_win.c dsl_os_win.c dsl_soft_win.c bie_win.c dsl_bie_win.c dsl_ml_win.c dsl_update_win.c; do nice -n 19 $TC $CF $MLGF -I$D/win/third_party/zlib -c $f -o $OBJ/${f:t:r}.o; done
 for f in $D/win/third_party/zlib/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC $PM -O2 -w -c $f -o $OBJ/zl_${f:t:r}.o; done
 for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c; do nice -n 19 $TC $PM -O2 -w -I$MH/include -c $f -o $OBJ/mh_${f:t:r}.o; done
 nice -n 19 $TC -shared -Wl,--no-insert-timestamp -o $O/baselib.dll.tmp $OBJ/*.o $O/baselib_exports.def -static -static-libgcc -lbcrypt -lurlmon -Wl,-Bstatic -lpthread
@@ -48,10 +48,11 @@ cp kit/install.bat kit/uninstall.bat kit/README.txt $K/
 cp kit/find_game.bat kit/copy_exclude.txt $K/files/
 cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
 print 25846389 > $K/files/BUILD.txt
+print ${DSM_RELEASE:-$(head -1 $L/RELEASE)} > $K/files/RELEASE        # the kit release (auto-update compares it)
 stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done
 ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $K/files/baselib.dll "$K/files/Dungeon Settlers Modded.exe"   # no build paths
-for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
+for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt $K/files/RELEASE; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
 echo "kit $K: $(ls $K/files/mods | tr '\n' ' ')"
 
 # the friend zip: one folder "Dungeon Settlers Modded" inside

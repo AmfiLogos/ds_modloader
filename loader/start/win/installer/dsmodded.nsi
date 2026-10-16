@@ -136,11 +136,13 @@ Section "Uninstall"
     SetErrorLevel 1
     Abort
   ${EndIf}
-  ; the game copy, the mods, the starter and the downloads go; saves and logs (profiles\) stay
+  ; the game copy, the mods, the starter, the downloads and the auto-update folder go; saves and logs (profiles\) stay
   RMDir /r "$INSTDIR\game"
   RMDir /r "$INSTDIR\mods"
   RMDir /r "$INSTDIR\retired"
   RMDir /r "$INSTDIR\cache"
+  RMDir /r "$INSTDIR\update"
+  Delete "$INSTDIR\RELEASE"
   Delete "$INSTDIR\${NAME}.exe"
   Delete "$INSTDIR\uninstall.bat"
   Delete "$DESKTOP\${NAME}.lnk"

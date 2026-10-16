@@ -3,6 +3,7 @@
 //   ROOT    = the folder of this exe (install.bat: %LOCALAPPDATA%\Dungeon Settlers Modded)
 //   game    = ROOT\game (full copy of Steam's folder made by install.bat; baselib.dll = the loader proxy)
 //   mods    = ROOT\mods\<id>\ (DSL_MODS_DIR)
+//   update  = ROOT\update (auto-update, DSML_ROOT = ROOT); a pending.txt left there is rolled back before the game starts
 //   PROFILE = ROOT\profiles\modded (DSRIG_DIR, DSL_LOG_DIR, logs), DATA = PROFILE\data (the game's save folder,
 //             redirected there by the proxy)
 // Steps: Steam not running -> steam.exe -silent, wait up to 90 s for a signed-in user (the game starts in every case;
@@ -186,6 +187,50 @@ static void install_packages(void) {
     FindClose(h);
 }
 
+/* ---- auto-update (src/dsl_update.c): ROOT\update\pending.txt still there = the last update never reached the title.
+   Roll it back the way dsl_update.c does: MOVE lines last to first, the new file into retired\update-failed-<time>\<n>,
+   the backup back in place; pending.txt into update\old, the KEY items into update\bad.txt (not offered again).
+   Paths in the file are in the ANSI code page (the loader's getenv / fopen). */
+static void movew(const wchar_t *from, const wchar_t *to, int *bad) {
+    wchar_t par[MAX_PATH * 2]; wcsncpy(par, to, MAX_PATH * 2 - 1); par[MAX_PATH * 2 - 1] = 0;
+    for (wchar_t *c = par; *c; c++) if (*c == L'/') *c = L'\\';
+    wchar_t *sl = wcsrchr(par, L'\\'); if (sl) { *sl = 0; mkdirs(par); }
+    if (!MoveFileExW(from, to, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING)) { logf_("update rollback: move %ls -> %ls failed (%lu)", from, to, GetLastError()); (*bad)++; }
+}
+static void update_cold_rollback(void) {
+    wchar_t pp[MAX_PATH]; _snwprintf(pp, MAX_PATH, L"%ls\\update\\pending.txt", root);
+    if (!exists(pp)) return;
+    FILE *f = _wfopen(pp, L"rb"); if (!f) { logf_("update rollback: cannot read %ls", pp); return; }
+    static char txt[1 << 20]; size_t k = fread(txt, 1, sizeof txt - 1, f); fclose(f); txt[k] = 0;
+    enum { MAXM = 400 };
+    static char *mp[MAXM], *mb[MAXM]; int n = 0; char label[200] = "", key[400] = "";
+    for (char *l = strtok(txt, "\r\n"); l; l = strtok(NULL, "\r\n")) {
+        char *t1 = strchr(l, '\t'); if (!t1) continue; *t1++ = 0;
+        if (!strcmp(l, "LABEL")) snprintf(label, sizeof label, "%s", t1);
+        else if (!strcmp(l, "KEY")) snprintf(key, sizeof key, "%s", t1);
+        else if (!strcmp(l, "MOVE") && n < MAXM) { char *t2 = strchr(t1, '\t'); if (t2) *t2++ = 0; mp[n] = t1; mb[n] = t2 ? t2 : ""; n++; }
+    }
+    wchar_t ts[32], fdir[MAX_PATH]; stamp(ts, 32);
+    _snwprintf(fdir, MAX_PATH, L"%ls\\retired\\update-failed-%ls", root, ts);
+    logf_("update: %s never reached the title: rolling back %d change(s)", label[0] ? label : "the last update", n);
+    int bad = 0;
+    for (int i = n - 1; i >= 0; i--) {
+        wchar_t p[MAX_PATH * 2], b[MAX_PATH * 2], d[MAX_PATH * 2];
+        MultiByteToWideChar(CP_ACP, 0, mp[i], -1, p, MAX_PATH * 2); MultiByteToWideChar(CP_ACP, 0, mb[i], -1, b, MAX_PATH * 2);
+        _snwprintf(d, MAX_PATH * 2, L"%ls\\%d", fdir, i);
+        if (exists(p)) movew(p, d, &bad);
+        if (b[0]) movew(b, p, &bad);
+    }
+    wchar_t od[MAX_PATH], q[MAX_PATH]; _snwprintf(od, MAX_PATH, L"%ls\\update\\old", root); mkdirs(od);
+    _snwprintf(q, MAX_PATH, L"%ls\\pending-coldrollback-%ls.txt", od, ts);
+    if (!MoveFileExW(pp, q, MOVEFILE_REPLACE_EXISTING)) logf_("update rollback: cannot move %ls (%lu)", pp, GetLastError());
+    wchar_t bp[MAX_PATH]; _snwprintf(bp, MAX_PATH, L"%ls\\update\\bad.txt", root);
+    FILE *bf = key[0] ? _wfopen(bp, L"ab") : NULL;
+    for (char *t = strtok(key, ","); t && bf; t = strtok(NULL, ",")) fprintf(bf, "%s\n", t);
+    if (bf) fclose(bf);
+    logf_("update: rolled back %d change(s) at the cold start (%d move(s) failed); not offered again: %s", n, bad, key[0] ? key : "(no key)");
+}
+
 /* ---- first start: default mod profile (never overwrites the player's choice) */
 static void default_profile(void) {
     wchar_t ap[MAX_PATH], md[MAX_PATH], pat[MAX_PATH];
@@ -232,6 +277,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     mkdirs(data);
     { wchar_t lp[MAX_PATH]; _snwprintf(lp, MAX_PATH, L"%ls\\starter.log", profile); lg = _wfopen(lp, L"a"); }
     logf_("---- start pid %lu, root %ls", GetCurrentProcessId(), root);
+    update_cold_rollback();                                /* before the game files are checked: it may put them back */
 
     wchar_t exe[MAX_PATH], bl[MAX_PATH], blo[MAX_PATH], bfile[MAX_PATH];
     _snwprintf(exe, MAX_PATH, L"%ls\\DungeonSettlers.exe", game);
@@ -277,6 +323,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
       if (SHGetKnownFolderPath(&FOLDERID_LocalAppDataLow, 0, NULL, &low) == S_OK) {
           _snwprintf(v, MAX_PATH * 2, L"%ls\\CanOpener\\Dungeon Settlers\\Saves", low); env(L"DSML_GAME_SAVES", v); CoTaskMemFree(low); } }
     env(L"DSL_STEAM", steam ? L"1" : L"0");
+    env(L"DSML_ROOT", root);                               /* auto-update: RELEASE, update\, the files it swaps */
 
     wchar_t line[4096];
     _snwprintf(line, 4096, L"\"%ls\" -logFile \"%ls\\player.log\"", exe, profile);
@@ -284,9 +331,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
 
     if (dry) {
         const wchar_t *keys[] = { L"SteamAppId", L"SteamGameId", L"DSRIG_DIR", L"DSRIG_LIVE", L"DSRIG_FPS", L"DSL_MODS_DIR",
-                                  L"DSL_PROFILE", L"DSL_LOG_DIR", L"DSML_SESSION", L"DSML_BUILD", L"DSML_APP", L"DSML_DATA", L"DSL_STEAM" };
+                                  L"DSL_PROFILE", L"DSL_LOG_DIR", L"DSML_SESSION", L"DSML_BUILD", L"DSML_APP", L"DSML_DATA", L"DSL_STEAM", L"DSML_ROOT" };
         FILE *o = lg ? lg : stdout;
-        for (int i = 0; i < 13; i++) { GetEnvironmentVariableW(keys[i], v, MAX_PATH * 2); fprintf(o, "ENV %ls=%ls\n", keys[i], v); }
+        for (int i = 0; i < (int)(sizeof keys / sizeof keys[0]); i++) { GetEnvironmentVariableW(keys[i], v, MAX_PATH * 2); fprintf(o, "ENV %ls=%ls\n", keys[i], v); }
         fprintf(o, "CWD %ls\nCMD %ls\n", game, line); fflush(o);
         return 0;
     }

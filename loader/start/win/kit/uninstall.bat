@@ -19,6 +19,8 @@ rem the game copy, the mods and the starter go. Saves and logs (profiles\) stay.
 if exist "%ROOT%\game" rd /s /q "%ROOT%\game"
 if exist "%ROOT%\mods" rd /s /q "%ROOT%\mods"
 if exist "%ROOT%\Dungeon Settlers Modded.exe" del /q "%ROOT%\Dungeon Settlers Modded.exe"
+if exist "%ROOT%\RELEASE" del /q "%ROOT%\RELEASE"
+if exist "%ROOT%\update" rd /s /q "%ROOT%\update"
 set "DESK="
 for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul') do set "DESK=%%b"
 if not defined DESK set "DESK=%USERPROFILE%\Desktop"
