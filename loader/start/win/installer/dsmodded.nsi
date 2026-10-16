@@ -148,7 +148,7 @@ Section "Install"
     DetailPrint "$INSTDIR already holds other files. Nothing was changed."
     MessageBox MB_OK|MB_ICONSTOP "$INSTDIR already holds other files. Nothing was changed. Choose a new or empty folder." /SD IDOK
     SetErrorLevel 3
-    Abort
+    Quit
   ${EndIf}
   SetOutPath "$PLUGINSDIR\kit"
   File /r "${KIT}\*"
@@ -162,6 +162,7 @@ Section "Install"
     SetDetailsView show
     MessageBox MB_OK|MB_ICONSTOP "The install did not finish. The reason is in the list above." /SD IDOK
     SetErrorLevel 1
+    ${IfThen} ${Silent} ${|} Quit ${|}
     Abort
   ${EndIf}
   SetOutPath "$INSTDIR"
