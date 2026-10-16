@@ -111,6 +111,81 @@ static void copy_saves(void) {
     logf_("first run: saves copied from %ls", src);
 }
 
+/* ---- mod packages: a <id>-<version>.zip dropped into ROOT\mods is unpacked to ROOT\mods\<id> (one top folder <id>\
+   or the files at the top). The old folder of that id goes to ROOT\retired, the zip to mods\.installed (bad: .failed).
+   A new mod is off until the player turns it on in the Mods window. */
+static int mod_id_ok(const char *id) {
+    if (!id || !*id || strlen(id) > 60 || id[0] == '.') return 0;
+    for (const char *c = id; *c; c++) if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '.' || *c == '_' || *c == '-')) return 0;
+    return 1;
+}
+static int read_mod_id(const wchar_t *dir, char *id, size_t n) {   /* 1 = dir\mod.json with a good id */
+    wchar_t mp[MAX_PATH]; _snwprintf(mp, MAX_PATH, L"%ls\\mod.json", dir);
+    FILE *f = _wfopen(mp, L"rb"); if (!f) return 0;
+    static char txt[1 << 16]; size_t k = fread(txt, 1, sizeof txt - 1, f); fclose(f); txt[k] = 0;
+    JNode *m = json_parse(txt); const char *s = json_str(m, "id"); int ok = mod_id_ok(s);
+    if (ok) snprintf(id, n, "%s", s);
+    json_free(m);
+    return ok;
+}
+static void stamp(wchar_t *out, size_t n) { SYSTEMTIME t; GetLocalTime(&t); _snwprintf(out, n, L"%04d%02d%02d-%02d%02d%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond); }
+static void install_packages(void) {
+    wchar_t md[MAX_PATH], pat[MAX_PATH]; _snwprintf(md, MAX_PATH, L"%ls\\mods", root); _snwprintf(pat, MAX_PATH, L"%ls\\*.zip", md);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        wchar_t zp[MAX_PATH], un[MAX_PATH], ts[32], dst[MAX_PATH];
+        _snwprintf(zp, MAX_PATH, L"%ls\\%ls", md, fd.cFileName);
+        _snwprintf(un, MAX_PATH, L"%ls\\.unpack-%lu", md, GetCurrentProcessId());
+        stamp(ts, 32); mkdirs(un);
+        char z8[MAX_PATH * 3], u8[MAX_PATH * 3], id[64] = "";
+        WideCharToMultiByte(CP_ACP, 0, zp, -1, z8, sizeof z8, NULL, NULL); WideCharToMultiByte(CP_ACP, 0, un, -1, u8, sizeof u8, NULL, NULL);
+        int k = bie_unzip_file(z8, u8);
+        wchar_t src[MAX_PATH] = L"";
+        if (k > 0 && read_mod_id(un, id, sizeof id)) wcscpy(src, un);
+        else if (k > 0) {                                  /* one folder down */
+            wchar_t p2[MAX_PATH]; _snwprintf(p2, MAX_PATH, L"%ls\\*", un);
+            WIN32_FIND_DATAW f2; HANDLE h2 = FindFirstFileW(p2, &f2);
+            if (h2 != INVALID_HANDLE_VALUE) {
+                do {
+                    if (!(f2.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || f2.cFileName[0] == L'.') continue;
+                    wchar_t c[MAX_PATH]; _snwprintf(c, MAX_PATH, L"%ls\\%ls", un, f2.cFileName);
+                    if (read_mod_id(c, id, sizeof id)) { wcscpy(src, c); break; }
+                } while (FindNextFileW(h2, &f2));
+                FindClose(h2);
+            }
+        }
+        int ok = 0;
+        if (src[0]) {
+            wchar_t wid[64]; MultiByteToWideChar(CP_UTF8, 0, id, -1, wid, 64);
+            _snwprintf(dst, MAX_PATH, L"%ls\\%ls", md, wid);
+            if (exists(dst)) {
+                wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
+                _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, wid, ts);
+                if (!MoveFileW(dst, old)) logf_("mods: cannot move the old %s folder (%lu)", id, GetLastError());
+            }
+            ok = !exists(dst) && MoveFileW(src, dst);
+        }
+        wchar_t keep[MAX_PATH], kz[MAX_PATH];
+        _snwprintf(keep, MAX_PATH, L"%ls\\%ls", md, ok ? L".installed" : L".failed"); mkdirs(keep);
+        _snwprintf(kz, MAX_PATH, L"%ls\\%ls-%ls", keep, ts, fd.cFileName);
+        if (!MoveFileW(zp, kz)) logf_("mods: cannot move %ls (%lu)", zp, GetLastError());
+        if (exists(un) && !RemoveDirectoryW(un)) {         /* what is left of the unpack folder (empty: removed): out of the mods list */
+            wchar_t rd[MAX_PATH], lo[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
+            _snwprintf(lo, MAX_PATH, L"%ls\\unpack-%ls", rd, ts);
+            if (!MoveFileW(un, lo)) logf_("mods: cannot move %ls (%lu)", un, GetLastError());
+        }
+        if (ok) logf_("mods: %ls installed as mods\\%s (%d files)", fd.cFileName, id, k);
+        else {
+            logf_("mods: %ls is not a mod package (unzip %d, id '%s'): moved to mods\\.failed", fd.cFileName, k, id);
+            wchar_t msg[600]; _snwprintf(msg, 600, L"%ls is not a mod for Dungeon Settlers Modded. It was moved to the mods\\.failed folder. The game starts without it.", fd.cFileName);
+            MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
 /* ---- first start: default mod profile (never overwrites the player's choice) */
 static void default_profile(void) {
     wchar_t ap[MAX_PATH], md[MAX_PATH], pat[MAX_PATH];
@@ -170,6 +245,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     wchar_t wbuild[64]; MultiByteToWideChar(CP_UTF8, 0, build, -1, wbuild, 64);
 
     copy_saves();
+    install_packages();
     default_profile();
     int steam = dry ? steam_user() : ensure_steam();
 

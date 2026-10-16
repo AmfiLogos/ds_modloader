@@ -103,6 +103,14 @@ static int unzip_to(const unsigned char *z, size_t n, const char *dest) {
     return (int)files;
 }
 
+/* a zip file unpacked into dest (the starter's mod packages); files written, or -1 */
+int bie_unzip_file(const char *zip, const char *dest) {
+    size_t n = 0; unsigned char *z = (unsigned char *)slurp(zip, &n);
+    if (!z) return -1;
+    int k = unzip_to(z, n, dest); free(z);
+    return k;
+}
+
 /* BepInEx in the game copy: <game>\BepInEx\core + dotnet + winhttp.dll + doorstop_config.ini */
 static int installed(const char *game) {
     char p[1200]; snprintf(p, sizeof p, "%s\\BepInEx\\core\\BepInEx.Unity.IL2CPP.dll", game);
