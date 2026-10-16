@@ -68,27 +68,34 @@ static int sha256_hex(const unsigned char *d, size_t n, char out[65]) {
 static uint32_t rd32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint16_t rd16(const unsigned char *p) { return (uint16_t)(p[0] | p[1] << 8); }
 static int unzip_to(const unsigned char *z, size_t n, const char *dest) {
-    size_t e = n >= 22 ? n - 22 : 0;
+    /* every offset and size is checked against the zip's own length (a damaged file must fail, never read past it) */
+    if (n < 22) return -1;
+    size_t e = n - 22;
     while (e > 0 && rd32(z + e) != 0x06054b50) e--;
     if (rd32(z + e) != 0x06054b50) return -1;
     uint32_t cnt = rd16(z + e + 10), cd = rd32(z + e + 16), files = 0;
-    const unsigned char *p = z + cd;
+    if (cd > n) return -1;
+    const unsigned char *p = z + cd, *end = z + n;
     for (uint32_t i = 0; i < cnt; i++) {
-        if (p + 46 > z + n || rd32(p) != 0x02014b50) return -1;
+        if ((size_t)(end - p) < 46 || rd32(p) != 0x02014b50) return -1;
         uint16_t meth = rd16(p + 10), nl = rd16(p + 28), xl = rd16(p + 30), cl = rd16(p + 32);
         uint32_t csz = rd32(p + 20), usz = rd32(p + 24), lho = rd32(p + 42);
+        if ((size_t)(end - p) < 46u + nl + xl + cl || nl == 0) return -1;
         char name[512]; size_t L = nl < 511 ? nl : 511; memcpy(name, p + 46, L); name[L] = 0;
         p += 46 + nl + xl + cl;
-        if (strstr(name, "..") || name[0] == '/' || name[0] == '\\') return -1;         /* no path escape */
+        if (strlen(name) != L || strstr(name, "..") || name[0] == '/' || name[0] == '\\' || strchr(name, ':')) return -1;   /* no path escape */
         char out[1400]; snprintf(out, sizeof out, "%s\\%s", dest, name);
         for (char *s = out; *s; s++) if (*s == '/') *s = '\\';
-        if (L && (name[L - 1] == '/' || name[L - 1] == '\\')) { mkdirs(out); continue; }
+        if (name[L - 1] == '/' || name[L - 1] == '\\') { mkdirs(out); continue; }
         char dir[1400]; snprintf(dir, sizeof dir, "%s", out); char *sl = strrchr(dir, '\\'); if (sl) { *sl = 0; mkdirs(dir); }
+        if (lho > n || n - lho < 30 || rd32(z + lho) != 0x04034b50) return -1;
         const unsigned char *lh = z + lho;
-        if (lh + 30 > z + n || rd32(lh) != 0x04034b50) return -1;
-        const unsigned char *data = lh + 30 + rd16(lh + 26) + rd16(lh + 28);
-        if (data + csz > z + n) return -1;
+        size_t doff = 30u + rd16(lh + 26) + rd16(lh + 28);
+        if ((size_t)(end - lh) < doff || (size_t)(end - lh) - doff < csz) return -1;
+        const unsigned char *data = lh + doff;
+        if (usz > (512u << 20) || (meth == 0 && csz != usz)) return -1;   /* stored: the sizes must agree; no file over 512 MB */
         unsigned char *buf = malloc(usz ? usz : 1);
+        if (!buf) return -1;
         if (meth == 0) memcpy(buf, data, usz);
         else if (meth == 8) {
             z_stream s; memset(&s, 0, sizeof s);
@@ -98,7 +105,9 @@ static int unzip_to(const unsigned char *z, size_t n, const char *dest) {
             if (r != Z_STREAM_END || s.total_out != usz) { free(buf); return -1; }
         } else { free(buf); return -1; }
         FILE *f = fopen(out, "wb"); if (!f) { free(buf); return -1; }
-        fwrite(buf, 1, usz, f); fclose(f); free(buf); files++;
+        size_t w = fwrite(buf, 1, usz, f); int c = fclose(f); free(buf);
+        if (w != usz || c) { lg("unzip: writing %s failed (disk full?)", out); return -1; }
+        files++;
     }
     return (int)files;
 }
@@ -112,20 +121,25 @@ int bie_unzip_file(const char *zip, const char *dest) {
 }
 
 /* BepInEx in the game copy: <game>\BepInEx\core + dotnet + winhttp.dll + doorstop_config.ini */
+/* each loader counts as installed only after a full unpack: <game>\\.dsm_ok_<what> is written last (an unpack cut by
+   a full disk or a closed game leaves no marker and is done again at the next start) */
+static int marker(const char *game, const char *what, char *p, size_t n) { return snprintf(p, n, "%s\\.dsm_ok_%s", game, what); }
+static int complete(const char *game, const char *what) { char p[1200]; marker(game, what, p, sizeof p); return exists(p); }
 static int installed(const char *game) {
     char p[1200]; snprintf(p, sizeof p, "%s\\BepInEx\\core\\BepInEx.Unity.IL2CPP.dll", game);
     char q[1200]; snprintf(q, sizeof q, "%s\\winhttp.dll", game);
-    return exists(p) && exists(q);
+    return exists(p) && exists(q) && complete(game, "bepinex");
 }
 /* MelonLoader in the game copy: <game>\version.dll + MelonLoader\net6 */
 static int ml_installed(const char *game) {
     char p[1200]; snprintf(p, sizeof p, "%s\\MelonLoader\\net6\\MelonLoader.dll", game);
     char q[1200]; snprintf(q, sizeof q, "%s\\version.dll", game);
-    return exists(p) && exists(q);
+    return exists(p) && exists(q) && complete(game, "melon");
 }
 /* the pinned zip (cache, else download) unpacked into the game copy */
 static int fetch_unpack(const char *root, const char *game, const wchar_t *url, const char *sha, const char *zipname,
-                        const char *what, char *why, size_t wn) {
+                        const char *what, const char *mk, const char *proxy, char *why, size_t wn) {
+    char mp[1200]; marker(game, mk, mp, sizeof mp); DeleteFileA(mp);
     char cache[1200], zp[1300]; snprintf(cache, sizeof cache, "%s\\cache", root); mkdirs(cache);
     snprintf(zp, sizeof zp, "%s\\%s", cache, zipname);
     size_t n = 0; unsigned char *z = (unsigned char *)slurp(zp, &n); char h[65] = "";
@@ -139,18 +153,24 @@ static int fetch_unpack(const char *root, const char *game, const wchar_t *url, 
         if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) { free(z); lg("%s: download sha256 %s, expected %s", what, h, sha); snprintf(why, wn, "The %s download is damaged. Try again.", what); return -1; }
     }
     int k = unzip_to(z, n, game); free(z);
-    if (k <= 0) { snprintf(why, wn, "%s could not be unpacked into the game copy.", what); return -1; }
+    if (k <= 0) {                                            /* half unpacked: its proxy DLL goes, so the game starts without it */
+        char pp[1200]; snprintf(pp, sizeof pp, "%s\\%s", game, proxy); DeleteFileA(pp);
+        snprintf(why, wn, "%s could not be unpacked into the game copy (disk full?). The game starts without it.", what);
+        lg("%s: unpack failed (%d): %s removed, no completion marker", what, k, proxy); return -1;
+    }
+    FILE *f = fopen(mp, "wb"); int ok = f && fprintf(f, "%s\n", zipname) > 0; if (f && fclose(f)) ok = 0;
+    if (!ok) { DeleteFileA(mp); snprintf(why, wn, "%s could not be marked as installed (disk full?).", what); return -1; }
     lg("%s installed in %s (%d files)", what, game, k);
     return 0;
 }
 static int install(const char *root, const char *game, char *why, size_t wn) {
     if (installed(game)) return 0;
-    if (fetch_unpack(root, game, BIE_URL, BIE_SHA, "BepInEx-" BIE_TAG "-win-x64.zip", "BepInEx " BIE_TAG, why, wn)) return -1;
+    if (fetch_unpack(root, game, BIE_URL, BIE_SHA, "BepInEx-" BIE_TAG "-win-x64.zip", "BepInEx " BIE_TAG, "bepinex", "winhttp.dll", why, wn)) return -1;
     return installed(game) ? 0 : -1;
 }
 static int ml_install(const char *root, const char *game, char *why, size_t wn) {
     if (ml_installed(game)) return 0;
-    if (fetch_unpack(root, game, ML_URL, ML_SHA, "MelonLoader-" ML_TAG "-x64.zip", "MelonLoader " ML_TAG, why, wn)) return -1;
+    if (fetch_unpack(root, game, ML_URL, ML_SHA, "MelonLoader-" ML_TAG "-x64.zip", "MelonLoader " ML_TAG, "melon", "version.dll", why, wn)) return -1;
     return ml_installed(game) ? 0 : -1;
 }
 

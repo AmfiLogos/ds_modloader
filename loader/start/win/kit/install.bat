@@ -80,7 +80,11 @@ if "%HAVE%"=="%BUILD%" (
   echo  The game copy is already there ^(build %BUILD%^).
   goto files
 )
-rem an older or unfinished copy holds only game files and mod files (saves live in profiles\): replaced
+rem an older or unfinished copy holds game files and mod files (saves live in profiles\): replaced. The player's
+rem BepInEx and MelonLoader settings in it (BepInEx\config, UserData) are kept aside first and put back after the copy.
+set "KEEP=%ROOT%\keep_settings"
+if exist "%COPY%\BepInEx\config" xcopy "%COPY%\BepInEx\config" "%KEEP%\BepInEx\config\" /E /I /H /Q /Y >nul || goto copyfail
+if exist "%COPY%\UserData" xcopy "%COPY%\UserData" "%KEEP%\UserData\" /E /I /H /Q /Y >nul || goto copyfail
 if exist "%COPY%" rd /s /q "%COPY%"
 if exist "%COPY%" goto copyfail
 echo  Copying the game ^(about 700 MB, this takes a minute or two^) ...
@@ -90,6 +94,9 @@ if errorlevel 1 goto copyfail
 copy /y "%STOCKBL%" "%COPY%\baselib_orig.dll" >nul || goto copyfail
 for %%F in ("%COPY%\GameAssembly.dll") do set "CSIZE=%%~zF"
 if not "%CSIZE%"=="%WANTSIZE%" goto copyfail
+if exist "%KEEP%\BepInEx\config" xcopy "%KEEP%\BepInEx\config" "%COPY%\BepInEx\config\" /E /I /H /Q /Y >nul || goto copyfail
+if exist "%KEEP%\UserData" xcopy "%KEEP%\UserData" "%COPY%\UserData\" /E /I /H /Q /Y >nul || goto copyfail
+if exist "%KEEP%" rd /s /q "%KEEP%"
 
 :files
 copy /y "files\baselib.dll" "%COPY%\baselib.dll" >nul || goto copyfail
