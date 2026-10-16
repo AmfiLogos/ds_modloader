@@ -660,6 +660,20 @@ static void on_il2cpp_ready(const char *via) {
 static int my_il2cpp_init(const char *domain) { int r = orig_init(domain); on_il2cpp_ready(""); return r; }
 static int my_il2cpp_init_utf16(const void *domain) { int r = orig_init_utf16(domain); on_il2cpp_ready("_utf16"); return r; }
 
+int (*dsl_core_prereq)(char *why, size_t n);
+/* the start part's condition failed: modules opened by dsl_core_start go off before any of their hooks (as a failed
+   dsl_module_load), no il2cpp_init hook, so no dsl_module_early / dsl_plugin_init; status file + one notice */
+static void mods_off(const char *reason, const char *why) {
+    int n = 0;
+    for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) { dsl_unhook_owner(ORDER[i]->idx); ORDER[i]->state = 2; n++; }
+    snprintf(status_why, sizeof status_why, "%s", why);
+    dsl_log("START CONDITION FAILED (%s): %s", reason, status_why);
+    dsl_log("%d module(s) off this session; no module hook, the game runs unmodded", n);
+    write_status(0, reason, NULL, dsl_build_id, NULL);
+    if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) return;
+    dsl_os_notice("Dungeon Settlers: mods are off", status_why);
+}
+
 /* GameAssembly mapped (start part: Mac add-image callback, Windows DllMain), none of its code ran yet. The start part
    has checked that the mapped image is the build of dsl_core_start and set dsl_text_lo / hi, dsl_image_end and
    dsl_ga_sym. 0 = modules started (or nothing to do). */
@@ -678,6 +692,10 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
     if (!any) return 0;
     if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return -1; }
     if (dsl_engine_init()) return -1;
+    if (dsl_core_prereq) {
+        char why[sizeof status_why] = "";
+        if (dsl_core_prereq(why, sizeof why)) { mods_off("start_condition_failed", why); return -1; }
+    }
     if (want_init) {
         void *ii = dsl_ga_sym("il2cpp_init"), *iu = dsl_ga_sym("il2cpp_init_utf16");
         int a = ii ? dsl_hook(DSL_OWNER_LOADER, ii, (void*)my_il2cpp_init, (void**)&orig_init, "loader il2cpp_init") : -1;
