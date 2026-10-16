@@ -205,6 +205,7 @@ __attribute__((constructor)) static void dsl_init(void) {
     if (scwd_r != 1) dsl_log("DSL_SOFT_CWD %s: chdir %s", scwd, scwd_r == 0 ? "ok" : "failed");
     dsl_soft_snapshot(dsl_core_logdir());
     pass_through_env();
+    { extern void dsl_notch_start(void); dsl_notch_start(); }      /* built-in notch fix (dsl_notch_mac.m), any game build */
 
     /* main executable -> app; GameAssembly file -> build */
     char exe[1024]; uint32_t sz = sizeof exe;
