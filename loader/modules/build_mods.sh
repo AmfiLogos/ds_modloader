@@ -51,8 +51,9 @@ if [[ $1 == --check ]]; then check ${2:-$OUT}; exit $?; fi
 
 TC=~/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang
 [[ -x $TC ]] || { echo "llvm-mingw not found: $TC" >&2; exit 1; }
-CFM=(-arch arm64 -O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0 -I$L/sdk)
-CFW=(-O2 -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/sdk)
+PM=(-ffile-prefix-map=$HOME=/src)                               # no build path (user name) in what ships (gate G12)
+CFM=($PM -arch arm64 -O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0 -I$L/sdk)
+CFW=($PM -O2 -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/sdk)
 mkdir -p $OUT/old; for s in mac win; do [[ -d $OUT/$s ]] && mv $OUT/$s $OUT/old/$s-$(date +%Y%m%d-%H%M%S); done
 mkdir -p $OUT/mac $OUT/win
 
@@ -99,6 +100,12 @@ fi
 DSMP_TARGET=module DSL_SDK=$L/sdk DSL_MODJSON=$MD/multiplayer/mod.json CM_MODJSON=${CM_MODJSON:-} nice -n 19 zsh $WT/win/build_win.sh | grep -v "^ABI \|^warning" | tail -6
 cp -R $WT/win/build/mods/multiplayer $OUT/win/
 [[ -d $WT/win/build/mods/custom-modes ]] && cp -R $WT/win/build/mods/custom-modes $OUT/win/
+
+# ---- what ships carries no debug info (build paths) and no user name: strip, then scan every file (fails the build)
+for f in $OUT/win/**/*.dll(N); do ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $f; done
+for f in $OUT/mac/**/*.dylib(N); do strip -S $f 2>/dev/null; codesign -f -s - $f 2>/dev/null; done
+python3 $MD/scan_names.py "$USER" $OUT/mac $OUT/win > $OUT/name_scan.txt || { cat $OUT/name_scan.txt; echo "build_mods: the user name is inside the built mods" >&2; exit 1; }
+tail -1 $OUT/name_scan.txt
 
 # ---- one mod.json per module, both platforms' files listed (and identical in both copies)
 python3 - $OUT <<'PY'

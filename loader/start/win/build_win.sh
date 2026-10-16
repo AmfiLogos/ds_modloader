@@ -14,24 +14,28 @@ O=$L/build/win; OBJ=$O/obj; mkdir -p $OBJ $O/old
 olds=($OBJ/*.o(N)); (( ${#olds} )) && mv -f $olds $O/old/
 
 python3 gen_def.py $GAME/baselib.dll $O/baselib_exports.def
-CF=(-O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/src -I$L/sdk -I$MH/include)
+PM=(-ffile-prefix-map=$HOME=/src)                               # no build path (user name) in what ships (gate G12)
+CF=($PM -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -I$L/src -I$L/sdk -I$MH/include)
 # MelonLoader guard plugin (kind "melon" mods): its DLL is embedded into bie_win.c (starter + baselib.dll)
 MLG=${ML_GUARD_DLL:-$D/ext/melon/plugin/DSMelonGuard/bin/Release/net6.0/DSMelonGuard.dll}; MLGF=()
-if [[ -f $MLG ]]; then xxd -i -n ml_guard_dll $MLG > $OBJ/ml_guard.h; MLGF=(-DDSL_ML_GUARD -I$OBJ); else echo "WARNING: no $MLG: MelonLoader guard plugin not embedded"; fi
+if [[ -f $MLG ]]; then
+  # its debug record names the .pdb by its full build path (user name): keep only the file name, same length (gate G12)
+  python3 -c 'import re,sys; d=open(sys.argv[1],"rb").read(); d=re.sub(rb"[^\x00]*[/\\\\]([^/\\\\\x00]+\.pdb)\x00", lambda m: m.group(1)+b"\x00"*(len(m.group(0))-len(m.group(1))), d); open(sys.argv[2],"wb").write(d)' $MLG $OBJ/ml_guard.dll
+  xxd -i -n ml_guard_dll $OBJ/ml_guard.dll > $OBJ/ml_guard.h; MLGF=(-DDSL_ML_GUARD -I$OBJ); else echo "WARNING: no $MLG: MelonLoader guard plugin not embedded"; fi
 # the core = every src/*.c except the arm64 engine (dsl_engine_win.c replaces it) + the Mods window (loader/ui, lane L2)
 CORE=($L/src/*.c(N) $L/ui/*.c(N)); CORE=(${CORE:#*/dsl_engine.c})
 for f in $CORE; do nice -n 19 $TC $CF -include compat/dsl_compat_win.h -c $f -o $OBJ/${f:t:r}.o; done
 for f in dsl_start_win.c dsl_engine_win.c dsl_os_win.c dsl_soft_win.c bie_win.c dsl_bie_win.c dsl_ml_win.c; do nice -n 19 $TC $CF $MLGF -I$D/win/third_party/zlib -c $f -o $OBJ/${f:t:r}.o; done
-for f in $D/win/third_party/zlib/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC -O2 -w -c $f -o $OBJ/zl_${f:t:r}.o; done
-for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c; do nice -n 19 $TC -O2 -w -I$MH/include -c $f -o $OBJ/mh_${f:t:r}.o; done
+for f in $D/win/third_party/zlib/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC $PM -O2 -w -c $f -o $OBJ/zl_${f:t:r}.o; done
+for f in $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c; do nice -n 19 $TC $PM -O2 -w -I$MH/include -c $f -o $OBJ/mh_${f:t:r}.o; done
 nice -n 19 $TC -shared -o $O/baselib.dll.tmp $OBJ/*.o $O/baselib_exports.def -static -static-libgcc -lbcrypt -lurlmon -Wl,-Bstatic -lpthread
 mv -f $O/baselib.dll.tmp $O/baselib.dll
 echo "built $O/baselib.dll"
 
 $B/x86_64-w64-mingw32-windres ds_modded_win.rc -O coff -o $OBJ/ds_modded_res.res.o
 ZL=$D/win/third_party/zlib; ZO=(); mkdir -p $OBJ/zl
-for f in $ZL/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC -O2 -w -c $f -o $OBJ/zl/${f:t:r}.o; ZO+=($OBJ/zl/${f:t:r}.o); done
-nice -n 19 $TC -O2 -Wall -municode -mwindows -I$L/src -I$ZL $MLGF ds_modded_win.c bie_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
+for f in $ZL/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC $PM -O2 -w -c $f -o $OBJ/zl/${f:t:r}.o; ZO+=($OBJ/zl/${f:t:r}.o); done
+nice -n 19 $TC $PM -O2 -Wall -municode -mwindows -I$L/src -I$ZL $MLGF ds_modded_win.c bie_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
 mv -f "$O/Dungeon Settlers Modded.exe.tmp" "$O/Dungeon Settlers Modded.exe"
 echo "built $O/Dungeon Settlers Modded.exe"
 
@@ -44,6 +48,7 @@ cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
 print 25846389 > $K/files/BUILD.txt
 stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done
+~/tools/llvm-mingw/bin/llvm-strip --strip-debug $K/files/baselib.dll "$K/files/Dungeon Settlers Modded.exe"   # no build paths
 for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
 echo "kit $K: $(ls $K/files/mods | tr '\n' ' ')"
 
