@@ -611,7 +611,7 @@ int main(int argc, char **argv) {
 
     if (dry) {
         const char *keys[] = { "SteamAppId", "SteamGameId", "CFFIXED_USER_HOME", "DSRIG_DIR", "DSRIG_LIVE", "DSRIG_FPS",
-                               "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
+                               "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSML_USER_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
                                "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
                                "DOORSTOP_ENABLED", "DOORSTOP_TARGET_ASSEMBLY", "DOORSTOP_CLR_RUNTIME_CORECLR_PATH",
                                "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS",
