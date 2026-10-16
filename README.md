@@ -53,8 +53,9 @@ On the title screen, click Mods to turn mods on or off.
 
 At the title screen, the switch "Auto-update" is in the top-right corner. It is on by default.
 
-- On: when a new version is out, the game downloads it and installs it at the title screen. Each download is checked
-  before it is installed. The game restarts behind a loading screen and shows "Updated to v13.x".
+- On: when a new version is out, the game downloads it and checks it. At the title screen it asks: "v13.x is ready.
+  Install and restart now?" Click "Install and restart": the game restarts behind a loading screen and shows
+  "Updated to v13.x". Click "Later": the game asks again next start, and the "Update to v13.x" button stays.
 - Off: nothing is downloaded. A button "Update to v13.x" shows instead. Click it to update.
 
 The game never updates in a world or in a multiplayer game. If the new version does not start, the old version comes

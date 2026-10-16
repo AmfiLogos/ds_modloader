@@ -121,6 +121,13 @@ if 'on' in TESTS:
     r = Run('on', [('v13.4', '13.4', ())])
     try:
         r.start()
+        asked = r.wait('update: prompt shown: v13.4 is ready. Install and restart now?', 240)
+        time.sleep(3)
+        check('on: prompt shown, nothing installed before the click', asked and 'installed (' not in r.logtext() and r.release_of() == ('13.3', '13.3'))
+        open(os.path.join(r.root, 'update', 'test_later'), 'w').close()
+        btn = r.wait('update: corner button "Update to v13.4" shown', 60)
+        check('on: Later -> corner button, still 13.3', btn and r.release_of() == ('13.3', '13.3'))
+        open(os.path.join(r.root, 'update', 'test_click'), 'w').close()
         got = r.wait('update: v13.4 confirmed at the title', 300)
         t = r.logtext()
         check('on: download sha256 ok', 'Dungeon-Settlers-Modded-Mac.zip downloaded, sha256 ok' in t, grep(t, 'sha256')[0])
@@ -151,6 +158,8 @@ if 'rollback' in TESTS:
     r = Run('rollback', [('v13.5', '13.5', ())])
     try:
         r.start()
+        r.wait('update: prompt shown', 240)
+        open(os.path.join(r.root, 'update', 'test_install'), 'w').close()
         got = r.wait('update: rolled back', 300)
         time.sleep(2)
         t = r.logtext()

@@ -9,8 +9,10 @@
 // install. Network failure, rate limit, bad JSON: silent (log line), next start tries again.
 // Title corner (top right, only at the title while its menu shows): "Auto-update" switch (default on; ROOT/update/
 // settings.json, per machine) and one short line or an "Update to v13.x" button.
-//   On:  download at once; at the title with nothing busy (no world, no multiplayer session, no restart): install,
-//        then the hidden soft restart (dsl_reg_restart_same). B shows "Updated to v13.x".
+//   On:  download at once; at the title with nothing busy (no world, no multiplayer session, no restart) a prompt
+//        "v13.x is ready. Install and restart now?" [Install and restart] [Later]. Install: the files, then the hidden
+//        soft restart (dsl_reg_restart_same); B shows "Updated to v13.x". Later: the button stays in the corner, the
+//        prompt comes again next start (the download is kept). Nothing installs without the player's click.
 //   Off: no download; the button downloads and installs on click.
 // Install = dsl_uos_kit_install / dsl_uos_mod_install: the old files move into ROOT/update/backup-<from>-<time>/, the
 // move list is ROOT/update/pending.txt. B confirms at the title (pending.txt -> update/old/). A soft restart that fails
@@ -19,7 +21,7 @@
 // touched (they are in PROFILE/data, outside every installed folder).
 // Kit first: a kit update carries the mods; mod updates wait for the next start.
 // Test only: DSL_UPDATE_API=<base URL> (a local release server instead of https://api.github.com), DSL_UPDATE=0 (off),
-// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button).
+// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button, test_install / test_later = the prompt's buttons).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include "dsl_update_os.h"
@@ -60,6 +62,8 @@ static char line[200];                                     /* the corner's one s
 static int restarting;                                     /* A: our update restart runs */
 static char confirm_label[64];                             /* B: DSML_UPDATE of this start */
 static int busy_install;
+static int consent;                                        /* the player clicked Install (prompt or button) */
+static int asked, later;                                   /* On: the prompt was shown this start / answered Later */
 
 /* ------------------------------------------------------------------ small helpers */
 static void upath(char *out, size_t n, const char *f) { snprintf(out, n, "%s/%s", udir, f); }
@@ -316,6 +320,22 @@ static void install_now(void) {
     free(mv); restarting = 1;
 }
 
+/* ------------------------------------------------------------------ On: ask before installing (owner 2026-10-16) */
+static void prompt_ok(void *ud, DSLObj w) { (void)ud; (void)w; consent = 1; dsl_log("update: prompt: Install and restart"); }
+static void prompt_later(void *ud, DSLObj w) { (void)ud; (void)w; later = 1; dsl_log("update: prompt: Later (asked again next start; the download stays)"); }
+static void prompt(void) {
+    const DSLUi *u = dsl_ui_kit(); if (!u) return;
+    asked = 1; char t[300], names[200] = "";
+    if (S.kit_ver[0]) snprintf(t, sizeof t, "v%s is ready. Install and restart now?", S.kit_ver);
+    else {
+        for (int i = 0; i < S.nmods; i++) if (S.mods[i].ver[0] && S.mods[i].file[0]) { size_t k = strlen(names);
+            snprintf(names + k, sizeof names - k, "%s%s %s", k ? ", " : "", S.mods[i].name, S.mods[i].ver); }
+        snprintf(t, sizeof t, "Mod updates are ready (%s). Install and restart now?", names);
+    }
+    u->notice(t, "Install and restart", "Later", prompt_ok, prompt_later, NULL);
+    dsl_log("update: prompt shown: %s", t);
+}
+
 /* ------------------------------------------------------------------ title corner */
 static uintptr_t c_tog, c_txt, c_btn;                      /* DSLObj kept as plain pointers (re-made when gone) */
 static int c_btn_on; static char c_last_line[200], c_btn_label[64];
@@ -327,7 +347,7 @@ static void toggle_change(void *ud, DSLObj w) {
 }
 static void button_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
-    pthread_mutex_lock(&mu); int st = S.dl; S.dl_wanted = 1; pthread_mutex_unlock(&mu);
+    pthread_mutex_lock(&mu); int st = S.dl; S.dl_wanted = 1; pthread_mutex_unlock(&mu); consent = 1;
     dsl_log("update: \"%s\" clicked", c_btn_label);
     if (st == 0 || st == -1) { pthread_t t; thread_on = 1; if (pthread_create(&t, NULL, dl_thread, NULL)) thread_on = 0; else pthread_detach(t); }
 }
@@ -342,14 +362,14 @@ static void corner_frame(void) {
         btn = u->button(NULL, 0, 0, 220, 40, "Update", button_click, NULL);
         if (!tog || !txt || !btn) return;
         dsl_ui_place_tr(tog, 24, 20, 260, 40); dsl_ui_place_tr(txt, 24, 64, 420, 30); dsl_ui_place_tr(btn, 24, 64, 220, 40);
-        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods install at the title screen.\nOff: you choose when to update.");
+        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods download by themselves. The game asks before it installs them.\nOff: nothing downloads until you click Update.");
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
     u->set_active(tog, 1);
     /* the button: Off with an update not yet downloading */
     pthread_mutex_lock(&mu); int st = S.dl, avail = S.checked && any_update(); char kv[32]; snprintf(kv, sizeof kv, "%s", S.kit_ver); pthread_mutex_unlock(&mu);
-    int want_btn = !auto_on && avail && st != 1 && st != 2 && !line[0];
+    int want_btn = (!auto_on || later) && avail && st != 1 && !consent && !S.dl_wanted && !line[0];
     char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, "Update to v%s", kv); else snprintf(bl, sizeof bl, "Update mods");
     if (want_btn && strcmp(bl, c_btn_label)) { snprintf(c_btn_label, sizeof c_btn_label, "%s", bl); u->set_text(btn, bl); }
     if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
@@ -412,12 +432,19 @@ void dsl_update_frame(void) {
         free(mv); restarting = 0;
     }
     if (at_title && !restarting && !busy_install && !dsl_busy_reason() && !dsl_soft_busy()) {
-        pthread_mutex_lock(&mu); int ready = S.dl == 2, go = ready && (auto_on || S.dl_wanted); pthread_mutex_unlock(&mu);
+        pthread_mutex_lock(&mu); int ready = S.dl == 2, go = ready && consent; pthread_mutex_unlock(&mu);
         if (go) { busy_install = 1; install_now(); busy_install = 0; }
+        else if (ready && auto_on && !asked && dsl_ui_title_shown()) prompt();
     }
     corner_frame();
     { const char *t = getenv("DSL_UPDATE_TEST"); static int tick;                       /* test: click the button by file */
       if (t && *t == '1' && ++tick % 30 == 0 && c_btn_on == 1) {
           char p[1200]; upath(p, sizeof p, "test_click");
-          if (dsl_uos_exists(p)) { char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q); button_click(NULL, NULL); } } }
+          if (dsl_uos_exists(p)) { char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q); button_click(NULL, NULL); } }
+      if (t && *t == '1' && asked && !consent && !later && tick % 30 == 0) {                /* test: answer the prompt by file */
+          const DSLUi *u = dsl_ui_kit(); char p[1200], q[1300];
+          upath(p, sizeof p, "test_install"); snprintf(q, sizeof q, "%s.done", p);
+          if (dsl_uos_exists(p)) { remove(q); dsl_uos_move(p, q); if (u && u->notice_close) u->notice_close(); prompt_ok(NULL, NULL); }
+          upath(p, sizeof p, "test_later"); snprintf(q, sizeof q, "%s.done", p);
+          if (dsl_uos_exists(p)) { remove(q); dsl_uos_move(p, q); if (u && u->notice_close) u->notice_close(); prompt_later(NULL, NULL); } } }
 }
