@@ -600,13 +600,14 @@ int dsl_ui_test_tip(char *title, size_t cap);
 int dsl_ui_test_tip_rects(float card[4], float panel[4]);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
-DSLObj dsl_win_test_control(const char *name) __attribute__((weak));
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
+__attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
 static int hv_wait; static char hv_what[120];
 static void hover_test(const char *what) {
     DSLObj t = NULL; char b[2000] = "";
     if (!strncmp(what, "title:", 6)) t = dsl_ui_test_title(what + 6, b, sizeof b);
     else if (!strncmp(what, "row:", 4)) { t = dsl_rows_test_line(atoi(what + 4)); if (t) dsl_ui_test_label(t, b, sizeof b); }
-    else if (!strncmp(what, "win:", 4) && dsl_win_test_control) t = dsl_win_test_control(what + 4);
+    else if (!strncmp(what, "win:", 4)) t = dsl_win_test_control(what + 4);
     dsl_log("reg test: hover %s: target %s%s%s", what, t ? "found" : "MISSING", b[0] ? ", text: " : "", b);
     if (!t) return;
     dsl_ui_test_hover(t); hv_wait = 140; snprintf(hv_what, sizeof hv_what, "%s", what);   /* rects at 20 frames, held 2 s for a shot */
