@@ -89,9 +89,13 @@ if "%HAVE%"=="%BUILD%" (
   echo  The game copy is already there ^(build %BUILD%^).
   goto files
 )
-rem an older or unfinished copy of ours (marker files) holds only game files and mod files (saves live in profiles\):
-rem replaced. A "game" folder without our marker is never removed.
+rem an older or unfinished copy of ours (marker files) holds game files and mod files (saves live in profiles\):
+rem replaced. A "game" folder without our marker is never removed. The player's BepInEx and MelonLoader settings in it
+rem (BepInEx\config, UserData) are kept aside first and put back after the copy.
 if exist "%COPY%\" if not exist "%COPY%\dsmodded_build.txt" if not exist "%COPY%\dsmodded_copy.txt" goto notours
+set "KEEP=%ROOT%\keep_settings"
+if exist "%COPY%\BepInEx\config" xcopy "%COPY%\BepInEx\config" "%KEEP%\BepInEx\config\" /E /I /H /Q /Y >nul || goto copyfail
+if exist "%COPY%\UserData" xcopy "%COPY%\UserData" "%KEEP%\UserData\" /E /I /H /Q /Y >nul || goto copyfail
 if exist "%COPY%" rd /s /q "%COPY%"
 if exist "%COPY%" goto copyfail
 mkdir "%COPY%"
@@ -103,6 +107,9 @@ if errorlevel 1 goto copyfail
 copy /y "%STOCKBL%" "%COPY%\baselib_orig.dll" >nul || goto copyfail
 for %%F in ("%COPY%\GameAssembly.dll") do set "CSIZE=%%~zF"
 if not "%CSIZE%"=="%WANTSIZE%" goto copyfail
+if exist "%KEEP%\BepInEx\config" xcopy "%KEEP%\BepInEx\config" "%COPY%\BepInEx\config\" /E /I /H /Q /Y >nul || goto copyfail
+if exist "%KEEP%\UserData" xcopy "%KEEP%\UserData" "%COPY%\UserData\" /E /I /H /Q /Y >nul || goto copyfail
+if exist "%KEEP%" rd /s /q "%KEEP%"
 
 :files
 copy /y "files\baselib.dll" "%COPY%\baselib.dll" >nul || goto copyfail
