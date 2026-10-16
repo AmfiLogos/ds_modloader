@@ -42,12 +42,13 @@ try:
     check("1 the other files untouched", open(f"{U}/notes.txt").read() == "user file\n" and os.path.exists(f"{U}/photos/a.jpg"))
     # 2
     r = wine([w.winpath(setup), "/S", f"/D=C:\\FULLDIR\\{NAME}"], timeout=300)
-    check("2 folder of ours by name but holding other files: refused", r.returncode != 0 and not os.path.exists(f"{F}/game")
+    check("2 folder of ours by name but holding other files: refused", not os.path.exists(f"{F}/game")   # CrossOver's wine gives rc 0 for this GUI exe
           and os.listdir(F) == ["budget.xlsx"], f"rc {r.returncode}, {os.listdir(F)}")
     # 3
-    r = wine([w.winpath(setup), "/S"], timeout=900)
+    t3 = time.time(); r = wine([w.winpath(setup), "/S"], timeout=900)
     loc = f"{DRIVE}/users/crossover/AppData/Local/{NAME}"
-    check("3 second Setup without /D reuses the folder", r.returncode == 0 and not os.path.exists(f"{loc}/game"), f"rc {r.returncode}")
+    check("3 second Setup without /D reuses the folder", r.returncode == 0 and os.path.getmtime(f"{I}/install_files.log") >= t3
+          and not (os.path.exists(f"{loc}/install_files.log") and os.path.getmtime(f"{loc}/install_files.log") >= t3), f"rc {r.returncode}")
     # 4
     r = wine(["cmd", "/c", "set DSMODDED_NOPAUSE=1&& set DSMODDED_ROOT=C:\\FULLDIR2&& call " + w.winpath(f"{kit}/install.bat")], timeout=300)
     check("4 install.bat into a folder with other files: refused", r.returncode != 0 and os.listdir(F2) == ["thesis.docx"]
