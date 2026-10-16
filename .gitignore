@@ -20,3 +20,5 @@ loader/build/cmpin/
 
 # Unit Builder icons: game art, extracted from the installed game (builder/gen/extract_icons.py)
 ui/bicons/
+__pycache__/
+*.pyc
