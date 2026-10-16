@@ -424,3 +424,20 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   Expedition"; "Save for this world" -> world set; set unchanged after an Apply (soft restart); the autosave loads with
   it (flow K); a second save of the world written in game (CampaignSaveLoader.Save; this seed world is Ironman, so the
   game takes only the autosave kind) has the same world and the same set.
+
+## Soft restart progress bar (owner v13.3; branch softprogress, 2026-10-16)
+- Designs "Reload" B (bottom strip on the game's NOW LOADING screen, Apply at the title) and A (centered framed panel,
+  flow K into a world). Drawn by `ui/dsl_progress.c` with the kit (game fonts), above the loading screen (own canvas 32100).
+- Real steps only (src/dsl_soft.c): A: "Starting the game with the new mods" (cold) / "Switching to the new mods"
+  (prewarmed, 95 % when ready); B writes <handoff>.progress at each step: "Loading <mods>" (modules loaded), the game's
+  boot coroutines (LoadSheets "Loading game data", LoadFont "Loading fonts", LoadCursor/LoadTiles, LoadUIPrefabs "Loading
+  menus"), "Opening the title screen", flow K "Opening your world" with the game's own LoadingUI percent (50-95 %),
+  "Done". Flow K: the boot is the first half. A reads the file every 0.1 s; never backwards.
+- The boot coroutine hooks are now installed in every B (logging still only with DSL_SOFT_BOOTLOG); MainFlow.Start only
+  with the log. Kit sprite scan also at most once a second (a hidden B is uncapped: it scanned 30 times in its boot).
+- Proof `test/l1_progress_test.py` (copy S, prog3): 8/8, 0 guard violations; cold Apply 6.42 s, flow K 14.57 s (as before);
+  shots `~/ds_launcher/loader/test_env/l1_out/prog3/shot_{1_strip_low,2_strip_mid,3_panel_world}.png`.
+  Windows (DSMP bottle, w_pkg_test run, -nographics so no picture): dsload.log "progress: bottom strip shown", 0 -> 10
+  (mods) -> 20 -> 30 % until the test stops.
+- Trap: with DSL_SOFT_CAPTURE on, one run (prog1) had A's staged window moved on screen at the apply (guard kill in
+  0.5 s). Not seen without the capture (prog2, prog3); the test takes its pictures with the "shot" request instead.

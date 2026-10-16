@@ -252,9 +252,13 @@ static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat;
 static int64_t frames, scan_last = -100000; static int scans, scan_done, kit_used;
 static Obj ui_prefab(int type);
 static void prefab_touch(int type) { (void)ui_prefab(type); }
+static double clock_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
 static void assets_scan(int force) {
-    if (scan_done || (!force && (!kit_used || frames - scan_last < 300 || scans >= 30))) return;
-    scan_last = frames; scans++;
+    /* at most once a second as well: a hidden soft-restart game runs uncapped (thousands of frames a second) and
+       300 frames went by in 0.2 s, so it scanned every sprite 30 times during its boot */
+    static double scan_t;
+    if (scan_done || (!force && (!kit_used || frames - scan_last < 300 || scans >= 30 || clock_s() - scan_t < 1.0))) return;
+    scan_last = frames; scans++; scan_t = clock_s();
     prefab_touch(8); prefab_touch(2); prefab_touch(13); prefab_touch(5);   /* load popup prefabs: their sprites too (as mpmenu) */
     Obj arr = find_all(K.Sprite); int n = arr_n(arr), found = 0;
     for (int i = 0; i < n; i++) {
@@ -822,6 +826,10 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
     e->target = target; e->h = hnew(target);
     snprintf(e->title, sizeof e->title, "%s", title ? title : ""); snprintf(e->body, sizeof e->body, "%s", body);
 }
+/* a kit panel as a flat colour (no frame sprite), no click target: bars, lines */
+void dsl_ui_flat(DSLObj o, uint32_t rgba) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj im = r ? comp_get(r, K.Image) : NULL; if (im) img_set(im, NULL, rgba_col(rgba, C_WHITE), 0); }
+/* a kit widget drawn above the game's own views (loading screen, notices): its own canvas, sorting order `order` */
+void dsl_ui_raise(DSLObj o, int order) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; if (r) raise_view(r, order); }
 /* test only: hover this target instead of the mouse (NULL = the mouse) */
 __attribute__((visibility("default"))) void dsl_ui_test_hover(DSLObj target) { tip_test_target = target; }
 /* test only: the shown card's body text as drawn */

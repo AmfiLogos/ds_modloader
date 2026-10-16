@@ -42,6 +42,7 @@ static double t_start;                               /* process start (kernel), 
 static double now_s(void) { struct timeval tv; gettimeofday(&tv, NULL); return tv.tv_sec + tv.tv_usec / 1e6; }
 static double since(void) { return now_s() - t_start; }
 #define SLOG(fmt, ...) dsl_log("soft +%.3fs: " fmt, since(), ##__VA_ARGS__)
+void dsl_soft_progress(int pct, const char *text);
 static char sdir[1200];                              /* <log dir>/softrestart */
 static FILE *ff;                                     /* per-frame window log */
 
@@ -183,6 +184,7 @@ static void *(*obj_class)(Obj); static const char *(*class_name)(void *);
 static void *(*nested_types)(void *, void **);
 static int (*o_start_mn)(Obj, const void *); static int32_t off_it_state = -1, off_it_cur = -1;
 static int my_start_mn(Obj self, const void *mi) {
+    if (!boot_log) return o_start_mn(self, mi);
     int s0 = off_it_state >= 0 ? AT(self, off_it_state, int32_t) : -9; double t0 = since();
     int r = o_start_mn(self, mi);
     Obj cur = off_it_cur >= 0 ? AT(self, off_it_cur, Obj) : NULL;
@@ -193,8 +195,16 @@ static int my_start_mn(Obj self, const void *mi) {
 /* the same for every iterator nested in Refactor.Addressable.AddressableInitializer (LoadSheets, LoadFont, ...) */
 #define NIT 8
 static int (*o_it[NIT])(Obj, const void *); static const char *it_name[NIT]; static int32_t it_state[NIT], it_cur[NIT];
+static void boot_step(const char *name) {                               /* the game's boot step -> progress (B) */
+    static const struct { const char *k; int pct; const char *text; } S[] = {
+        { "LoadSheets", 20, "Loading game data" }, { "LoadFont", 30, "Loading fonts" }, { "LoadCursor", 75, "Loading game data" },
+        { "LoadTiles", 77, "Loading game data" }, { "LoadUIPrefabs", 80, "Loading menus" } };
+    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) if (strstr(name, S[i].k)) { dsl_soft_progress(S[i].pct, S[i].text); return; }
+}
 static int it_mn(int i, Obj self, const void *mi) {
     int s0 = it_state[i] >= 0 ? AT(self, it_state[i], int32_t) : -9; double t0 = since();
+    if (s0 == 0) boot_step(it_name[i]);
+    if (!boot_log) return o_it[i](self, mi);
     int r = o_it[i](self, mi);
     Obj cur = it_cur[i] >= 0 ? AT(self, it_cur[i], Obj) : NULL;
     SLOG("boot step: %s state %d -> %d in %.1f ms, yields %s, frame %d", it_name[i], s0, it_state[i] >= 0 ? AT(self, it_state[i], int32_t) : -9,
@@ -212,7 +222,7 @@ static void boot_log_install(void *kmf, void *(*icall)(const char *)) {
     while (kmf && nested_types && class_name && (k = nested_types(kmf, &it))) if (!strncmp(class_name(k), "<Start>d__", 10)) ks = k;
     void *m = ks ? dsl_find_method(ks, "MoveNext", 0) : NULL, *a = m ? dsl_method_address(m) : NULL;
     if (ks) { off_it_state = dsl_field_offset(ks, "<>1__state"); off_it_cur = dsl_field_offset(ks, "<>2__current"); }
-    int h = a ? dsl_hook(DSL_OWNER_LOADER, a, (void *)my_start_mn, (void **)&o_start_mn, "loader soft boot log MainFlow.Start") : -1;
+    int h = a && boot_log ? dsl_hook(DSL_OWNER_LOADER, a, (void *)my_start_mn, (void **)&o_start_mn, "loader soft boot log MainFlow.Start") : -1;
     SLOG("boot log: MainFlow.Start iterator %s, hook %d, frame count %s", ks ? class_name(ks) : "NOT FOUND", h, frame_count ? "ok" : "MISSING");
     void *ka = dsl_find_class("Refactor.Addressable", "AddressableInitializer"); int n = 0; it = NULL;
     while (ka && n < NIT && (k = nested_types(ka, &it))) {
@@ -252,6 +262,29 @@ static void flags_clear(int keep_ready) {
     }
 }
 
+/* ------------------------------------------------------------------ progress (owner v13.3: a bar on the loading screen)
+   Real steps only: B writes <handoff>.progress ("<pct>\t<text>") when a step starts (mods loaded, each boot step of
+   the game, the title, the world load with the game's own percent, ready); A shows it while it waits. A few small
+   writes in B, one small read in A every 0.1 s: no cost for the restart. ui/dsl_progress.c draws it. */
+static int pg_pct = -1; static char pg_text[160]; static double pg_read;
+static int b_flowk(void) { const char *sv = json_str(hand, "save"); return sv && *sv && json_get(hand, "scene") && json_get(hand, "scene")->num == 2; }
+void dsl_soft_progress(int pct, const char *text) {
+    if (!role_b || !hand) return;
+    if (b_flowk() && pct < 100 && pct > 0 && strcmp(text, "Opening your world")) pct = pct / 2;   /* flow K: the boot is the first half */
+    if (pct < pg_pct) pct = pg_pct;                                    /* never backwards */
+    if (pct == pg_pct && !strcmp(text, pg_text)) return;
+    pg_pct = pct; snprintf(pg_text, sizeof pg_text, "%s", text);
+    char p[1300], b[220]; path_of(p, sizeof p, "progress"); snprintf(b, sizeof b, "%d\t%s", pct, text);
+    put_text(p, b);
+}
+static void a_progress_read(double t) {                                 /* A: B's last step */
+    if (t - pg_read < 0.1) return; pg_read = t;
+    char p[1300]; path_of(p, sizeof p, "progress");
+    char *s = slurp(p); if (!s) return;
+    char *tab = strchr(s, '\t'); int v = atoi(s);
+    if (tab && v >= pg_pct) { pg_pct = v; snprintf(pg_text, sizeof pg_text, "%s", tab + 1); }
+    free(s);
+}
 /* ------------------------------------------------------------------ per-frame window log + capture */
 static void frame_log(const char *who) {
     if (!ff) return;
@@ -410,6 +443,9 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
     SLOG("A: APPLY profile %s (title%s%s)", profile ? profile : "", a_save[0] ? ", B opens " : "", a_save);
     fade_out(fade, NULL, 1, NULL);                                        /* the game's loading screen */
     if (fade_done && !fade_done(fade, NULL)) a_fade_seen_open = 1;
+    pg_pct = 0; snprintf(pg_text, sizeof pg_text, "%s", use_pw ? "Switching to the new mods" : "Starting the game with the new mods");
+    if (use_pw && pw_state == PW_READY) pg_pct = 95;                       /* the prewarmed game is ready: only the swap is left */
+    { char p[1300]; path_of(p, sizeof p, "progress"); if (!use_pw) unlink(p); }
     if (use_pw) {
         SLOG("A: the prewarmed B pid %ld is used (%s)", dsl_sos_child_pid(), pw_state == PW_READY ? "ready" : "still booting");
         write_handoff(pw_profile, 1, t_start + a_t0);                     /* frame + apply time of now; B reads it at "go" */
@@ -433,6 +469,7 @@ static void a_tick(void) {
     if (t - a_t0 > env_num("DSL_SOFT_TIMEOUT", 90)) { a_fail("the restart took too long"); return; }
     Obj fv = fade; int up = fv && fade_done && fade_done(fv, NULL);
     if (!up) a_fade_seen_open = 1;
+    a_progress_read(t);
     if (a_state == A_WAIT_READY) {
         static double last_note;
         int rd = ready_ok();
@@ -445,6 +482,7 @@ static void a_tick(void) {
         if (!(up && open_ok) && t - a_ready_seen <= 3) return;
         if (!(up && open_ok)) SLOG("A: loading screen not reported up 3 s after B was ready: swap anyway");
         SLOG("A: B ready (%.3f s after apply)", t - a_t0);
+        pg_pct = 100; snprintf(pg_text, sizeof pg_text, "Done");
         if (!no_activate) dsl_sos_yield();                                 /* activation is given, not taken */
         path_of(p, sizeof p, "go"); touch_file(p, NULL);
         a_state = A_WAIT_SHOWN; return;
@@ -457,6 +495,19 @@ static void a_tick(void) {
         a_state = A_QUITTING; cap_on = 0;
         if (app_quit) app_quit(NULL); else exit(0);
     }
+}
+
+/* what to draw now: 1 = show (pct 0..100, step text, panel 1 = centered panel for flow K, 0 = bottom strip) */
+int dsl_soft_progress_view(int *pct, char *text, size_t cap, int *panel) {
+    double t = since(); int on = 0, fk = 0;
+    if (!role_b && (a_state == A_WAIT_READY || a_state == A_WAIT_SHOWN || a_state == A_QUITTING)) { on = 1; fk = a_scene == 2; }
+    else if (hand) {                                                    /* B: from its loading screen until just after the fade in */
+        extern int dsl_soft_b_state_visible(double);
+        on = dsl_soft_b_state_visible(t); fk = b_flowk();
+    }
+    if (!on) return 0;
+    *pct = pg_pct < 0 ? 0 : pg_pct > 100 ? 100 : pg_pct; snprintf(text, cap, "%s", pg_text); *panel = fk;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ B side */
@@ -479,6 +530,18 @@ static void b_quit(const char *why) {
     SLOG("B: %s: B quits", why);
     b_state = B_DONE; if (app_quit && mf) app_quit(NULL); else exit(0);
 }
+int dsl_soft_b_state_visible(double t) { return role_b ? b_state >= B_FADING : (b_state == B_DONE && t - b_tstate < 0.3); }
+/* flow K: the game's own loading percent (LoadingUI._progressText of the loading screen) while the world loads */
+static int32_t off_lui = -1, off_ptext = -1; static Obj (*tmp_get)(Obj, const void *);
+static void b_world_progress(double t) {
+    static double last; if (t - last < 0.2) return; last = t;
+    Obj f = fade, lui = f && off_lui >= 0 ? AT(f, off_lui, Obj) : NULL, pt = lui && off_ptext >= 0 ? AT(lui, off_ptext, Obj) : NULL;
+    int v = 0;
+    if (pt && tmp_get) { Obj s = tmp_get(pt, NULL); if (s) { int32_t n = AT(s, 0x10, int32_t); const uint16_t *c = (const uint16_t *)((char *)s + 0x14);
+        for (int i = 0; i < n && i < 16; i++) if (c[i] >= '0' && c[i] <= '9') v = v * 10 + (c[i] - '0'); else if (v) break; } }
+    if (v > 100) v = 100;
+    dsl_soft_progress(50 + v * 45 / 100, "Opening your world");
+}
 static void b_tick(void) {
     char p[1300]; double t = since();
     if (b_state == B_DONE) return;
@@ -495,14 +558,17 @@ static void b_tick(void) {
         if (boot_log && t - last_bl >= 0.5) { last_bl = t; SLOG("boot: frame %d scene %d bootReady %d busy %d", frame_count ? frame_count() : -1, sc, boot_ready(), busy()); }
         if (sc != 1 || !boot_ready() || busy()) return;
         SLOG("B: title ready (frame %d)", frame_count ? frame_count() : -1);
+        dsl_soft_progress(90, "Opening the title screen");
         const char *save = json_str(hand, "save");
         if (save && *save && json_get(hand, "scene") && json_get(hand, "scene")->num == 2) {
+            dsl_soft_progress(50, "Opening your world");
             Obj e = obj_new(k_load); ctor_load(e, str_new(save), NULL); queue(e);
             SLOG("B: LoadCampaignRequested %s", save); b_state = B_LOADING; b_tstate = t;
         } else b_fade_start(t);                                           /* title: nothing to settle, the loading screen at once */
         return;
     }
     if (b_state == B_LOADING) {                                           /* flow K: the world of the given save */
+        b_world_progress(t);
         if (sc != 2 || busy() || (fade_loading && fade_loading(fade, NULL))) { b_frames_ok = 0; return; }
         if (++b_frames_ok < 10) return;
         b_load_speed = game_speed(); set_speed(0);
@@ -518,6 +584,7 @@ static void b_tick(void) {
         if (!up) b_fade_seen_open = 1;
         if (!up || (!b_fade_seen_open && t - b_tstate < 0.4)) return;
         char pid[32]; snprintf(pid, sizeof pid, "%d\n", (int)getpid());
+        dsl_soft_progress(100, "Done");
         path_of(p, sizeof p, "ready"); touch_file(p, pid);
         SLOG("B: ready (loading screen up, window still hidden, %.3f s after the fade started)%s", t - b_tstate, b_prewarm ? ": prewarmed, waiting for an apply" : "");
         b_state = B_WAIT_GO; b_tstate = t; return;
@@ -664,7 +731,9 @@ void dsl_soft_install(void) {
         }
         SLOG("B: boot speed-up: splash %s, frame cap %s", splash_done && splash_cancel ? "ok" : "MISSING", set_fps && set_vsync && get_fps && get_vsync ? "ok" : "MISSING");
     }
-    if (role_b && getenv("DSL_SOFT_BOOTLOG") && *getenv("DSL_SOFT_BOOTLOG") == '1') { boot_log = 1; boot_log_install(kmf, icall); }
+    if (role_b) { boot_log = getenv("DSL_SOFT_BOOTLOG") && *getenv("DSL_SOFT_BOOTLOG") == '1'; boot_log_install(kmf, icall); }   /* progress steps; the step log only with DSL_SOFT_BOOTLOG */
+    { void *kf = klass("Refactor.UI", "ScreenFadeEffectView"), *kl = klass("Refactor", "LoadingUI");
+      off_lui = kf ? foff(kf, "_loadingUI") : -1; off_ptext = kl ? foff(kl, "_progressText") : -1; tmp_get = meth("TMPro", "TMP_Text", "get_text", 0); }
     if (cap_dir[0]) {
         cap_tex = meth("UnityEngine", "ScreenCapture", "CaptureScreenshotAsTexture", 0);
         enc_png = meth("UnityEngine", "ImageConversion", "EncodeToPNG", 1); obj_destroy = meth("UnityEngine", "Object", "Destroy", 1);
