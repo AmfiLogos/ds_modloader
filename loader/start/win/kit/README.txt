@@ -36,8 +36,9 @@ ADD A MOD
    - In the game, on the title screen, click Mods. Click "Open mods folder".
    - Press Windows+R. Paste %LOCALAPPDATA%\Dungeon Settlers Modded\mods and press Enter.
 3. Put the zip file into the mods folder.
-4. Start Dungeon Settlers Modded. It installs the mod.
-5. On the title screen, click Mods. Turn the new mod on. Click Apply.
+4. In the Mods window, click Refresh. The mod shows up in the list.
+   (If the game is not running: start Dungeon Settlers Modded. It installs the mod. Then click Mods.)
+5. Turn the new mod on. Click Apply. The game restarts behind a loading screen, with the mod on.
 A new version of a mod replaces the old version. The old version goes to the "retired" folder.
 
 

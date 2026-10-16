@@ -129,6 +129,14 @@ static void mods_scan(void) {
     json_free(prof);
 }
 int dsl_mods_count(void) { mods_scan(); return nmi; }
+/* read the mods folder again (a mod package installed while the game runs, ui/dsl_pkg.c): the list for the Mods window.
+   What runs does not change (the running key, loaded modules); old DSLModInfo pointers are invalid afterwards. */
+void dsl_mods_rescan(void) {
+    for (int i = 0; i < nmi; i++) { free((void *)MI[i].id); free((void *)MI[i].name); free((void *)MI[i].version); free((void *)MI[i].description); free((void *)MI[i].kind); free((void *)MI[i].scope); free((void *)MI[i].reason); }
+    memset(MI, 0, sizeof MI); memset(MI_short, 0, sizeof MI_short); nmi = 0; mods_scanned = 0;
+    mods_scan();
+    dsl_log("reg: mods folder read again: %d installed mod(s)", nmi);
+}
 /* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 characters */
 void dsl_mod_short(const char *id, char *out, size_t cap) {
     mods_scan(); out[0] = 0;
@@ -666,6 +674,8 @@ int dsl_ui_test_tip_rects(float card[4], float panel[4]);
 void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
+__attribute__((weak)) int dsl_pkg_refresh(char *fail, size_t fcap) { if (fail && fcap) fail[0] = 0; return -2; }
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
 __attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
 static int hv_wait; static char hv_what[120];
@@ -718,6 +728,11 @@ static void test_frame(void) {
         dsl_log("reg test: save_file %s: %s", nm, ok < 0 ? "FAILED (names)" : ok == 2 ? "saved (Ironman: autosave kind)" : ok ? "saved" : "the game refused");
     }
     else if (c && !strcmp(c, "draft")) dsl_mods_draft(ids, json_get(j, "drop") ? -1 : n);
+    else if (c && !strcmp(c, "pkg_refresh")) {                         /* Refresh without the window (Windows test, -nographics) */
+        char f[400] = ""; int k = dsl_pkg_refresh(f, sizeof f); char l[1200] = "";
+        for (int i = 0; i < nmi; i++) { strlcat(l, i ? "," : "", sizeof l); strlcat(l, MI[i].id, sizeof l); strlcat(l, MI[i].enabled ? ":on" : ":off", sizeof l); }
+        dsl_log("reg test: pkg_refresh %d new; fail '%s'; list %s", k, f, l);
+    }
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
     json_free(j);

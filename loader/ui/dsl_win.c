@@ -316,10 +316,30 @@ static void apply_click(void *ud, DSLObj w) {
     reopen_mark(1);
     destroy_all();                                                     /* the game's loading screen must be on top */
 }
+/* new mod packages (ui/dsl_pkg.c): looked for when the Mods tab opens and with "Refresh"; switches the player already
+   changed are kept across the rebuild */
+int dsl_pkg_refresh(char *fail, size_t fcap);
+static char keep_ids[NM][64]; static int keep_on[NM], nkeep = -1;
+static void mods_tab_reload(void);
+static void refresh_note(int n, const char *fail) {
+    if (fail[0]) snprintf(m_note, sizeof m_note, "%s", fail);
+    else if (n > 0) snprintf(m_note, sizeof m_note, n == 1 ? "Found 1 new mod. Turn it on, then click Apply." : "Found %d new mods. Turn them on, then click Apply.", n);
+}
+static void refresh_click(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    nkeep = 0; for (int i = 0; i < nmods && nkeep < NM; i++) { snprintf(keep_ids[nkeep], 64, "%s", mods[i].m->id); keep_on[nkeep++] = mods[i].on; }
+    char fail[400]; int n = dsl_pkg_refresh(fail, sizeof fail);
+    dsl_log("win: Refresh: %d new or changed mod(s)%s%s", n < 0 ? 0 : n, fail[0] ? "; " : "", fail);
+    mods_tab_reload();
+    if (n == 0 && !fail[0]) snprintf(m_note, sizeof m_note, "The mods folder has no new mods.");
+    else refresh_note(n, fail);
+    mods_sync();
+}
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
     snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0;
+    if (!world_mode && nkeep < 0) { char fail[400]; int n = dsl_pkg_refresh(fail, sizeof fail); if (n || fail[0]) refresh_note(n, fail); }
     for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
         const DSLModInfo *m = dsl_mods_at(i);
         if (!m || m->hidden) continue;
@@ -334,6 +354,10 @@ static void mods_open(DSLObj root, float w, float h) {
         }
     }
     for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base;
+    if (nkeep >= 0) {                                                  /* after Refresh: the switches as the player left them */
+        for (int i = 0; i < nmods; i++) for (int k = 0; k < nkeep; k++) if (!strcmp(keep_ids[k], mods[i].m->id)) mods[i].on = keep_on[k];
+        nkeep = -1;
+    }
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
     float lh = h - 40 - 76;
     /* the world's name, cut to fit the heading box (620 wide, size 20: about 40 characters with "Mods for ") */
@@ -343,7 +367,9 @@ static void mods_open(DSLObj root, float w, float h) {
     named(U->text(root, 0, 0, m_lw, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);
     if (!world_mode) {
         DSLObj of = named(U->button(root, m_lw - 200, 0, 200, 34, "Open mods folder", folder_click, NULL), 0, "mods-folder", folder_click, NULL, "Open mods folder");
-        U->tooltip(of, "Open mods folder", "Put a downloaded mod (its .zip file) into this folder. Restart the game, then turn the mod on here.");
+        U->tooltip(of, "Open mods folder", "Put the mod's .zip file in this folder. Click Refresh to add it to this list. Then turn it on and click Apply.");
+        DSLObj rf = named(U->button(root, m_lw - 316, 0, 108, 34, "Refresh", refresh_click, NULL), 0, "mods-refresh", refresh_click, NULL, "Refresh");
+        U->tooltip(rf, "Refresh", "Check the mods folder for new mods.");
     }
     U->panel(root, 0, 40, m_lw, lh, 0);
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
@@ -412,6 +438,8 @@ static void apply_watch(void) {
 }
 
 /* ---------------------------------------------------------------- window, tabs */
+static void tab_close(void); static void tab_select(int t);
+static void mods_tab_reload(void) { tab_close(); tab_select(0); }
 static const DSLTab *tab_at(int t) { return t > 0 ? dsl_tab_at(t - 1) : NULL; }     /* 0 = Mods, 1.. = module tabs */
 static void tab_close(void) {
     if (cur < 0) return;
