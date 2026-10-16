@@ -224,7 +224,7 @@ static void group_pick(void *ud, DSLObj w) {
 static char del_name[80];
 static void del_ok(void *ud, DSLObj w) {
     (void)ud; (void)w;
-    if (dsl_group_delete(del_name)) snprintf(m_note, sizeof m_note, "The group could not be deleted (see dsload.log).");
+    if (dsl_group_delete(del_name)) snprintf(m_note, sizeof m_note, "The group could not be deleted.");
     else dsl_log("win: group %s deleted", del_name);
     groups_build(); mods_sync();
 }
@@ -274,7 +274,7 @@ static void fsave_click(void *ud, DSLObj w) {
     if (!name[0]) return;                                              /* no name: the field stays open */
     const char *ids[NM]; int n = 0;
     for (int i = 0; i < nmods; i++) if (mods[i].on) ids[n++] = mods[i].m->id;
-    if (dsl_group_save(name, ids, n)) snprintf(m_note, sizeof m_note, "The group could not be saved (see dsload.log).");
+    if (dsl_group_save(name, ids, n)) snprintf(m_note, sizeof m_note, "The group could not be saved.");
     else { m_note[0] = 0; dsl_log("win: group %s saved (%d mods)", name, n); }
     naming_show(0);
     groups_build(); mods_sync();
@@ -286,13 +286,13 @@ static void apply_click(void *ud, DSLObj w) {
     const char *ids[NM]; int n = 0;
     for (int i = 0; i < nmods; i++) if (mods[i].on) ids[n++] = mods[i].m->id;
     if (world_mode) {                                                  /* no restart: the world remembers its set */
-        if (dsl_world_set_mods(world_guid, ids, n)) snprintf(m_note, sizeof m_note, "The mods for this world could not be saved (see dsload.log).");
+        if (dsl_world_set_mods(world_guid, ids, n)) snprintf(m_note, sizeof m_note, "The mods for this world could not be saved.");
         else { for (int i = 0; i < nmods; i++) mods[i].base = mods[i].on; snprintf(m_note, sizeof m_note, "Saved. %s loads with these mods.", world_name[0] ? world_name : "This world"); }
         dsl_log("win: world %s: %d mods saved", world_guid, n);
         mods_sync(); return;
     }
     char why[300] = "";
-    if (dsl_apply_mods(ids, n, why, sizeof why)) { snprintf(m_note, sizeof m_note, "The mods did not change: %s", why[0] ? why : "refused (see dsload.log)"); mods_sync(); return; }
+    if (dsl_apply_mods(ids, n, why, sizeof why)) { snprintf(m_note, sizeof m_note, "The mods did not change: %s", why[0] ? why : "the game did not allow the change"); mods_sync(); return; }
     applying = 1; applying_seen_busy = 0; applying_t = now_s(); m_note[0] = 0;
     dsl_log("win: Apply: %d mods, soft restart started: the window closes (the loading screen covers the screen)", n);
     reopen_mark(1);
@@ -379,7 +379,7 @@ static void apply_watch(void) {
         if (ld) { snprintf(fp, sizeof fp, "%s/softrestart/handoff.json.failed", ld);
                   FILE *f = fopen(fp, "r"); if (f) { size_t n = fread(why, 1, sizeof why - 1, f); why[n] = 0; fclose(f);
                                                        while (n && (why[n - 1] == '\n' || why[n - 1] == '\r')) why[--n] = 0; } }
-        snprintf(carry_note, sizeof carry_note, "The mods did not change: %s", why[0] ? why : "the restart did not finish (see dsload.log).");
+        snprintf(carry_note, sizeof carry_note, "The mods did not change: %s", why[0] ? why : "the restart did not finish.");
         dsl_log("win: the soft restart ended here without a swap: window opens with the reason");
         reopen_mark(0);
         dsl_win_open("mods");

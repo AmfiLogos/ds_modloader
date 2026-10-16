@@ -416,7 +416,7 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
         pw_clear();
     } else {
         write_handoff(profile ? profile : "", 0, t_start + a_t0);        /* B starts now */
-        if (dsl_sos_spawn(profile ? profile : "", handoff_path, env_lines ? env_lines : "")) { a_fail("could not start B"); return -1; }
+        if (dsl_sos_spawn(profile ? profile : "", handoff_path, env_lines ? env_lines : "")) { a_fail("the restart could not begin"); return -1; }
         SLOG("A: B started, pid %ld", dsl_sos_child_pid());
     }
     a_state = A_WAIT_READY;
@@ -429,8 +429,8 @@ static void a_tick(void) {
     if (a_state == A_IDLE || a_state == A_FAILED) { pw_tick(); return; }
     if (a_state == A_QUITTING) return;
     capture("A");
-    if (dsl_sos_child_exited()) { a_fail("B exited before the swap"); return; }
-    if (t - a_t0 > env_num("DSL_SOFT_TIMEOUT", 90)) { a_fail("timeout"); return; }
+    if (dsl_sos_child_exited()) { a_fail("the restarted game closed before it was ready"); return; }
+    if (t - a_t0 > env_num("DSL_SOFT_TIMEOUT", 90)) { a_fail("the restart took too long"); return; }
     Obj fv = fade; int up = fv && fade_done && fade_done(fv, NULL);
     if (!up) a_fade_seen_open = 1;
     if (a_state == A_WAIT_READY) {

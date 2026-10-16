@@ -110,7 +110,7 @@ static void mods_scan(void) {
             const char *dd = getenv("DOORSTOP_DISABLE");                 /* start/win/bie_win.c (lane L3) */
             int runs = on && !(dd && *dd);
             const char *br = getenv("DSL_BIE_REASON");
-            st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : "BepInEx did not start (see starter.log)";
+            st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : "BepInEx did not start";
 #else
             char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);   /* Mac: start/mac/dsl_bie_mac.c, its folder in this start */
             st = dsl_bie_running_dir(pd) ? 1 : 0;
@@ -123,7 +123,7 @@ static void mods_scan(void) {
             why = mr && *mr ? mr : dsl_ml_state() < 0 ? "MelonLoader is not available in this start" : "MelonLoader mod: not running in this start";
         }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
-        x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "not loaded (see dsload.log)"));
+        x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "did not load"));
         json_free(m);
     }
     json_free(prof);
@@ -367,7 +367,7 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     for (int i = 0; i < n && k < MAXM; i++) all[k++] = ids[i];
     for (int i = 0; i < nmi && k < MAXM; i++) if (MI[i].hidden && MI[i].enabled) { int dup = 0; for (int j = 0; j < k; j++) dup |= !strcmp(all[j], MI[i].id); if (!dup) all[k++] = MI[i].id; }
     dpath(p, pcap, "pending.json");
-    if (write_profile(p, all, k)) { snprintf(why, cap, "cannot write %s", p); return -1; }
+    if (write_profile(p, all, k)) { dsl_log("reg: cannot write %s", p); snprintf(why, cap, "the mod settings could not be saved"); return -1; }
     key_of(all, k, kk, kcap);
     /* BepInEx plugins or MelonLoader mods of the new set (profile order; one .NET host per set, src/dsl_ml.h): install at
        first use, the host's env for the new process */
@@ -379,7 +379,7 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     for (int i = 0; i < k; i++) if (nk && dsl_net_kind(kinds[i]) == nk) { snprintf(pdirs[nb], sizeof pdirs[nb], "%s/%s", dsl_mods_dir(), all[i]); pd[nb] = pdirs[nb]; nb++; }
     int bs = nk ? dsl_net_state(nk) : 2;
     const char *hn = dsl_net_name(nk);
-    if (nb && bs < 0) { snprintf(why, cap, "%s mods need the Dungeon Settlers Modded app (no %s folder in this start)", hn, hn); return -1; }
+    if (nb && bs < 0) { dsl_log("reg: no %s folder in this start", hn); snprintf(why, cap, "%s mods need the Dungeon Settlers Modded app", hn); return -1; }
     if (nb && bs == 0) return 1;
     char bie[4096] = ""; if (dsl_net_env(nk, pd, nb, bie, sizeof bie)) bie[0] = 0;
     int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */

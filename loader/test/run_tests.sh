@@ -97,10 +97,10 @@ check "next start: crasher OFF, floor-logger loads, game runs" '[[ "$r" == *"ori
 
 print "== T6 future build guard: the launcher pinned another build than this copy's"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=99999999)
-check "env pin differs: no module, no hook, game runs, clear reason" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: This copy of the game is build test, but the launcher pinned build 99999999"* ]] && log | grep -q "GAME BUILD CHECK FAILED (not_pinned_build)" && ! log | grep -q "hooked" && ! log | grep -q "loaded (" && grep -q "\"active\":false,\"reason\":\"not_pinned_build\"" "$LOGD/dsload_status.json"'
+check "env pin differs: no module, no hook, game runs, clear reason" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: This game is build test, but the launcher started this world for build 99999999"* ]] && log | grep -q "GAME BUILD CHECK FAILED (not_pinned_build)" && ! log | grep -q "hooked" && ! log | grep -q "loaded (" && grep -q "\"active\":false,\"reason\":\"not_pinned_build\"" "$LOGD/dsload_status.json"'
 print -r -- '{"build":"88888888","modset":"aaa","worlds":{}}' > "$OUT/session_pin.json"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_pin.json")
-check "session pin differs: same refusal (world check not installed either)" '[[ "$r" == *"orig_safe=2"* && "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "pinned build 88888888" && ! log | grep -q "hooked"'
+check "session pin differs: same refusal (world check not installed either)" '[[ "$r" == *"orig_safe=2"* && "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "this world for build 88888888" && ! log | grep -q "hooked"'
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=test)
 check "pin equal to the copy: modules load" 'log | grep -q "floor-logger 1.0.0: loaded" && grep -q "\"pinned_build\":\"test\"" "$LOGD/dsload_status.json"'
 

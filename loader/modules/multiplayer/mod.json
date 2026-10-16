@@ -18,6 +18,6 @@
   "loader>=2.0.0"
  ],
  "conflicts": [],
- "description": "Lockstep multiplayer (dsrig) as a dsload module. Needs DSRIG_DIR (the launcher's profile folder).",
+ "description": "Play your worlds with friends. Host one of your saves, or join a friend by address or through Steam. Each player controls their own units.",
  "scope": "gameplay"
 }

@@ -128,7 +128,7 @@ static int fetch_unpack(const char *root, const char *game, const wchar_t *url, 
         HRESULT r = URLDownloadToFileW(NULL, url, wz, 0, NULL);
         if (r != S_OK) { snprintf(why, wn, "%s could not be downloaded (error %#lx). Check the internet connection.", what, (unsigned long)r); return -1; }
         z = (unsigned char *)slurp(zp, &n);
-        if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) { free(z); snprintf(why, wn, "The %s download is not the expected file (sha256 %s).", what, h); return -1; }
+        if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) { free(z); lg("%s: download sha256 %s, expected %s", what, h, sha); snprintf(why, wn, "The %s download is damaged. Try again.", what); return -1; }
     }
     int k = unzip_to(z, n, game); free(z);
     if (k <= 0) { snprintf(why, wn, "%s could not be unpacked into the game copy.", what); return -1; }
