@@ -51,7 +51,7 @@ On the title screen, click Mods to turn mods on or off.
 
 ## Add a mod
 
-Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-2.0.0.zip`). One file works on Mac and Windows.
+Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-0.1.18.zip`). One file works on Mac and Windows.
 
 1. Download the zip. Do not unzip it.
 2. Start the game, click Mods, then click "Open mods folder". Put the zip into that folder.
@@ -96,7 +96,7 @@ the modded game, its cloud copy goes too. The game's own cloud saves never chang
 
 ## Report a bug
 
-Open an issue on this repo's Issues page. Say your system (Mac or Windows), the release (for example v13.2) and
+Open an issue on this repo's Issues page. Say your system (Mac or Windows), the release (for example v0.1.16) and
 what you did. Attach the `.log` files from this folder (not the `data` folder, which holds your saves):
 Mac: `~/Library/Application Support/DSModLauncher/profiles/modded` (and `~/Library/Logs/DungeonSettlersModded.log`).
 Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.

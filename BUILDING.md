@@ -50,7 +50,7 @@ Never commit these. They are game files or are made from game files.
 | floor-logger example | The owner's API 1 example mod (`floor-logger.dylib`, `mod.json`). | none: `loader/build.sh:80-81` and `loader/test/run_tests.sh:36-37` expect `DungeonSettlersMods/mods/floor-logger/` in your home folder. Edit the lines. |
 
 Other env vars: `DSMP_ROOT` (ds_multiplayer checkout for MinHook and zlib, default `ds_multiplayer` in your home folder),
-`MP_WIN_TREE` (build Windows multiplayer from a checkout, not the pin), `SKIP_MAC=1`, `LOADER_ONLY=1`, `VER` (installer version, default 13.2.0).
+`MP_WIN_TREE` (build Windows multiplayer from a checkout, not the pin), `SKIP_MAC=1`, `LOADER_ONLY=1`, `VER` (installer version, default 0.1.18).
 
 The supported game is Dungeon Settlers, Steam build 25846389.
 
