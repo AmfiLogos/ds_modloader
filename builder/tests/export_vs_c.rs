@@ -1,8 +1,9 @@
-//! The Rust export (src/export.rs) against the PvP mod's own C (ext/pvp/src/pvp_build.c + pvp_wiki.c + fe/), on the
+//! The Rust export (src/export.rs) against the PvP mod's own C (Custom Modes units/pvp_build.c + pvp_wiki.c + fe/), on the
 //! same links with the same seed: every entry must be byte-identical (closure, closure_hash, progress_sig,
 //! wiki_hash, guids), every refusal the same text, the notes and the stored majors the same.
-//! Cases: ext/pvp/tools/make_build_cases.js (random playable builds, --edge, --team 3) + refusals made here.
-//! Needs `cc`, zlib, node and the ext sources; skipped with a note when one is missing.
+//! Cases: tests/node/make_build_cases.js (random playable builds, --edge, --team 3) + refusals made here.
+//! Needs `cc`, zlib, node, the wiki builder and a Custom Modes checkout (tests/common/mod.rs, tests/REFERENCES.md);
+//! a missing one is a visible REF SKIP line, or a failure with DS_REQUIRE_REFS=1.
 //! The full comparison goes to tests/c_harness/last_run.txt.
 use ds_unit_builder::codec;
 use ds_unit_builder::export::{self, entries_from_link, wire_fp, wire_tables};
@@ -15,36 +16,57 @@ use std::process::{Command, Stdio};
 const SEED: u64 = 20261014;
 const UID: &str = "00112233445566778899aabbccddeeff";
 
-fn home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default())
-}
-fn harness() -> Option<PathBuf> {
-    let src = home().join("ds_multiplayer/ext/pvp/src");
+mod common;
+use common::{ran, skip};
+
+/// the PvP mod's C (Custom Modes units/ + fe/ at DS_CM_REV, default the pinned commit) built with the test harness.
+/// Err = why it could not be built (a skip, or a failure with DS_REQUIRE_REFS=1).
+fn harness() -> Result<(PathBuf, String), String> {
     let me = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/c_harness/harness.c");
-    if !src.join("pvp_build.c").exists() || !me.exists() {
-        println!("NOTE: ext/pvp sources or the harness are missing: test skipped");
-        return None;
+    let (dir, rev) = (common::cm_dir(), common::cm_rev());
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let root = if rev == "worktree" {
+        dir.clone()
+    } else {
+        // the pinned commit's files, whatever the checkout is at
+        let c = Command::new("git").arg("-C").arg(&dir).args(["rev-parse", "--verify", "-q"]).arg(format!("{rev}^{{commit}}")).output();
+        let full = match c {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+            _ => return Err(format!("Custom Modes commit {rev} not found in {} (DS_CM_DIR / DS_CM_REV; git fetch there?)", dir.display())),
+        };
+        let root = tmp.join(format!("cm_{}", &full[..12]));
+        let _ = std::fs::create_dir_all(&root);
+        let sh = format!("git -C '{}' archive {full} units fe | tar -x -C '{}'", dir.display(), root.display());
+        match Command::new("sh").args(["-c", &sh]).status() {
+            Ok(s) if s.success() => root,
+            _ => return Err(format!("cannot extract units/ fe/ of {full} from {}", dir.display())),
+        }
+    };
+    let srcs = ["units/pvp_build.c", "units/pvp_wiki.c", "fe/fe_json.c", "fe/fe_save.c"];
+    if let Some(f) = srcs.iter().find(|f| !root.join(f).exists()) {
+        return Err(format!("{f} missing in {}", root.display()));
     }
-    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("pvp_export_harness");
-    let st = Command::new("nice")
+    let out = tmp.join("pvp_export_harness");
+    let o = Command::new("nice")
         .args(["-n", "19", "cc", "-O1", "-I"])
-        .arg(&src)
+        .arg(root.join("units"))
+        .arg("-I")
+        .arg(&root)
         .arg(&me)
-        .args(["pvp_build.c", "pvp_wiki.c", "fe/fe_json.c", "fe/fe_save.c"].map(|f| src.join(f)))
+        .args(srcs.map(|f| root.join(f)))
         .args(["-lz", "-lm", "-o"])
         .arg(&out)
-        .status();
-    match st {
-        Ok(s) if s.success() => Some(out),
-        _ => {
-            println!("NOTE: cannot build the C harness (cc / zlib missing?): test skipped");
-            None
-        }
+        .output();
+    match o {
+        Ok(o) if o.status.success() => Ok((out, format!("Custom Modes {rev} ({})", if rev == "worktree" { common::git_head(&dir) + " + local edits" } else { dir.display().to_string() }))),
+        Ok(o) => Err(format!("C harness does not compile:\n{}", String::from_utf8_lossy(&o.stderr).lines().take(20).collect::<Vec<_>>().join("\n"))),
+        Err(e) => Err(format!("cannot run cc: {e}")),
     }
 }
 fn node_cases(args: &[&str]) -> Vec<Value> {
-    let tool = home().join("ds_multiplayer/ext/pvp/tools/make_build_cases.js");
+    let tool = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/node/make_build_cases.js");
     let o = Command::new("nice").args(["-n", "19", "node"]).arg(&tool).args(args).output().expect("node");
+    assert!(o.status.success(), "make_build_cases.js {args:?} failed: {}", String::from_utf8_lossy(&o.stderr));
     String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).collect()
 }
 
@@ -171,11 +193,18 @@ fn export_matches_c() {
     }
     assert_eq!(wire_fp(), x.fp, "fingerprint");
 
-    let Some(h) = harness() else { return };
-    if Command::new("node").arg("--version").output().is_err() {
-        println!("NOTE: node missing: test skipped");
-        return;
+    const NAME: &str = "export_vs_c";
+    if let Err(e) = common::node_ok() {
+        return skip(NAME, &e);
     }
+    let dsb = common::dsb_dir();
+    if !dsb.join("builder.js").exists() {
+        return skip(NAME, &format!("no wiki builder at {} (DSB_DIR); the cases need it", dsb.display()));
+    }
+    let (h, cref) = match harness() {
+        Ok(x) => x,
+        Err(e) => return skip(NAME, &e),
+    };
     let seed_s = SEED.to_string();
     let mut cases: Vec<(String, String)> = vec![];
     let mut builds: Vec<Build> = vec![];
@@ -255,5 +284,6 @@ fn export_matches_c() {
     for d in diffs.iter().take(10) {
         println!("{d}");
     }
+    ran(NAME, &format!("{summary}; C = {cref}; cases from wiki builder {}", common::git_head(&dsb)));
     assert!(diffs.is_empty(), "{summary} (details: {})", path.display());
 }

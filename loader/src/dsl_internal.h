@@ -63,6 +63,7 @@ int dsl_ui_title_add(const char *owner_id, const char *label, int order, const c
 void dsl_frame_hook(void);                               /* dsl_reg.c: every frame, main thread */
 /* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
    row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
+struct DSLHost; void dsl_cloud_install(struct DSLHost *host);   /* dsl_cloud.c: after dsl_reg_ready */
 void dsl_rows_install(void);                             /* after dsl_ui_install */
 void dsl_rows_frame(void);                               /* from dsl_frame_hook */
 int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
