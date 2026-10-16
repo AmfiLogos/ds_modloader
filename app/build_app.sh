@@ -38,6 +38,8 @@ cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
 cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
 cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
 cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)
+# the kit release ("13.3"): auto-update compares it with the GitHub releases (DSM_RELEASE overrides loader/RELEASE)
+print -r -- "${DSM_RELEASE:-$(head -1 "$REPO/loader/RELEASE")}" > "$C/Resources/dsml/RELEASE"
 for m in $MODS; do   # every shipped mod is required (one mod.json per module, mac-arm64 + win-x64 sha256s)
   [[ -d $REPO/loader/build/mods_all/mac/$m ]] || die "no loader/build/mods_all/mac/$m (run loader/modules/build_mods.sh)"
   cp -R "$REPO/loader/build/mods_all/mac/$m" "$C/Resources/dsml/mods/$m"

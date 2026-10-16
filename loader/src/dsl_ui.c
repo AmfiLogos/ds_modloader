@@ -1024,6 +1024,17 @@ static void title_frame(void) {
     }
 }
 
+/* the title menu is on screen (its stock button column shows; the multiplayer pages hide it) */
+int dsl_ui_title_shown(void) {
+    Obj v = title_view(); if (!v || !on_tree(v)) return 0;
+    for (int i = 0; i < 7; i++) if (f_tv_btn[i] >= 0) { Obj b = AT(v, f_tv_btn[i], Obj); if (b && active_self(b)) return 1; }
+    return 0;
+}
+/* a kit widget pinned to the top-right corner of its parent (the screen layer): right / top margins, size */
+void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
+    if (w) rt_set((Obj)w, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ wd, h }, (V2){ -right, -top });
+}
+
 /* ------------------------------------------------------------------ frame tick */
 static void run_queue(void) {
     uint32_t q[QMAX]; int n = nq; memcpy(q, queue, (size_t)n * sizeof *q); nq = 0;
