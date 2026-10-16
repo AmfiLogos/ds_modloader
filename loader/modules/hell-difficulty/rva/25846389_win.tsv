@@ -1,0 +1,6 @@
+# Hell difficulty, GameAssembly.dll x64 build 25846389: functions used by the module (staff strip).
+# From ~/ds_multiplayer/win/25846389/dump/script.json; return = call ParseItems (0xa7e525, E8 rel32) + 5. See tools/WIN_SITES_NOTES.md.
+# patch table: 25846389_win_patches.tsv
+RecruitHelper.DetermineInitialEquipments	0xa7e480
+RecruitHelper.ParseItems	0xa80ce0
+DetermineInitialEquipments.ParseItems_return	0xa7e52a

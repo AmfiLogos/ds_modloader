@@ -12,11 +12,15 @@
  "platforms": {
   "mac-arm64": {
    "entry": "gcd-cdr.dylib"
+  },
+  "win-x64": {
+   "entry": "gcd-cdr.dll"
   }
  },
  "tables": {
   "25846389": {
-   "mac-arm64": "rva/25846389_mac.tsv"
+   "mac-arm64": "rva/25846389_mac.tsv",
+   "win-x64": "rva/25846389_win.tsv"
   }
  },
  "requires": [

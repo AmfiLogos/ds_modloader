@@ -1,0 +1,29 @@
+# patch <rva> <expected hex> <new hex> <note>  (Windows x64 GameAssembly.dll, Steam build 25846389)
+# Derived method by method from 25846389_mac_patches.tsv (Mac arm64) with the owner's 25284551 WIN_DLL_PATCHES as the x64 guide.
+# CreateCampaignPresenter bodies are byte-identical to 25284551 (shift +0x35C10). Three sites are NEW vs the 25284551 list:
+# MSVC inlined copies (env count in GetCombatRegionalEnvironmentRows, two value-colour switches in GetManagementMoodRows).
+# IsDownfallDifficultyLocked (25284551 had a patch there) is left stock, as on Mac: no direct caller on Mac or Windows.
+# Check: tools/check_win_patches.py. Notes: tools/WIN_SITES_NOTES.md.
+patch	0xb5e842	83fe037519	83fe037c19	combat lock jne->jl (Mac 0xe62e3c)
+patch	0xb5e860	83fe04	83fe05	combat max cmp 4->5 (Mac 0xe62e70)
+patch	0xb5e872	0f94c0	0f93c0	iron enter new sete->setae (Mac 0xe62e90)
+patch	0xb5e878	0f95c1	0f92c1	iron enter old setne->setb (Mac 0xe62e88)
+patch	0xb5e889	740e	730e	iron stay je->jae (Mac 0xe62eac)
+patch	0xb5e88e	750d	720d	iron leave jne->jb (Mac 0xe62ec0)
+patch	0xb5e8cf	400f95c7	400f92c7	iron toggle interactable setne->setb (Mac 0xe62e90/0xe62eac paths)
+patch	0xb5fcf3	0f94c0	0f93c0	IsIronModeForced sete->setae (Mac 0xe628a8)
+patch	0xb5ea5c	7448	7d48	mgmt lock je->jge (Mac 0xe63080)
+patch	0xb5ea5e	83f904	83f905	mgmt max cmp 4->5 (Mac 0xe630b0)
+patch	0xb61ac7	837b6804	837b6805	combat + lock cmp 4->5, cleared path (Mac 0xe62804)
+patch	0xb61b15	83fd04	83fd05	mgmt + lock cmp 4->5 (Mac 0xe627dc)
+patch	0xb61b32	0f94c1	0f93c1	combat gate tooltip sete->setae (Mac 0xe627ec)
+patch	0xb61b3d	400f94c6	400f93c6	mgmt gate tooltip sete->setae (Mac 0xe627d4)
+patch	0xb61b41	837b6804	837b6805	combat + lock cmp 4->5, gate path (Mac 0xe62804)
+patch	0xc43c3a	7409	eb09	env fallback jmp CountDownfall (Mac 0xf3cd94)
+patch	0xc43da5	7409	eb09	env fallback jmp CountDownfall, inlined copy in GetCombatRegionalEnvironmentRows (Mac 0xf3cd94)
+patch	0x5c1e12	7433	eb33	treatment mood 5->Downfall (Mac 0x842ed4)
+patch	0x5c1ce2	7433	eb33	dungeon stay 5->Downfall (Mac 0x842fbc)
+patch	0xc43081	7422	eb22	mood grade fallback jmp SuperHigh (Mac 0xf3d634)
+patch	0xc44176	7403	eb03	mood color >4 uses Downfall 7 (Mac 0xf3d6d8)
+patch	0xc4427e	7405	eb05	mood row1 color 0->7, inlined value colour (Mac 0xf3bf5c)
+patch	0xc443a4	740a	eb0a	mood row2 color 0->7, inlined value colour (Mac 0xf3c054)

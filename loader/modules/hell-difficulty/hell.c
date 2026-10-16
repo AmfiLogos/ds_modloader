@@ -1,13 +1,15 @@
 // Hell difficulty (sixth difficulty, CombatDifficulty 5) as a dsload code module: the code half of the owner's
 // ~/DungeonSettlers_HellDifficulty/b25846389/apply_hell.py, applied in memory through the loader's engine instead
-// of bytes in GameAssembly. The TABLE half (difficulty rows, texts, catalog.bin) is data: the launcher applies it
-// to the play copy (apply_hell.py --tables-only --out-dir), declared as "hell-difficulty-data" in "requires".
+// of bytes in GameAssembly. The TABLE half (difficulty rows, texts) is in this module too (hell_data.c: the Hell table
+// bundle rebuilt from the player's stock one + a shipped delta, loaded instead of it; the catalog is not touched).
 //   1. 20 in-place instruction patches (difficulty max 3->4, iron mode, unlock gate, tooltips, mood rows), each
 //      checked against the expected stock bytes (rva/<build>_mac_patches.tsv);
 //   2. the staff strip: on Hell, RecruitHelper.DetermineInitialEquipments drops "Staff" items from a recruit's
 //      default kit (Mage, Druid, Prodigy, Cursed Child arrive without their staff). The byte patch did it with a
 //      cave around the ParseItems call; here DetermineInitialEquipments keeps its `this` in a thread-local and ParseItems
 //      filters only when called from that site (return address +0xA4) on a Hell campaign.
+// Windows (win-x64): the same module built with llvm-mingw; its tables are rva/<build>_win_patches.tsv (x64 sites, derived
+// method by method from the Mac ones: tools/WIN_SITES_NOTES.md) and rva/<build>_win.tsv (call + 5 return address).
 #include "dsl_sdk.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -16,12 +18,18 @@
 
 DSL_PLUGIN();
 
+#ifdef _WIN32
+#define PATCH_TABLE "win_patches"
+#else
+#define PATCH_TABLE "mac_patches"
+#endif
+
 static const DSLHost *H;
 static DSLPlugin *ME;
 static void *(*orig_parse)(void *self, void *items, const void *mi);
 static void *(*orig_determine)(void *self, void *key, const void *mi);
 static _Thread_local void *cur_helper;           /* RecruitHelper `this` of the running DetermineInitialEquipments
-                                                    (the ParseItems call there does not pass it: x0 is garbage) */
+                                                    (the ParseItems call there does not pass it: x0 / rcx is garbage) */
 static uintptr_t strip_site;                     /* return address of the ParseItems call in DetermineInitialEquipments */
 static int stripped;
 
@@ -77,7 +85,7 @@ static void *my_parse(void *self, void *items, const void *mi) {
 DSL_EXPORT int dsl_module_early(const DSLHost *host, DSLPlugin *self) {
     H = host; ME = self;
     if (host->size < sizeof(DSLHost)) { host->log(self, "loader too old (needs patch_rva)"); return 1; }
-    char path[1200]; snprintf(path, sizeof path, "%s/rva/%s_mac_patches.tsv", host->module_dir(self), host->game_build);
+    char path[1200]; snprintf(path, sizeof path, "%s/rva/%s_" PATCH_TABLE ".tsv", host->module_dir(self), host->game_build);
     FILE *f = fopen(path, "r");
     if (!f) { host->log(self, "no patch table %s", path); return 2; }
     char line[512]; int ok = 0, bad = 0;
@@ -100,4 +108,14 @@ DSL_EXPORT int dsl_module_early(const DSLHost *host, DSLPlugin *self) {
     if (host->hook(self, parse, (void *)my_parse, (void **)&orig_parse)) return 6;
     host->log(self, "Hell difficulty ready: %d code patches + staff strip on CombatDifficulty 5", ok);
     return 0;
+}
+
+/* table half (hell_data.c, same compile unit: one source per module): the Hell table bundle from the stock one + the
+   shipped delta, loaded instead of the stock one. A failure here turns the whole module off (the loader puts every
+   patched byte back): Hell code without Hell tables would offer a difficulty the tables do not know. */
+#include "hell_data.c"
+DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
+    int r = hell_tables_init(host, self);
+    if (r) host->log(self, "Hell tables failed (%d): Hell OFF", r);
+    return r;
 }
