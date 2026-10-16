@@ -129,13 +129,13 @@ static void mods_scan(void) {
     json_free(prof);
 }
 int dsl_mods_count(void) { mods_scan(); return nmi; }
-/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 22 characters */
+/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 characters */
 void dsl_mod_short(const char *id, char *out, size_t cap) {
     mods_scan(); out[0] = 0;
     for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) {
         if (MI_short[i][0]) { snprintf(out, cap, "%s", MI_short[i]); return; }
         snprintf(out, cap, "%s", MI[i].name);
-        if (strlen(out) > 22) { size_t c = 20; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 20; snprintf(out + c, cap - c, "..."); }
+        if (strlen(out) > 18) { size_t c = 16; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 16; snprintf(out + c, cap - c, "..."); }
         return;
     }
     snprintf(out, cap, "%s", id);
@@ -227,11 +227,50 @@ static void strip_mp(JNode *c) {
     if (!out[0]) snprintf(out, sizeof out, "vanilla");
     if (strcmp(out, c->str)) { free(c->str); c->str = strdup(out); worlds_migrated = 1; }
 }
+/* mods belong to the WORLD (owner 2026-10-16 v13 #4): a key that names one save file ("<Clan>__AutoSave_<32 hex>_0",
+   any "<name>_<32 hex>_<n>") becomes its world's guid. Two entries for one world: a guid entry wins (written by this
+   code, so newer); between two save entries the one whose save file is newer wins. */
+static int save_key_guid(const char *k, char out[40]) {
+    size_t L = strlen(k);
+    for (size_t i = 0; i + 32 <= L; i++) {
+        if (i && k[i - 1] != '_') continue;
+        int hex = 1; for (int j = 0; j < 32 && hex; j++) hex = strchr("0123456789abcdefABCDEF", k[i + j]) != NULL;
+        if (!hex || (i + 32 < L && k[i + 32] != '_')) continue;
+        const char *h = k + i;
+        snprintf(out, 40, "%.8s-%.4s-%.4s-%.4s-%.12s", h, h + 8, h + 12, h + 16, h + 20);
+        for (char *p = out; *p; p++) if (*p >= 'A' && *p <= 'F') *p += 32;
+        return 1;
+    }
+    return 0;
+}
+static double save_mtime(const char *name) {
+    const char *d = getenv("DSML_DATA"); if (!d || !*d) return 0;
+    char p[1400]; struct stat st; snprintf(p, sizeof p, "%s/Saves/%s.json", d, name);
+    return stat(p, &st) ? 0 : (double)st.st_mtime;
+}
+static void migrate_save_keys(JNode *w) {
+    for (JNode *c = w->child; c; c = c->next) {
+        char g[40]; if (!c->key || c->t != JN_STR || !save_key_guid(c->key, g) || !strcasecmp(c->key, g)) continue;
+        JNode *other = NULL;
+        for (JNode *o = w->child; o; o = o->next) if (o != c && o->t == JN_STR && o->key) {
+            char g2[40]; if (!strcasecmp(o->key, g) || (save_key_guid(o->key, g2) && !strcasecmp(g2, g) && strcasecmp(o->key, g2))) { other = o; break; }
+        }
+        int lose = 0;
+        if (other) {
+            char g2[40]; int other_is_guid = !(save_key_guid(other->key, g2) && strcasecmp(other->key, g2));
+            lose = other_is_guid || save_mtime(other->key) > save_mtime(c->key);
+        }
+        dsl_log("worlds: per-save entry %s -> world %s%s", c->key, g, lose ? " (another entry of that world is newer: dropped)" : "");
+        if (lose) c->t = JN_NULL;                                      /* worlds_save keeps strings only */
+        else { free(c->key); c->key = strdup(g); }
+        worlds_migrated = 1;
+    }
+}
 static void worlds_load(void) {
     if (worlds_doc) return;
     char *t = slurp(worlds_path(), 8 << 20); worlds_doc = t ? json_parse(t) : NULL; free(t);
     JNode *w = json_get(worlds_doc, "worlds");
-    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) strip_mp(c);
+    if (w && w->t == JN_OBJ) { for (JNode *c = w->child; c; c = c->next) strip_mp(c); migrate_save_keys(w); }
 }
 static const char *world_key(const char *guid) {
     worlds_load();
@@ -300,6 +339,17 @@ int dsl_world_mods(const char *guid, const char **ids, int max) {
     if (!strcmp(k, "vanilla")) return 0;
     snprintf(world_ids_buf, sizeof world_ids_buf, "%s", k); int n = 0;
     for (char *sv = NULL, *t = strtok_r(world_ids_buf, "+", &sv); t && n < max; t = strtok_r(NULL, "+", &sv)) ids[n++] = t;
+    return n;
+}
+/* every mod that is on when this world plays (owner v13 #5): its gameplay set, plus the mods the set leaves out
+   because they load with any world (multiplayer, client mods), when they are on */
+int dsl_world_mods_all(const char *guid, const char **ids, int max) {
+    int n = dsl_world_mods(guid, ids, max);
+    for (int i = 0; i < nmi && n < max; i++) {
+        if (!MI[i].enabled || (strcmp(MI[i].id, "multiplayer") && strcmp(MI[i].scope, "client"))) continue;
+        int dup = 0; for (int j = 0; j < n; j++) dup |= !strcmp(ids[j], MI[i].id);
+        if (!dup) ids[n++] = MI[i].id;
+    }
     return n;
 }
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
@@ -613,6 +663,7 @@ DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap);
 void dsl_ui_test_hover(DSLObj target);
 int dsl_ui_test_tip(char *title, size_t cap);
 int dsl_ui_test_tip_rects(float card[4], float panel[4]);
+void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
@@ -632,6 +683,8 @@ static void hover_frame(void) {
     if (--hv_wait == 0) { dsl_ui_test_hover(NULL); return; }
     if (hv_wait != 120) return;
     float c[4], p[4]; char tt[200] = ""; int on = dsl_ui_test_tip_rects(c, p); dsl_ui_test_tip(tt, sizeof tt);
+    { char bd[1400]; dsl_ui_test_tip_body(bd, sizeof bd); for (char *q = bd; *q; q++) if (*q == '\n') *q = '|';
+      dsl_log("reg test: tip %s body '%s'", hv_what, bd); }
     dsl_log("reg test: tip %s shown %d title '%s' card %.0f,%.0f,%.0f,%.0f panel %.0f,%.0f,%.0f,%.0f", hv_what, on, tt, c[0], c[1], c[2], c[3], p[0], p[1], p[2], p[3]);
 }
 static void test_frame(void) {
@@ -652,6 +705,18 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "shot")) dsl_log("reg test: shot %s: %s", json_str(j, "path"), dsl_soft_shot(json_str(j, "path")) ? "FAILED" : "ok");
     else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }
     else if (c && !strcmp(c, "world_set")) dsl_world_set_mods(json_str(j, "guid"), ids, n);
+    else if (c && !strcmp(c, "change")) { void dsl_rows_test_change(int); dsl_rows_test_change((int)(json_get(j, "row") ? json_get(j, "row")->num : 0)); }
+    else if (c && !strcmp(c, "save_file")) {                           /* the game's own manual save: CampaignSaveLoader.Save */
+        void *kmf = dsl_find_class("Refactor.Main", "MainFlow"); int32_t ol = kmf ? dsl_field_offset(kmf, "_campaignSaveLoader") : -1;
+        void *kl = dsl_find_class("Refactor", "CampaignSaveLoader");
+        void *ms = kl ? dsl_find_method(kl, "Save", 3) : NULL;
+        Obj (*snew)(const char *) = dsl_ga_sym("il2cpp_string_new");
+        Obj mf = mainflow(), ld = mf && ol >= 0 ? AT(mf, ol, Obj) : NULL; const char *nm = json_str(j, "name") ? json_str(j, "name") : "Manual";
+        uint8_t (*sv)(Obj, Obj, uint8_t, Obj, const void *) = ms ? dsl_method_address(ms) : NULL;
+        int ok = ld && sv && snew ? sv(ld, snew(nm), 0, snew(nm), ms) : -1;
+        if (ok == 0) ok = sv(ld, snew(nm), 1, snew(nm), ms) ? 2 : 0;    /* Ironman worlds take only the autosave kind (as the multiplayer save does) */
+        dsl_log("reg test: save_file %s: %s", nm, ok < 0 ? "FAILED (names)" : ok == 2 ? "saved (Ironman: autosave kind)" : ok ? "saved" : "the game refused");
+    }
     else if (c && !strcmp(c, "draft")) dsl_mods_draft(ids, json_get(j, "drop") ? -1 : n);
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
