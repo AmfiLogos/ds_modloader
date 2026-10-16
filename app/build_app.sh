@@ -19,11 +19,12 @@ mkdir -p "$OUTDIR"
 clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation \
   -o "$OUTDIR/ds_modded" "$HERE/stub/ds_modded.c"
 # no build-machine paths in the shipped binary (panic locations hold the cargo registry and source paths)
-(cd "$REPO" && RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry/src=crates --remap-path-prefix=$HOME/.rustup=rustup --remap-path-prefix=$REPO=dsml" \
+(cd "$REPO" && RUSTFLAGS="--remap-path-prefix=$HOME=/src --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.cargo/registry/src=crates --remap-path-prefix=$HOME/.rustup=rustup --remap-path-prefix=$REPO=dsml" \
   nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
 HELPER="$REPO/target/release/dsml-helper"
 [[ -f $HELPER ]] || die "dsml-helper was not built"
-python3 -c "import sys; sys.exit(sys.argv[2].encode() in open(sys.argv[1],'rb').read())" "$HELPER" "$HOME" || die "dsml-helper holds $HOME paths"
+strip -S -x "$HELPER"                                              # no debug info / local symbols (gate G12)
+python3 -c "import sys; d=open(sys.argv[1],'rb').read().lower(); sys.exit(sys.argv[2].lower().encode() in d or sys.argv[3].lower().encode() in d)" "$HELPER" "$HOME" "$USER" || die "dsml-helper holds $HOME paths or the user name"
 [[ $(lipo -archs "$HELPER") == arm64 ]] || die "dsml-helper is not arm64 (build on an Apple silicon Mac)"
 
 # 2. bundle in a temp folder, then moved into place (old build -> app/old/)
@@ -100,3 +101,6 @@ Z="$OUTDIR/$NAME.zip"
 echo "built: $APP"
 echo "zip:   $Z ($(du -h "$Z" | cut -f1))"
 echo "dsml VERSION $(cat "$APP/Contents/Resources/dsml/VERSION")"
+# gate G12: no user name anywhere in what ships (every file of the zip: bytes, UTF-8, UTF-16LE)
+python3 "$REPO/loader/modules/scan_names.py" "$USER" "$Z" > "$OUTDIR/name_scan.txt" || { cat "$OUTDIR/name_scan.txt"; die "the user name is inside $Z"; }
+echo "name scan: $(tail -1 "$OUTDIR/name_scan.txt")"
