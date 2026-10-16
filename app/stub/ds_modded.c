@@ -174,6 +174,49 @@ static int sync_loader(const char *app, const char *root) {
     return 0;
 }
 
+/* 2a. auto-update (loader src/dsl_update.c): ROOT/update/pending.txt still there = the last update never reached the
+   title. Its MOVE lines (installed path, backup) are walked backwards: the new file goes to ROOT/retired, the old one
+   comes back; its KEY items go into update/bad.txt (not offered again). Same steps as rollback() in dsl_update.c. */
+static void cold_rollback(const char *root) {
+    char pp[PATH_MAX]; snprintf(pp, sizeof pp, "%s/update/pending.txt", root);
+    char *b = slurp(pp); if (!b) return;
+    char *mv[160][2]; int n = 0; char *key = NULL, *label = NULL;
+    for (char *l = strtok(b, "\n"); l; l = strtok(NULL, "\n")) {
+        char *t = strchr(l, '\t'); if (!t) continue; *t++ = 0;
+        if (!strcmp(l, "KEY")) key = t; else if (!strcmp(l, "LABEL")) label = t;
+        else if (!strcmp(l, "MOVE") && n < 160) { char *t2 = strchr(t, '\t'); if (t2) *t2++ = 0; mv[n][0] = t; mv[n][1] = t2 ? t2 : ""; n++; }
+    }
+    char ts[32]; stamp(ts, sizeof ts);
+    logf_("update: %s never reached the title: rolling back %d change(s)", label ? label : "the last update", n);
+    for (int i = n - 1; i >= 0; i--) {
+        char dst[PATH_MAX]; snprintf(dst, sizeof dst, "%s/retired/update-failed-%s/%d", root, ts, i);
+        char par[PATH_MAX]; snprintf(par, sizeof par, "%s/retired/update-failed-%s", root, ts); mkdirs(par);
+        if (exists(mv[i][0]) && rename(mv[i][0], dst) != 0) logf_("update: cannot move %s away (%s)", mv[i][0], strerror(errno));
+        if (mv[i][1][0] && rename(mv[i][1], mv[i][0]) != 0) logf_("update: cannot put back %s (%s)", mv[i][0], strerror(errno));
+    }
+    if (key && *key) {
+        char bp[PATH_MAX]; snprintf(bp, sizeof bp, "%s/update/bad.txt", root); FILE *f = fopen(bp, "a");
+        if (f) { for (char *k = strtok(key, ","); k; k = strtok(NULL, ",")) fprintf(f, "%s\n", k); fclose(f); }
+    }
+    char od[PATH_MAX], q[PATH_MAX]; snprintf(od, sizeof od, "%s/update/old", root); mkdirs(od);
+    snprintf(q, sizeof q, "%s/pending-coldrollback-%s.txt", od, ts);
+    if (rename(pp, q) != 0) logf_("update: cannot move %s (%s)", pp, strerror(errno));
+    free(b);
+}
+/* "2.0.0" < "2.1.0" (numbers, a leading v ignored); -1 / 0 / 1 */
+static int vcmp(const char *a, const char *b) {
+    for (;;) {
+        while (*a && (*a < '0' || *a > '9')) a++;
+        while (*b && (*b < '0' || *b > '9')) b++;
+        if (!*a && !*b) return 0;
+        long x = strtol(a, (char **)&a, 10), y = strtol(b, (char **)&b, 10);
+        if (x != y) return x < y ? -1 : 1;
+        if (*a == '.') a++;
+        if (*b == '.') b++;
+        if ((*a < '0' || *a > '9') && (*b < '0' || *b > '9')) return 0;
+    }
+}
+
 /* 2b. the player's mods: ROOT/mods (the Mods window's "Open mods folder"). A downloaded <id>-<version>.zip there is
    unpacked to ROOT/mods/<id> (the zip moves to ROOT/mods/.installed/, a bad one to .failed/). Every ROOT/mods/<id>
    whose mod.json "id" is <id> is copied into ROOT/loader/mods/<id> when its mod.json differs (marker .player_mod
@@ -260,6 +303,10 @@ static void user_mods(const char *app, const char *root) {
         if (!json_str(a, "id", id, sizeof id) || strcmp(id, n) || !valid_id(id)) { logf_("mods: %s/%s skipped (mod.json id is not the folder name)", um, n); free(a); continue; }
         snprintf(q, sizeof q, "%s/%s/mod.json", lm, n);
         char *b = slurp(q);
+        char va[32] = "", vb[32] = "";
+        if (b && json_str(a, "version", va, sizeof va) && json_str(b, "version", vb, sizeof vb) && vcmp(va, vb) < 0) {
+            logf_("mods: player mod %s %s is older than the loader's %s (auto-update): not copied", n, va, vb); free(a); free(b); continue;
+        }
         if (!b || strcmp(a, b)) {
             snprintf(p, sizeof p, "%s/%s", um, n); snprintf(q, sizeof q, "%s/%s", lm, n);
             if (copy_in(root, p, q, n, 1) == 0) logf_("mods: player mod %s copied into the loader", n);
@@ -557,6 +604,7 @@ int main(int argc, char **argv) {
     if (!exists(data)) { logf_("cannot create %s (%s)", data, strerror(errno));
                          return fail("Dungeon Settlers Modded cannot create its folder in Application Support."); }
 
+    cold_rollback(root);
     if (sync_loader(app, root)) return 1;
     user_mods(app, root);
     char play[PATH_MAX], build[128];
@@ -605,6 +653,7 @@ int main(int argc, char **argv) {
     setenv("DSML_DATA", data, 1);
     snprintf(v, sizeof v, "%s/Library/Application Support/CanOpener/Dungeon Settlers/Saves", home);
     setenv("DSML_GAME_SAVES", v, 1);                         /* the title's "Import a save" copies worlds from there */
+    setenv("DSML_ROOT", root, 1);                           /* auto-update (loader src/dsl_update.c) */
 
     char **av = calloc((size_t)argc + 4, sizeof *av); int k = 0;
     av[k++] = game; av[k++] = "-logFile"; av[k++] = plog;
@@ -614,7 +663,7 @@ int main(int argc, char **argv) {
     if (dry) {
         const char *keys[] = { "SteamAppId", "SteamGameId", "CFFIXED_USER_HOME", "DSRIG_DIR", "DSRIG_LIVE", "DSRIG_FPS",
                                "DYLD_INSERT_LIBRARIES", "DSL_MODS_DIR", "DSML_USER_MODS_DIR", "DSL_PROFILE", "DSL_LOG_DIR", "DSML_SESSION",
-                               "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_GAME_SAVES", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
+                               "DSML_BUILD", "DSML_APP", "DSML_DATA", "DSML_GAME_SAVES", "DSML_ROOT", "DSML_DSLOAD", "DSML_BEPINEX_DIR", "DSML_BEPINEX_SCRIPT",
                                "DOORSTOP_ENABLED", "DOORSTOP_TARGET_ASSEMBLY", "DOORSTOP_CLR_RUNTIME_CORECLR_PATH",
                                "DOORSTOP_CLR_CORLIB_DIR", "DOORSTOP_IGNORE_DISABLED_ENV", "BEPINEX_PLUGIN_DIRS",
                                "DSML_MELON_DIR", "DSML_MELON_SCRIPT", "MELONLOADER_BASEDIR", "MELONLOADER_MOD_DIRS" };

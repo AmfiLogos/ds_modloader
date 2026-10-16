@@ -18,7 +18,8 @@
 // last update never reached the title): the starter (Mac stub / Windows exe) rolls back the same way. Saves are never
 // touched (they are in PROFILE/data, outside every installed folder).
 // Kit first: a kit update carries the mods; mod updates wait for the next start.
-// Test only: DSL_UPDATE_API=<base URL> (a local release server instead of https://api.github.com), DSL_UPDATE=0 (off).
+// Test only: DSL_UPDATE_API=<base URL> (a local release server instead of https://api.github.com), DSL_UPDATE=0 (off),
+// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include "dsl_update_os.h"
@@ -341,7 +342,7 @@ static void corner_frame(void) {
         btn = u->button(NULL, 0, 0, 220, 40, "Update", button_click, NULL);
         if (!tog || !txt || !btn) return;
         dsl_ui_place_tr(tog, 24, 20, 260, 40); dsl_ui_place_tr(txt, 24, 64, 420, 30); dsl_ui_place_tr(btn, 24, 64, 220, 40);
-        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods install by themselves at the title screen.\nOff: you choose when.");
+        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods install at the title screen.\nOff: you choose when to update.");
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
@@ -351,7 +352,7 @@ static void corner_frame(void) {
     int want_btn = !auto_on && avail && st != 1 && st != 2 && !line[0];
     char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, "Update to v%s", kv); else snprintf(bl, sizeof bl, "Update mods");
     if (want_btn && strcmp(bl, c_btn_label)) { snprintf(c_btn_label, sizeof c_btn_label, "%s", bl); u->set_text(btn, bl); }
-    if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; }
+    if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
     char l[200] = "";
     if (line[0]) snprintf(l, sizeof l, "%s", line);
     else if (st == 1 && (!auto_on || S.dl_wanted)) snprintf(l, sizeof l, kv[0] ? "Downloading v%s..." : "Downloading mod updates...", kv);
@@ -415,4 +416,8 @@ void dsl_update_frame(void) {
         if (go) { busy_install = 1; install_now(); busy_install = 0; }
     }
     corner_frame();
+    { const char *t = getenv("DSL_UPDATE_TEST"); static int tick;                       /* test: click the button by file */
+      if (t && *t == '1' && ++tick % 30 == 0 && c_btn_on == 1) {
+          char p[1200]; upath(p, sizeof p, "test_click");
+          if (dsl_uos_exists(p)) { char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q); button_click(NULL, NULL); } } }
 }

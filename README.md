@@ -49,6 +49,18 @@ Get the installers from the latest release on the
 The default mods are inside: Multiplayer, Custom Modes, Global cooldown, Hell difficulty (off until you turn it on).
 On the title screen, click Mods to turn mods on or off.
 
+## Auto-update
+
+At the title screen, the switch "Auto-update" is in the top-right corner. It is on by default.
+
+- On: when a new version is out, the game downloads it and installs it at the title screen. Each download is checked
+  before it is installed. The game restarts behind a loading screen and shows "Updated to v13.x".
+- Off: nothing is downloaded. A button "Update to v13.x" shows instead. Click it to update.
+
+The game never updates in a world or in a multiplayer game. If the new version does not start, the old version comes
+back and that version is not offered again. Your saves are not changed. Without internet the game starts as usual and
+checks again next time.
+
 ## Add a mod
 
 Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-2.0.0.zip`). One file works on Mac and Windows.
@@ -104,6 +116,11 @@ Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.
 ## Build it yourself
 
 See [BUILDING.md](BUILDING.md). The license files that ship with each release are in [licenses/](licenses/).
+
+Releases for auto-update: tag `v<N.N>` in ds_multiplayer with the assets `Dungeon-Settlers-Modded-Mac.zip` (or the
+`.dmg`) and `Dungeon-Settlers-Modded-Windows.zip` (the kit zip; the Setup.exe alone is not enough), built with the same
+number in `loader/RELEASE` (or `DSM_RELEASE`). Mod zips `<id>-<version>.zip` in their own repos. GitHub's asset digest
+is the checksum (a `<asset>.sha256` file also works). Tests: `loader/test/update/` (local release server).
 
 ## Mod Launcher (step 1, Mac; older design notes)
 
