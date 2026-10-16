@@ -11,3 +11,4 @@ int bie_installed(const char *game);
 int bie_install_now(const char *root, const char *game, char *why, size_t wn);   /* download (once) + unpack; 0 = ok */
 int bie_ml_installed(const char *game);
 int bie_ml_install_now(const char *root, const char *game, char *why, size_t wn);   /* MelonLoader 0.7.3 (once) */
+int bie_unzip_file(const char *zip, const char *dest);   /* a mod package zip -> dest; files written, or -1 */
