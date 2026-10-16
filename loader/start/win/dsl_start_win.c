@@ -32,7 +32,7 @@ static const struct { uint32_t ts, size; const char *build; } WIN_BUILDS[] = {
 #define W_STRING_NEW      0x49E320        /* il2cpp_string_new (export) */
 #define W_STORE_START     0xA3F240        /* Refactor.Main.StoreRuntimeHandler$$Start (Steam gate) */
 
-static char data_dir[1100];
+static char data_dir[3300];                 /* UTF-8 */
 static HMODULE self_mod;
 
 static void env_default(const char *k, const char *v) { if (!getenv(k) || !*getenv(k)) { _putenv_s(k, v); SetEnvironmentVariableA(k, v); } }
@@ -97,14 +97,18 @@ static int my_store_start(Obj self, Obj on_signal, void *mi) {
    2026-10-16: modded saves never live in the game's LocalLow folder), so not redirected = modded play would write the
    normal saves: every module off. DSL_TEST_REDIRECT_FAIL=1 = the hook is not tried (test). */
 static int save_folder(char *why, size_t n) {
-    const char *rd = getenv("DSRIG_DIR");
-    snprintf(data_dir, sizeof data_dir, "%s/data", rd && *rd ? rd : "");
-    if (!rd || !*rd) dsl_log("save folder: no DSRIG_DIR");
+    /* il2cpp_string_new reads UTF-8; getenv gives the ANSI code page (a user name like José breaks the path): the
+       folder comes from the wide environment, UTF-8 for the game, wide for the folder itself */
+    wchar_t wd[1100] = L"";
+    DWORD wn = GetEnvironmentVariableW(L"DSRIG_DIR", wd, 1090);
+    if (wn >= 1090) wn = 0;
+    if (wn) { wcscat(wd, L"\\data"); CreateDirectoryW(wd, NULL); }
+    else { wd[0] = 0; dsl_log("save folder: no DSRIG_DIR"); }
+    if (!WideCharToMultiByte(CP_UTF8, 0, wd, -1, data_dir, sizeof data_dir, NULL, NULL)) { data_dir[0] = 0; wn = 0; }
     for (char *p = data_dir; *p; p++) if (*p == '\\') *p = '/';
-    if (rd && *rd) CreateDirectoryA(data_dir, NULL);
     int test = getenv("DSL_TEST_REDIRECT_FAIL") && *getenv("DSL_TEST_REDIRECT_FAIL") == '1';
     if (test) dsl_log("DSL_TEST_REDIRECT_FAIL=1: save folder hook not tried");
-    if (!test && rd && *rd && !dsl_hook(DSL_OWNER_LOADER, (void *)(dsl_ga_base + W_PERSISTENT_PATH), (void *)my_pdp, (void **)&o_pdp, "Application.get_persistentDataPath")) {
+    if (!test && wn && !dsl_hook(DSL_OWNER_LOADER, (void *)(dsl_ga_base + W_PERSISTENT_PATH), (void *)my_pdp, (void **)&o_pdp, "Application.get_persistentDataPath")) {
         dsl_log("save folder: %s", data_dir);
         return 0;
     }
