@@ -408,3 +408,19 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
 - Multiplayer module ctl.sock: a prewarm B unlinks and re-binds `<DSRIG_DIR>/ctl.sock` (MP src, lane mpfix told via
   orchestrator13).
 - Steam with a second process (prewarm, up to 30 min): not tested.
+
+## Mods per world (owner v13 feedback #4, #5; branch worldmods, 2026-10-16)
+- Data was already per world (worlds.json key = the save header's CampaignGuid). The break was the display: Load list
+  "Change" passed the save FILE name, so the Mods window read "Mods for ElvenExpedition__AutoSave_<hash>_0" and overflowed.
+  Now: the world's name as its row shows it (rich text and the multiplayer tag removed), cut at 30 characters.
+- worlds.json keys that name a save file (old format) move to their world's guid at start; two entries of one world: a
+  guid entry wins, else the newer save file.
+- Hover card (#5): it listed only the world's gameplay set; Multiplayer (left out of the key on purpose) was missing.
+  Owner's data: Elven Expedition = gcd-cdr + Multiplayer; Moonlight Brigade (no saved set) = the running set, same two;
+  Custom Modes off. Now the card lists every mod on when the world plays (its set + multiplayer / client mods that are
+  on), one per line; the row shows short names (cut near 16 characters) and "+N".
+- Proof `test/l1_world_test.py` (copy S, run world3): 14/14, 0 guard violations. Per-save entry -> guid; row
+  "Mods: Global cooldown  +1", card "Global cooldown uses cooldown reduction" / "Multiplayer"; heading "Mods for Elven
+  Expedition"; "Save for this world" -> world set; set unchanged after an Apply (soft restart); the autosave loads with
+  it (flow K); a second save of the world written in game (CampaignSaveLoader.Save; this seed world is Ironman, so the
+  game takes only the autosave kind) has the same world and the same set.

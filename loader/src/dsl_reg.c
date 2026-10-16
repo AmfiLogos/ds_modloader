@@ -706,15 +706,16 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }
     else if (c && !strcmp(c, "world_set")) dsl_world_set_mods(json_str(j, "guid"), ids, n);
     else if (c && !strcmp(c, "change")) { void dsl_rows_test_change(int); dsl_rows_test_change((int)(json_get(j, "row") ? json_get(j, "row")->num : 0)); }
-    else if (c && !strcmp(c, "save_file")) {                           /* the game's own manual save (SaveFileRequested) */
-        void *k = dsl_find_class("Refactor.Main.Event", "SaveFileRequested"); void *ctor = k ? dsl_find_method(k, ".ctor", 1) : NULL;
-        void *kq = dsl_find_class("Refactor.Main", "EventQueue"); void *add = kq ? dsl_find_method(kq, "AddEvent", 1) : NULL;
-        void *kmf = dsl_find_class("Refactor.Main", "MainFlow"); int32_t oq = kmf ? dsl_field_offset(kmf, "_eventQueue") : -1;
-        Obj (*onew)(void *) = dsl_ga_sym("il2cpp_object_new"); Obj (*snew)(const char *) = dsl_ga_sym("il2cpp_string_new");
-        Obj mf = mainflow(), q = mf && oq >= 0 ? AT(mf, oq, Obj) : NULL, ev = q && ctor && add && onew ? onew(k) : NULL;
-        if (ev) { ((void (*)(Obj, Obj, const void *))dsl_method_address(ctor))(ev, snew(json_str(j, "name") ? json_str(j, "name") : "Manual"), ctor);
-                  ((void (*)(Obj, Obj, const void *))dsl_method_address(add))(q, ev, add); }
-        dsl_log("reg test: save_file %s: %s", json_str(j, "name") ? json_str(j, "name") : "Manual", ev ? "queued" : "FAILED");
+    else if (c && !strcmp(c, "save_file")) {                           /* the game's own manual save: CampaignSaveLoader.Save */
+        void *kmf = dsl_find_class("Refactor.Main", "MainFlow"); int32_t ol = kmf ? dsl_field_offset(kmf, "_campaignSaveLoader") : -1;
+        void *kl = dsl_find_class("Refactor", "CampaignSaveLoader");
+        void *ms = kl ? dsl_find_method(kl, "Save", 3) : NULL;
+        Obj (*snew)(const char *) = dsl_ga_sym("il2cpp_string_new");
+        Obj mf = mainflow(), ld = mf && ol >= 0 ? AT(mf, ol, Obj) : NULL; const char *nm = json_str(j, "name") ? json_str(j, "name") : "Manual";
+        uint8_t (*sv)(Obj, Obj, uint8_t, Obj, const void *) = ms ? dsl_method_address(ms) : NULL;
+        int ok = ld && sv && snew ? sv(ld, snew(nm), 0, snew(nm), ms) : -1;
+        if (ok == 0) ok = sv(ld, snew(nm), 1, snew(nm), ms) ? 2 : 0;    /* Ironman worlds take only the autosave kind (as the multiplayer save does) */
+        dsl_log("reg test: save_file %s: %s", nm, ok < 0 ? "FAILED (names)" : ok == 2 ? "saved (Ironman: autosave kind)" : ok ? "saved" : "the game refused");
     }
     else if (c && !strcmp(c, "draft")) dsl_mods_draft(ids, json_get(j, "drop") ? -1 : n);
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
