@@ -694,6 +694,8 @@ int dsl_ui_test_tip_rects(float card[4], float panel[4]);
 void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_progress.c gives the real one */
+__attribute__((weak)) void dsl_progress_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
 __attribute__((weak)) int dsl_pkg_refresh(char *fail, size_t fcap) { if (fail && fcap) fail[0] = 0; return -2; }
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
@@ -818,6 +820,7 @@ void dsl_frame_hook(void) {
     test_frame();
     dsl_rows_frame();
     if (dsl_win_frame) dsl_win_frame();
+    dsl_progress_frame();
 }
 
 static const char *data_dir_get(void) { return dsl_reg_data_dir(); }
@@ -850,6 +853,12 @@ void dsl_reg_after_init(void) {
     { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
       /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
       if (!(given && *given) && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
+    if (dsl_soft_wanted()) {                                           /* the new game of a soft restart: its first progress step */
+        extern void dsl_soft_progress(int pct, const char *text);
+        char t[300] = "Loading "; int k = 0;
+        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[64]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
+        dsl_soft_progress(10, k ? t : "Loading the game");
+    }
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
             run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());
