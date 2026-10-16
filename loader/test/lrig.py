@@ -39,6 +39,23 @@ EXE_REL = 'DungeonSettlers.app/Contents/MacOS/Dungeon Settlers'
 def idir(x): return os.path.join(INST, x)
 
 
+def display_asleep():
+    """1 = the Mac's main display sleeps (screen off). Then a SHOWN game window with vsync on gets no frames (Unity's main
+    thread waits for the display): soft-restart tests pass DSL_SOFT_NO_VSYNC=1 so B keeps vsync 0 (loader dsl_soft.c)."""
+    try:
+        import ctypes
+        cg = ctypes.cdll.LoadLibrary('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+        cg.CGMainDisplayID.restype = ctypes.c_uint32; cg.CGDisplayIsAsleep.argtypes = [ctypes.c_uint32]
+        return int(cg.CGDisplayIsAsleep(cg.CGMainDisplayID()))
+    except Exception:
+        return 0
+
+
+def soft_test_env():
+    """env for a soft-restart test copy that depends on this Mac's state (now: vsync off while the display sleeps)"""
+    return {'DSL_SOFT_NO_VSYNC': '1'} if display_asleep() else {}
+
+
 def pair_port(x):
     """each pair gets its own TCP port, so one pair's client can never join another pair's host"""
     for pair, port in PAIR_PORTS.items():          # PAIR_PORTS: defined with the pair leases below
