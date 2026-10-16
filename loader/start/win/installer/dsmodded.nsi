@@ -194,12 +194,22 @@ Section "Uninstall"
     SetErrorLevel 1
     Abort
   ${EndIf}
-  ; only what the install put there: the files of install_files.log (inside this folder only), then the empty folders
-  ; of install_dirs.log (deepest first). Saves (profiles\), player mods and any other file stay. Never RMDir /r.
+  ; only what the install and the starter put there: the files of install_files.log (inside this folder only), then the
+  ; empty folders of install_dirs.log (deepest first). Saves (profiles\) and files that nobody of ours made stay.
+  ; Never RMDir /r.
   ${IfNot} ${FileExists} "$INSTDIR\install_files.log"
     MessageBox MB_OK|MB_ICONEXCLAMATION "This folder has no install file list. Nothing was removed." /SD IDOK
     SetErrorLevel 1
     Abort
+  ${EndIf}
+  ; the game copy is ours from top to bottom (install.bat made it, marker inside): whatever the game or its loader added
+  ; there later (BepInEx, MelonLoader, caches) joins the lists before they are read
+  ${If} ${FileExists} "$INSTDIR\game\dsmodded_build.txt"
+  ${OrIf} ${FileExists} "$INSTDIR\game\dsmodded_copy.txt"
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /a-d "$INSTDIR\game" >> "$INSTDIR\install_files.log"`
+    Pop $0
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /ad "$INSTDIR\game" >> "$INSTDIR\install_dirs.log"`
+    Pop $0
   ${EndIf}
   StrLen $5 "$INSTDIR\"
   ClearErrors

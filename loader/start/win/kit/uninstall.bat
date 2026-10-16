@@ -22,6 +22,11 @@ if not exist "%ROOT%\install_files.log" (
   echo  Install this kit once over it, then uninstall again.
   goto fail
 )
+rem the game copy is ours from top to bottom (marker inside): what the game or its loader added there joins the lists
+if exist "%ROOT%\game\dsmodded_build.txt" (
+  dir /s /b /a-d "%ROOT%\game" >> "%ROOT%\install_files.log"
+  dir /s /b /ad "%ROOT%\game" >> "%ROOT%\install_dirs.log"
+)
 for /f "usebackq delims=" %%f in ("%ROOT%\install_files.log") do if exist "%%f" del /f /q "%%f"
 if exist "%ROOT%\install_dirs.log" for /f "delims=" %%d in ('sort /r "%ROOT%\install_dirs.log"') do rd "%%d" 2>nul
 for %%f in (install_files.log install_files.prev.log install_dirs.log dsmodded_install.txt) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"

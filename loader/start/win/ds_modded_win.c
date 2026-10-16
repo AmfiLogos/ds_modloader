@@ -129,6 +129,27 @@ static int read_mod_id(const wchar_t *dir, char *id, size_t n) {   /* 1 = dir\mo
     return ok;
 }
 static void stamp(wchar_t *out, size_t n) { SYSTEMTIME t; GetLocalTime(&t); _snwprintf(out, n, L"%04d%02d%02d-%02d%02d%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond); }
+/* the install's file lists (install.bat writes them; the uninstaller deletes exactly the listed files, then the empty
+   listed folders): every file and folder this starter makes under ROOT is added, so the uninstall removes it too */
+static void log_line(const wchar_t *list, const wchar_t *path) {
+    wchar_t lp[MAX_PATH]; _snwprintf(lp, MAX_PATH, L"%ls\\%ls", root, list);
+    if (!exists(lp)) return;                                  /* no lists: an install without them (older kit) */
+    FILE *f = _wfopen(lp, L"ab"); if (!f) return;
+    char a[MAX_PATH * 3]; WideCharToMultiByte(CP_OEMCP, 0, path, -1, a, sizeof a, NULL, NULL);   /* cmd's dir /b writes OEM */
+    fprintf(f, "%s\r\n", a); fclose(f);
+}
+static void log_tree(const wchar_t *p) {
+    DWORD at = GetFileAttributesW(p); if (at == INVALID_FILE_ATTRIBUTES) return;
+    if (!(at & FILE_ATTRIBUTE_DIRECTORY)) { log_line(L"install_files.log", p); return; }
+    log_line(L"install_dirs.log", p);
+    wchar_t pat[MAX_PATH]; _snwprintf(pat, MAX_PATH, L"%ls\\*", p);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd); if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        wchar_t c[MAX_PATH]; _snwprintf(c, MAX_PATH, L"%ls\\%ls", p, fd.cFileName); log_tree(c);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
 static void install_packages(void) {
     wchar_t md[MAX_PATH], pat[MAX_PATH]; _snwprintf(md, MAX_PATH, L"%ls\\mods", root); _snwprintf(pat, MAX_PATH, L"%ls\\*.zip", md);
     WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
@@ -164,6 +185,7 @@ static void install_packages(void) {
                 wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
                 _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, wid, ts);
                 if (!MoveFileW(dst, old)) logf_("mods: cannot move the old %s folder (%lu)", id, GetLastError());
+                else { log_line(L"install_dirs.log", rd); log_tree(old); }
             }
             ok = !exists(dst) && MoveFileW(src, dst);
         }
@@ -171,10 +193,13 @@ static void install_packages(void) {
         _snwprintf(keep, MAX_PATH, L"%ls\\%ls", md, ok ? L".installed" : L".failed"); mkdirs(keep);
         _snwprintf(kz, MAX_PATH, L"%ls\\%ls-%ls", keep, ts, fd.cFileName);
         if (!MoveFileW(zp, kz)) logf_("mods: cannot move %ls (%lu)", zp, GetLastError());
+        else { log_line(L"install_dirs.log", keep); log_tree(kz); }
+        if (ok) log_tree(dst);
         if (exists(un) && !RemoveDirectoryW(un)) {         /* what is left of the unpack folder (empty: removed): out of the mods list */
             wchar_t rd[MAX_PATH], lo[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
             _snwprintf(lo, MAX_PATH, L"%ls\\unpack-%ls", rd, ts);
             if (!MoveFileW(un, lo)) logf_("mods: cannot move %ls (%lu)", un, GetLastError());
+            else { log_line(L"install_dirs.log", rd); log_tree(lo); }
         }
         if (ok) logf_("mods: %ls installed as mods\\%s (%d files)", fd.cFileName, id, k);
         else {
