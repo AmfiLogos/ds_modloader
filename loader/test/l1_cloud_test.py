@@ -4,7 +4,7 @@ take a lease first: rig.py lease <lane> --pid). Uses this worktree's build/. The
 a folder under <out>): the real Steam Cloud is never read or written. The owner's save folder: hash before/after.
  1. the loader's cloud thread uploads the copy's modded save as dsmodded_<name> (same bytes) while the game runs
  2. a file the "game" owns in the fake cloud (no prefix) stays as it is
- 3. the Mods window's "Saves" tab lists the world of the game's save folder (DSML_GAME_SAVES = a copy) - screenshot
+ 3. the title has "Import a save" (the import itself: test/cloud/run.sh) - screenshot
 Output: <out>/ (logs, shots, summary.json)."""
 import json, os, sys, time, glob, shutil, signal, subprocess, threading, hashlib
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -56,10 +56,11 @@ def main():
               os.path.exists(remote) and open(remote, 'rb').read() == open(local, 'rb').read(), S['cloud_files'])
         check("the game's own cloud file untouched", open(os.path.join(cloud, 'Game_own_file.json')).read() == 'the game auto-cloud file')
         check('status line logged', T.wait_log('cloud: Cloud backup: ', 20))
-        V.ui('open', tab='saves'); time.sleep(3)
-        T.shot('saves_tab')
-        check('Saves tab lists the game folder world (Moonlight Brigade)', T.wait_log('cloud: ', 1) and os.path.exists(os.path.join(OUT, 'saves_tab.png')))
-        V.ui('close')
+        mark = len(T.dlog()); T.request({'cmd': 'title'})
+        m = V.wait_line(r'reg test: title (.*)', mark, 10)
+        S['title'] = m.group(1) if m else None
+        check('title column has "Import a save" under Mods', m is not None and 'Import a save' in m.group(1), S['title'])
+        T.shot('title')
     except Exception as e:
         check('run finished', False, repr(e))
     finally:

@@ -604,7 +604,7 @@ int main(int argc, char **argv) {
     setenv("DSML_APP", app, 1);
     setenv("DSML_DATA", data, 1);
     snprintf(v, sizeof v, "%s/Library/Application Support/CanOpener/Dungeon Settlers/Saves", home);
-    setenv("DSML_GAME_SAVES", v, 1);                         /* the Mods window's "Saves" tab copies worlds from there */
+    setenv("DSML_GAME_SAVES", v, 1);                         /* the title's "Import a save" copies worlds from there */
 
     char **av = calloc((size_t)argc + 4, sizeof *av); int k = 0;
     av[k++] = game; av[k++] = "-logFile"; av[k++] = plog;

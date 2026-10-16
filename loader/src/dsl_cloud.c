@@ -10,7 +10,7 @@
 //           Space: an upload only when the cloud keeps max(1 GB, 20 x the game's own use) free after it and our files
 //           stay at most CLOUD_MAX_FILES (app quota 10 GB / 700 files, appinfo ufs); else no upload, one status line.
 //           State: <DSML_DATA>/Mods/cloud_state.tsv (name, local mtime, local size, remote time at the last sync).
-//   import  the Mods window's "Saves" tab lists the worlds of the game's own save folder (DSML_GAME_SAVES, set by the
+//   import  the title button "Import a save" offers the worlds of the game's own save folder (DSML_GAME_SAVES, set by the
 //           start part) and imports (copies) one world's saves into the modded saves. The game's file is only read.
 // Env: DSML_DATA (required), DSML_GAME_SAVES (import), DSL_CLOUD=0 (cloud off), DSL_CLOUD_API=<library> (tests: a fake
 // steam_api instead of the game's), DSL_CLOUD_EVERY=<seconds between passes, default 30>.
@@ -342,47 +342,36 @@ int dsl_cloud_import(const char *g) {
     return bad ? -1 : n;
 }
 
-static DSLObj tab_root, status_t, msg_t;
-static float tab_w, tab_h;
-static void tab_fill(void);
+/* title button "Import a save" -> the game's notice box, one world at a time: Import / Next (Close on the last) */
+static int cur;
+static void ask(void);
+static void done_box(const char *msg) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(msg, "OK", NULL, NULL, NULL, NULL); }
 static void on_import(void *ud, DSLObj w) {
-    (void)w; int i = (int)(intptr_t)ud; if (i < 0 || i >= nW) return;
-    int n = dsl_cloud_import(W[i].guid);
-    if (n < 0) snprintf(import_msg, sizeof import_msg, "Could not import %s. The details are in dsload.log.", W[i].clan);
-    else if (n == 0) snprintf(import_msg, sizeof import_msg, "%s is already in your modded saves.", W[i].clan);
-    else snprintf(import_msg, sizeof import_msg, "%s imported (%d save%s). You can open it from Load.", W[i].clan, n, n == 1 ? "" : "s");
-    const DSLUi *u = dsl_ui_kit(); if (u && msg_t) u->set_text(msg_t, import_msg);
+    (void)ud; (void)w; if (cur < 0 || cur >= nW) return;
+    int n = dsl_cloud_import(W[cur].guid);
+    if (n < 0) snprintf(import_msg, sizeof import_msg, "Could not import %s. The details are in dsload.log.", W[cur].clan);
+    else if (n == 0) snprintf(import_msg, sizeof import_msg, "%s is already in your modded saves.", W[cur].clan);
+    else snprintf(import_msg, sizeof import_msg, "%s imported (%d save%s). You can open it from Load Campaign.", W[cur].clan, n, n == 1 ? "" : "s");
+    done_box(import_msg);
 }
-static void tab_open(void *ud, DSLObj root, float w, float h) {
-    (void)ud; tab_root = root; tab_w = w; tab_h = h; import_msg[0] = 0; tab_fill();
+static void on_next(void *ud, DSLObj w) { (void)ud; (void)w; if (++cur < nW) ask(); }
+static void ask(void) {
+    const DSLUi *u = dsl_ui_kit(); if (!u || cur >= nW) return;
+    char t[700], st[300]; dsl_cloud_status(st, sizeof st);
+    snprintf(t, sizeof t, "Import %s from the game? (%d save%s, last saved %s)\n\nThis copies the world. The game's own save is not "
+             "changed, and your modded saves never show up in the game's Load list.%s%s",
+             W[cur].clan, W[cur].n, W[cur].n == 1 ? "" : "s", W[cur].when, cur == 0 ? "\n\n" : "", cur == 0 ? st : "");
+    u->notice(t, "Import", cur + 1 < nW ? "Next world" : "Close", on_import, on_next, NULL);
 }
-static void tab_fill(void) {
-    const DSLUi *u = dsl_ui_kit(); if (!u || !tab_root) return;
-    char s[300]; dsl_cloud_status(s, sizeof s);
-    float x = 16, y = 12, w = tab_w - 32;
-    status_t = u->text(tab_root, x, y, w, 44, s, 18, DSL_TXT_LEFT | DSL_TXT_WRAP, 0xFFFFFFFF); y += 54;
-    u->text(tab_root, x, y, w, 30, "Import a world from the game", 22, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xFFE9C46A); y += 32;
-    u->text(tab_root, x, y, w, 40, "This copies the world. The game's own save is not changed, and your modded saves never show up in the game's Load list.", 16, DSL_TXT_LEFT | DSL_TXT_WRAP, 0xFFCCCCCC); y += 46;
-    msg_t = u->text(tab_root, x, y, w, 24, import_msg, 16, DSL_TXT_LEFT, 0xFF8FC4FF); y += 30;
-    scan_game();
-    if (!nW) { u->text(tab_root, x, y, w, 30, game_saves[0] ? "No saves found in the game's folder." : "The game's save folder is not known here.", 18, DSL_TXT_LEFT, 0xFFCCCCCC); return; }
-    DSLObj c = u->scroll(tab_root, x, y, w, tab_h - y - 12); float ry = 0;
-    for (int i = 0; i < nW; i++) {
-        char line[200]; snprintf(line, sizeof line, "%s   %d save%s, last %s", W[i].clan, W[i].n, W[i].n == 1 ? "" : "s", W[i].when);
-        u->text(c, 0, ry + 6, w - 150, 30, line, 18, DSL_TXT_LEFT, 0xFFFFFFFF);
-        u->button(c, w - 140, ry, 130, 40, "Import", on_import, (void *)(intptr_t)i);
-        ry += 48;
-    }
-    u->scroll_height(c, ry);
+static void on_title(void *ud) {
+    (void)ud; scan_game(); cur = 0;
+    if (!nW) { char st[300], t[500]; dsl_cloud_status(st, sizeof st);
+               snprintf(t, sizeof t, "%s\n\n%s", game_saves[0] ? "No saves found in the game's own save folder." : "The game's save folder is not known here.", st);
+               done_box(t); return; }
+    ask();
 }
-static void tab_update(void *ud) {
-    (void)ud; static int k; if (++k % 60) return;
-    const DSLUi *u = dsl_ui_kit(); if (!u || !status_t) return;
-    char s[300]; dsl_cloud_status(s, sizeof s); u->set_text(status_t, s);
-}
-static void tab_close(void *ud) { (void)ud; tab_root = status_t = msg_t = NULL; }
 
-/* after il2cpp_init (the tab) and before the game's Steam start (the thread waits for it) */
+/* after il2cpp_init (the title button) and before the game's Steam start (the thread waits for it) */
 void dsl_cloud_install(DSLHost *host) {
     const char *d = getenv("DSML_DATA");
     if (!d || !*d) { dsl_log("cloud: off (no DSML_DATA)"); return; }
@@ -390,8 +379,8 @@ void dsl_cloud_install(DSLHost *host) {
     snprintf(state_p, sizeof state_p, "%s/cloud_state.tsv", mods_d); snprintf(backups_d, sizeof backups_d, "%s/cloud_backups", mods_d);
     const char *g = getenv("DSML_GAME_SAVES"); if (g && *g) snprintf(game_saves, sizeof game_saves, "%s", g);
     mkdir(mods_d, 0755);
-    static const DSLTab t = { "saves", "Saves", 5, tab_open, tab_update, tab_close, NULL, NULL };
-    if (host && host->menu_add_tab) host->menu_add_tab(NULL, &t);
+    if (host && host->title_add_button)                       /* the Mods window shows only mods (owner 2026-10-16 #14) */
+        host->title_add_button(NULL, "Import a save", 110, "Copy a world from the game's own saves into your modded saves. The game's save is not changed.", on_title, NULL);
     const char *off = getenv("DSL_CLOUD");
     if (off && !strcmp(off, "0")) { set_status("Cloud backup is off (DSL_CLOUD=0)."); return; }
     pthread_t th; if (pthread_create(&th, NULL, cloud_thread, NULL)) { dsl_log("cloud: thread failed"); return; }
