@@ -350,3 +350,61 @@ Frames: `~/ds_launcher/loader/test_env/l1_out/{run5,rows3}/*.png`.
 - No Mods window yet (L2): the title button and "Change" log only. Multiplayer does not call set_session_busy yet (M2/M4).
 - Steam with two game processes during a restart: still not tested (softrestart notes). Full-screen Space swap not handled.
 - loader/build/*.dylib are tracked in this public repo from before; I did not commit new binaries.
+
+## v13 loaderui (branch loaderui, 2026-10-16) - PLAN_V13 WP LUI, owner feedback v12 items 1-3, 6, 7, 9, 10, 14
+Helpers (opus): soft restart work in `test/soft/NOTES_v13.md` (branch loaderui-soft, merged here); notice cause in
+`../app/stub/NOTES_bg.md` (branch loaderui-bg, merged here; its patch for dsl_soft_mac.c applied by hand).
+
+### What changed
+- Title (dsl_reg.c, dsl_ui.c): "Mods" has no hover card. The loader's title buttons sit right below the multiplayer
+  module's "Multiplayer" button, by order (Mods 100, then other modules' buttons such as "Custom Modes"); without
+  "Multiplayer" they stay last in the column as before.
+- Hover cards (dsl_ui.c): the card's top-left = the panel's right edge (+8 px), level with the element's top. Panel =
+  the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list). After layout, a card that
+  leaves the screen on the right or was pushed back over the panel by the stock clamp moves outside the panel's left edge.
+- World rows (dsl_rows.c): right half of the world row: "Mods: <short names> · ... +N" (as many as fit), "Change" at the
+  end; the hover card "Mods of this world" lists every mod, one per line. Short name = mod.json "short_name" (new,
+  optional), else the name cut at a word before 22 characters. The left half keeps the world name + multiplayer tag.
+- Apply only at the title: dsl_soft.c refuses scene 2; dsl_reg.c refuses Apply outside the title ("Go back to the title
+  screen to change mods."); the old in-world worlds.json rewrite is gone. Mods window in a world: switches, groups and
+  "Save as a group" disabled, Apply / Undo hidden, status "Go back to the title screen to change mods.". Load list in a
+  world: no "Change". dsl_world.c: a world with other mods loaded from the in-world Load list is refused with the game's
+  own notice "This world uses other mods. Go back to the title screen to load it." (no "Load it with them?"). Flow K at
+  the title is unchanged.
+- Prewarm (dsl_reg.c + ui/dsl_win.c): every switch / group / Undo change reports the switches (dsl_mods_draft); 1.5 s after
+  the last change the set is prepared exactly like an Apply (pending.json + env lines) and dsl_soft_prewarm starts a
+  hidden game; switches back to the running set or the window closed without Apply stop it; Apply uses it when the set
+  is the same. Not for a set that must download BepInEx or prepare it the first time. DSL_PREWARM=0 turns it off.
+  Default ON (MORNING_QUESTIONS v13 loaderui).
+- Mods window: only the Mods tab (owner #14: nothing but mods); module tabs stay registered but are not shown (log line).
+  "MelonLoader" mark for mod kind "melon", like the "BepInEx" mark.
+- Kit (dsl_ui.c): the widget templates are taken at the first title seen, even hidden. Before, a B of flow K (title ->
+  straight into a world) could not build any kit widget in that world (Mods window did not open). Found by l1_v13_test.
+- "App Running in Background" (macOS 27): cause = B posix_spawned inside A's launchd job; B's AutoFill XPC helper is
+  booked on A's app; when A quits, A's Dock tile "runs in the background" and ~30 s later macOS posts the notice (owner's
+  log 2026-10-15 23:57:41, 33 s after his first Apply; not at app start). Fix: dsl_soft_mac.c starts B through
+  LaunchServices (NSWorkspace openApplicationAtURL, new instance, no activation, same env + args; posix_spawn fallback),
+  dsl_start_mac.c chdir to DSL_SOFT_CWD. Proof: toy apps (before: notice; posix_spawn + disclaim: notice; LaunchServices:
+  none). A game test copy cannot show it (LSUIElement rule). Check on a player copy: `log show --predicate 'process ==
+  "Dock" AND category == "tile"'` must show no "Tile started running in background" at a soft restart.
+- Test-only (DSL_SOFT_TEST=1): reg requests "title", "hover" (title:<label> | row:<i> | win:<control>; logs card + panel
+  rects), "draft". A hidden B never takes the test request files (A answers them).
+
+### Proof (copy S hidden + muted + staged, leases loaderui, 0 guard violations in every run)
+| Test | Result |
+|---|---|
+| `test/run_tests.sh` host | 31/31 |
+| `start/win/build_win.sh` (read only) | baselib.dll + starter + kit built (one old warning) |
+| `test/l1_v13_test.py` runs 2, 3, 4 | 17/17 each. Prewarmed Apply 0.83 / 0.83 / 0.82 s, flow K 15.31 / 14.51 / 14.74 s, prewarm start 1.74 / 1.74 / 1.73 s after the switch. Run 2: Multiplayer index 3, Mods 4; no card on Mods; Mods window card x 749-901 vs window x 220-740; row line "Mods: Global cooldown uses..." card x 658-810 vs list panel x 311-649 (960x540 frame); prewarm starts 1.74 s after the switch, B ready 6.3 s later, prewarmed Apply 0.83 s (B shown 0.767 s after Apply in A's log); flow K 15.31 s; in the world: window read-only, Apply refused, no new process, other-mods load refused with no question |
+| `test/l1_test.py` | 13/13 (flow J in a world replaced by "Apply refused in a world") |
+| `test/l1_rows_test.py` | 8/8 |
+| `test/uikit_test.py` | run 1 66/67 (only fail = the old "demo button last" rule); expectation updated (Mods then demo right below Multiplayer): run 2 35/35 |
+Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timings (3 runs each, cold + prewarmed): `test/soft/NOTES_v13.md`.
+
+### Open
+- Dock: B is now started by LaunchServices. A player copy has no LSUIElement, so B may show a Dock icon for a moment
+  before it turns itself into a UIElement (with posix_spawn this was 17 ms). Not testable here (test copies must have
+  LSUIElement). With prewarm, B starts while the player is in the Mods window.
+- Multiplayer module ctl.sock: a prewarm B unlinks and re-binds `<DSRIG_DIR>/ctl.sock` (MP src, lane mpfix told via
+  orchestrator13).
+- Steam with a second process (prewarm, up to 30 min): not tested.
