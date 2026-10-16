@@ -9,12 +9,15 @@
 #include <unistd.h>
 #include <utime.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/wait.h>
 void dsl_log(const char *fmt, ...) { va_list ap; va_start(ap, fmt); printf("    log: "); vprintf(fmt, ap); va_end(ap); putchar('\n'); }
 const void *dsl_ui_kit(void) { return NULL; }
 void *dsl_os_dlopen(const char *p) { return dlopen(p, RTLD_NOW); }
 void *dsl_os_dlsym(void *h, const char *n) { return dlsym(h, n); }
 struct DSLHost; void dsl_cloud_install(struct DSLHost *h); int dsl_cloud_pass(void); int dsl_cloud_test_bind(void);
-void dsl_cloud_status(char *o, size_t n); int dsl_cloud_import(const char *g);
+void dsl_cloud_status(char *o, size_t n); int dsl_cloud_import(const char *g, int replace, char *mw, size_t mc);
 extern int dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
 static char T[600]; static int fails, oks;
 static void check(const char *what, int ok) { printf("%s %s\n", ok ? "ok  " : "FAIL", what); ok ? oks++ : fails++; }
@@ -81,11 +84,38 @@ int main(int argc, char **argv) {
     sprintf(p, "%s/gamesaves/Elf__AutoSave_abc_0.json", T);
     put(p, "{\"x\":1,\"CampaignSaveHeader\":{\"CampaignGuid\":\"f816ebc6-195c-432c-9fff-754b75ee3738\",\"ClanName\":\"Elven\",\"SaveTime\":\"2026-10-11\"}}", now - 1000);
     struct stat s0; stat(p, &s0); char before[4096]; strcpy(before, get(p));
-    machine("A"); int n = dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738");
+    machine("A"); int n = dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738", 0, NULL, 0);
     loc("A", "Elf__AutoSave_abc_0.json", q); struct stat s1; stat(p, &s1);
     check("import copied 1 save", n == 1 && get(q) && !strcmp(get(q), before));
     check("the game's own save unchanged (content + mtime)", !strcmp(get(p), before) && s0.st_mtime == s1.st_mtime);
-    check("import again: nothing to copy", dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738") == 0);
+    check("import again: nothing to copy", dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738", 0, NULL, 0) == 0);
+    puts("== 9 audit #1: the world was played modded -> import never overwrites without asking; replace keeps a copy");
+    const char *G = "f816ebc6-195c-432c-9fff-754b75ee3738";
+    put(q, "{\"modded progress\":1,\"CampaignSaveHeader\":{\"CampaignGuid\":\"f816ebc6-195c-432c-9fff-754b75ee3738\",\"ClanName\":\"Elven\",\"SaveTime\":\"2026-10-16\"}}", now - 10);
+    char mw[24] = ""; int b0 = count_backups("A");
+    check("import: modded world differs -> -2 (ask), nothing written", dsl_cloud_import(G, 0, mw, sizeof mw) == -2 && strstr(get(q), "modded progress") && !strcmp(mw, "2026-10-16") && count_backups("A") == b0);
+    { char bd[900], c2[1000]; sprintf(bd, "%s/A/Mods/cloud_backups", T); sprintf(c2, "mkdir -p '%s' && mv '%s' '%s.moved' && touch '%s'", bd, bd, bd, bd); system(c2); }   /* the backup folder cannot be written */
+    check("replace with a failing backup -> -1, modded save unchanged", dsl_cloud_import(G, 1, NULL, 0) == -1 && strstr(get(q), "modded progress"));
+    { char bd[900], c2[2000]; sprintf(bd, "%s/A/Mods/cloud_backups", T); sprintf(c2, "mv '%s' '%s.file' && mv '%s.moved' '%s'", bd, bd, bd, bd); system(c2); }
+    check("replace -> copied, the modded one kept in cloud_backups", dsl_cloud_import(G, 1, NULL, 0) == 1 && !strcmp(get(q), before) && count_backups("A") == b0 + 1);
+    puts("== 10 audit #4: a conflict that cannot finish keeps ONE copy, not one per pass");
+    machine("B"); loc("B", "Moon.json", p); put(p, "moon B again", now - 60);  /* local change, newer */
+    pc("dsmodded_Moon.json", q); put(q, "moon cloud again", now - 120);     /* cloud change, older */
+    setenv("FAKE_GAME_USE", "100000000", 1); setenv("FAKE_QUOTA_TOTAL", "2000000000", 1);   /* backup cloud, upload fails (space) */
+    int cb = count_backups("B"); dsl_cloud_pass(); dsl_cloud_pass(); dsl_cloud_pass();
+    check("3 passes, upload blocked by space: 1 backup only", count_backups("B") == cb + 1);
+    unsetenv("FAKE_GAME_USE"); unsetenv("FAKE_QUOTA_TOTAL");
+    puts("== 11 open check: Steam returns another case for a name -> one save, no download over it, no delete");
+    sprintf(p, "%s/D", T); mkdir(p, 0755); sprintf(p, "%s/D/Saves", T); mkdir(p, 0755); machine("D"); dsl_cloud_pass();
+    { char x[900]; sprintf(x, "%s/D/Saves/Case.json", T); put(x, "case local", now - 100); } dsl_cloud_pass();
+    { char a1[900], a2[900]; pc("dsmodded_Case.json", a1); pc("dsmodded_case.json", a2); rename(a1, a2); }   /* the cloud lists it in lower case */
+    int dd = dsl_cloud_del, dn = dsl_cloud_down; dsl_cloud_pass(); loc("D", "Case.json", p);
+    check("case-only difference: nothing downloaded or deleted, local kept", dsl_cloud_del == dd && dsl_cloud_down == dn && get(p) && !strcmp(get(p), "case local"));
+    puts("== 12 audit #6: another game process holds the pass lock -> pass skipped");
+    { char lp[900]; sprintf(lp, "%s/D/Mods/cloud.lock", T); int fd = open(lp, O_CREAT | O_RDWR, 0644); flock(fd, LOCK_EX);
+      extern int dsl_cloud_lock_busy; int lb = dsl_cloud_lock_busy;
+      pid_t k = fork(); if (k == 0) { _exit(dsl_cloud_pass() == 1 ? 0 : 1); } int stx; waitpid(k, &stx, 0);
+      check("pass skipped while the lock is held (other process)", WIFEXITED(stx) && WEXITSTATUS(stx) == 0); (void)lb; close(fd); }
     printf("== %d ok, %d failed\n", oks, fails);
     return fails != 0;
 }

@@ -54,6 +54,18 @@ static void *my_load(void *self, void *name, const void *mi) {
     const char *sp = getenv("DSML_SESSION"), *mine = getenv("DSML_MODSET");
     char *txt = sp ? read_all(sp) : NULL;
     JNode *s = txt ? json_parse(txt) : NULL; free(txt);
+    const char *kept = NULL;
+    if (dsl_worlds_bad(&kept)) {                                         /* never load a world without knowing its mods */
+        json_free(s);
+        dsl_log("world check: REFUSED %s: worlds.json could not be read (kept as %s)", nm, kept);
+        dsl_world_refusals++;
+        if (it) *(int32_t*)((char*)it + 0x10) = -2;
+        if (cancel_notice && str_new) {
+            char msg[1600]; snprintf(msg, sizeof msg, "The list of mods for each world could not be read, so no world is loaded now. The file is kept as %s. Restart the game, and if this message comes back, send that file with a bug report.", kept);
+            cancel_notice(self, str_new(msg), str_new("dsload: worlds.json unreadable"), NULL);
+        }
+        return it;
+    }
     if (!s) { dsl_log("world check: session file %s not readable: load %s allowed", sp ? sp : "?", nm); return it; }
     if (!mine || !*mine) mine = json_str(s, "modset");
     uint8_t hdr[0x100] = {0}; void *set = NULL;
