@@ -4,8 +4,8 @@ What we are working on, what comes next, and where you can help.
 
 Dungeon Settlers Modded is made of three repos. Each item below is listed once, in the repo that does the work:
 
-- **Mod loader** (this repo): the app, the Mods window, which mods each world uses, the installers.
-- **Multiplayer mod** ([ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer), [its roadmap](https://github.com/AmfiLogos/ds_multiplayer/blob/main/ROADMAP.md)): playing together, the Multiplayer page, the release downloads.
+- **Mod loader** (this repo): the app, the Mods window, which mods each world uses, the installers and their downloads.
+- **Multiplayer mod** ([ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer), [its roadmap](https://github.com/AmfiLogos/ds_multiplayer/blob/main/ROADMAP.md)): playing together, the Multiplayer page.
 - **Custom Modes** ([ds_custommodes](https://github.com/AmfiLogos/ds_custommodes), [its roadmap](https://github.com/AmfiLogos/ds_custommodes/blob/main/ROADMAP.md)): My Units, Unit Builder, Gallery, Test Fights, the Foreign Expedition hub, PvP.
 
 ## Now
@@ -30,6 +30,7 @@ Have you tried one of these? Please open an issue and tell us what happened.
 
 - **A real Windows PC.** The Windows install, the Mods window and our mods were only tested in a test setup on a Mac.
 - **Steam on Windows.** Nobody has tested the Windows version with a real Steam install yet.
+- **Windows: a user name with accents.** Test on a real PC with a user name that has accents (for example José). Under Wine the game fails to load some of its own files from such a folder; we need to know if real Windows does the same.
 
 ## Known issues
 
