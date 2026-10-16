@@ -11,9 +11,13 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-/// Trusted index keys. DEV ONLY: the dev key in dev_keys/ signs test indexes. Before the first public
-/// release: replace with the owner's offline key + a rotation key (plan section 5).
+/// Trusted index keys. DEV ONLY: the dev key in dev_keys/ signs test indexes, and its secret half is public.
+/// Release builds trust no key, so they refuse every index. This prototype does not ship (README.md);
+/// a real release needs the owner's offline key + a rotation key here first (plan section 5).
+#[cfg(debug_assertions)]
 const TRUSTED_KEYS: &[&str] = &[include_str!("../../dev_keys/dev.pub")];
+#[cfg(not(debug_assertions))]
+const TRUSTED_KEYS: &[&str] = &[];
 const PROFILE: &str = "default";
 
 #[derive(Serialize)]
