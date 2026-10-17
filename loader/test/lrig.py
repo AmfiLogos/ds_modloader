@@ -201,6 +201,15 @@ def require_windowed(x):
         raise SystemExit(f'refused: test copy {x} ({dom}) would open full screen (Screenmanager Fullscreen mode {m})')
 
 
+def win_size():
+    """the copy's window size: LRIG_SIZE=<w>x<h> (e.g. 960x600 for 16:10), default 960x540 (16:9)"""
+    try:
+        w, h = (int(v) for v in os.environ.get('LRIG_SIZE', '960x540').lower().split('x'))
+        return w, h
+    except Exception:
+        return 960, 540
+
+
 def prepare_data(x):
     d = os.path.join(idir(x), 'data')
     os.makedirs(os.path.join(d, 'Saves'), exist_ok=True)
@@ -218,7 +227,7 @@ def prepare_data(x):
         g['VSyncEnabled'] = False
         for a, b in (('ResolutionWidth', 'ResolutionHeight'), ('WindowedResolutionWidth', 'WindowedResolutionHeight'),
                      ('FullScreenResolutionWidth', 'FullScreenResolutionHeight')):
-            g[a], g[b] = 960, 540
+            g[a], g[b] = win_size()
         g['SaveCurrentScreenType'] = 1
         s['GeneralSettingData']['IsKeyboardEnvironmentNoticeAcknowledged'] = True
         json.dump(s, open(us, 'w'), indent=1)
@@ -227,8 +236,8 @@ def prepare_data(x):
         shutil.copy2(os.path.join(SEED_DATA, 'OutGame.json'), og)
     # copy's own prefs domain: small window, windowed (Unity reads these before any game code)
     dom = f'com.CanOpener.Dungeon-Settlers.mp{x}'
-    for k, v in (('Screenmanager Fullscreen mode', 3), ('Screenmanager Resolution Width', 960),
-                 ('Screenmanager Resolution Height', 540), ('Screenmanager Resolution Use Native', 0)):
+    for k, v in (('Screenmanager Fullscreen mode', 3), ('Screenmanager Resolution Width', win_size()[0]),
+                 ('Screenmanager Resolution Height', win_size()[1]), ('Screenmanager Resolution Use Native', 0)):
         subprocess.run(['defaults', 'write', dom, k, '-int', str(v)])
 
 
@@ -254,7 +263,7 @@ def start(x, window=False, fps=30, show=None):
     env.setdefault('DSL_NOTCH', '0')                           # the notch fix covers the whole screen: off in tests (notch_test sets 1)
     require_windowed(x)
     args = [exe, '-logFile', os.path.join(idir(x), 'player.log'), '-screen-fullscreen', '0',
-            '-screen-width', '960', '-screen-height', '540']
+            '-screen-width', str(win_size()[0]), '-screen-height', str(win_size()[1])]
     if window and show:
         env['DSRIG_SHOWWIN'] = show                            # demo: visible, placed on one half of the screen
     elif window:

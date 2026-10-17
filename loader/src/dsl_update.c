@@ -344,11 +344,11 @@ static void corner_frame(void) {
     if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
     if (!tog) {
         c_gen = dsi_generation();
-        tog = u->toggle(NULL, 0, 0, 340, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
+        tog = u->toggle(NULL, 0, 0, 380, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
         txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 220, 40, TR("Update"), button_click, NULL);
         if (!tog || !txt || !btn) return;
-        dsl_ui_place_tr(tog, 24, 56, 340, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
+        dsl_ui_place_tr(tog, 24, 56, 380, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
