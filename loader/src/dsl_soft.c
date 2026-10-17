@@ -476,6 +476,10 @@ static void a_tick(void) {
         static double last_note;
         int rd = ready_ok();
         if (t - last_note > 5) { last_note = t; SLOG("A: waiting: B ready %d, loading screen up %d", rd, up); }
+        /* an Apply right after the title shows: the title's own fade-in can end over our fade-out (the screen never
+           reports up; the swap then waited for the 3 s fallback). Same as B: put it up again once a second. */
+        static double a_refade;
+        if (!up && t - a_t0 > 1.0 && t - a_refade > 1.0) { a_refade = t; if (fv) fade_out(fv, NULL, 1, NULL); SLOG("A: loading screen not up 1 s after Apply: up again"); }
         if (!rd) return;
         if (!a_ready_seen) a_ready_seen = t;
         /* A's own loading screen must be up (its done flag seen low after the call, or 0.4 s). When it never reports
