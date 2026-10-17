@@ -37,9 +37,14 @@ extern int (*dsl_core_prereq)(char *why, size_t n);
 const char *dsl_os_build_list(void);                     /* JSON list of the builds this loader knows: "\"a\",\"b\"" */
 int dsl_os_sha256_file(const char *path, char out[65]);  /* 0 = ok */
 int dsl_os_sha256_buf(const void *data, size_t n, char out[65]);
+int dsl_os_file_stamp(const char *utf8, long long *size, long long *mtime);   /* 0 = ok; mtime in the OS's finest unit */
+int dsl_os_replace(const char *from_utf8, const char *to_utf8);            /* rename over an existing file; 0 = ok */
 void *dsl_os_dlopen(const char *path);                   /* NULL = failed, see dsl_os_dlerror */
 void *dsl_os_dlsym(void *h, const char *name);
 const char *dsl_os_dlerror(void);
 int dsl_os_batchmode(void);                              /* the game was started with -batchmode */
 void dsl_os_notice(const char *title, const char *msg);  /* one system notice (not in -batchmode) */
-void *dsl_ga_sym(const char *name);                      /* exported GameAssembly symbol (il2cpp API), NULL if none */
+void *dsl_ga_sym(const char *name);
+/* a path for a module's plain fopen: Mac as is; Windows the ANSI code page (the core's paths are UTF-8), or the
+   8.3 short form when a letter is outside it */
+const char *dsl_os_native_path(const char *utf8, char *out, size_t n);                      /* exported GameAssembly symbol (il2cpp API), NULL if none */

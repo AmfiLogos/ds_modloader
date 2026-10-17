@@ -302,7 +302,7 @@ static void folder_click(void *ud, DSLObj w) {
     if (!d || !*d) return;
     mkdir_(d); dsl_log("win: open mods folder %s", d);
 #ifdef _WIN32
-    ShellExecuteA(NULL, "open", d, NULL, NULL, SW_SHOWNORMAL);
+    { wchar_t w[2048]; if (!dsl_u8_to_w(d, w, 2048)) ShellExecuteW(NULL, L"open", w, NULL, NULL, SW_SHOWNORMAL); }
 #else
     pid_t pid; int st; char *av[] = { "/usr/bin/open", (char *)d, NULL };
     if (posix_spawn(&pid, av[0], NULL, NULL, av, environ) == 0) waitpid(pid, &st, 0);

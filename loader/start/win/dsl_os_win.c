@@ -6,6 +6,7 @@
 #include <bcrypt.h>
 #include <stdio.h>
 #include <string.h>
+#include "dsl_u8_names_win.h"                     /* last: paths and environment are UTF-8 (wide Windows calls) */
 
 /* GameAssembly.dll builds this loader knows (dsl_start_win.c reads the mapped image's PE header) */
 const char *dsl_os_build_list(void) { return "\"25846389\""; }
@@ -71,7 +72,29 @@ void dsl_os_notice(const char *title, const char *msg) {
     if (h) CloseHandle(h); else HeapFree(GetProcessHeap(), 0, n);
 }
 
+const char *dsl_os_native_path(const char *utf8, char *out, size_t n) {
+    wchar_t w[2048], s[2048]; BOOL lossy = FALSE;
+    snprintf(out, n, "%s", utf8 ? utf8 : "");
+    if (!utf8 || dsl_u8_to_w(utf8, w, 2048)) return out;
+    if (WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, -1, out, (int)n, NULL, &lossy) && !lossy) return out;
+    DWORD k = GetShortPathNameW(w, s, 2048);
+    lossy = FALSE;
+    if (k && k < 2048 && WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, s, -1, out, (int)n, NULL, &lossy) && !lossy) return out;
+    snprintf(out, n, "%s", utf8);                             /* nothing better: as is */
+    return out;
+}
+
 void *dsl_ga_sym(const char *name) {
     HMODULE ga = dsl_ga_base ? (HMODULE)dsl_ga_base : GetModuleHandleA("GameAssembly.dll");
     return ga && name ? (void *)GetProcAddress(ga, name) : NULL;
 }
+
+/* fast boot (dsl_fastboot.c): size + last write time (100 ns units) of a file; rename over an existing file */
+int dsl_os_file_stamp(const char *utf8, long long *size, long long *mtime) {
+    WIN32_FILE_ATTRIBUTE_DATA d; wchar_t w[1024];
+    if (dsl_u8_to_w(utf8, w, 1024) || !GetFileAttributesExW(w, GetFileExInfoStandard, &d)) return -1;
+    *size = (long long)(((unsigned long long)d.nFileSizeHigh << 32) | d.nFileSizeLow);
+    *mtime = (long long)(((unsigned long long)d.ftLastWriteTime.dwHighDateTime << 32) | d.ftLastWriteTime.dwLowDateTime);
+    return 0;
+}
+int dsl_os_replace(const char *from_utf8, const char *to_utf8) { return MoveFileExA(from_utf8, to_utf8, MOVEFILE_REPLACE_EXISTING) ? 0 : -1; }

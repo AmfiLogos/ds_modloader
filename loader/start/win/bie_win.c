@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "dsl_u8_names_win.h"                     /* last: paths and environment are UTF-8 (wide Windows calls) */
 
 #define BIE_URL  L"https://builds.bepinex.dev/projects/bepinex_be/788/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.788%2B5b766a3.zip"
 #define BIE_SHA  "f4cc496bd098a0df4164b81e3737297707f13a47c2478dba2f60eefab784817a"
@@ -145,7 +146,7 @@ static int fetch_unpack(const char *root, const char *game, const wchar_t *url, 
     size_t n = 0; unsigned char *z = (unsigned char *)slurp(zp, &n); char h[65] = "";
     if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) {
         free(z); z = NULL;
-        wchar_t wz[1300]; MultiByteToWideChar(CP_ACP, 0, zp, -1, wz, 1300);
+        wchar_t wz[1300]; MultiByteToWideChar(CP_UTF8, 0, zp, -1, wz, 1300);
         lg("%s: downloading", what);
         HRESULT r = URLDownloadToFileW(NULL, url, wz, 0, NULL);
         if (r != S_OK) { snprintf(why, wn, TR("%s could not be downloaded (error %#lx). Check the internet connection."), what, (unsigned long)r); return -1; }

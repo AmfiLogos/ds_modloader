@@ -10,19 +10,18 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 ## Now
 
-- **Mods are saved per world.** The mods you pick will belong to the whole world, so every save and autosave of that world uses them. Today they stick to a single save file. The Mods window then shows that file's long name, which can run past the edge of the window. We will show the world's name instead.
-- **The hover card on a world lists all its mods.** One mod per line, Multiplayer and Custom Modes included. Today the card can show just one mod. When the mods do not fit on the world's row, the row will say how many are hidden, for example "Global cooldown +2".
-- **One download per mod.** Each mod will be a single download, and the loader reads it as it is.
-- **Mac .dmg and Windows installer.** These replace the zip files, so installing takes fewer steps.
-- **Plainer text.** We are rewriting the Mods window help lines and the mod descriptions in plain words. Some of the current text reads like a programmer's notes.
+- **Plainer text.** We are rewriting the Mods window help lines and the mod descriptions in plain words. Some of the current text reads like a programmer's notes. A first pass is in v0.1.6.
 
 ## Next
 
 - Nothing else is planned for the loader yet. The Now list comes first.
 
-## Later / ideas
+## Done
 
-- **Mod settings.** Change a mod's options in the game, not just turn it on or off. It's an idea for later. We haven't started it.
+- **Mods are saved per world.** The mods you pick belong to the whole world, so every save and autosave of that world uses them. The Mods window shows the world's name, not the save file's long name. In v0.1.6.
+- **The hover card on a world lists all its mods.** One mod per line, Multiplayer and Custom Modes included. When the mods do not fit on the world's row, the row says how many are hidden, for example "Global cooldown +2". In v0.1.6.
+- **One download per mod.** Each mod is a single .zip file. Put it in the mods folder and the Mods window adds it. In v0.1.6.
+- **Mac .dmg and Windows installer.** These replace the zip files, so installing takes fewer steps. In v0.1.6.
 
 ## Needs help / testing
 

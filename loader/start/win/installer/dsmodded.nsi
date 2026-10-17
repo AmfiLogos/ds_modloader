@@ -111,12 +111,16 @@ Function OwnFolder
   ${AndIf} ${FileExists} "$INSTDIR\${NAME}.exe"
     StrCpy $1 1                               ; an install of an older kit (no marker yet)
   ${EndIf}
-  StrCpy $2 0                                 ; 1 = holds anything
+  StrCpy $2 0                                 ; 1 = holds something that is not ours
   ${If} $1 == 0
+    ; what an uninstall of ours leaves (the saves in profiles\, the player's own mods in mods\) is not "other files":
+    ; a reinstall into the same folder must work (older uninstallers removed the marker)
     FindFirst $3 $4 "$INSTDIR\*.*"
     ${DoWhile} $4 != ""
       ${If} $4 != "."
       ${AndIf} $4 != ".."
+      ${AndIf} $4 != "profiles"
+      ${AndIf} $4 != "mods"
         StrCpy $2 1
         ${Break}
       ${EndIf}
@@ -132,9 +136,35 @@ Function OwnFolder
   ${EndIf}
 FunctionEnd
 
+; PathOk: Push 1 when the game can start from $INSTDIR, else 0. Letters outside the PC's ANSI code page (Chinese,
+; Japanese ... on a Western PC) reach the game as "?": it does not start. A UTF-8 code page (65001) holds every letter.
+Function PathOk
+  System::Call 'kernel32::GetACP() i .r0'
+  ${If} $0 == 65001
+    Push 1
+    Return
+  ${EndIf}
+  ; WC_NO_BEST_FIT_CHARS (0x400): a letter without an exact ANSI form sets the "default char used" flag ($1)
+  System::Call 'kernel32::WideCharToMultiByte(i 0, i 0x400, w "$INSTDIR", i -1, m .r2, i ${NSIS_MAX_STRLEN}, p 0, *i 0 r1) i .r0'
+  ${If} $0 == 0
+  ${OrIf} $1 != 0
+    Push 0
+  ${Else}
+    Push 1
+  ${EndIf}
+FunctionEnd
+
+!define BADPATH_TEXT "The game will not start from this folder:$\r$\n$INSTDIR$\r$\n$\r$\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).$\r$\nChoose a folder with plain letters only, for example C:\Games\${NAME}."
+
 Function InstDirLeave
   Call OwnFolder
   Pop $0
+  Call PathOk
+  Pop $1
+  ${If} $1 == 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION "${BADPATH_TEXT}"
+    Abort
+  ${EndIf}
   ${If} $0 == 0
     MessageBox MB_OK|MB_ICONEXCLAMATION "$INSTDIR already holds other files.$\r$\nChoose another folder: ${NAME} needs a new or empty folder of its own."
     Abort
@@ -143,7 +173,15 @@ FunctionEnd
 
 Section "Install"
   Call OwnFolder                              ; also for /S /D=... (no pages in a silent install)
+  Call PathOk
+  Pop $1
   Pop $0
+  ${If} $1 == 0
+    DetailPrint "The game will not start from $INSTDIR (letters it cannot read). Nothing was changed."
+    MessageBox MB_OK|MB_ICONSTOP "${BADPATH_TEXT}" /SD IDOK
+    SetErrorLevel 4
+    Quit
+  ${EndIf}
   ${If} $0 == 0
     DetailPrint "$INSTDIR already holds other files. Nothing was changed."
     MessageBox MB_OK|MB_ICONSTOP "$INSTDIR already holds other files. Nothing was changed. Choose a new or empty folder." /SD IDOK
@@ -202,20 +240,39 @@ Section "Uninstall"
     SetErrorLevel 1
     Abort
   ${EndIf}
-  ; the game copy is ours from top to bottom (install.bat made it, marker inside): whatever the game or its loader added
-  ; there later (BepInEx, MelonLoader, caches) joins the lists before they are read
+  ; the game copy is ours from top to bottom (install.bat made it, marker inside) and so is the auto-update folder: every
+  ; file in them goes, whatever the game, its loader or an update added later (Unicode-safe walk, no list needed)
   ${If} ${FileExists} "$INSTDIR\game\dsmodded_build.txt"
   ${OrIf} ${FileExists} "$INSTDIR\game\dsmodded_copy.txt"
-    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /a-d "$INSTDIR\game" >> "$INSTDIR\install_files.log"`
-    Pop $0
-    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /ad "$INSTDIR\game" >> "$INSTDIR\install_dirs.log"`
-    Pop $0
+    Push "$INSTDIR\game"
+    Call un.DeleteFilesUnder
   ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\update\*.*"
+    Push "$INSTDIR\update"
+    Call un.DeleteFilesUnder
+    Delete "$INSTDIR\RELEASE"
+  ${EndIf}
+  ; the files of install_files.log (inside this folder only): UTF-16LE with a BOM (written by the starter), or the OEM
+  ; text of an older install
   StrLen $5 "$INSTDIR\"
   ClearErrors
   FileOpen $6 "$INSTDIR\install_files.log" r
+  FileReadByte $6 $0
+  FileReadByte $6 $1
+  StrCpy $9 0
+  ${If} $0 == 255
+  ${AndIf} $1 == 254
+    StrCpy $9 1
+  ${Else}
+    FileSeek $6 0 SET
+  ${EndIf}
+  ClearErrors
   ${Do}
-    FileRead $6 $7
+    ${If} $9 == 1
+      FileReadUTF16LE $6 $7
+    ${Else}
+      FileRead $6 $7
+    ${EndIf}
     ${If} ${Errors}
       ${Break}
     ${EndIf}
@@ -238,10 +295,16 @@ Section "Uninstall"
   Call un.RemoveEmptyDirs
   Push "$INSTDIR\cache"
   Call un.RemoveEmptyDirs
+  Push "$INSTDIR\licenses"
+  Call un.RemoveEmptyDirs
   Delete "$INSTDIR\install_files.log"
   Delete "$INSTDIR\install_files.prev.log"
   Delete "$INSTDIR\install_dirs.log"
-  Delete "$INSTDIR\dsmodded_install.txt"
+  ; the marker stays while our leftovers (saves, player mods) stay: a reinstall into this folder is accepted
+  ${IfNot} ${FileExists} "$INSTDIR\profiles\*.*"
+  ${AndIfNot} ${FileExists} "$INSTDIR\mods\*.*"
+    Delete "$INSTDIR\dsmodded_install.txt"
+  ${EndIf}
   Delete "$INSTDIR\uninstall.bat"
   Delete "$DESKTOP\${NAME}.lnk"
   Delete "$DESKTOP\${NAME}.bat"
@@ -256,6 +319,33 @@ Section "Uninstall"
     MessageBox MB_OK "${NAME} is removed. Steam's game was never changed.$\r$\nYour modded saves stay in $INSTDIR\profiles. You can delete that folder if you do not need them." /SD IDOK
   ${EndIf}
 SectionEnd
+
+; un.DeleteFilesUnder <folder>: every file below <folder> (folders stay for un.RemoveEmptyDirs). Only called for folders
+; that are ours from top to bottom (the marked game copy, the auto-update folder).
+Function un.DeleteFilesUnder
+  Exch $R0
+  Push $R1
+  Push $R2
+  ClearErrors
+  FindFirst $R1 $R2 "$R0\*.*"
+  ${DoUntil} ${Errors}
+    ${If} $R2 != "."
+    ${AndIf} $R2 != ".."
+      ${If} ${FileExists} "$R0\$R2\*.*"
+        Push "$R0\$R2"
+        Call un.DeleteFilesUnder
+      ${Else}
+        Delete "$R0\$R2"
+      ${EndIf}
+    ${EndIf}
+    ClearErrors
+    FindNext $R1 $R2
+  ${Loop}
+  FindClose $R1
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
 
 ; un.RemoveEmptyDirs <folder>: every empty folder below <folder>, children before parents, then <folder> itself when
 ; empty. Never deletes a file.

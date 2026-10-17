@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "dsl_u8_names_win.h"                     /* last: paths and environment are UTF-8 (wide Windows calls) */
 
 /* GameAssembly.dll builds this loader knows: PE TimeDateStamp + SizeOfImage -> Steam build */
 static const struct { uint32_t ts, size; const char *build; } WIN_BUILDS[] = {
@@ -40,7 +41,7 @@ static void env_default(const char *k, const char *v) { if (!getenv(k) || !*gete
 /* the starter sets everything; started another way (a soft-restart child inherits it), the copy's folder gives it */
 static int configure(void) {
     if (getenv("DSL_MODS_DIR") && *getenv("DSL_MODS_DIR")) return 1;
-    char exe[MAX_PATH], root[MAX_PATH], v[MAX_PATH + 64];
+    char exe[MAX_PATH * 3], root[MAX_PATH * 3], v[MAX_PATH * 3 + 64];
     if (!GetModuleFileNameA(NULL, exe, sizeof exe)) return 0;
     char *sl = strrchr(exe, '\\'); if (!sl) return 0; *sl = 0;                       /* exe dir = ROOT\game */
     snprintf(v, sizeof v, "%s\\dsmodded_build.txt", exe);
@@ -48,7 +49,7 @@ static int configure(void) {
     snprintf(root, sizeof root, "%s", exe); sl = strrchr(root, '\\'); if (!sl) return 0; *sl = 0;
     FILE *f = fopen(v, "r"); char build[64] = "";
     if (f) { if (fgets(build, sizeof build, f)) build[strcspn(build, "\r\n ")] = 0; fclose(f); }
-    char prof[MAX_PATH + 32]; snprintf(prof, sizeof prof, "%s\\profiles\\modded", root);
+    char prof[MAX_PATH * 3 + 32]; snprintf(prof, sizeof prof, "%s\\profiles\\modded", root);
     env_default("DSRIG_DIR", prof);
     env_default("DSRIG_LIVE", "1");
     env_default("DSRIG_FPS", "60");
@@ -142,7 +143,7 @@ static const char *yn(int v) { return v < 0 ? "unknown" : v ? "yes" : "no"; }
 
 static void start(HMODULE ga) {
     uint64_t lo, hi, end;
-    char self[MAX_PATH] = "", path[MAX_PATH] = "", id[64];
+    char self[MAX_PATH * 3] = "", path[MAX_PATH * 3] = "", id[64];
     if (!configure()) return;
     GetModuleFileNameA(self_mod, self, sizeof self);
     {   /* the lang folder in UTF-8 (ds_i18n.h opens it with _wfopen); self stays ANSI for the core's fopen calls */
@@ -256,7 +257,7 @@ static DWORD WINAPI wait_ga(LPVOID arg) {                                       
 
 /* our copy: the starter's environment, or dsmodded_build.txt next to the exe (configure() reads it later) */
 static int ours(void) {
-    if (GetEnvironmentVariableA("DSL_MODS_DIR", NULL, 0) > 1) return 1;
+    if (GetEnvironmentVariableW(L"DSL_MODS_DIR", NULL, 0) > 1) return 1;
     wchar_t exe[MAX_PATH + 32];
     DWORD n = GetModuleFileNameW(NULL, exe, MAX_PATH);
     if (!n || n >= MAX_PATH) return 0;

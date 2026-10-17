@@ -35,11 +35,15 @@ mkdir -p "$C/MacOS" "$C/Resources/dsml/mods"
 cp "$OUTDIR/ds_modded" "$C/MacOS/DS Modded"
 cp "$HELPER" "$C/MacOS/dsml-helper"
 cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
+mkdir -p "$C/Resources/licenses"                                  # licenses/: our license + third-party notices, in every release file
+cp "$REPO/licenses/LICENSE.txt" "$REPO/licenses/THIRD_PARTY_NOTICES.txt" "$C/Resources/licenses/"
 cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
 cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
 cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)
 # the loader's texts (lang/<code>.json; the stub copies dsml/ to ROOT/loader/, so they end in ROOT/loader/lang/)
 LJ=("$REPO"/loader/lang/*.json(N)); if (( ${#LJ} )); then mkdir -p "$C/Resources/dsml/lang"; cp "${LJ[@]}" "$C/Resources/dsml/lang/"; fi
+# the loader release (repo file RELEASE, 0.1.N): auto-update compares it with ds_modloader's v0.1.N releases (DSM_RELEASE overrides)
+print -r -- "${DSM_RELEASE:-$(head -1 "$REPO/RELEASE")}" > "$C/Resources/dsml/RELEASE"
 for m in $MODS; do   # every shipped mod is required (one mod.json per module, mac-arm64 + win-x64 sha256s)
   [[ -d $REPO/loader/build/mods_all/mac/$m ]] || die "no loader/build/mods_all/mac/$m (run loader/modules/build_mods.sh)"
   cp -R "$REPO/loader/build/mods_all/mac/$m" "$C/Resources/dsml/mods/$m"
@@ -52,7 +56,7 @@ for f in "$C/MacOS/DS Modded" "$C/MacOS/dsml-helper" ${(f)"$(find "$C/Resources/
   if [[ ${MINOS%%.*} -gt 12 ]]; then
     xcrun vtool -set-build-version macos 12.0 ${MINOS} -replace -output "$f.v12" "$f" && mv "$f.v12" "$f"
     echo "${f:t}: minos $MINOS -> 12.0 (code unchanged)"
-    [[ $f == "$C/Resources/dsml/"* ]] && echo "WARNING: ${f:t} bytes changed: its sha256 in mod.json / the MP mod-set no longer matches; rebuild it with -mmacosx-version-min=12.0" >&2
+    [[ $f == "$C/Resources/dsml/mods/"* ]] && die "${f:t}: minos $MINOS needed a rewrite, so its bytes changed and its sha256 in mod.json / the mod-set no longer matches; rebuild it with -mmacosx-version-min=12.0"
   fi
 done
 
@@ -93,6 +97,12 @@ codesign -f -s - "$C/MacOS/dsml-helper"
 codesign -f -s - "$C/MacOS/DS Modded"
 codesign -f -s - "$TMP"
 codesign -v --deep --strict "$TMP" || die "signature check failed"
+# the shipped mods must be byte for byte the built ones (the loader and the multiplayer mod-set check their sha256)
+for m in $MODS; do
+  (cd "$REPO/loader/build/mods_all/mac/$m" && find . -type f | LC_ALL=C sort | while read -r f; do
+     cmp -s "$f" "$C/Resources/dsml/mods/$m/$f" || die "mods/$m/${f#./} changed while the app was built (re-sign or minos rewrite): its sha256 no longer matches mod.json"
+   done) || exit 1
+done
 
 if [[ -e $APP ]]; then mkdir -p "$HERE/old"; mv "$APP" "$HERE/old/$NAME-$(date +%Y%m%d-%H%M%S).app"; fi
 mv "$TMP" "$APP"

@@ -41,7 +41,7 @@ char dsl_core_self_utf8[1024];
 #define MAXT 512
 typedef struct { char name[64]; uintptr_t rva; } TabEnt;
 struct DSLPlugin {
-    char id[64], version[32], dir[1100], file[1200], sig[64];
+    char id[64], version[32], dir[1100], file[1200], sig[64], ndir[1100];
     int idx, state;                       /* 0 listed, 1 active, 2 failed, 3 skipped */
     int api, order_key, ordered, gameplay;
     void *h;
@@ -183,30 +183,44 @@ static void h_log(DSLPlugin *self, const char *fmt, ...) {
 static const char *h_plugin_id(DSLPlugin *self) { return self ? self->id : ""; }
 static void *h_rva(uintptr_t r) { return dsl_ga_base ? (void*)(dsl_ga_base + r) : NULL; }
 static int h_ready(void) { return dsl_ready; }
+static int mod_hook(DSLPlugin *self, void *t, void *r, void **o, const char *who) {
+    dsl_fastboot_yield(t, who);                 /* the loader's fast boot gives its method to a mod that hooks it (Hell tables) */
+    return dsl_hook(self->idx, t, r, o, who);
+}
 static int h_hook(DSLPlugin *self, void *t, void *r, void **o) {
     if (!self || self->state != 1) return -1;
-    return dsl_hook(self->idx, t, r, o, self->id);
+    return mod_hook(self, t, r, o, self->id);
 }
 static int h_hook_method(DSLPlugin *self, const char *ns, const char *k, const char *m, int argc, void *r, void **o) {
     if (!self || self->state != 1) return -1;
     void *a = dsl_find_method_address(ns, k, m, argc);
     if (!a) { dsl_log("[%s] hook %s.%s refused: method not found", self->id, k, m); return -1; }
     char who[160]; snprintf(who, sizeof who, "%s %s.%s", self->id, k, m);
-    return dsl_hook(self->idx, a, r, o, who);
+    return mod_hook(self, a, r, o, who);
 }
 static int h_unhook(DSLPlugin *self, void *t) { return self ? dsl_unhook(self->idx, t, self->id) : -1; }
 static int h_hook_rva(DSLPlugin *self, uintptr_t rva, void *r, void **o, const char *name) {
     if (!self || self->state != 1 || !dsl_ga_base) return -1;
     char who[160]; snprintf(who, sizeof who, "%s %s", self->id, name ? name : "");
-    return dsl_hook(self->idx, (void*)(dsl_ga_base + rva), r, o, who);
+    return mod_hook(self, (void*)(dsl_ga_base + rva), r, o, who);
 }
 static void *h_table(DSLPlugin *self, const char *name) {
     if (!self || !name || !dsl_ga_base) return NULL;
     for (int i = 0; i < self->ntab; i++) if (!strcmp(self->tab[i].name, name)) return (void*)(dsl_ga_base + self->tab[i].rva);
     return NULL;
 }
-static const char *h_module_dir(DSLPlugin *self) { return self ? self->dir : ""; }
-static const char *h_ga_path(void) { return dsl_ga_base ? ga_path_s : NULL; }
+/* paths handed to modules: in the form their own fopen opens (dsl_os_native_path) */
+static const char *h_module_dir(DSLPlugin *self) {
+    if (!self) return "";
+    if (!self->ndir[0]) dsl_os_native_path(self->dir, self->ndir, sizeof self->ndir);
+    return self->ndir;
+}
+static const char *h_ga_path(void) {
+    static char n[1024];
+    if (!dsl_ga_base) return NULL;
+    if (!n[0]) dsl_os_native_path(ga_path_s, n, sizeof n);
+    return n;
+}
 static int h_patch_rva(DSLPlugin *self, uintptr_t rva, const void *old, const void *neu, size_t n, const char *name) {
     if (!self || self->state != 1 || !dsl_ga_base) return -1;
     char who[160]; snprintf(who, sizeof who, "%s %s", self->id, name ? name : "");

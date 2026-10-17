@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include "dsl_u8_names_win.h"                     /* last: paths and environment are UTF-8 (wide Windows calls) */
 
 static wchar_t *env0; static size_t env0_len;           /* the environment block as started (double-NUL terminated) */
 static wchar_t exe0[MAX_PATH], cwd0[MAX_PATH], *cmd0;
@@ -45,7 +46,7 @@ void dsl_sos_snapshot(void) {
     cmd0 = _wcsdup(GetCommandLineW());
     tid0 = GetCurrentThreadId();
 }
-void dsl_sos_unsetenv(const char *name) { SetEnvironmentVariableA(name, NULL); char k[128]; snprintf(k, sizeof k, "%s=", name); _putenv(k); }
+void dsl_sos_unsetenv(const char *name) { dsl_u8_setenv(name, NULL); }
 
 /* ------------------------------------------------------------------ the process's windows */
 typedef struct { HWND w[32]; int n; } Wins;
@@ -168,7 +169,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     free(ov);
     /* BepInEx plugins of the new set into the game copy (bie_win.c); Doorstop's variables of A never pass on */
     char g8[MAX_PATH * 3], r8[MAX_PATH * 3], why[600] = ""; int bie_any = 0;
-    WideCharToMultiByte(CP_ACP, 0, exe0, -1, g8, sizeof g8, NULL, NULL);
+    WideCharToMultiByte(CP_UTF8, 0, exe0, -1, g8, sizeof g8, NULL, NULL);
     { char *sl = strrchr(g8, '\\'); if (sl) *sl = 0; }
     snprintf(r8, sizeof r8, "%s", g8); { char *sl = strrchr(r8, '\\'); if (sl) *sl = 0; }
     bie_set_log(dsl_log);

@@ -231,8 +231,9 @@ static int same_content(void *rs, Ent *e) {
 #ifdef _WIN32
 static HANDLE lock_take(void) {
     char p[1300]; snprintf(p, sizeof p, "%s/cloud.lock", mods_d);
-    HANDLE h = CreateFileA(p, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    return h;
+    wchar_t w[2048];                                    /* UTF-8 path (dsl_u8_win.h) */
+    if (dsl_u8_to_w(p, w, 2048)) return INVALID_HANDLE_VALUE;
+    return CreateFileW(w, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 }
 static int lock_ok(HANDLE h) { return h != INVALID_HANDLE_VALUE; }
 static void lock_drop(HANDLE h) { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }

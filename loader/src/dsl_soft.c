@@ -25,6 +25,7 @@
 // OS-neutral: windows, process start and the main-thread timer are in dsl_soft_os.h (start/mac/dsl_soft_mac.c,
 // start/win/dsl_soft_win.c); everything here uses the game by il2cpp names.
 #include "dsl_internal.h"
+#include "dsl_os.h"
 #include "dsl_soft_os.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,7 +80,7 @@ static int (*get_fsmode)(void); static void (*set_fsmode)(int);         /* Scree
 /* B boot speed: the Unity splash is cancelled and frames are uncapped while hidden (the boot is frame bound:
    one loading step per frame); a prewarm B waiting at the title runs at DSL_SOFT_IDLE_FPS (10). The game's own frame
    cap and vsync come back at the swap. */
-static int (*splash_done)(void); static void (*splash_cancel)(void);
+static _Bool (*splash_done)(void); static void (*splash_cancel)(void);    /* bool: only the low byte is set (Windows x64) */
 static void (*set_fps)(int); static int (*get_fps)(void);              /* icalls (the managed getters are stripped) */
 static void (*set_vsync)(int); static int (*get_vsync)(void);
 static void (*set_blp)(int); static int (*get_blp)(void);              /* Application.backgroundLoadingPriority */
@@ -100,7 +101,7 @@ static void force_fps(int target) {
 }
 static void fast_tick(void) {
     if (!fast_on) return;
-    if (splash_done && !splash_done()) {
+    if (role_b && splash_done && splash_cancel && !splash_done()) {
         if (!splash_seen++) SLOG("B: Unity splash screen running: cancelled");
         if (splash_cancel) splash_cancel();
     }
@@ -482,6 +483,10 @@ static void a_tick(void) {
         static double last_note;
         int rd = ready_ok();
         if (t - last_note > 5) { last_note = t; SLOG("A: waiting: B ready %d, loading screen up %d", rd, up); }
+        /* an Apply right after the title shows: the title's own fade-in can end over our fade-out (the screen never
+           reports up; the swap then waited for the 3 s fallback). Same as B: put it up again once a second. */
+        static double a_refade;
+        if (!up && t - a_t0 > 1.0 && t - a_refade > 1.0) { a_refade = t; if (fv) fade_out(fv, NULL, 1, NULL); SLOG("A: loading screen not up 1 s after Apply: up again"); }
         if (!rd) return;
         if (!a_ready_seen) a_ready_seen = t;
         /* A's own loading screen must be up (its done flag seen low after the call, or 0.4 s). When it never reports
@@ -665,7 +670,68 @@ static void test_requests(double t) {                                    /* test
     else { const char *e = json_str(j, "env"); int r = dsl_soft_apply(pr, e && *e ? e : NULL); dsl_log("soft test: apply %s -> %d", pr, r); }
     json_free(j);
 }
+/* measurement only (DSL_BOOTPROF=1, fastboot lane): A logs splash end, scene / bootReady / busy changes with frame count */
+static int prof_on;
+static void prof_tick(void) {
+    static int last = -99, sp = -1, ticks;
+    if (!ticks++) SLOG("prof: first tick (frame %d)", frame_count ? frame_count() : -1);
+    if (splash_done) { int d = splash_done(); if (d != sp) { SLOG("prof: splash finished %d (frame %d)", d, frame_count ? frame_count() : -1); sp = d; } }
+    if (!dsl_ready || !mf) return;
+    int k = scene() * 100 + boot_ready() * 10 + (busy() ? 1 : 0);
+    if (k != last) { SLOG("prof: scene %d bootReady %d busy %d (frame %d)", scene(), boot_ready(), busy(), frame_count ? frame_count() : -1); last = k; }
+}
+/* A (a normal start, owner go 2026-10-17): frames uncapped + loading priority High from the first tick until the
+   title is ready, then the game's own values come back (fast_end). The Unity splash is NOT cancelled in A. */
+static int a_fast;
+/* A's splash (owner 2026-10-17: exactly the vanilla splash, and never a longer boot). The startup splash holds the first
+   scene back (MainFlow.Awake waits for it), so it is cancelled at the first tick and Unity's own splash is begun again as
+   soon as the first scene runs (SplashScreen.Begin): Unity then draws it over the running boot by itself (no wait). At the title it ends with BeginSplashScreenFade (= SplashScreen.Stop(FadeOut)). Same logos, background,
+   size, place and timing as the stock splash; it only ends early when the boot is done first. */
+static void (*sp_begin)(void), (*sp_fade)(void);
+static int sp_state, sp_on;                              /* 0 start, 1 cancelled, 2 drawing, 3 fading / over */
+static int splash_drawing(void) { return sp_on && splash_done && !splash_done(); }
+static void a_splash_tick(int title) {
+    if (sp_state == 0) {
+        int running = splash_done && !splash_done();
+        if (running) splash_cancel();
+        sp_state = running && sp_begin ? 1 : 3;
+        SLOG("A: startup splash %s", !running ? "already over" : sp_state == 1 ? "cancelled: Unity draws it again over the boot from the first scene" : "cancelled (no splash: functions missing)");
+        return;
+    }
+    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; SLOG("A: splash begun in the first scene"); return; }
+    if (sp_state == 2 && (title || !splash_drawing())) {
+        int fin = !splash_drawing();
+        if (!fin && sp_fade) sp_fade();
+        SLOG("A: %s", fin ? "splash over before the title" : "title ready: splash fades out (BeginSplashScreenFade)"); sp_state = 3;
+    }
+}
+/* test: DSL_FASTBOOT_SHOTS=<dir> + DSL_SHOT_EVERY=<s>: the game's frame every s seconds from the first tick until 1 s after
+   the title (A, fast or not), to compare a fast boot's splash frames with a normal boot's */
+static void shot_tick(int title) {
+    static double next, until = -1; const char *sd = getenv("DSL_FASTBOOT_SHOTS"), *ev = getenv("DSL_SHOT_EVERY");
+    if (!sd || !*sd || !ev || !*ev || !dsl_ready) return;
+    double t = since();
+    if (title && until < 0) until = t + 1.0;
+    if ((until >= 0 && t > until) || t < next) return;
+    next = t + atof(ev); char p[1300]; snprintf(p, sizeof p, "%s/f_%06.2f.png", sd, t); dsl_soft_shot(p);
+}
+static void a_fast_tick(void) {
+    if (!a_fast || !fast_on || !dsl_ready) return;
+    int title = mf && scene() == 1 && boot_ready() && !busy();
+    if (splash_cancel) a_splash_tick(title);
+    if (title) { fast_end(); a_fast = 0; SLOG("A: boot done (title ready): frame cap and loading priority restored"); return; }
+    fast_tick();
+}
+/* the title screen is idle and on screen: title scene, boot done, nothing loading, no loading screen / fade over it */
+int dsl_soft_title_idle(void) {
+    if (!dsl_ready || !mf || scene() != 1 || !boot_ready() || busy() || (role_b && b_state != B_DONE)) return 0;
+    Obj fv = fade; if (fv && ((fade_loading && fade_loading(fv, NULL)) || (fade_done && fade_done(fv, NULL)))) return 0;
+    return !splash_drawing();
+}
 static void tick(void) {
+    if (prof_on && !role_b) prof_tick();
+    dsl_fastboot_tick();
+    if (!role_b) { shot_tick(dsl_ready && mf && scene() == 1 && boot_ready() && !busy()); a_fast_tick(); }
     if (stage_on) dsl_sos_stage_check();                                 /* test stage: a window off the stage is never seen */
     if (role_b) b_tick(); else a_tick();
     double t = since();
@@ -738,6 +804,17 @@ void dsl_soft_install(void) {
         get_apause = icall("UnityEngine.AudioListener::get_pause"); set_apause = icall("UnityEngine.AudioListener::set_pause");
         SLOG("B: mute while hidden: volume %s, pause %s", get_vol && set_vol ? "ok" : "MISSING", get_apause && set_apause ? "ok" : "MISSING");
     }
+    { const char *fb = getenv("DSL_FASTBOOT");
+      dsl_fastboot_install(dsl_core_logdir());
+      if (!role_b && !(fb && *fb == '0') && icall && dsl_build_id) {
+          set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
+          set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
+          set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
+          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
+          splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
+          if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
+          else SLOG("A: boot speed-up off (game functions missing)");
+      } }
     if (role_b && !getenv("DSL_SOFT_NOFAST")) {
         fast_on = 1;
         if (icall) { splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen"); }
@@ -748,6 +825,9 @@ void dsl_soft_install(void) {
         }
         SLOG("B: boot speed-up: splash %s, frame cap %s", splash_done && splash_cancel ? "ok" : "MISSING", set_fps && set_vsync && get_fps && get_vsync ? "ok" : "MISSING");
     }
+    prof_on = getenv("DSL_BOOTPROF") && *getenv("DSL_BOOTPROF") == '1';
+    if (prof_on && !role_b && icall) { boot_log = 1; boot_log_install(kmf, icall);
+        splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); }
     if (role_b) { boot_log = getenv("DSL_SOFT_BOOTLOG") && *getenv("DSL_SOFT_BOOTLOG") == '1'; boot_log_install(kmf, icall); }   /* progress steps; the step log only with DSL_SOFT_BOOTLOG */
     { void *kf = klass("Refactor.UI", "ScreenFadeEffectView"), *kl = klass("Refactor", "LoadingUI");
       off_lui = kf ? foff(kf, "_loadingUI") : -1; off_ptext = kl ? foff(kl, "_progressText") : -1; tmp_get = meth("TMPro", "TMP_Text", "get_text", 0); }

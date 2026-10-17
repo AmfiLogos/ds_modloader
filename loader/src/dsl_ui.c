@@ -71,7 +71,7 @@ static struct {
 static struct {
     void *Object, *Component, *GameObject, *Transform, *RectTransform, *Graphic, *Image, *TMP_Text, *TMP_Input, *Selectable,
          *Sprite, *FontAsset, *Action, *Byte, *Vector3, *Canvas, *CanvasScaler, *GraphicRaycaster, *RectMask2D, *ScrollRect,
-         *Texture2D, *TitleMenuView, *TitleButton, *Notice, *DASText, *TooltipUI, *TooltipETC, *TipCtx, *UIFactory,
+         *Texture2D, *TitleMenuView, *LangView, *GridLayout, *TitleButton, *Notice, *DASText, *TooltipUI, *TooltipETC, *TipCtx, *UIFactory,
          *SaveLoadView, *CampaignSetting, *TMP_Asset, *CanvasGroup;
 } K;
 
@@ -81,9 +81,9 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
     *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_corners,
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
-    *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
+    *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
-    *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_getsize, *m_tmp_getauto, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv, *m_rt_rect,   /* text fit */
+    *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv,   /* text fit (+ m_tmp_getsize, m_tmp_getauto, m_rt_rect) */
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
     *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
     *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create,
@@ -1033,8 +1033,63 @@ static Obj notice_view(void) {
     nview_last = frames; v = find_obj(K.Notice, 1); hset(&h_nview, v); return v;
 }
 static struct { int serial; dsl_ui_cb ok, cancel; void *ud; uintptr_t h_ok, h_cancel; char text[1024]; } NB;
+/* a notice button label longer than the stock button: the buttons grow to the text + side padding; the stock size
+   comes back before the next notice and when this one is answered or closed */
+static uintptr_t nfit_lab[2], nfit_txt[2]; static int nfit_tries, nfit_auto[2]; static uintptr_t nfit_grid; static V2 nfit_cell;
+#define NFIT_KIDS 12
+static uintptr_t nfit_kid[NFIT_KIDS]; static V2 nfit_kidsz[NFIT_KIDS]; static int nfit_nkid;
+static void notice_unfit(void) {
+    for (int i = 0; i < 2; i++) {
+        Obj t = hget(nfit_txt[i]); if (t && m_tmp_auto) CALL(m_tmp_auto, void, Obj, bool)(t, nfit_auto[i] != 0, m_tmp_auto);
+        hset(&nfit_lab[i], NULL); hset(&nfit_txt[i], NULL);
+    }
+    Obj g = hget(nfit_grid); if (g && m_grid_cell) CALL(m_grid_cell, void, Obj, V2)(g, nfit_cell, m_grid_cell);
+    for (int q = 0; q < nfit_nkid; q++) { Obj ch = hget(nfit_kid[q]); if (ch && m_rt_size) CALL(m_rt_size, void, Obj, V2)(ch, nfit_kidsz[q], m_rt_size); hset(&nfit_kid[q], NULL); }
+    nfit_nkid = 0;
+    hset(&nfit_grid, NULL); nfit_tries = 0;
+}
+static int notice_fit(int i, Obj label) {
+    Obj b = tr_parent(label); if (!b || !isa(label, K.TMP_Text) || !m_tmp_prefw || !m_rt_rect) return 1;
+    R4 r = CALL(m_rt_rect, R4, Obj)(tr_of(b), m_rt_rect);
+    float want = CALL(m_tmp_prefw, float, Obj)(label, m_tmp_prefw) + 64;
+    if (r.w <= 0) return 0;                                              /* laid out a frame after it shows */
+    if (want <= r.w) return 1;
+    /* the stock notice lays its buttons out with a GridLayoutGroup (one cell size for both): the cells grow, so both
+       buttons keep one width as in the game's other notices; the font keeps its size (no auto-size growth) */
+    Obj g = K.GridLayout ? comp_get(tr_parent(b), K.GridLayout) : NULL;
+    if (!g || !m_grid_cell || !m_grid_getcell) return 1;
+    V2 c = CALL(m_grid_getcell, V2, Obj)(g, m_grid_getcell);
+    if (c.x >= want) return 1;
+    if (!hget(nfit_grid)) { nfit_cell = c; hset(&nfit_grid, g); }
+    CALL(m_grid_cell, void, Obj, V2)(g, (V2){ want, c.y }, m_grid_cell);
+    /* a button's frame image is a child with its own fixed width (not stretched): it grows with the cell */
+    Obj gp = tr_parent(b);
+    for (int k = 0, nk = child_count(gp); k < nk; k++) {
+        Obj btn = child_at(gp, k);
+        for (int m = 0, nm = child_count(btn); m < nm && m_rt_size; m++) {
+            Obj ch = child_at(btn, m); V2 z = rt_size(ch);
+            if (ch == tr_of(label) || z.x < c.x - 2 || z.x > c.x + 2) continue;          /* only fixed-width frames */
+            int seen = 0; for (int q = 0; q < nfit_nkid; q++) seen |= hget(nfit_kid[q]) == ch;
+            if (!seen && nfit_nkid < NFIT_KIDS) { nfit_kidsz[nfit_nkid] = z; hset(&nfit_kid[nfit_nkid++], ch); }
+            CALL(m_rt_size, void, Obj, V2)(ch, (V2){ want, z.y }, m_rt_size);
+        }
+    }
+    if (m_tmp_getauto && m_tmp_auto && m_tmp_getsize && m_tmp_size) {
+        float fs = CALL(m_tmp_getsize, float, Obj)(label, m_tmp_getsize);
+        nfit_auto[i] = CALL(m_tmp_getauto, bool, Obj)(label, m_tmp_getauto); hset(&nfit_txt[i], label);
+        CALL(m_tmp_auto, void, Obj, bool)(label, false, m_tmp_auto); CALL(m_tmp_size, void, Obj, float)(label, fs, m_tmp_size);
+    }
+    dsl_log("ui: notice buttons widened %.0f -> %.0f for \"%s\"", c.x, want, i ? "cancel" : "ok");
+    return 1;
+}
+static void notice_fit_frame(void) {                                     /* kit tick: the labels set by k_notice */
+    if (nfit_tries <= 0) return;
+    int left = 0;
+    for (int i = 0; i < 2; i++) { Obj l = hget(nfit_lab[i]); if (l) { if (notice_fit(i, l)) hset(&nfit_lab[i], NULL); else left = 1; } }
+    nfit_tries = left ? nfit_tries - 1 : 0;
+}
 static void k_notice(const char *text, const char *ok_label, const char *cancel_label, dsl_ui_cb ok, dsl_ui_cb cancel, void *ud) {
-    nview_last = -1000; Obj v = notice_view();
+    notice_unfit(); nview_last = -1000; Obj v = notice_view();
     if (!v || !m_nv_select || !m_nv_confirm || f_nv_text < 0) { dsl_log("ui: notice: no CommonNoticeView in this scene: \"%s\" not shown", text ? text : ""); return; }
     NB.serial = (NB.serial + 1) & 0x0FFFFFFF; NB.ok = ok; NB.cancel = cancel; NB.ud = ud;
     snprintf(NB.text, sizeof NB.text, "%s", text ? text : ""); dsi_utf8_fix_end(NB.text);   /* the box shows (and k_notice_close compares) this copy */
@@ -1046,14 +1101,16 @@ static void k_notice(const char *text, const char *ok_label, const char *cancel_
     tmp_set(nt, NB.text);
     fit_stock(nt);                                                   /* a long text auto-sizes in the stock box */
     if (isa(nt, K.TMP_Text)) CALL(m_tmp_align, void, Obj, int)(nt, 514, m_tmp_align);
-    if (f_nv_tok >= 0) tmp_set(AT(v, f_nv_tok, Obj), ok_label ? ok_label : TR("OK"));
-    if (cancel_label && f_nv_tcancel >= 0) tmp_set(AT(v, f_nv_tcancel, Obj), cancel_label);
+    if (f_nv_tok >= 0) { tmp_set(AT(v, f_nv_tok, Obj), ok_label ? ok_label : TR("OK")); hset(&nfit_lab[0], AT(v, f_nv_tok, Obj)); }
+    if (cancel_label && f_nv_tcancel >= 0) { tmp_set(AT(v, f_nv_tcancel, Obj), cancel_label); hset(&nfit_lab[1], AT(v, f_nv_tcancel, Obj)); }
+    nfit_tries = 60;
     go_active(v, 1);
     raise_view(v, 32040);
     dsl_log("ui: notice %d shown (%s): %s", NB.serial, cancel_label ? "two buttons" : "one button", text ? text : "");
 }
 
 static void k_notice_close(void) {
+    notice_unfit();
     Obj v = notice_view(); if (!v || !NB.text[0] || !on_tree(v)) return;
     char cur[1024] = ""; utf8_of(tmp_get(AT(v, f_nv_text, Obj)), cur, sizeof cur);
     if (strcmp(cur, NB.text)) return;                                   /* another box is up now (the game's own): leave it */
@@ -1238,6 +1295,23 @@ static void title_frame(void) {
     }
 }
 
+/* the title menu is on screen (its stock button column shows; the multiplayer pages hide it) */
+static uintptr_t h_lang; static int64_t lang_last = -1000;
+static int lang_open(void) {                              /* the game's first-start Language picker (StartLanguageSelectView) */
+    Obj l = hget(h_lang);
+    if (!l && frames - lang_last >= 30) { lang_last = frames; l = find_obj(K.LangView, 0); hset(&h_lang, l); }
+    return l && on_tree(l);
+}
+int dsl_ui_title_shown(void) {
+    Obj v = title_view(); if (!v || !on_tree(v) || lang_open()) return 0;
+    for (int i = 0; i < 7; i++) if (f_tv_btn[i] >= 0) { Obj b = AT(v, f_tv_btn[i], Obj); if (b && active_self(b)) return 1; }
+    return 0;
+}
+/* a kit widget pinned to the top-right corner of its parent (the screen layer): right / top margins, size */
+void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
+    if (w) rt_set((Obj)w, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ wd, h }, (V2){ -right, -top });
+}
+
 /* ------------------------------------------------------------------ frame tick */
 static void run_queue(void) {
     uint32_t q[QMAX]; int n = nq; memcpy(q, queue, (size_t)n * sizeof *q); nq = 0;
@@ -1247,7 +1321,7 @@ static void run_queue(void) {
         if (part == P_OK || part == P_CANCEL) {
             if (id != NB.serial) continue;
             dsl_ui_cb cb = part == P_OK ? NB.ok : NB.cancel; void *ud = NB.ud;
-            NB.ok = NB.cancel = NULL; NB.serial = (NB.serial + 1) & 0x0FFFFFFF;
+            NB.ok = NB.cancel = NULL; NB.serial = (NB.serial + 1) & 0x0FFFFFFF; notice_unfit();
             if (cb) cb(ud, NULL);
             continue;
         }
@@ -1284,6 +1358,7 @@ static void (*o_es_update)(Obj, const void *);
 static void tick(void) {
     frames++;
     if (frames % 60 == 0) w_sweep();
+    notice_fit_frame();
     assets_scan(0);
     /* templates at the first title seen, even hidden (a soft restart B goes from its title straight into a world; the
        kit could not build widgets there before: Mods window and rows after flow K) */
@@ -1385,7 +1460,7 @@ void dsl_ui_install(void) {
     K.TMP_Asset = klass(TM, "TMP_Asset"); K.Action = klass("System", "Action"); K.Byte = klass("System", "Byte");
     K.Vector3 = klass(UE, "Vector3"); K.Canvas = klass(UE, "Canvas"); K.CanvasScaler = klass(UI, "CanvasScaler");
     K.GraphicRaycaster = klass(UI, "GraphicRaycaster"); K.RectMask2D = klass(UI, "RectMask2D"); K.ScrollRect = klass(UI, "ScrollRect");
-    K.Texture2D = klass(UE, "Texture2D"); K.TitleMenuView = klass(RU, "TitleMenuView"); K.TitleButton = klass(RU, "SubUI_TitleMenuButton");
+    K.Texture2D = klass(UE, "Texture2D"); K.TitleMenuView = klass(RU, "TitleMenuView"); K.LangView = klass(RU, "StartLanguageSelectView"); K.TitleButton = klass(RU, "SubUI_TitleMenuButton");
     K.Notice = klass(RU, "CommonNoticeView"); K.DASText = klass(RU, "DASText"); K.TooltipUI = klass(RU, "TooltipUI");
     K.TooltipETC = klass(RU, "Tooltip_ETC"); K.TipCtx = klass(RU, "TooltipContext"); K.UIFactory = klass("Refactor.Main.UI", "UIFactory");
     K.SaveLoadView = klass("Refactor", "SaveLoadView"); K.CanvasGroup = klass(UE, "CanvasGroup"); K.CampaignSetting = klass(RU, "SubUI_CampaignSetting");
@@ -1420,14 +1495,16 @@ void dsl_ui_install(void) {
     m_tmp_get = MTH(K.TMP_Text, "get_text", 0); m_tmp_set = MTH(K.TMP_Text, "set_text", 1);
     m_tmp_font = MTH(K.TMP_Text, "set_font", 1); m_tmp_getfont = MTH(K.TMP_Text, "get_font", 0); m_tmp_size = MTH(K.TMP_Text, "set_fontSize", 1);
     m_tmp_auto = MTH(K.TMP_Text, "set_enableAutoSizing", 1); m_tmp_align = MTH(K.TMP_Text, "set_alignment", 1);
+    m_tmp_prefw = MTH(K.TMP_Text, "get_preferredWidth", 0);
+    K.GridLayout = klass(UI, "GridLayoutGroup");
+    if (K.GridLayout) { m_grid_cell = MTH(K.GridLayout, "set_cellSize", 1); m_grid_getcell = MTH(K.GridLayout, "get_cellSize", 0); }
+    m_rt_rect = MTH(K.RectTransform, "get_rect", 0); m_tmp_getsize = MTH(K.TMP_Text, "get_fontSize", 0); m_tmp_getauto = MTH(K.TMP_Text, "get_enableAutoSizing", 0);
     m_tmp_wrap = MTH(K.TMP_Text, "set_textWrappingMode", 1); m_tmp_overflow = MTH(K.TMP_Text, "set_overflowMode", 1);
     m_tmp_rich = MTH(K.TMP_Text, "set_richText", 1); m_tmp_shmat = OPT(K.TMP_Text, "set_fontSharedMaterial", 1);
     m_asset_mat = OPT(K.TMP_Asset, "get_material", 0);
     m_tmp_fsmin = OPT(K.TMP_Text, "set_fontSizeMin", 1); m_tmp_fsmax = OPT(K.TMP_Text, "set_fontSizeMax", 1);
-    m_tmp_getsize = OPT(K.TMP_Text, "get_fontSize", 0); m_tmp_getauto = OPT(K.TMP_Text, "get_enableAutoSizing", 0);
     m_tmp_pw = OPT(K.TMP_Text, "get_preferredWidth", 0); m_tmp_ph = OPT(K.TMP_Text, "get_preferredHeight", 0);
     m_tmp_prefv = OPTSIG(K.TMP_Text, "GetPreferredValues", 2, "System.Single,System.Single");
-    m_rt_rect = OPT(K.RectTransform, "get_rect", 0);
     if (!m_asset_mat) f_asset_mat = fld(K.TMP_Asset, "m_Material");
     m_in_text = MTH(K.TMP_Input, "get_text", 0); m_in_settext = MTH(K.TMP_Input, "SetTextWithoutNotify", 1);
     m_in_limit = OPT(K.TMP_Input, "set_characterLimit", 1); m_in_ctype = OPT(K.TMP_Input, "set_contentType", 1);
