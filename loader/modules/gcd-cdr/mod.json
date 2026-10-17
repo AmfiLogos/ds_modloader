@@ -34,12 +34,12 @@
  "scope": "gameplay",
  "i18n": {
   "ko": {
-   "name": "전역 재사용 대기 시간에도 감소 적용",
+   "name": "전역 재사용 대기 시간에도 스킬 재사용 대기 시간 감소 적용",
    "short_name": "전역 재사용 대기 시간",
    "description": "스킬 재사용 대기 시간 감소가 스킬 재사용 대기 시간과 같은 방식으로 전역 재사용 대기 시간도 줄입니다."
   },
   "fr": {
-   "name": "Recharge globale avec réduction de recharge",
+   "name": "Le temps de recharge global utilise la réduction du temps de recharge",
    "short_name": "Temps de recharge global",
    "description": "La réduction du temps de recharge raccourcit aussi le temps de recharge global, comme pour les compétences."
   },
@@ -49,8 +49,8 @@
    "description": "Abklingzeitreduktion verkürzt auch die globale Abklingzeit, genauso wie die Abklingzeiten von Skills."
   },
   "ru": {
-   "name": "Глобальное время восстановления сокращается",
-   "short_name": "Глобальный откат",
+   "name": "Глобальное время восстановления учитывает снижение времени восстановления",
+   "short_name": "Глобальное время восстановления",
    "description": "Снижение времени восстановления сокращает и глобальное время восстановления, так же как время восстановления навыков."
   },
   "zh-Hans": {
@@ -69,7 +69,7 @@
    "description": "クールタイム短縮は、スキルのクールタイムを短くするのと同じように、全体のクールタイムも短くします。"
   },
   "es": {
-   "name": "Enfriamiento global con reducción de enfriamiento",
+   "name": "El enfriamiento global usa la reducción de enfriamiento",
    "short_name": "Enfriamiento global",
    "description": "La reducción de enfriamiento también acorta el enfriamiento global, igual que acorta los enfriamientos de habilidades."
   },

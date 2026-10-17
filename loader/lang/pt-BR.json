@@ -157,7 +157,7 @@
  "This world uses: %s.\nInstall the missing mods to load it.": "Este mundo usa: %s.\nInstale os mods que faltam para carregá-lo.",
  "This world uses: %s.\nIt cannot be loaded now: %s": "Este mundo usa: %s.\nNão pode ser carregado agora: %s",
  "This world uses: %s.\nLoad it with them?": "Este mundo usa: %s.\nCarregar com eles?",
- "Undo changes": "Desfazer",
+ "Undo changes": "Desfazer alterações",
  "Your modded saves already have %s (last saved %s), with its own progress. Replace it with the game's %s (last saved %s)?\n\nYour modded %s is kept as a copy in:\n%s": "Seus salvamentos modificados já têm %s (último salvamento em %s), com progresso próprio. Substituir pelo %s do jogo (último salvamento em %s)?\n\nSeu %s modificado é guardado como cópia em:\n%s",
  "Your world opens when this is done.": "Seu mundo abre quando isto terminar.",
  "did not load": "não carregou",
