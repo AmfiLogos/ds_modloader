@@ -5,13 +5,18 @@
 # Last line: "RESULT n/n pass".
 # Real-release mode (after a publish): mac_gate.sh <work> <instance app> real 0.1.7 -> only a test copy of release
 # 0.1.6.99 is built, and the REAL GitHub release v0.1.7 must be offered: Off = corner button, On = background download
-# (sha256 ok) and the next-launch "Updating ... to 0.1.7" install, on the test copy only.
+# (sha256 ok) and the next-launch "Updating ... to 0.1.7" install, on the test copy only. REAL_APP=<app> + DSL_REAL_OLD=<its
+# release>: the test copy is that real released app instead of a 0.1.6.99 build.
 set -e; H="${0:A:h}"; REPO="${H:h:h:h}"; W=${1:A}; INST=${2:A}
 A=$W/apps; mkdir -p $A $W/run
 if [[ ${3:-} == real ]]; then
   export DSL_REAL_RELEASE=${4:?version}; export DSL_REAL_OLD=${DSL_REAL_OLD:-0.1.6.99}
-  DSM_RELEASE=$DSL_REAL_OLD zsh $REPO/app/build_app.sh > $W/build_old.log 2>&1 || { tail -3 $W/build_old.log; exit 1; }
-  mkdir -p $A/$DSL_REAL_OLD; ditto "$REPO/app/build/Dungeon Settlers Modded.app" "$A/$DSL_REAL_OLD/Dungeon Settlers Modded.app"
+  if [[ -n ${REAL_APP:-} ]]; then   # start from a real released app (REAL_APP=<.app from its .dmg>, DSL_REAL_OLD = its release)
+    mkdir -p $A/$DSL_REAL_OLD; ditto "$REAL_APP" "$A/$DSL_REAL_OLD/Dungeon Settlers Modded.app"
+  else
+    DSM_RELEASE=$DSL_REAL_OLD zsh $REPO/app/build_app.sh > $W/build_old.log 2>&1 || { tail -3 $W/build_old.log; exit 1; }
+    mkdir -p $A/$DSL_REAL_OLD; ditto "$REPO/app/build/Dungeon Settlers Modded.app" "$A/$DSL_REAL_OLD/Dungeon Settlers Modded.app"
+  fi
   R=~/ds_multiplayer/rig/rig.py; P=""
   for i in {1..60}; do P=$(python3 $R lease mac_gate --pid $$ 2>/dev/null | tail -1); [[ $P == [A-J][A-J] ]] && break; sleep 10; done
   [[ $P == [A-J][A-J] ]] || { print "no rig pair free"; exit 2; }
