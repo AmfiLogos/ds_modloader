@@ -19,6 +19,13 @@ BACKUP = os.path.expanduser('~/ds_multiplayer/backup_prefs_2026-10-12')       # 
 SEED = os.path.expanduser('~/DungeonSettlers_SaveBackups/2026-10-11-1827')
 NAME = 'Dungeon Settlers Modded.app'
 OLD, NEW, BROKEN = '0.1.3', '0.1.4', '0.1.5'
+# real-release mode (gate after a publish): DSL_REAL_RELEASE=0.1.7 -> the installed test copy is DSL_REAL_OLD (0.1.6.99)
+# and the REAL GitHub release is offered: no local server, no DSL_UPDATE_API. Only the test copy is installed over.
+REAL = os.environ.get('DSL_REAL_RELEASE', '')
+if REAL:
+    OLD, NEW = os.environ.get('DSL_REAL_OLD', '0.1.6.99'), REAL
+    if len(sys.argv) <= 4:
+        TESTS = ['on', 'off']
 results = []
 
 
@@ -76,10 +83,10 @@ class Run:
             json.dump(us, open(os.path.join(dd, 'UserSetting.json'), 'w'), indent=1)
             shutil.copy2(os.path.join(SEED, 'OutGame.json'), os.path.join(dd, 'OutGame.json'))
         self.srv = os.path.join(self.d, 'srv'); self.server = None
-        for tag, src in srv_tags:
+        for tag, src in ([] if REAL else srv_tags):
             d = os.path.join(self.srv, KIT_REPO, tag); os.makedirs(d)
             zip_app(os.path.join(APPS, src, NAME), os.path.join(d, 'Dungeon-Settlers-Modded-Mac.zip'))
-        if srv_tags:
+        if srv_tags and not REAL:
             self.server = subprocess.Popen([sys.executable, '-I', os.path.join(HERE, 'relserver.py'), self.srv, str(PORT)],
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(0.5)
@@ -89,7 +96,9 @@ class Run:
              'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': os.environ.get('TMPDIR', '/tmp'),
              'DSMODDED_ROOT': self.root, 'DSMP_NO_DIALOG': '1', 'DSMODDED_NO_STEAM': '1', 'DSL_UPDATE_WINDOW': 'hidden',
              'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': '-20000,-20000', 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1',
-             'DSL_UPDATE_API': f'http://127.0.0.1:{PORT}', 'DSL_UPDATE_TEST': '1'}
+             'DSL_UPDATE_TEST': '1'}
+        if not REAL:
+            e['DSL_UPDATE_API'] = f'http://127.0.0.1:{PORT}'
         if dry:
             e['DSMODDED_DRY_RUN'] = '1'
         return e
