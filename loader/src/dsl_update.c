@@ -322,7 +322,7 @@ static void button_click(void *ud, DSLObj w) {
 }
 static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
-    int show = dsl_ui_title_shown() && dsl_reg_scene() == 1;
+    int show = dsl_ui_title_shown() && dsl_reg_scene() == 1 && dsl_soft_title_idle();   /* the idle title only: never under a loading screen */
     DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn;
     if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
     if (!tog) {
@@ -331,7 +331,6 @@ static void corner_frame(void) {
         btn = u->button(NULL, 0, 0, 220, 40, "Update", button_click, NULL);
         if (!tog || !txt || !btn) return;
         dsl_ui_place_tr(tog, 24, 56, 260, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
-        u->tooltip(tog, "Auto-update", "On: new versions of the mod loader and the mods download while you play. They install the next time you start the game.\nOff: nothing downloads until you click Update.");
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
@@ -353,6 +352,9 @@ static void corner_frame(void) {
     if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
     u->set_active(txt, l[0] != 0 && !want_btn);
 }
+
+/* test (uikit-demo driver, dlsym): the corner's Auto-update switch, NULL before the title showed it */
+__attribute__((visibility("default"))) DSLObj dsl_update_test_toggle(void) { return (DSLObj)c_tog; }
 
 /* ------------------------------------------------------------------ entry points (dsl_reg.c) */
 void dsl_update_start(void) {

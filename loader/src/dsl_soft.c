@@ -675,10 +675,39 @@ static void prof_tick(void) {
 /* A (a normal start, owner go 2026-10-17): frames uncapped + loading priority High from the first tick until the
    title is ready, then the game's own values come back (fast_end). The Unity splash is NOT cancelled in A. */
 static int a_fast;
+/* the splash's two logos, drawn by us over the running boot (dsl_ui_boot_logo): LOGO_S each with a short fade, gone at
+   the title at the latest (the boot never waits for them). DSL_FASTBOOT_SHOTS=<dir> (test): one frame per logo. */
+int dsl_ui_boot_logo(int idx, float alpha);
+#define LOGO_S 0.9
+#define LOGO_FADE 0.15
+static double logo_t0 = -1; static int logo_done, logo_shot[2];
+static int logo_t0_active(void) { return logo_t0 >= 0 && !logo_done; }
+static void logo_tick(int title) {
+    if (logo_done) return;
+    double t = since();
+    if (logo_t0 < 0) logo_t0 = t;
+    double e = t - logo_t0; int idx = (int)(e / LOGO_S);
+    if (title || idx > 1) { dsl_ui_boot_logo(-1, 0); logo_done = 1; SLOG("A: boot logos %s after %.2f s", title && idx <= 1 ? "cut at the title" : "shown", e); return; }
+    double in = e - idx * LOGO_S, a = in < LOGO_FADE ? in / LOGO_FADE : LOGO_S - in < LOGO_FADE ? (LOGO_S - in) / LOGO_FADE : 1;
+    if (dsl_ui_boot_logo(idx, (float)a) < 0) { logo_done = 1; return; }
+    const char *sd = getenv("DSL_FASTBOOT_SHOTS");
+    if (sd && *sd && !logo_shot[idx] && in > LOGO_S / 2) {
+        logo_shot[idx] = 1; char p[1300]; snprintf(p, sizeof p, "%s/logo%d_%.2fs.png", sd, idx + 1, t);
+        SLOG("A: boot logo %d frame -> %s (rc %d)", idx + 1, p, dsl_soft_shot(p));
+    }
+}
 static void a_fast_tick(void) {
     if (!a_fast || !fast_on || !dsl_ready) return;
-    if (mf && scene() == 1 && boot_ready() && !busy()) { fast_end(); a_fast = 0; SLOG("A: boot done (title ready): frame cap and loading priority restored"); return; }
+    int title = mf && scene() == 1 && boot_ready() && !busy();
+    if (splash_cancel) logo_tick(title);
+    if (title) { fast_end(); a_fast = 0; SLOG("A: boot done (title ready): frame cap and loading priority restored"); return; }
     fast_tick();
+}
+/* the title screen is idle and on screen: title scene, boot done, nothing loading, no loading screen / fade over it */
+int dsl_soft_title_idle(void) {
+    if (!dsl_ready || !mf || scene() != 1 || !boot_ready() || busy() || (role_b && b_state != B_DONE)) return 0;
+    Obj fv = fade; if (fv && ((fade_loading && fade_loading(fv, NULL)) || (fade_done && fade_done(fv, NULL)))) return 0;
+    return !logo_t0_active();
 }
 static void tick(void) {
     if (prof_on && !role_b) prof_tick();
