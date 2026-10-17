@@ -22,6 +22,8 @@
 #include <unistd.h>
 #include <crt_externs.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <objc/runtime.h>
+#include <objc/message.h>
 
 static const struct symtab_command *symtab;
 static uintptr_t linkedit_base;
@@ -197,12 +199,46 @@ static void note_other_loaders(void) {
    it). Before Unity reads its window settings: the copy's own preferences domain is set windowed 960x540; a copy whose
    domain still says full screen after that is stopped here. DSL_NOTCH=0 (the notch fix makes the game cover the whole
    screen) unless the caller set it (notch_test). The owner's own domains are never written. */
+/* A test copy (LSBackgroundOnly) is never the front app: activation policy held at Prohibited (background-only).
+   LSUIElement copies still became the front app now and then (guard kills, 2026-10-17): the system can pick one when
+   the front app quits or hides, and a saved original activate IMP bypasses no-op swizzles. Demo copies
+   (DSRIG_SHOWWIN / DSRIG_SPACE) and DSRIG_LIVE are left alone. */
+#define MSG(ret, ...) ((ret (*)(__VA_ARGS__))objc_msgSend)
+static IMP o_policy, o_finish;
+static BOOL my_policy(id self, SEL s, long p) { (void)p; return ((BOOL (*)(id, SEL, long))o_policy)(self, s, 2); }
+static void hold_policy(id app) {
+    if (!app || MSG(long, id, SEL)(app, sel_registerName("activationPolicy")) == 2) return;
+    BOOL ok = ((BOOL (*)(id, SEL, long))o_policy)(app, sel_registerName("setActivationPolicy:"), 2);
+    dsl_log("screen: test copy: activation policy Prohibited (%s)", ok ? "ok" : "REFUSED");
+}
+static void my_finish(id self, SEL s) { hold_policy(self); ((void (*)(id, SEL))o_finish)(self, s); }
+/* batchmode never calls finishLaunching but still checks in with AppKit: held from a main run loop timer too */
+static void hold_tick(CFRunLoopTimerRef t, void *i) { (void)t; (void)i; id *a = (id *)dlsym(RTLD_DEFAULT, "NSApp"); if (a && *a) hold_policy(*a); }
+static void test_copy_noactivate(void) {
+    if (getenv("DSRIG_SHOWWIN") || getenv("DSRIG_SPACE") || getenv("DSRIG_LIVE")) return;
+    Class c = objc_getClass("NSApplication"); if (!c) { dsl_log("screen: NSApplication missing: activation policy not held"); return; }
+    Method m = class_getInstanceMethod(c, sel_registerName("setActivationPolicy:")), f = class_getInstanceMethod(c, sel_registerName("finishLaunching"));
+    if (!m || !f) return;
+    o_policy = method_setImplementation(m, (IMP)my_policy);
+    o_finish = method_setImplementation(f, (IMP)my_finish);
+    id *nsapp = (id *)dlsym(RTLD_DEFAULT, "NSApp"); if (nsapp && *nsapp) hold_policy(*nsapp);
+    CFRunLoopTimerRef tm = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.2, 0.5, 0, 0, hold_tick, NULL);
+    CFRunLoopAddTimer(CFRunLoopGetMain(), tm, kCFRunLoopCommonModes);
+}
+
 static void test_copy_window(void) {
     CFBundleRef mb = CFBundleGetMainBundle(); if (!mb) return;
     CFTypeRef bo = CFBundleGetValueForInfoDictionaryKey(mb, CFSTR("LSBackgroundOnly"));
     int bg = bo && ((CFGetTypeID(bo) == CFBooleanGetTypeID() && CFBooleanGetValue((CFBooleanRef)bo)) ||
                     (CFGetTypeID(bo) == CFStringGetTypeID() && CFStringCompare((CFStringRef)bo, CFSTR("1"), 0) == kCFCompareEqualTo));
+    const char *rd = getenv("DSRIG_DIR");
+    if (!bg && rd && *rd && !getenv("DSRIG_LIVE")) {     /* rig env without the hidden-app flag: a Dock app that can take focus */
+        dsl_log("screen: refused: a test copy (DSRIG_DIR set, no DSRIG_LIVE) must be a background-only app "
+                "(Info.plist LSBackgroundOnly, test/make_instance.sh): this copy does not start");
+        _exit(3);
+    }
     if (!bg) return;
+    test_copy_noactivate();
     CFStringRef dom = CFBundleGetIdentifier(mb); if (!dom) return;
     char db[200] = ""; CFStringGetCString(dom, db, sizeof db, kCFStringEncodingUTF8);
     if (!strcmp(db, "com.CanOpener.Dungeon-Settlers") || !strcmp(db, "com.CanOpener.Dungeon-Settlers.Modded")) { dsl_log("screen: test copy with the owner's bundle id %s: its settings are not touched", db); return; }
