@@ -170,6 +170,7 @@ void dsl_sos_windows_install(int hide, int stage, double sx, double sy) {
     swap_m("NSApplication", "finishLaunching", (IMP)my_finish, &o_finish, 0);
 }
 void dsl_sos_set_hidden(int on) { hidden = on; }
+int dsl_sos_windows_hidden(void) { return hidden; }   /* the notch fix's key-window override keeps a hidden B never key */
 
 void dsl_sos_frame_log(FILE *ff) {
     unsigned long n; id ws = windows(&n);

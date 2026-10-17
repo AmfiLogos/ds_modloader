@@ -293,7 +293,7 @@ static void test_copy_window(void) {
                 "(Info.plist LSBackgroundOnly, test/make_instance.sh): this copy does not start");
         _exit(3);
     }
-    if (!bg) return;
+    if (!bg) { dsl_log("screen: a player's copy (not background-only): quiet mode off"); return; }
     if (!getenv("DSRIG_LIVE")) test_copy_cap();
     test_copy_noactivate();
     if (!getenv("DSRIG_LIVE")) { extern void dsl_quiet_install(void); dsl_quiet_install(); }   /* dsl_quiet_mac.c */

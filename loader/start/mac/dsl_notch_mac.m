@@ -4,16 +4,55 @@
 // notch band), native full screen is turned off for it (a native full-screen window sits below the notch with a black
 // band), and while the game is the active app the Dock and the menu bar are hidden (presentation options 0xA) so the
 // auto-shown menu bar cannot slide over the notch band. Re-applied on window resize / move / key / main / exit full
-// screen and app activation, plus every 0.5 s for the first 20 s (40 tries) while Unity sets its window up.
+// screen and app activation, plus every 0.5 s for the first 20 s (40 tries) while Unity sets its window up. The
+// borderless game window stays able to be the key window (keyboard) and the main window.
 // Only on a screen with a notch (safeAreaInsets.top > 0): on other screens the window is left as the game made it.
 // Off: batchmode (no window), DSL_NOTCH=0.
 #import <AppKit/AppKit.h>
 #include "dsl_internal.h"
 #include "dsl_os.h"
+#include <objc/runtime.h>
+#include <dlfcn.h>
 #include <stdlib.h>
+#include <string.h>
 
 static BOOL applying;
 static int tries;
+
+/* NSWindow answers canBecomeKeyWindow / canBecomeMainWindow NO for a borderless window, and Unity's PlayerWindow
+   (6000.0.58) does not override them: once the game lost the key window (another app in front, e.g. the Mods window's
+   "open mods folder" showing Finder), it never got it back and the keyboard was dead until the game restarted
+   (owner, 2026-10-18 00:13). The game window stays able to be key / main, except in a hidden soft restart B
+   (dsl_soft_mac.c: never key / main while hidden) and when another module swapped NSWindow's answer (the test rig's
+   window hiding in multiplayer: never key / main). */
+int dsl_sos_windows_hidden(void);
+static BOOL pw_can_become(id self, SEL s) {
+    BOOL (*cur)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation([NSWindow class], s);
+    if (cur(self, s)) return YES;
+    if (dsl_sos_windows_hidden()) return NO;
+    Dl_info d, me; const char *img = dladdr((void *)cur, &d) && d.dli_fname ? d.dli_fname : "";
+    return strstr(img, "/AppKit.framework/") || (dladdr((void *)pw_can_become, &me) && me.dli_fname && !strcmp(img, me.dli_fname));
+}
+static void keep_key_able(NSWindow *w) {
+    static BOOL done; if (done) return; done = YES;
+    Class c = [w class];                                                  /* PlayerWindow (not a KVO subclass) */
+    for (NSString *sel in @[ @"canBecomeKeyWindow", @"canBecomeMainWindow" ]) {
+        SEL s = NSSelectorFromString(sel);
+        BOOL added = class_addMethod(c, s, (IMP)pw_can_become, "c@:");       /* NO: the game's class has its own */
+        dsl_log("notch: %s %s for %s", sel.UTF8String, added ? "kept on while borderless" : "is the game's own", class_getName(c));
+    }
+}
+/* the keyboard goes to the key window's first responder: what it is after each change (changes only, first 12) */
+static void log_keys(NSWindow *w, const char *why) {
+    static int n; static char last[300]; char cur[300];
+    NSWindow *k = NSApp.keyWindow;
+    snprintf(cur, sizeof cur, "key window %s (the game's %d, can be key %d), first responder %s, app active %d",
+             k ? object_getClassName(k) : "none", k == w, w.canBecomeKeyWindow, w.firstResponder ? object_getClassName(w.firstResponder) : "none",
+             NSApp.isActive);
+    if (!strcmp(cur, last) || n >= 12) return;
+    snprintf(last, sizeof last, "%s", cur); n++;
+    dsl_log("notch: keys (%s): %s%s", why, cur, n == 12 ? "; further changes not logged" : "");
+}
 
 static NSWindow *player_window(void) {
     Class pw = NSClassFromString(@"PlayerWindow");
@@ -67,6 +106,7 @@ static void apply_frame(void) {
         }
         NSRect f = s.frame;
         if (w.styleMask != NSWindowStyleMaskBorderless || !NSEqualRects(w.frame, f)) {
+            keep_key_able(w);
             w.styleMask = NSWindowStyleMaskBorderless;
             w.acceptsMouseMovedEvents = YES;
             [w setFrame:f display:YES];
@@ -91,20 +131,28 @@ static void apply_presentation(void) {
     NSApplicationPresentationOptions want = NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar;
     @try { if (NSApp.presentationOptions != want) NSApp.presentationOptions = want; } @catch (id e) { (void)e; }
 }
-static void apply(void) { apply_frame(); apply_presentation(); }
+static void apply(const char *why) {
+    apply_frame(); apply_presentation();
+    @try { NSWindow *w = player_window(); if (w) log_keys(w, why); } @catch (id e) { (void)e; }
+}
 
 void dsl_notch_start(void) {
     const char *e = getenv("DSL_NOTCH");
     if ((e && *e == '0') || dsl_os_batchmode()) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        apply();
+        apply("start");
         for (NSNotificationName n in @[ NSWindowDidResizeNotification, NSWindowDidMoveNotification, NSWindowDidBecomeKeyNotification,
                                        NSWindowDidBecomeMainNotification, NSWindowDidExitFullScreenNotification,
                                        NSApplicationDidBecomeActiveNotification ])
             [NSNotificationCenter.defaultCenter addObserverForName:n object:nil queue:NSOperationQueue.mainQueue
-                                                         usingBlock:^(NSNotification *note) { (void)note; apply(); }];
+                                                         usingBlock:^(NSNotification *note) { apply(note.name.UTF8String); }];
+        for (NSNotificationName n in @[ NSWindowDidResignKeyNotification, NSApplicationDidResignActiveNotification ])   /* log only */
+            [NSNotificationCenter.defaultCenter addObserverForName:n object:nil queue:NSOperationQueue.mainQueue
+                                                         usingBlock:^(NSNotification *note) {
+                @try { NSWindow *w = player_window(); if (w) log_keys(w, note.name.UTF8String); } @catch (id x) { (void)x; }
+            }];
         [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
-            apply();
+            apply("timer");
             if (++tries > 40) [t invalidate];
         }];
     });

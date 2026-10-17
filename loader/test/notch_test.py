@@ -4,12 +4,13 @@ module's DSRIG_HIDEWIN mode: alpha 0, never key, lowest level; the app never act
   off: DSL_NOTCH=0 -> the game's own window; on: the fix -> borderless window over the whole screen frame.
 Proof: dsload.log notch lines + the game's own screenshot (its size = the window's drawable) before / after, and the
 owner's real game prefs file unchanged. One rig lease. Needs a screen with a notch (safeAreaInsets.top > 0).
-  notch_test.py <mods dir with multiplayer>"""
+Keys: the fix keeps the borderless window able to be key, but the rig's window hiding (never key) still wins here.
+  [NOTCH_X=<copy, default Z>] notch_test.py <mods dir with multiplayer>"""
 import json, os, re, shutil, struct, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); L = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import lrig
-X = "Z"; MODS = os.path.abspath(sys.argv[1])
+X = os.environ.get("NOTCH_X", "Z"); MODS = os.path.abspath(sys.argv[1])
 OUT = os.path.join(L, "test_env", "notch_out", time.strftime("%Y%m%d-%H%M%S")); os.makedirs(OUT, exist_ok=True)
 res = []
 def log(*a): print("[notch]", *a, flush=True)
@@ -59,7 +60,10 @@ try:
         lines = [l for l in L_.splitlines() if "notch:" in l]
         log(run, "screenshot", shots[run], "| notch lines:", len(lines))
         if run == "off": check("off (DSL_NOTCH=0): window untouched", not lines)
-        else: check("on: game window made borderless over the whole screen", any("borderless over the whole screen" in l for l in lines), (lines or [""])[-1][-110:])
+        else:
+            check("on: game window made borderless over the whole screen", any("borderless over the whole screen" in l for l in lines), (lines or [""])[-1][-110:])
+            keys = [l for l in lines if "notch: keys" in l]
+            check("on: hidden copy never key (the rig's rule beats the fix)", keys and all("can be key 0" in l for l in keys), (keys or [""])[-1][-120:])
     sz = lambda s: tuple(int(x) for x in s.split()[0].split("x")) if s else None
     a, b = sz(wb.get("off")), sz(wb.get("on"))
     check("window after = the whole screen (notch band included), before = the game's own size", a and b and b != a and b[1] >= a[1], f"before {wb.get('off')} after {wb.get('on')}; game picture {shots}")
