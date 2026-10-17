@@ -690,18 +690,39 @@ static int a_fast;
 /* owner 2026-10-17: both logos, sped up so that the whole stock splash (2 logos x 2 s + fades, 4.5 s measured) plays in
    about 1.9 s, the time a fast boot has after the first scene starts; SplashScreen.SetTime moves the splash clock. */
 #define SPLASH_SPEED 2.4
+/* Windows (player report 2026-10-17, real PC: freeze at start, ErrorLog "GfxDeviceD3D11Base::WaitForLastPresentationAndGetTimestamp()
+   was called multiple times in a row without calling GfxDeviceD3D11Base::PresentFrame()"). UnityPlayer.dll 6000.0.58f2
+   (public symbols): until the startup splash is over, the player runs its own startup loop (no player loop): each
+   pass DrawSplashScreen(true) draws AND presents, then waits for the last presentation. SplashScreen.Begin and
+   SplashScreen.SetTime both call BeginSplashScreen(true) = "drawn by the player loop": DrawSplashScreen then draws
+   WITHOUT presenting, and the startup loop still waits -> two waits without a present -> that message, and D3D11's
+   wait (INFINITE) never returns. MainFlow.Awake runs inside that loop (first scene activation, then a 0.5 s fade), so
+   Begin from the next tick hit it every start (v0.1.9-v0.1.11). Our wine tests ran -batchmode -nographics (no splash,
+   no waits). On Windows: Begin / SetTime only once the player loop runs (Time.frameCount moved on by 2: the startup
+   loop never advances it); while the startup loop still fades the cancelled splash, CancelSplashScreen again
+   (it presents like the stock last pass, and ends that loop at once). The Mac keeps the order the owner checked. */
+#ifdef _WIN32
+#define SPLASH_WAIT_LOOP 1
+#else
+#define SPLASH_WAIT_LOOP 0
+#endif
 static void (*sp_begin)(void), (*sp_fade)(void), (*sp_settime)(float); static double sp_t0;
 static int sp_state, sp_on;                              /* 0 start, 1 cancelled, 2 drawing, 3 fading / over */
+static int sp_f0, sp_recancel;                           /* Windows: Time.frameCount at the cancel; re-cancelled once */
 static int splash_drawing(void) { return sp_on && splash_done && !splash_done(); }
 static void a_splash_tick(int title) {
     if (sp_state == 0) {
-        int running = splash_done && !splash_done();
-        if (running) splash_cancel();
-        sp_state = running && sp_begin ? 1 : 3;
-        SLOG("A: startup splash %s", !running ? "already over" : sp_state == 1 ? "cancelled: Unity draws it again over the boot from the first scene" : "cancelled (no splash: functions missing)");
+        int running = splash_done && !splash_done(), can = sp_begin && (!SPLASH_WAIT_LOOP || frame_count);
+        if (running && can) { splash_cancel(); if (frame_count) sp_f0 = frame_count(); }
+        sp_state = running && can ? 1 : 3;
+        SLOG("A: startup splash %s", !running ? "already over" : sp_state == 1 ? "cancelled: Unity draws it again over the boot from the first scene" : "left as it is (functions missing)");
         return;
     }
-    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; sp_t0 = since(); SLOG("A: splash begun in the first scene (%.1fx speed)", SPLASH_SPEED); return; }
+    if (sp_state == 1 && mf && SPLASH_WAIT_LOOP && frame_count() < sp_f0 + 2) {      /* Windows: Unity's startup loop still runs */
+        if (!sp_recancel && splash_done && !splash_done()) { splash_cancel(); sp_recancel = 1; SLOG("A: first scene up, startup splash fade cancelled (frame %d)", frame_count()); }
+        return;
+    }
+    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; sp_t0 = since(); SLOG("A: splash begun in the first scene (%.1fx speed, frame %d)", SPLASH_SPEED, frame_count ? frame_count() : -1); return; }
     if (sp_state == 2 && sp_settime && !title && splash_drawing()) sp_settime((float)((since() - sp_t0) * SPLASH_SPEED));
     if (sp_state == 2 && (title || !splash_drawing())) {
         int fin = !splash_drawing();
@@ -750,6 +771,16 @@ static void tick(void) {
 /* ------------------------------------------------------------------ install */
 /* constructor time, BEFORE dsload edits DYLD_INSERT_LIBRARIES */
 void dsl_soft_snapshot(const char *logdir) {
+    /* player kill switch, no rebuild: a file "safe_mode" (or "safe_mode.txt", what Explorer makes) in the log folder
+       (Windows: %LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded) = DSL_FASTBOOT=0 + DSL_PREWARM=0 + DSL_SOFT_NOFAST=1:
+       no bundle CRC skip, no boot speed-up / splash handling, no prewarmed game, a soft-restart B boots plainly */
+    for (int i = 0; i < 2; i++) {
+        char sm[1300]; snprintf(sm, sizeof sm, "%s/%s", logdir ? logdir : ".", i ? "safe_mode.txt" : "safe_mode");
+        if (access(sm, 0)) continue;
+        setenv("DSL_FASTBOOT", "0", 1); setenv("DSL_PREWARM", "0", 1); setenv("DSL_SOFT_NOFAST", "1", 1);
+        dsl_log("safe mode: %s found: fast boot, boot speed-up, splash handling and prewarm off", sm);
+        break;
+    }
     t_start = dsl_sos_proc_start();
     dsl_sos_snapshot();
     snprintf(sdir, sizeof sdir, "%s/softrestart", logdir); mkdir(sdir, 0755);
@@ -816,6 +847,7 @@ void dsl_soft_install(void) {
           set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
           sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_settime = icall("UnityEngine.Rendering.SplashScreen::SetTime"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
           splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
+          frame_count = icall("UnityEngine.Time::get_frameCount");
           if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
           else SLOG("A: boot speed-up off (game functions missing)");
       } }
