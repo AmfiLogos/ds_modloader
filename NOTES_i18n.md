@@ -155,8 +155,16 @@ BepInEx, MelonLoader (names: kept), Steam Cloud.
   `dsl_u8_setenv` (the label holds mod names, maybe translated). `DSL_BIE_REASON` stays `bie_env_text` (%XX).
 - Mac stub: `DSI_IMPLEMENTATION` before the `dsl_json.c` include (it pulls ds_i18n.h in first).
 - `ui/dsl_pkg.c`: "is ready" / "are ready" (TRN) / "could not be installed" texts.
-- en.json 207 keys (49 new, none translated yet: `loader/test/i18n/run.sh` fails "fr/ja: all keys resolve" until the
-  translation pass).
+- en.json 207 keys (49 new). Translated in all 9 languages (plain pass + one review per language: game terms, own terms,
+  the file's older wording, reason fragments inside "(...)", "Applications" = the Finder's own name). `i18n_tool.py check`
+  0 missing / 0 bad; `loader/test/i18n/run.sh` ok.
+- Game test (Mac, hidden 960x540 copy, notch fix off; en, ja, ru): title corner switch + "Update to 0.1.10" (local release
+  server), the "installs the next time" line after the click, the Mods window "is ready" / "could not be installed"
+  lines (DSL_PKG_TEST_INUSE; `.pending` made a file), the soft-restart strip, a starter notice line in B's corner: right
+  language, fits (the notice and the long Mods-window lines wrap to two lines). The starter's update window (440x110,
+  one-line label 392 px): all 10 languages fit (AppKit measure). Not run: the Windows window and the folder-path box
+  (wine). Test-only: the UI test registry copies a text into 160 bytes and can cut a CJK character (the screen has the
+  whole text).
 - `loader/ui/test/build_test.sh` (Windows part) and `loader/test/winbie/build.sh` do not build on main either (main's
   UTF-8 compat headers are not on their include path): not changed here.
 
