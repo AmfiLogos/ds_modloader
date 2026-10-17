@@ -142,12 +142,18 @@ static int hexeq(const unsigned char *a, const char *hex) {
 #define DSL_FB_DEFAULT 1
 #endif
 #endif
+/* DSL_FB_SPLASH has its own default: on on Windows too (owner 2026-10-17 evening: the stock splash flashes by in 2-3 s on
+   Windows; A's splash plays the logos at the stock pace over the boot). Its Windows freeze fix stays: SplashScreen.Begin
+   only once the player loop runs, and no SplashScreen.SetTime at all (dsl_soft.c). */
+#ifndef DSL_FB_SPLASH_DEFAULT
+#define DSL_FB_SPLASH_DEFAULT 1
+#endif
 int dsl_fastboot_part(const char *env) {
     const char *v = getenv(env);
     if (v && (*v == '0' || *v == '1')) return *v == '1';
     v = getenv("DSL_FASTBOOT");
     if (v && (*v == '0' || *v == '1')) return *v == '1';
-    return DSL_FB_DEFAULT;
+    return strcmp(env, "DSL_FB_SPLASH") ? DSL_FB_DEFAULT : DSL_FB_SPLASH_DEFAULT;
 }
 
 void dsl_fastboot_install(const char *logdir) {

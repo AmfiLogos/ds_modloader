@@ -596,6 +596,44 @@ static Obj layer(void) {
     Obj rt = tr_of(g);
     hset(&h_layer, rt); return rt;
 }
+/* the boot progress line (dsl_soft.c, A from the first scene to the title, owner 2026-10-17: the screen never looks
+   dead). The game's own loading screen draws only once its UI bundle is in (Mac: 7-8 s into the boot, after LoadFont):
+   before that this line is all there is under the Unity splash. Its own overlay canvas, plain Image quads (no sprite,
+   no font, no template), so it draws from the first scene on. Colours of the soft-restart strip (ui/dsl_progress.c);
+   bottom, above the game's NOW LOADING. frac < 0: removed. */
+static int kit_ok;
+static uintptr_t h_bb, h_bbfill;
+static Obj bb_quad(Obj parent, uint32_t rgba, V2 amin, V2 amax, V2 size, V2 pos) {
+    Obj g = new_go("dsl_boot_line", parent); Obj im = g ? comp_add(g, K.Image) : NULL;
+    if (!im) return NULL;
+    img_set(im, NULL, rgba_col(rgba, C_WHITE), 0);
+    rt_set(im, amin, amax, (V2){ 0, 0 }, size, pos);
+    return im;
+}
+void dsl_ui_boot_line(float frac) {
+    Obj root = hget(h_bb);
+    if (frac < 0) { if (root) { destroy_obj(go_of(root)); dsl_log("ui: boot progress line removed"); } hfree(&h_bb); hfree(&h_bbfill); return; }
+    if (!root) {
+        if (!kit_ok || !K.Canvas || !K.Image || !m_cv_mode) return;
+        Obj g = new_go("dsl_boot_line", NULL); Obj cv = g ? comp_add(g, K.Canvas) : NULL;
+        if (!cv) return;
+        if (m_obj_dontdestroy) CALL(m_obj_dontdestroy, void, Obj)(g, m_obj_dontdestroy);   /* kept over the boot -> title scene load */
+        CALL(m_cv_mode, void, Obj, int)(cv, 0, m_cv_mode);
+        if (m_cv_order) CALL(m_cv_order, void, Obj, int)(cv, 32000, m_cv_order);
+        Obj cs = comp_add(g, K.CanvasScaler);
+        if (cs && m_cs_mode) { CALL(m_cs_mode, void, Obj, int)(cs, 1, m_cs_mode); CALL(m_cs_ref, void, Obj, V2)(cs, (V2){ 1920, 1080 }, m_cs_ref);
+                               CALL(m_cs_match, void, Obj, float)(cs, 0.5f, m_cs_match); }
+        root = tr_of(g);
+        Obj frame = bb_quad(root, 0x9A6A4BFFu, (V2){ 0, 0 }, (V2){ 1, 0 }, (V2){ -256, 10 }, (V2){ 128, 120 });   /* copper */
+        Obj track = frame ? bb_quad(frame, 0x2A2530FFu, (V2){ 0, 0 }, (V2){ 1, 1 }, (V2){ 0, -4 }, (V2){ 0, 2 }) : NULL;   /* 6 high */
+        Obj fill = track ? bb_quad(track, 0xC98A52FFu, (V2){ 0, 0 }, (V2){ 0, 1 }, (V2){ 0, 0 }, (V2){ 0, 0 }) : NULL;
+        if (!fill) { destroy_obj(g); return; }
+        hset(&h_bb, root); hset(&h_bbfill, fill);
+        dsl_log("ui: boot progress line shown");
+    }
+    Obj fill = hget(h_bbfill); Obj rt = fill ? tr_of(fill) : NULL;
+    if (rt && isa(rt, K.RectTransform)) CALL(m_rt_amax, void, Obj, V2)(rt, (V2){ frac > 1 ? 1 : frac, 1 }, m_rt_amax);
+}
 /* a nested override-sorting canvas order (stock TooltipUI 10020; our layer 30900): raise a stock view above it */
 static void raise_view(Obj view, int order) {
     Obj cv = view && K.Canvas ? CALL(m_comp_inparent, Obj, Obj, Obj)(tr_of(view), type_of(K.Canvas), m_comp_inparent) : NULL;
@@ -1462,7 +1500,7 @@ static void fields_frame(void) {
     }
     for (int i = 0; i < ns; i++) { W *w = w_by_id(sub[i]); if (w && w->cb) w->cb(w->ud, w->rt); }
 }
-static int kit_ok, in_tick; static int32_t last_frame = -1;
+static int in_tick; static int32_t last_frame = -1;
 /* the game's language changed (the title's Options): fonts of the new language, title clones made again (their stock
    font and material for that language), then the loader relabels its texts and rebuilds an open Mods window */
 static void kit_lang_changed(void) {

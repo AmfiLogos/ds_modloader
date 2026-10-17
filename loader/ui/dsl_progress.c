@@ -71,11 +71,10 @@ static void step_text(const char *key, const char *arg, char *out, size_t cap, i
 }
 /* "Step n of m" of the title Apply: the steps dsl_soft.c reports (by their keys), in their order */
 static void step_of(const char *key, const char *text, char *out, size_t cap) {
-    static const char *const order[] = { "Starting the game with the new mods", "Loading %s", "Loading game data", "Loading fonts", "Loading menus", "Opening the title screen", "Done" };
+    static const char *const order[] = { "Preparing mods", "Loading %s", "Loading game data", "Loading fonts", "Loading menus", "Almost done", "Done" };
     int n = (int)(sizeof order / sizeof order[0]), k = 0;
     for (int i = 0; i < n; i++) if (!strcmp(key, order[i])) k = i + 1;
-    if (!k && !strcmp(key, "Switching to the new mods")) k = 1;
-    if (!k && !strcmp(key, "Loading the game")) k = 2;                    /* no mod names */
+    if (!k && !strcmp(key, "Loading mods")) k = 2;                        /* no mod names */
     if (k) snprintf(out, cap, TR("Step %d of %d \xC2\xB7 %s"), k, n, text); else snprintf(out, cap, "%s", text);
     dsi_utf8_fix_end(out);
 }

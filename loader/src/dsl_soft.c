@@ -198,11 +198,12 @@ static int my_start_mn(Obj self, const void *mi) {
 /* the same for every iterator nested in Refactor.Addressable.AddressableInitializer (LoadSheets, LoadFont, ...) */
 #define NIT 8
 static int (*o_it[NIT])(Obj, const void *); static const char *it_name[NIT]; static int32_t it_state[NIT], it_cur[NIT];
+static void a_boot_step(int pct);
 static void boot_step(const char *name) {                               /* the game's boot step -> progress (B) */
     static const struct { const char *k; int pct; const char *text; } S[] = {
         { "LoadSheets", 20, TR_NOOP("Loading game data") }, { "LoadFont", 30, TR_NOOP("Loading fonts") }, { "LoadCursor", 75, TR_NOOP("Loading game data") },
         { "LoadTiles", 77, TR_NOOP("Loading game data") }, { "LoadUIPrefabs", 80, TR_NOOP("Loading menus") } };
-    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) if (strstr(name, S[i].k)) { dsl_soft_progress(S[i].pct, S[i].text, NULL); return; }
+    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) if (strstr(name, S[i].k)) { dsl_soft_progress(S[i].pct, S[i].text, NULL); a_boot_step(S[i].pct); return; }
 }
 static int it_mn(int i, Obj self, const void *mi) {
     int s0 = it_state[i] >= 0 ? AT(self, it_state[i], int32_t) : -9; double t0 = since();
@@ -453,7 +454,7 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
     SLOG("A: APPLY profile %s (title%s%s)", profile ? profile : "", a_save[0] ? ", B opens " : "", a_save);
     fade_out(fade, NULL, 1, NULL);                                        /* the game's loading screen */
     if (fade_done && !fade_done(fade, NULL)) a_fade_seen_open = 1;
-    pg_pct = 0; snprintf(pg_text, sizeof pg_text, "%s", use_pw ? TR_NOOP("Switching to the new mods") : TR_NOOP("Starting the game with the new mods")); pg_arg[0] = 0;
+    pg_pct = 0; snprintf(pg_text, sizeof pg_text, "%s", TR_NOOP("Preparing mods")); pg_arg[0] = 0;
     if (use_pw && pw_state == PW_READY) pg_pct = 95;                       /* the prewarmed game is ready: only the swap is left */
     { char p[1300]; path_of(p, sizeof p, "progress"); if (!use_pw) unlink(p); }
     if (use_pw) {
@@ -462,7 +463,7 @@ int dsl_soft_apply(const char *profile, const char *env_lines) {
         pw_clear();
     } else {
         write_handoff(profile ? profile : "", 0, t_start + a_t0);        /* B starts now */
-        if (dsl_sos_spawn(profile ? profile : "", handoff_path, env_lines ? env_lines : "")) { a_fail(TR_NOOP("the restart could not begin")); return -1; }
+        if (dsl_sos_spawn(profile ? profile : "", handoff_path, env_lines ? env_lines : "")) { a_fail(TR_NOOP("the new mods could not start")); return -1; }
         SLOG("A: B started, pid %ld", dsl_sos_child_pid());
     }
     a_state = A_WAIT_READY;
@@ -475,8 +476,8 @@ static void a_tick(void) {
     if (a_state == A_IDLE || a_state == A_FAILED) { pw_tick(); return; }
     if (a_state == A_QUITTING) return;
     capture("A");
-    if (dsl_sos_child_exited()) { a_fail(TR_NOOP("the restarted game closed before it was ready")); return; }
-    if (t - a_t0 > env_num("DSL_SOFT_TIMEOUT", 90)) { a_fail(TR_NOOP("the restart took too long")); return; }
+    if (dsl_sos_child_exited()) { a_fail(TR_NOOP("the new mods stopped before they were ready")); return; }
+    if (t - a_t0 > env_num("DSL_SOFT_TIMEOUT", 90)) { a_fail(TR_NOOP("applying the mods took too long")); return; }
     Obj fv = fade; int up = fv && fade_done && fade_done(fv, NULL);
     if (!up) a_fade_seen_open = 1;
     a_progress_read(t);
@@ -576,7 +577,7 @@ static void b_tick(void) {
         if (boot_log && t - last_bl >= 0.5) { last_bl = t; SLOG("boot: frame %d scene %d bootReady %d busy %d", frame_count ? frame_count() : -1, sc, boot_ready(), busy()); }
         if (sc != 1 || !boot_ready() || busy()) return;
         SLOG("B: title ready (frame %d)", frame_count ? frame_count() : -1);
-        dsl_soft_progress(90, TR_NOOP("Opening the title screen"), NULL);
+        dsl_soft_progress(90, TR_NOOP("Almost done"), NULL);
         const char *save = json_str(hand, "save");
         if (save && *save && json_get(hand, "scene") && json_get(hand, "scene")->num == 2) {
             dsl_soft_progress(50, TR_NOOP("Opening your world"), NULL);
@@ -688,9 +689,11 @@ static int a_fast;
    scene back (MainFlow.Awake waits for it), so it is cancelled at the first tick and Unity's own splash is begun again as
    soon as the first scene runs (SplashScreen.Begin): Unity then draws it over the running boot by itself (no wait). At the title it ends with BeginSplashScreenFade (= SplashScreen.Stop(FadeOut)). Same logos, background,
    size, place and timing as the stock splash; it only ends early when the boot is done first. */
-/* owner 2026-10-17: both logos, sped up so that the whole stock splash (2 logos x 2 s + fades, 4.5 s measured) plays in
-   about 1.9 s, the time a fast boot has after the first scene starts; SplashScreen.SetTime moves the splash clock. */
-#define SPLASH_SPEED 2.4
+/* owner 2026-10-17 (evening): the sped-up logos (2.4x, SplashScreen.SetTime every tick) flashed by much too fast: the
+   logos play at the stock pace (2 logos x 2 s + fades), over the running boot, and still end at the title. No SetTime:
+   UnityPlayer.dll's SplashScreen_CUSTOM_SetTime calls BeginSplashScreen(true), which deletes the current logo's
+   Texture2D and loads it again from globalgamemanagers.assets.resS (8 MB each) - every tick; on D3D11 only the grey
+   clear was ever seen (VM 2026-10-17: "splash begun ... frame 2", no logo), on Metal the logos still showed. */
 /* Windows (player report 2026-10-17, real PC: freeze at start, ErrorLog "GfxDeviceD3D11Base::WaitForLastPresentationAndGetTimestamp()
    was called multiple times in a row without calling GfxDeviceD3D11Base::PresentFrame()"). UnityPlayer.dll 6000.0.58f2
    (public symbols): until the startup splash is over, the player runs its own startup loop (no player loop): each
@@ -707,7 +710,7 @@ static int a_fast;
 #else
 #define SPLASH_WAIT_LOOP 0
 #endif
-static void (*sp_begin)(void), (*sp_fade)(void), (*sp_settime)(float); static double sp_t0;
+static void (*sp_begin)(void), (*sp_fade)(void);
 static int sp_state, sp_on;                              /* 0 start, 1 cancelled, 2 drawing, 3 fading / over */
 static int sp_f0, sp_recancel;                           /* Windows: Time.frameCount at the cancel; re-cancelled once */
 static int splash_drawing(void) { return sp_on && splash_done && !splash_done(); }
@@ -723,12 +726,11 @@ static void a_splash_tick(int title) {
         if (!sp_recancel && splash_done && !splash_done()) { splash_cancel(); sp_recancel = 1; SLOG("A: first scene up, startup splash fade cancelled (frame %d)", frame_count()); }
         return;
     }
-    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; sp_t0 = since(); SLOG("A: splash begun in the first scene (%.1fx speed, frame %d)", SPLASH_SPEED, frame_count ? frame_count() : -1); return; }
-    if (sp_state == 2 && sp_settime && !title && splash_drawing()) sp_settime((float)((since() - sp_t0) * SPLASH_SPEED));
+    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; SLOG("A: splash begun in the first scene (stock pace, frame %d)", frame_count ? frame_count() : -1); return; }
     if (sp_state == 2 && (title || !splash_drawing())) {
         int fin = !splash_drawing();
         if (!fin && sp_fade) sp_fade();
-        SLOG("A: %s", fin ? "splash over before the title" : "title ready: splash fades out (BeginSplashScreenFade)"); sp_state = 3;
+        SLOG("A: %s", fin ? "splash over before the title" : "title shown: splash fades out (BeginSplashScreenFade)"); sp_state = 3;
     }
 }
 /* test: DSL_FASTBOOT_SHOTS=<dir> + DSL_SHOT_EVERY=<s>: the game's frame every s seconds from the first tick until 1 s after
@@ -737,16 +739,68 @@ static void shot_tick(int title) {
     static double next, until = -1; const char *sd = getenv("DSL_FASTBOOT_SHOTS"), *ev = getenv("DSL_SHOT_EVERY");
     if (!sd || !*sd || !ev || !*ev || !dsl_ready) return;
     double t = since();
-    if (title && until < 0) until = t + 1.0;
+    if (title && until < 0) until = t + 3.0;
     if ((until >= 0 && t > until) || t < next) return;
     next = t + atof(ev); char p[1300]; snprintf(p, sizeof p, "%s/f_%06.2f.png", sd, t); dsl_soft_shot(p);
 }
+/* the splash ends when the title is really shown: the game keeps its fade over a ready title for another 1.7 s and then
+   fades it in (with A's boot screen: the loading screen goes down); at most 3 s after the title is ready */
+static double title_at;
 static void a_fast_tick(void) {
-    if (!a_fast || !fast_on || !dsl_ready) return;
+    if (!dsl_ready) return;
     int title = mf && scene() == 1 && boot_ready() && !busy();
-    if (splash_cancel && a_part_splash) a_splash_tick(title);
+    if (title && title_at == 0) title_at = since();
+    if (splash_cancel && a_part_splash && sp_state < 3 && (a_fast || sp_state > 0)) {
+        Obj fv = fade;
+        a_splash_tick(title && (!fv || !fade_done || !fade_done(fv, NULL) || since() - title_at > 3));
+    }
+    if (!a_fast || !fast_on) return;
     if (title) { fast_end(); a_fast = 0; SLOG("A: boot done (title ready): frame cap and loading priority restored"); return; }
     fast_tick();
+}
+/* A's boot screen (owner 2026-10-17: the screen never looks dead between start and title). From the first scene to
+   the title the stock game shows only its plain fade colour (Mac 9 s, a Windows VM 10-20 s). Here the game's own
+   loading screen comes up there (ScreenFadeEffectView.AnimateFadeOut with its LoadingUI: the loading animation, a tip,
+   the percent), the same screen the game shows when a world loads; the boot steps (AddressableInitializer iterators,
+   boot_step) give the percent. The Unity splash (A's splash or the stock one) draws over it until its logos are done.
+   At the title the game fades its title in by itself. Off: DSL_BOOT_SCREEN=0 (and the safe_mode file). */
+static int bs_on, bs_state, bs_pct = 5; static double bs_t, bs_shown, bs_tick;
+void dsl_ui_boot_line(float frac);                                      /* src/dsl_ui.c */
+/* the line moves on its own between two steps (towards just under the next step, slower and slower): one step can
+   take 5-20 s (LoadFont: the game's CRC check of a 1.1 GB bundle), and a line that stands still looks dead again */
+static int bs_next(int p) { static const int st[] = { 5, 20, 30, 75, 77, 80, 100 }; for (int i = 0; i < 6; i++) if (p < st[i + 1]) return st[i + 1] - 1; return 100; }
+static void (*set_lprog)(Obj, float, const void *), (*refresh_tip)(Obj, const void *);
+static void a_boot_step(int pct) { if (!role_b && pct > bs_pct) bs_pct = pct; }
+static void a_boot_screen_tick(void) {
+    if (!bs_on || role_b || !dsl_ready || !mf) return;
+    Obj fv = fade; if (!fv) return;
+    double t = since();
+    int title = scene() == 1 && boot_ready() && !busy();
+    if (bs_state == 0) {
+        if (title || scene() > 1) { bs_state = 3; SLOG("A: boot screen: title already up"); return; }
+        static int f0 = -1;                                              /* Windows: only once the player loop runs (as A's splash) */
+        if (SPLASH_WAIT_LOOP && frame_count && (f0 < 0 ? (f0 = frame_count()), 1 : frame_count() < f0 + 2)) return;
+        fade_out(fv, NULL, 1, NULL); bs_state = 1; bs_t = t;
+        SLOG("A: boot screen: the game's loading screen up (frame %d)", frame_count ? frame_count() : -1);
+    }
+    if (bs_state == 1) {
+        static int tip_done, last = -1;
+        if (!tip_done && bs_pct >= 30 && refresh_tip) { refresh_tip(fv, NULL); tip_done = 1; }   /* tips: after the game's sheets */
+        int p = title ? 100 : bs_pct;
+        if (set_lprog && p != last) { set_lprog(fv, p / 100.f, NULL); last = p; }
+        double dt = bs_tick > 0 ? t - bs_tick : 0; bs_tick = t;
+        if (bs_shown < p) bs_shown = p;
+        else { double cap = bs_next(p); if (bs_shown < cap) bs_shown += (cap - bs_shown) * (dt * 0.3 > 1 ? 1 : dt * 0.3); }
+        dsl_ui_boot_line((float)(bs_shown / 100));
+        if (title) { SLOG("A: boot screen: title ready (%.1f s after the loading screen came up)", t - bs_t); bs_state = 2; bs_t = t; }
+        return;
+    }
+    if (bs_state == 2) {                                                  /* the game fades its title in by itself */
+        int up = fade_done && fade_done(fv, NULL);
+        if (up && t - bs_t < 6) return;
+        dsl_ui_boot_line(-1); bs_state = 3;
+        SLOG("A: boot screen: the game fades its title in (%.2f s after the title)%s", t - bs_t, up ? ", or 6 s passed" : "");
+    }
 }
 /* the title screen is idle and on screen: title scene, boot done, nothing loading, no loading screen / fade over it */
 int dsl_soft_title_idle(void) {
@@ -757,7 +811,7 @@ int dsl_soft_title_idle(void) {
 static void tick(void) {
     if (prof_on && !role_b) prof_tick();
     dsl_fastboot_tick();
-    if (!role_b) { shot_tick(dsl_ready && mf && scene() == 1 && boot_ready() && !busy()); a_fast_tick(); }
+    if (!role_b) { shot_tick(dsl_ready && mf && scene() == 1 && boot_ready() && !busy()); a_fast_tick(); a_boot_screen_tick(); }
     if (stage_on) dsl_sos_stage_check();                                 /* test stage: a window off the stage is never seen */
     if (role_b) b_tick(); else a_tick();
     double t = since();
@@ -779,8 +833,8 @@ void dsl_soft_snapshot(const char *logdir) {
         char sm[1300]; snprintf(sm, sizeof sm, "%s/%s", logdir ? logdir : ".", i ? "safe_mode.txt" : "safe_mode");
         if (access(sm, 0)) continue;
         setenv("DSL_FASTBOOT", "0", 1); setenv("DSL_PREWARM", "0", 1); setenv("DSL_SOFT_NOFAST", "1", 1);
-        setenv("DSL_FB_CRC", "0", 1); setenv("DSL_FB_SPLASH", "0", 1); setenv("DSL_FB_FPS", "0", 1); setenv("DSL_FB_BLP", "0", 1);
-        dsl_log("safe mode: %s found: fast boot, boot speed-up, splash handling and prewarm off", sm);
+        setenv("DSL_FB_CRC", "0", 1); setenv("DSL_FB_SPLASH", "0", 1); setenv("DSL_FB_FPS", "0", 1); setenv("DSL_FB_BLP", "0", 1); setenv("DSL_BOOT_SCREEN", "0", 1);
+        dsl_log("safe mode: %s found: fast boot, boot speed-up, splash handling, boot screen and prewarm off", sm);
         break;
     }
     t_start = dsl_sos_proc_start();
@@ -848,7 +902,7 @@ void dsl_soft_install(void) {
           set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
           set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
           set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
-          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_settime = icall("UnityEngine.Rendering.SplashScreen::SetTime"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
+          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
           splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
           frame_count = icall("UnityEngine.Time::get_frameCount");
           if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
@@ -868,6 +922,12 @@ void dsl_soft_install(void) {
     prof_on = getenv("DSL_BOOTPROF") && *getenv("DSL_BOOTPROF") == '1';
     if (prof_on && !role_b && icall) { boot_log = 1; boot_log_install(kmf, icall);
         splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); }
+    if (!role_b) {
+        const char *bv = getenv("DSL_BOOT_SCREEN"); bs_on = !(bv && *bv == '0');
+        set_lprog = meth("Refactor.UI", "ScreenFadeEffectView", "SetLoadingProgress", 1); refresh_tip = meth("Refactor.UI", "ScreenFadeEffectView", "RefreshLoadingTip", 0);
+        if (bs_on && !prof_on) boot_log_install(kmf, icall);             /* the boot steps -> the percent (no step log) */
+        SLOG("A: boot screen %s (progress %s)", bs_on ? "on" : "off (DSL_BOOT_SCREEN=0)", set_lprog ? "ok" : "MISSING");
+    }
     if (role_b) { boot_log = getenv("DSL_SOFT_BOOTLOG") && *getenv("DSL_SOFT_BOOTLOG") == '1'; boot_log_install(kmf, icall); }   /* progress steps; the step log only with DSL_SOFT_BOOTLOG */
     { void *kf = klass("Refactor.UI", "ScreenFadeEffectView"), *kl = klass("Refactor", "LoadingUI");
       off_lui = kf ? foff(kf, "_loadingUI") : -1; off_ptext = kl ? foff(kl, "_progressText") : -1; tmp_get = meth("TMPro", "TMP_Text", "get_text", 0); }

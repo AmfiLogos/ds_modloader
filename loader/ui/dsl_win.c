@@ -196,11 +196,11 @@ static void mods_sync(void) {
     int ch = changed();
     char s[600];
     if (read_only) snprintf(s, sizeof s, "%s", TR("Go back to the title screen to change mods."));
-    else if (applying) snprintf(s, sizeof s, "%s", TR("Restarting with the new mods..."));
+    else if (applying) snprintf(s, sizeof s, "%s", TR("Applying mods..."));
     else if (m_note[0]) snprintf(s, sizeof s, "%s", m_note);
     else if (busy && ch && !world_mode) snprintf(s, sizeof s, TR("Mods cannot change now: %s"), busy);
     else if (!ch && world_mode) snprintf(s, sizeof s, "%s", TR("Switch mods on or off, then Save. The world loads with these mods."));
-    else if (!ch) snprintf(s, sizeof s, "%s", TR("Switch mods on or off, then Apply. The game restarts in the background and brings you back here."));
+    else if (!ch) snprintf(s, sizeof s, "%s", TR("Switch mods on or off, then Apply."));
     else {
         char list[500] = "", one[200], t[500]; int k = 0;
         for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) {
@@ -455,7 +455,7 @@ static void mods_open(DSLObj root, float w, float h) {
     m_apply = named(U->button(root, w - 200, h - 52, 200, 44, al, apply_click, NULL), 0, "apply", apply_click, NULL, al);
     if (read_only) { U->set_active(m_apply, 0); U->set_active(m_undo, 0); U->set_active(m_save, 0); }
     else if (world_mode) U->tooltip(m_apply, al, TR("This world loads with these mods. The mods running now do not change."));
-    else U->tooltip(m_apply, al, TR("The game restarts in the background with these mods, behind a loading screen, and brings you back to the same place."));
+    else U->tooltip(m_apply, al, TR("Turns these mods on behind a loading screen and brings you back here."));
     mods_sync();
 }
 static void mods_update(void) {
@@ -474,7 +474,7 @@ static void apply_watch(void) {
         if (ld) { snprintf(fp, sizeof fp, "%s/softrestart/handoff.json.failed", ld);
                   FILE *f = fopen(fp, "r"); if (f) { size_t n = fread(why, 1, sizeof why - 1, f); why[n] = 0; fclose(f);
                                                        while (n && (why[n - 1] == '\n' || why[n - 1] == '\r')) why[--n] = 0; } }
-        snprintf(carry_note, sizeof carry_note, TR("The mods did not change: %s"), why[0] ? TR(why) : TR("the restart did not finish."));
+        snprintf(carry_note, sizeof carry_note, TR("The mods did not change: %s"), why[0] ? TR(why) : TR("the mods could not be applied."));
         dsi_utf8_fix_end(carry_note);
         dsl_log("win: the soft restart ended here without a swap: window opens with the reason");
         reopen_mark(0);
