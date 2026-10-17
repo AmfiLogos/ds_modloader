@@ -27,6 +27,7 @@ static uintptr_t linkedit_base;
 static char self_path[1024];
 
 /* ------------------------------------------------------------------ OS calls of the core */
+const char *dsl_os_native_path(const char *utf8, char *out, size_t n) { snprintf(out, n, "%s", utf8 ? utf8 : ""); return out; }
 const char *dsl_os_build_list(void) {
     static char known[512];
     if (!known[0]) for (size_t i = 0; i < sizeof DSL_BUILDS / sizeof DSL_BUILDS[0]; i++)

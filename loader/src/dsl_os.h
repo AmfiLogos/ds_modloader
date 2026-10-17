@@ -39,4 +39,7 @@ void *dsl_os_dlsym(void *h, const char *name);
 const char *dsl_os_dlerror(void);
 int dsl_os_batchmode(void);                              /* the game was started with -batchmode */
 void dsl_os_notice(const char *title, const char *msg);  /* one system notice (not in -batchmode) */
-void *dsl_ga_sym(const char *name);                      /* exported GameAssembly symbol (il2cpp API), NULL if none */
+void *dsl_ga_sym(const char *name);
+/* a path for a module's plain fopen: Mac as is; Windows the ANSI code page (the core's paths are UTF-8), or the
+   8.3 short form when a letter is outside it */
+const char *dsl_os_native_path(const char *utf8, char *out, size_t n);                      /* exported GameAssembly symbol (il2cpp API), NULL if none */

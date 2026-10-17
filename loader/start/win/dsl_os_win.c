@@ -6,6 +6,7 @@
 #include <bcrypt.h>
 #include <stdio.h>
 #include <string.h>
+#include "dsl_u8_names_win.h"                     /* last: paths and environment are UTF-8 (wide Windows calls) */
 
 /* GameAssembly.dll builds this loader knows (dsl_start_win.c reads the mapped image's PE header) */
 const char *dsl_os_build_list(void) { return "\"25846389\""; }
@@ -69,6 +70,18 @@ void dsl_os_notice(const char *title, const char *msg) {
     MultiByteToWideChar(CP_UTF8, 0, msg, -1, n->m, 1024);
     HANDLE h = CreateThread(NULL, 0, notice_thread, n, 0, NULL);
     if (h) CloseHandle(h); else HeapFree(GetProcessHeap(), 0, n);
+}
+
+const char *dsl_os_native_path(const char *utf8, char *out, size_t n) {
+    wchar_t w[2048], s[2048]; BOOL lossy = FALSE;
+    snprintf(out, n, "%s", utf8 ? utf8 : "");
+    if (!utf8 || dsl_u8_to_w(utf8, w, 2048)) return out;
+    if (WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, w, -1, out, (int)n, NULL, &lossy) && !lossy) return out;
+    DWORD k = GetShortPathNameW(w, s, 2048);
+    lossy = FALSE;
+    if (k && k < 2048 && WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, s, -1, out, (int)n, NULL, &lossy) && !lossy) return out;
+    snprintf(out, n, "%s", utf8);                             /* nothing better: as is */
+    return out;
 }
 
 void *dsl_ga_sym(const char *name) {
