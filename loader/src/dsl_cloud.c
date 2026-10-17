@@ -44,7 +44,10 @@
 
 static char saves_d[1100], mods_d[1100], state_p[1200], backups_d[1200], game_saves[1100];
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
-static char status_s[300] = "Cloud backup starts once Steam is ready.";
+/* the status is kept as a code + its numbers (set on the cloud thread) and made into text by whoever shows it (main
+   thread, in the game's language; dsl_cloud_status). The log line stays English. */
+enum { CS_STARTS, CS_WAIT_STEAM, CS_OFF_CLOUD, CS_WAIT_FOLDER, CS_PAUSED, CS_FAILED, CS_OK, CS_NO_STEAM, CS_OFF_ENV };
+static int st_code = CS_STARTS, st_n; static char st_tm[16];
 int dsl_cloud_rdel, dsl_cloud_passes, dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
 
 static struct {
@@ -61,15 +64,45 @@ static struct {
     bool (*app)(void *);
 } A;
 
-static void set_status(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-static void set_status(const char *fmt, ...) {
-    char b[300]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
-    pthread_mutex_lock(&mu);
-    int changed = strcmp(b, status_s) != 0; snprintf(status_s, sizeof status_s, "%s", b);
-    pthread_mutex_unlock(&mu);
-    if (changed) dsl_log("cloud: %s", b);
+/* tr = 1: the game's language (TR / TRN; main thread only), 0: English (the log; tests look for "cloud: Cloud backup: ") */
+#define T_(s) (tr ? TR(s) : (s))
+static void status_text(int code, int n, const char *tm, int tr, char *b, size_t cap) {
+    switch (code) {
+    case CS_WAIT_STEAM: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is waiting for Steam."))); break;
+    case CS_OFF_CLOUD: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is off: Steam Cloud is turned off for this game or this account."))); break;
+    case CS_WAIT_FOLDER: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is waiting: the modded save folder is missing."))); break;
+    case CS_PAUSED:
+        snprintf(b, cap, tr ? TRN("Cloud backup paused: Steam Cloud is almost full, so %d save is only on this computer. The game's own saves get the space first.",
+                                  "Cloud backup paused: Steam Cloud is almost full, so %d saves are only on this computer. The game's own saves get the space first.", n)
+                    : n == 1 ? "Cloud backup paused: Steam Cloud is almost full, so %d save is only on this computer. The game's own saves get the space first."
+                             : "Cloud backup paused: Steam Cloud is almost full, so %d saves are only on this computer. The game's own saves get the space first.", n);
+        break;
+    case CS_FAILED:
+        snprintf(b, cap, tr ? TRN("Cloud backup failed for %d save at %s. It will try again in a moment.", "Cloud backup failed for %d saves at %s. It will try again in a moment.", n)
+                    : n == 1 ? "Cloud backup failed for %d save at %s. It will try again in a moment." : "Cloud backup failed for %d saves at %s. It will try again in a moment.", n, tm);
+        break;
+    case CS_OK:
+        snprintf(b, cap, tr ? TRN("Cloud backup: %d save in your Steam Cloud, checked at %s.", "Cloud backup: %d saves in your Steam Cloud, checked at %s.", n)
+                    : n == 1 ? "Cloud backup: %d save in your Steam Cloud, checked at %s." : "Cloud backup: %d saves in your Steam Cloud, checked at %s.", n, tm);
+        break;
+    case CS_NO_STEAM: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is off: Steam is not running."))); break;
+    case CS_OFF_ENV: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is off (DSL_CLOUD=0)."))); break;
+    default: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup starts once Steam is ready."))); break;
+    }
+    if (tr) dsi_utf8_fix_end(b);
 }
-void dsl_cloud_status(char *out, size_t cap) { pthread_mutex_lock(&mu); snprintf(out, cap, "%s", status_s); pthread_mutex_unlock(&mu); }
+#undef T_
+static void set_status(int code, int n, const char *tm) {
+    pthread_mutex_lock(&mu);
+    int changed = code != st_code || n != st_n || strcmp(tm ? tm : "", st_tm);
+    st_code = code; st_n = n; snprintf(st_tm, sizeof st_tm, "%s", tm ? tm : "");
+    pthread_mutex_unlock(&mu);
+    if (changed) { char b[300]; status_text(code, n, tm ? tm : "", 0, b, sizeof b); dsl_log("cloud: %s", b); }
+}
+void dsl_cloud_status(char *out, size_t cap) {
+    pthread_mutex_lock(&mu); int c = st_code, n = st_n; char tm[16]; snprintf(tm, sizeof tm, "%s", st_tm); pthread_mutex_unlock(&mu);
+    status_text(c, n, tm, 1, out, cap);
+}
 
 /* ------------------------------------------------------------------ files */
 static int is_json(const char *n) { size_t l = strlen(n); return l > 5 && !strcmp(n + l - 5, ".json"); }
@@ -223,8 +256,8 @@ int dsl_cloud_pass(void) {
 }
 static int pass_locked(void) {
     void *rs = A.get ? A.get() : NULL;
-    if (!rs) { set_status("Cloud backup is waiting for Steam."); return 1; }
-    if (!A.acc(rs) || !A.app(rs)) { set_status("Cloud backup is off: Steam Cloud is turned off for this game or this account."); return 1; }
+    if (!rs) { set_status(CS_WAIT_STEAM, 0, NULL); return 1; }
+    if (!A.acc(rs) || !A.app(rs)) { set_status(CS_OFF_CLOUD, 0, NULL); return 1; }
     dsl_cloud_passes++;
     state_load(); nE = 0;
     int ours_n = 0; uint64_t ours_bytes = 0;
@@ -237,7 +270,7 @@ static int pass_locked(void) {
     }
     time_t now = time(NULL); int busy = 0;
     DIR *d = opendir(saves_d); struct dirent *de;
-    if (!d) { set_status("Cloud backup is waiting: the modded save folder is missing."); return 1; }
+    if (!d) { set_status(CS_WAIT_FOLDER, 0, NULL); return 1; }
     {
         while ((de = readdir(d))) {
             if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
@@ -310,9 +343,9 @@ static int pass_locked(void) {
     }
     state_save();
     char tm[16]; time_t t = time(NULL); strftime(tm, sizeof tm, "%H:%M", localtime(&t));
-    if (space) set_status("Cloud backup paused: Steam Cloud is almost full, so %d save%s only on this computer. The game's own saves get the space first.", space, space == 1 ? " is" : "s are");
-    else if (fails) set_status("Cloud backup failed for %d save%s at %s. It will try again in a moment.", fails, fails == 1 ? "" : "s", tm);
-    else set_status("Cloud backup: %d save%s in your Steam Cloud, checked at %s.", ours_n, ours_n == 1 ? "" : "s", tm);
+    if (space) set_status(CS_PAUSED, space, NULL);
+    else if (fails) set_status(CS_FAILED, fails, tm);
+    else set_status(CS_OK, ours_n, tm);
     (void)busy;
     return 0;
 }
@@ -348,7 +381,7 @@ static void *cloud_thread(void *arg) {
     (void)arg;
     int every = getenv("DSL_CLOUD_EVERY") ? atoi(getenv("DSL_CLOUD_EVERY")) : 30; if (every < 1) every = 30;
     for (int tries = 0; ; tries++) {
-        if (!A.get && api_bind()) { if (tries == 60) set_status("Cloud backup is off: Steam is not running."); sleep(5); continue; }
+        if (!A.get && api_bind()) { if (tries == 60) set_status(CS_NO_STEAM, 0, NULL); sleep(5); continue; }
         dsl_cloud_pass();
         sleep((unsigned)every);
     }
@@ -451,22 +484,24 @@ int dsl_cloud_import(const char *g, int replace, char *mwhen, size_t mcap) {
 static int cur;
 static void ask(void);
 static void on_replace(void *ud, DSLObj w);
-static void done_box(const char *msg) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(msg, "OK", NULL, NULL, NULL, NULL); }
+static void done_box(const char *msg) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(msg, TR("OK"), NULL, NULL, NULL, NULL); }
 static void import_now(int replace) {
     char mw[24];
     int n = dsl_cloud_import(W[cur].guid, replace, mw, sizeof mw);
     if (n == -2) {
         const DSLUi *u = dsl_ui_kit(); if (!u) return;
         char t[900];
-        snprintf(t, sizeof t, "Your modded saves already have %s (last saved %s), with its own progress. Replace it with the "
-                 "game's %s (last saved %s)?\n\nYour modded %s is kept as a copy in:\n%s",
+        snprintf(t, sizeof t, TR("Your modded saves already have %s (last saved %s), with its own progress. Replace it with the "
+                 "game's %s (last saved %s)?\n\nYour modded %s is kept as a copy in:\n%s"),
                  W[cur].clan, mw[0] ? mw : "?", W[cur].clan, W[cur].when, W[cur].clan, backups_d);
-        u->notice(t, "Replace", "Keep mine", on_replace, NULL, NULL);
+        dsi_utf8_fix_end(t);
+        u->notice(t, TR("Replace"), TR("Keep mine"), on_replace, NULL, NULL);
         return;
     }
-    if (n < 0) snprintf(import_msg, sizeof import_msg, "Could not import %s. The details are in dsload.log.", W[cur].clan);
-    else if (n == 0) snprintf(import_msg, sizeof import_msg, "%s is already in your modded saves.", W[cur].clan);
-    else snprintf(import_msg, sizeof import_msg, "%s imported (%d save%s). You can open it from Load Campaign.", W[cur].clan, n, n == 1 ? "" : "s");
+    if (n < 0) snprintf(import_msg, sizeof import_msg, TR("Could not import %s. The details are in dsload.log."), W[cur].clan);
+    else if (n == 0) snprintf(import_msg, sizeof import_msg, TR("%s is already in your modded saves."), W[cur].clan);
+    else snprintf(import_msg, sizeof import_msg, TRN("%s imported (%d save). You can open it from Load Campaign.", "%s imported (%d saves). You can open it from Load Campaign.", n), W[cur].clan, n);
+    dsi_utf8_fix_end(import_msg);
     done_box(import_msg);
 }
 static void on_replace(void *ud, DSLObj w) { (void)ud; (void)w; if (cur >= 0 && cur < nW) import_now(1); }
@@ -475,19 +510,30 @@ static void on_next(void *ud, DSLObj w) { (void)ud; (void)w; if (++cur < nW) ask
 static void ask(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || cur >= nW) return;
     char t[700], st[300]; dsl_cloud_status(st, sizeof st);
-    snprintf(t, sizeof t, "Import %s from the game? (%d save%s, last saved %s)\n\nThis copies the world. The game's own save is not "
+    snprintf(t, sizeof t, TRN("Import %s from the game? (%d save, last saved %s)\n\nThis copies the world. The game's own save is not "
              "changed, and your modded saves never show up in the game's Load list.%s%s",
-             W[cur].clan, W[cur].n, W[cur].n == 1 ? "" : "s", W[cur].when, cur == 0 ? "\n\n" : "", cur == 0 ? st : "");
-    u->notice(t, "Import", cur + 1 < nW ? "Next world" : "Close", on_import, on_next, NULL);
+                              "Import %s from the game? (%d saves, last saved %s)\n\nThis copies the world. The game's own save is not "
+             "changed, and your modded saves never show up in the game's Load list.%s%s", W[cur].n),
+             W[cur].clan, W[cur].n, W[cur].when, cur == 0 ? "\n\n" : "", cur == 0 ? st : "");
+    dsi_utf8_fix_end(t);
+    u->notice(t, TR("Import"), cur + 1 < nW ? TR("Next world") : TR("Close"), on_import, on_next, NULL);
 }
 static void on_title(void *ud) {
     (void)ud; scan_game(); cur = 0;
     if (!nW) { char st[300], t[500]; dsl_cloud_status(st, sizeof st);
-               snprintf(t, sizeof t, "%s\n\n%s", game_saves[0] ? "No saves found in the game's own save folder." : "The game's save folder is not known here.", st);
+               snprintf(t, sizeof t, "%s\n\n%s", game_saves[0] ? TR("No saves found in the game's own save folder.") : TR("The game's save folder is not known here."), st);
+               dsi_utf8_fix_end(t);
                done_box(t); return; }
     ask();
 }
 
+/* the title button "Import a save" (registered again after a language change: the kit relabels it) */
+static DSLHost *title_host;
+static void title_button(DSLHost *host) {
+    title_host = host;
+    host->title_add_button(NULL, TR("Import a save"), 110, TR("Copy a world from the game's own saves into your modded saves. The game's save is not changed."), on_title, NULL);
+}
+void dsl_cloud_lang_changed(void) { if (title_host && title_host->title_add_button) title_button(title_host); }
 /* after il2cpp_init (the title button) and before the game's Steam start (the thread waits for it) */
 void dsl_cloud_install(DSLHost *host) {
     const char *d = getenv("DSML_DATA");
@@ -497,9 +543,9 @@ void dsl_cloud_install(DSLHost *host) {
     const char *g = getenv("DSML_GAME_SAVES"); if (g && *g) snprintf(game_saves, sizeof game_saves, "%s", g);
     mkdir(mods_d, 0755);
     if (host && host->title_add_button)                       /* the Mods window shows only mods (owner 2026-10-16 #14) */
-        host->title_add_button(NULL, "Import a save", 110, "Copy a world from the game's own saves into your modded saves. The game's save is not changed.", on_title, NULL);
+        title_button(host);
     const char *off = getenv("DSL_CLOUD");
-    if (off && !strcmp(off, "0")) { set_status("Cloud backup is off (DSL_CLOUD=0)."); return; }
+    if (off && !strcmp(off, "0")) { set_status(CS_OFF_ENV, 0, NULL); return; }
     pthread_t th; if (pthread_create(&th, NULL, cloud_thread, NULL)) { dsl_log("cloud: thread failed"); return; }
     pthread_detach(th);
     dsl_log("cloud: on (%s -> Steam Cloud " PFX "*, import from %s)", saves_d, game_saves[0] ? game_saves : "(none)");

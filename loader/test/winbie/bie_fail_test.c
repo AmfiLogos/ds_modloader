@@ -2,6 +2,8 @@
 //   bie_fail_test.exe unzip <zip> <dest>          -> prints "unzip <rc>" (must not crash on a damaged zip)
 //   bie_fail_test.exe install <root> <game>       -> prints "install <rc> installed <0|1> why <text>"
 #include "bie_win.h"
+#define DSI_IMPLEMENTATION                   /* bie_win.c's TR() (no language file: English) */
+#include "ds_i18n.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>

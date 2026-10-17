@@ -148,18 +148,18 @@ static int fetch_unpack(const char *root, const char *game, const wchar_t *url, 
         wchar_t wz[1300]; MultiByteToWideChar(CP_ACP, 0, zp, -1, wz, 1300);
         lg("%s: downloading", what);
         HRESULT r = URLDownloadToFileW(NULL, url, wz, 0, NULL);
-        if (r != S_OK) { snprintf(why, wn, "%s could not be downloaded (error %#lx). Check the internet connection.", what, (unsigned long)r); return -1; }
+        if (r != S_OK) { snprintf(why, wn, TR("%s could not be downloaded (error %#lx). Check the internet connection."), what, (unsigned long)r); return -1; }
         z = (unsigned char *)slurp(zp, &n);
-        if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) { free(z); lg("%s: download sha256 %s, expected %s", what, h, sha); snprintf(why, wn, "The %s download is damaged. Try again.", what); return -1; }
+        if (!z || sha256_hex(z, n, h) || strcmp(h, sha)) { free(z); lg("%s: download sha256 %s, expected %s", what, h, sha); snprintf(why, wn, TR("The %s download is damaged. Try again."), what); return -1; }
     }
     int k = unzip_to(z, n, game); free(z);
     if (k <= 0) {                                            /* half unpacked: its proxy DLL goes, so the game starts without it */
         char pp[1200]; snprintf(pp, sizeof pp, "%s\\%s", game, proxy); DeleteFileA(pp);
-        snprintf(why, wn, "%s could not be unpacked into the game copy (disk full?). The game starts without it.", what);
+        snprintf(why, wn, TR("%s could not be unpacked into the game copy (disk full?). The game starts without it."), what);
         lg("%s: unpack failed (%d): %s removed, no completion marker", what, k, proxy); return -1;
     }
     FILE *f = fopen(mp, "wb"); int ok = f && fprintf(f, "%s\n", zipname) > 0; if (f && fclose(f)) ok = 0;
-    if (!ok) { DeleteFileA(mp); snprintf(why, wn, "%s could not be marked as installed (disk full?).", what); return -1; }
+    if (!ok) { DeleteFileA(mp); snprintf(why, wn, TR("%s could not be marked as installed (disk full?)."), what); return -1; }
     lg("%s installed in %s (%d files)", what, game, k);
     return 0;
 }
@@ -371,10 +371,10 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
     json_free(prof);
     /* MelonLoader mods: one .NET host per start (BepInEx wins), installed at first use, off through its setting file */
     char mwhy[600] = "";
-    if (nm && nw) { snprintf(mwhy, sizeof mwhy, "BepInEx mods and MelonLoader mods cannot run together: the MelonLoader mods are off this time."); nm = 0; }
+    if (nm && nw) { snprintf(mwhy, sizeof mwhy, "%s", TR("BepInEx mods and MelonLoader mods cannot run together: the MelonLoader mods are off this time.")); nm = 0; }
     if (nm && ml_install(root, game, mwhy, sizeof mwhy)) nm = 0;
     if (mwhy[0]) lg("melon: OFF: %s", mwhy);
-    SetEnvironmentVariableA("DSL_ML_REASON", mwhy[0] ? mwhy : NULL);   /* the Mods window's "Not running: <reason>" */
+    bie_env_text("DSL_ML_REASON", mwhy);                               /* the Mods window's "Not running: <reason>" */
     if (ml_installed(game)) {
         char mdir[1300], moff[1300]; snprintf(mdir, sizeof mdir, "%s\\Mods", game); snprintf(moff, sizeof moff, "%s\\Mods_off", game);
         sync_mods(mods, mdir, moff, mwant, nm, 1, "melon");
@@ -391,6 +391,14 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
 }
 
 /* environment of a game process we start: Doorstop's own variables never pass on; DOORSTOP_DISABLE per the set */
+void bie_env_text(const char *name, const char *utf8) {
+    if (!utf8 || !*utf8) { SetEnvironmentVariableA(name, NULL); return; }
+    char b[2400]; size_t o = 0;
+    for (const unsigned char *c = (const unsigned char *)utf8; *c && o + 4 < sizeof b; c++)
+        if (*c >= 0x80 || *c == '%') o += (size_t)snprintf(b + o, sizeof b - o, "%%%02X", *c); else b[o++] = (char)*c;
+    b[o] = 0;
+    SetEnvironmentVariableA(name, b);
+}
 int bie_env_keep(const wchar_t *line) { return _wcsnicmp(line, L"DOORSTOP_", 9) != 0; }
 
 /* for dsl_bie_win.c (the core's BepInEx calls) */

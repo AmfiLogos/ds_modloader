@@ -62,30 +62,24 @@ MGMT_KEYS = (
     "GAMESYSTEM_Management_ResearchRequiredWorkloadFactorByDifficulty",
 )
 
-COMBAT_DESC_EN = (
-    "Do not play this difficulty. We warned you. Enemies have old Devastation "
-    "health and attack, plus current Devastation move speed, attack speed, crit, "
-    "dodge, and crit damage.\n"
-    "Allies get no crit or dodge bonus.\n"
-    "Ironman Mode is forcibly enabled."
-)
-COMBAT_DESC_FR = (
-    "Ne jouez pas à ce niveau de difficulté. Nous vous avons prévenus. "
-    "Les ennemis ont la santé et l'attaque de l'ancienne Dévastation, plus la "
-    "vitesse, le critique, l'esquive et les dégâts critiques de la Dévastation actuelle.\n"
-    "Les alliés n'ont aucun bonus de critique ni d'esquive.\n"
-    "Le mode Ironman est activé de force."
-)
-MGMT_DESC_EN = (
-    "Management uses demo 0.3.26 Devastation costs.\n"
-    "Crafting, construction, and research cost <color=#f16071>1.66x</color> Hard.\n"
-    "<color=#f16071>Even small waste can lead to downfall</color>."
-)
-MGMT_DESC_FR = (
-    "La gestion reprend les coûts de la Dévastation de la démo 0.3.26.\n"
-    "Fabrication, construction et recherche coûtent <color=#f16071>1,66x</color> Difficile.\n"
-    "<color=#f16071>Même un faible gaspillage peut mener à la ruine</color>."
-)
+# The Hell rows' texts, one per game language: ../lang/hell_texts.json (key -> {code -> text}; "" = that language keeps
+# the copied Downfall cell, with Devastation's colour tag made Hell's, as before). Game language code -> TextKeyTable
+# column (Refactor.Setting.LanguageType; pt-BR: an empty PortugueseBrazil cell shows the Portuguese one in the game).
+HELL_TEXTS = HERE.parent / "lang" / "hell_texts.json"
+LANG_COLUMN = {"en": "English", "ko": "Korean", "fr": "French", "de": "German", "ru": "Russian",
+               "zh-Hans": "ChineseSimplified", "zh-Hant": "ChineseTraditional", "ja": "Japanese",
+               "es": "Spanish", "pt-BR": "PortugueseBrazil"}
+
+
+def hell_texts() -> dict:
+    import json
+    t = json.loads(HELL_TEXTS.read_text(encoding="utf-8"))
+    for key in ("TEXTKEY_CreateCampaign_5Difficulty", "TEXTKEY_CreateCampaign_5CombatDifficulty_DESC",
+                "TEXTKEY_CreateCampaign_5ManagementDifficulty_DESC"):
+        if not (t.get(key) or {}).get("en"):
+            sys.exit("%s: no English text for %s" % (HELL_TEXTS, key))
+    return t
+
 
 GAME_APP = Path.home() / (
     "Library/Application Support/Steam/steamapps/common/"
@@ -274,13 +268,19 @@ def extend_array(row, extra: float) -> None:
     row["FloatValues"] = fv
 
 
-def clone_text(src, new_key: str, en: str, fr: str) -> dict:
+def clone_text(src, new_key: str, texts: dict) -> dict:
+    """a copy of the Downfall row src as new_key; texts = {game language code: text} (hell_texts.json)"""
     row = copy.deepcopy(src)
     row["Key"] = new_key
-    row["English"] = en
-    row["French"] = fr
+    given = {"Key"}
+    for code, col in LANG_COLUMN.items():
+        if texts.get(code):
+            if col not in row:
+                sys.exit("TextKeyTable has no %s column (language %s)" % (col, code))
+            row[col] = texts[code]
+            given.add(col)
     for lang, val in list(row.items()):
-        if lang in ("Key", "English", "French"):
+        if lang in given:
             continue
         if val not in ("", "NULL", None) and "<color=#f16071>Devastation</color>" in str(val):
             row[lang] = "<color=#f16071>Hell</color>"
@@ -323,13 +323,11 @@ def edit_tables(env) -> None:
     if not (src_name and src_c and src_m):
         sys.exit("missing Downfall text keys")
     existing = {r["Key"] for r in tk["tableDatas"]}
+    ht = hell_texts()
     new_rows = [
-        clone_text(src_name, "TEXTKEY_CreateCampaign_5Difficulty",
-                   "<color=#f16071>Hell</color>", "<color=#f16071>Hell</color>"),
-        clone_text(src_c, "TEXTKEY_CreateCampaign_5CombatDifficulty_DESC",
-                   COMBAT_DESC_EN, COMBAT_DESC_FR),
-        clone_text(src_m, "TEXTKEY_CreateCampaign_5ManagementDifficulty_DESC",
-                   MGMT_DESC_EN, MGMT_DESC_FR),
+        clone_text(src_name, "TEXTKEY_CreateCampaign_5Difficulty", ht["TEXTKEY_CreateCampaign_5Difficulty"]),
+        clone_text(src_c, "TEXTKEY_CreateCampaign_5CombatDifficulty_DESC", ht["TEXTKEY_CreateCampaign_5CombatDifficulty_DESC"]),
+        clone_text(src_m, "TEXTKEY_CreateCampaign_5ManagementDifficulty_DESC", ht["TEXTKEY_CreateCampaign_5ManagementDifficulty_DESC"]),
     ]
     for r in new_rows:
         if r["Key"] in existing:

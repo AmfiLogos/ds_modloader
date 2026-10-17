@@ -165,7 +165,9 @@ typedef struct DSLHost {
     int (*menu_open)(const char *tab_id);     /* open the Mods window at that tab (NULL = Mods); 0 = ok */
 
     /* Title screen button in the stock column style (clone of SubUI_TitleMenuButton), below the stock column and the
-       multiplayer clones. order: lower = higher up (the loader's "Mods" = 100). tip = game tooltip body or NULL. */
+       multiplayer clones. order: lower = higher up (the loader's "Mods" = 100). tip = game tooltip body or NULL.
+       Calling it again with the same self, click and ud gives that button a new label / tip (e.g. after the game's
+       language changed) instead of adding a second button. */
     int (*title_add_button)(DSLPlugin *self, const char *label, int order, const char *tip,
                             void (*click)(void *ud), void *ud);
 

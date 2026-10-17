@@ -47,6 +47,8 @@ mkdir -p $K/files/mods
 cp kit/install.bat kit/uninstall.bat kit/README.txt $K/
 cp kit/find_game.bat kit/copy_exclude.txt $K/files/
 cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
+# the loader's texts (lang/<code>.json): install.bat puts them next to the loader, ROOT\game\lang (the starter reads them too)
+LJ=($L/lang/*.json(N)); if (( ${#LJ} )); then mkdir -p $K/files/lang; cp $LJ $K/files/lang/; fi
 print 25846389 > $K/files/BUILD.txt
 stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done

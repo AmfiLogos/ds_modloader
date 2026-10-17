@@ -1,4 +1,5 @@
-// Minimal JSON reader for mod.json / profile.json (objects, arrays, strings with \" \\ \/ \n \t \uXXXX (ASCII only), numbers, bools, null).
+// Minimal JSON reader for mod.json / profile.json (objects, arrays, strings with \" \\ \/ \n \t \r \b \f \uXXXX (written
+// as UTF-8, surrogate pairs too), numbers, bools, null).
 #include "dsl_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,14 @@ typedef struct { const char *p; int depth; } P;
 static void ws(P *s) { while (*s->p && isspace((unsigned char)*s->p)) s->p++; }
 static JNode *node(JType t) { JNode *n = calloc(1, sizeof *n); if (n) n->t = t; return n; }
 
+static int hex4(const char *p, unsigned *v) {
+    *v = 0;
+    for (int i = 0; i < 4; i++) {
+        if (!isxdigit((unsigned char)p[i])) return 0;
+        *v = *v * 16 + (unsigned)(isdigit((unsigned char)p[i]) ? p[i] - '0' : (tolower((unsigned char)p[i]) - 'a' + 10));
+    }
+    return 1;
+}
 static char *pstr(P *s) {
     if (*s->p != '"') return NULL;
     s->p++;
@@ -17,8 +26,24 @@ static char *pstr(P *s) {
         char c = *s->p++;
         if (c == '\\') {
             c = *s->p++;
-            if (c == 'n') c = '\n'; else if (c == 't') c = '\t'; else if (c == 'r') c = '\r';
-            else if (c == 'u') { unsigned v = 0; for (int i = 0; i < 4; i++) { if (!isxdigit((unsigned char)*s->p)) { free(o); return NULL; } v = v * 16 + (unsigned)(isdigit((unsigned char)*s->p) ? *s->p - '0' : (tolower((unsigned char)*s->p) - 'a' + 10)); s->p++; } c = v < 128 ? (char)v : '?'; }
+            if (c == 'n') c = '\n'; else if (c == 't') c = '\t'; else if (c == 'r') c = '\r'; else if (c == 'b') c = '\b'; else if (c == 'f') c = '\f';
+            else if (c == 'u') {                                         /* \uXXXX -> UTF-8 (Python's json.dumps writes these) */
+                unsigned v, w;
+                if (!hex4(s->p, &v)) { free(o); return NULL; }
+                s->p += 4;
+                if (v >= 0xD800 && v < 0xDC00 && s->p[0] == '\\' && s->p[1] == 'u' && hex4(s->p + 2, &w) && w >= 0xDC00 && w < 0xE000) {
+                    v = 0x10000 + ((v - 0xD800) << 10) + (w - 0xDC00); s->p += 6;
+                }
+                if ((v >= 0xD800 && v < 0xE000) || v == 0) v = 0xFFFD;   /* lone surrogate, NUL: the replacement character */
+                char u[4]; int k = 0;
+                if (v < 0x80) u[k++] = (char)v;
+                else if (v < 0x800) { u[k++] = (char)(0xC0 | v >> 6); u[k++] = (char)(0x80 | (v & 63)); }
+                else if (v < 0x10000) { u[k++] = (char)(0xE0 | v >> 12); u[k++] = (char)(0x80 | (v >> 6 & 63)); u[k++] = (char)(0x80 | (v & 63)); }
+                else { u[k++] = (char)(0xF0 | v >> 18); u[k++] = (char)(0x80 | (v >> 12 & 63)); u[k++] = (char)(0x80 | (v >> 6 & 63)); u[k++] = (char)(0x80 | (v & 63)); }
+                if (n + (size_t)k + 1 > cap) o = realloc(o, cap = (cap + (size_t)k) * 2);
+                memcpy(o + n, u, (size_t)k); n += (size_t)k;
+                continue;
+            }
             else if (c != '"' && c != '\\' && c != '/') { free(o); return NULL; }
         }
         if (n + 2 > cap) o = realloc(o, cap *= 2);

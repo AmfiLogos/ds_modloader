@@ -1,0 +1,39 @@
+{
+ "_about": "Hell difficulty rows added to the game's TextKeyTable by tools/apply_hell.py (clone_text), one text per game language. Empty = that language keeps what it had before (the copied Downfall cell, Devastation's colour tag turned into Hell). Keep the <color> tags and \\n line breaks. After a change: rebuild the delta (tools/hell_delta.py, as loader/build.sh and modules/build_mods.sh do).",
+ "TEXTKEY_CreateCampaign_5Difficulty": {
+  "en": "<color=#f16071>Hell</color>",
+  "ko": "",
+  "fr": "<color=#f16071>Hell</color>",
+  "de": "",
+  "ru": "",
+  "zh-Hans": "",
+  "zh-Hant": "",
+  "ja": "",
+  "es": "",
+  "pt-BR": ""
+ },
+ "TEXTKEY_CreateCampaign_5CombatDifficulty_DESC": {
+  "en": "Do not play this difficulty. We warned you. Enemies have old Devastation health and attack, plus current Devastation move speed, attack speed, crit, dodge, and crit damage.\nAllies get no crit or dodge bonus.\nIronman Mode is forcibly enabled.",
+  "ko": "",
+  "fr": "Ne jouez pas à ce niveau de difficulté. Nous vous avons prévenus. Les ennemis ont la santé et l'attaque de l'ancienne Dévastation, plus la vitesse, le critique, l'esquive et les dégâts critiques de la Dévastation actuelle.\nLes alliés n'ont aucun bonus de critique ni d'esquive.\nLe mode Ironman est activé de force.",
+  "de": "",
+  "ru": "",
+  "zh-Hans": "",
+  "zh-Hant": "",
+  "ja": "",
+  "es": "",
+  "pt-BR": ""
+ },
+ "TEXTKEY_CreateCampaign_5ManagementDifficulty_DESC": {
+  "en": "Management uses demo 0.3.26 Devastation costs.\nCrafting, construction, and research cost <color=#f16071>1.66x</color> Hard.\n<color=#f16071>Even small waste can lead to downfall</color>.",
+  "ko": "",
+  "fr": "La gestion reprend les coûts de la Dévastation de la démo 0.3.26.\nFabrication, construction et recherche coûtent <color=#f16071>1,66x</color> Difficile.\n<color=#f16071>Même un faible gaspillage peut mener à la ruine</color>.",
+  "de": "",
+  "ru": "",
+  "zh-Hans": "",
+  "zh-Hant": "",
+  "ja": "",
+  "es": "",
+  "pt-BR": ""
+ }
+}

@@ -113,6 +113,8 @@ if exist "%KEEP%" rd /s /q "%KEEP%"
 
 :files
 copy /y "files\baselib.dll" "%COPY%\baselib.dll" >nul || goto copyfail
+rem the loader's texts (lang\<code>.json) next to it: ROOT\game\lang
+if exist "files\lang\" xcopy "files\lang" "%COPY%\lang\" /I /Q /Y >nul || goto copyfail
 > "%COPY%\steam_appid.txt" echo 2798330
 > "%COPY%\dsmodded_build.txt" echo %BUILD%
 copy /y "files\Dungeon Settlers Modded.exe" "%ROOT%\Dungeon Settlers Modded.exe" >nul || goto copyfail

@@ -59,7 +59,9 @@ int dsl_os_batchmode(void) {
 void dsl_os_notice(const char *title, const char *msg) {
     CFStringRef t = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
     CFStringRef m = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
-    if (t && m) CFUserNotificationDisplayNotice(0, kCFUserNotificationCautionAlertLevel, NULL, NULL, NULL, t, m, CFSTR("OK"));
+    CFStringRef ok = CFStringCreateWithCString(NULL, TR("OK"), kCFStringEncodingUTF8);
+    if (t && m) CFUserNotificationDisplayNotice(0, kCFUserNotificationCautionAlertLevel, NULL, NULL, NULL, t, m, ok ? ok : CFSTR("OK"));
+    if (ok) CFRelease(ok);
     if (t) CFRelease(t);
     if (m) CFRelease(m);
 }

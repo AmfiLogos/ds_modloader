@@ -113,9 +113,9 @@ static int save_folder(char *why, size_t n) {
         return 0;
     }
     dsl_log("save folder NOT redirected to %s: modded play would write the normal saves", data_dir);
-    snprintf(why, n, "The mod loader could not point the game to the Dungeon Settlers Modded save folder, so mods are off. "
+    snprintf(why, n, "%s", TR("The mod loader could not point the game to the Dungeon Settlers Modded save folder, so mods are off. "
              "This session runs the normal game with your normal saves, as if started from Steam. Close the game and "
-             "start Dungeon Settlers Modded again to play with mods.");
+             "start Dungeon Settlers Modded again to play with mods."));
     return -1;
 }
 

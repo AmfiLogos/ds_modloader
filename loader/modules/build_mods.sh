@@ -110,6 +110,11 @@ fi
 DSMP_TARGET=module DSL_SDK=$L/sdk DSL_MODJSON=$MD/multiplayer/mod.json CM_MODJSON=${CM_MODJSON:-} nice -n 19 zsh $WT/win/build_win.sh | grep -v "^ABI \|^warning" | tail -6
 cp -R $WT/win/build/mods/multiplayer $OUT/win/
 [[ -d $WT/win/build/mods/custom-modes ]] && cp -R $WT/win/build/mods/custom-modes $OUT/win/
+# translations of the pinned trees (repo lang/*.json; a subfolder, so not in mod.json "files" nor the mod-set hash)
+for s in mac win; do
+  if [[ -n $MP_WIN_TREE ]]; then zsh $MD/copy_lang.sh $WT - $OUT/$s/multiplayer; else zsh $MD/copy_lang.sh $MP_REPO $SHA $OUT/$s/multiplayer; fi
+  if [[ -d $OUT/$s/custom-modes ]]; then zsh $MD/copy_lang.sh $CM_REPO $CSHA $OUT/$s/custom-modes; fi
+done
 
 # ---- what ships carries no debug info (build paths) and no user name: strip, then scan every file (fails the build)
 for f in $OUT/win/**/*.dll(N); do ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $f; done
@@ -124,7 +129,7 @@ out = sys.argv[1]
 def sha(p): return hashlib.sha256(open(p, "rb").read()).hexdigest()
 for i in sorted(set(os.listdir(f"{out}/mac")) | set(os.listdir(f"{out}/win"))):
     srcs = [f"{out}/{s}/{i}/mod.json" for s in ("mac", "win") if os.path.exists(f"{out}/{s}/{i}/mod.json")]
-    m = json.load(open(srcs[0])); pl = m.setdefault("platforms", {})
+    m = json.load(open(srcs[0], encoding="utf-8")); pl = m.setdefault("platforms", {})
     for s in srcs[1:]:                                   # the Windows build may add its own win-x64 part (entry)
         for k, v in json.load(open(s)).get("platforms", {}).items(): pl.setdefault(k, {}).update({x: y for x, y in v.items() if x != "files"})
     for side, key, ext in (("mac", "mac-arm64", ".dylib"), ("win", "win-x64", ".dll")):
@@ -138,9 +143,9 @@ for i in sorted(set(os.listdir(f"{out}/mac")) | set(os.listdir(f"{out}/win"))):
                 if rel == "mod.json" or rel.startswith(".") or "/" in rel or rel == "PINNED_COMMIT": continue   # top-level files (the loader checks those)
                 files[rel] = sha(os.path.join(r, f))
         e["files"] = files
-    t = json.dumps(m, indent=1) + "\n"
+    t = json.dumps(m, indent=1, ensure_ascii=False) + "\n"
     for s in ("mac", "win"):
-        if os.path.isdir(f"{out}/{s}/{i}"): open(f"{out}/{s}/{i}/mod.json", "w").write(t)
+        if os.path.isdir(f"{out}/{s}/{i}"): open(f"{out}/{s}/{i}/mod.json", "w", encoding="utf-8").write(t)
     print(f"{i}: " + ", ".join(f"{k} {len(v.get('files', {}))} file(s)" for k, v in sorted(pl.items())))
 PY
 check $OUT

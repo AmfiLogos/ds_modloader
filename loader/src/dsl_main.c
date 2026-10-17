@@ -9,6 +9,7 @@
 //   dsl_core_ga_mapped (none of GameAssembly's code has run): engine init, il2cpp_init hook, dsl_module_early.
 // il2cpp_init returned: dsl_plugin_init of every module, then new hooks go to the late stub page.
 // Crash guard per module and phase: <state dir>/<id>.pending left over at the next start = it crashed there.
+#define DSI_IMPLEMENTATION                    /* ds_i18n.h: the string tables live in this file (one per binary) */
 #include "dsl_internal.h"
 #include "dsl_os.h"
 #include "../sdk/dsl_sdk.h"
@@ -157,7 +158,7 @@ static void build_refused(const char *reason, const char *uuid, const char *foun
     fprintf(stderr, "dsload: %s\n", status_why);
     write_status(0, reason, uuid, found, pinned);
     if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) return;
-    dsl_os_notice("Dungeon Settlers: mods are off", status_why);
+    dsl_os_notice(TR("Dungeon Settlers: mods are off"), status_why);
 }
 /* the launcher's pinned build for this start, or NULL */
 static const char *launcher_pin(void) {
@@ -229,8 +230,8 @@ int dsl_plugin_index(DSLPlugin *self) { return self ? self->idx : -1; }
 const char *dsl_plugin_name(DSLPlugin *self) { return self ? self->id : "loader"; }
 int dsl_mod_state(const char *id, const char **why) {
     struct DSLPlugin *p = find_mod_early(id);
-    if (why) *why = !p ? "not loaded: not made for this game version or this computer" : p->state == 2 ? "it crashed while starting"
-                  : p->state == 3 ? "not loaded: it needs another mod, clashes with one, or crashed last time" : "";
+    if (why) *why = !p ? TR_NOOP("not loaded: not made for this game version or this computer") : p->state == 2 ? TR_NOOP("it crashed while starting")
+                  : p->state == 3 ? TR_NOOP("not loaded: it needs another mod, clashes with one, or crashed last time") : "";   /* keys: the Mods window translates */
     return p ? p->state : 0;
 }
 
@@ -538,7 +539,7 @@ int dsl_net_check(const char *const *kinds, int n, char *why, size_t cap) {
     int b = 0, m = 0;
     for (int i = 0; i < n; i++) { int k = dsl_net_kind(kinds[i]); b |= k == DSL_NET_BIE; m |= k == DSL_NET_ML; }
     if (b && m) {
-        if (why && cap) snprintf(why, cap, "BepInEx mods and MelonLoader mods cannot run together. Turn off the mods of one of them.");
+        if (why && cap) snprintf(why, cap, "%s", TR("BepInEx mods and MelonLoader mods cannot run together. Turn off the mods of one of them."));
         return -1;
     }
     return b ? DSL_NET_BIE : m ? DSL_NET_ML : 0;
@@ -671,7 +672,7 @@ static void mods_off(const char *reason, const char *why) {
     dsl_log("%d module(s) off this session; no module hook, the game runs unmodded", n);
     write_status(0, reason, NULL, dsl_build_id, NULL);
     if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) return;
-    dsl_os_notice("Dungeon Settlers: mods are off", status_why);
+    dsl_os_notice(TR("Dungeon Settlers: mods are off"), status_why);
 }
 
 /* GameAssembly mapped (start part: Mac add-image callback, Windows DllMain), none of its code ran yet. The start part
@@ -718,7 +719,7 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
 /* The mapped GameAssembly is not the file the build came from (start part's check): mods stay off. */
 void dsl_core_ga_differs(const char *ga_id, const char *found_build) {
     dsl_log("mapped GameAssembly %s differs from the one checked at start (build %s)", ga_id, dsl_build_id ? dsl_build_id : "?");
-    snprintf(status_why, sizeof status_why, "The game files changed after the start check. Mods stay off. Restart the game.");
+    snprintf(status_why, sizeof status_why, "%s", TR("The game files changed after the start check. Mods stay off. Restart the game."));
     build_refused("mapped_image_differs", ga_id, found_build, dsl_build_id);
 }
 
@@ -744,6 +745,43 @@ int dsl_core_log_open(const char *logdir_default, const char *self) {
 }
 const char *dsl_core_logdir(void) { return logdir; }
 
+/* ------------------------------------------------------------------ language (ds_i18n.h)
+   Texts: <folder of this binary>/lang/<code>.json (Mac ROOT/loader/lang, Windows ROOT\game\lang). Before il2cpp: the
+   saved choice in <data>/UserSetting.json (GeneralSettingData.SaveCurrentLanguageType), for the start notices; then the
+   game's own Refactor.Setting.LanguageSetting.GetCurrentLanguage() once per frame (it can change at the title, Options). */
+static int lang_early_done;
+void dsl_lang_early(void) {
+    if (lang_early_done) return; lang_early_done = 1;
+    char d[1100]; snprintf(d, sizeof d, "%s", self_path);
+    char *sl = strrchr(d, '/'), *bs = strrchr(d, '\\'); if (bs > sl) sl = bs;
+    if (sl) { snprintf(sl, sizeof d - (size_t)(sl - d), "/lang"); dsi_set_dir(d); } else d[0] = 0;
+    const char *dd = getenv("DSML_DATA"), *rd = getenv("DSRIG_DIR");
+    char c[4][1200]; int nc = 0;
+    if (dd && *dd) snprintf(c[nc++], sizeof c[0], "%s/UserSetting.json", dd);
+    if (rd && *rd) snprintf(c[nc++], sizeof c[0], "%s/data/UserSetting.json", rd);
+    if (logdir[0]) snprintf(c[nc++], sizeof c[0], "%s/UserSetting.json", logdir);
+    int lang = 0, k;
+    for (k = 0; k < nc; k++) { char *t = read_file(c[k], 1 << 22); if (!t) continue; lang = dsi_lang_from_usersetting(t); free(t); break; }
+    dsi_set_lang(lang);
+    dsl_log("language %d (%s) from %s; texts %s: %d loaded, %d dropped", lang, dsi_code(), k < nc ? c[k] : "no UserSetting.json",
+            d[0] ? d : "(none)", dsi_loaded(), dsi_dropped());
+}
+int dsl_reg_scene(void);                                         /* dsl_reg.c: MainFlow scene, 1 title, 2 world, -1 none */
+int dsl_lang_poll(void) {
+    static int32_t (*get)(const void *); static int tried;
+    if (!dsl_ready || dsl_reg_scene() < 1) return 0;               /* during the boot the static is not loaded yet (0) */
+    if (!tried) {
+        tried = 1;
+        get = (int32_t (*)(const void *))dsl_find_method_address("Refactor.Setting", "LanguageSetting", "GetCurrentLanguage", 0);
+        dsl_log("language: LanguageSetting.GetCurrentLanguage %s", get ? "found" : "NOT found: the start language stays");
+    }
+    if (!get) return 0;
+    int v = get(NULL);
+    if (!dsi_set_lang(v)) return 0;
+    dsl_log("language: the game's language is now %d (%s): %d texts, %d dropped", dsi_lang(), dsi_code(), dsi_loaded(), dsi_dropped());
+    return 1;
+}
+
 /* Before GameAssembly is mapped. build = the start part's build for the GameAssembly file (NULL = unknown),
    ga_id = what it read (Mac arm64 LC_UUID, Windows PE stamp) for the logs and the status file, modsdir_default =
    the mods folder when DSL_MODS_DIR is not set. 0 = modules opened, the start part goes on to dsl_core_ga_mapped. */
@@ -753,16 +791,17 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     else if (modsdir_default) snprintf(modsdir, sizeof modsdir, "%s", modsdir_default);
     snprintf(profile_path, sizeof profile_path, "%s", (pf && *pf) ? pf : "");
     if (!profile_path[0]) snprintf(profile_path, sizeof profile_path, "%s/profile.json", modsdir);
+    dsl_lang_early();                                                /* the notices below speak the game's language */
     dsl_build_id = build;
     const char *pin = launcher_pin();
     if (!dsl_build_id) {
-        snprintf(status_why, sizeof status_why, "The game was updated. Mods stay off until they are updated for this game version.");
+        snprintf(status_why, sizeof status_why, "%s", TR("The game was updated. Mods stay off until they are updated for this game version."));
         dsl_log("unknown GameAssembly build (%s%s%s): loader inactive, the game runs without code mods", ga_id, pin ? "; the launcher pinned build " : "", pin ? pin : "");
         build_refused("unknown_build", ga_id, NULL, pin); return -1;
     }
     if (pin && strcmp(pin, dsl_build_id)) {
-        snprintf(status_why, sizeof status_why, "This game is build %s, but the launcher started this world for build %s. "
-                 "Mods stay off. Start the world from the launcher again.", dsl_build_id, pin);
+        snprintf(status_why, sizeof status_why, TR("This game is build %s, but the launcher started this world for build %s. "
+                 "Mods stay off. Start the world from the launcher again."), dsl_build_id, pin);
         build_refused("not_pinned_build", ga_id, dsl_build_id, pin); return -1;
     }
     snprintf(status_why, sizeof status_why, "build %s%s", dsl_build_id, pin ? " (launcher pin)" : "");
