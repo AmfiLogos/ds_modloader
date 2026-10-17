@@ -47,7 +47,6 @@
 "Dungeon Settlers Modded cannot create its folder in Application Support."	ds_modded.c:593
 "Dungeon Settlers Modded: BepInEx mods are off this time"	win/ds_modded_win.c:330
 "Dungeon Settlers: mods are off"	dsl_main.c:162 dsl_main.c:676
-"English"	dsl_internal.h:12
 "Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply."	dsl_win.c:337
 "Go back to the title screen to change mods."	dsl_reg.c:499 dsl_win.c:198
 "Group name"	dsl_win.c:424

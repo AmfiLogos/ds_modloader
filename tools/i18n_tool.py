@@ -9,7 +9,8 @@
                                                  exit 1 on a bad entry or a broken file
   i18n_tool.py prune <lang_dir>                  drop stale keys (no longer in en.json) from every language
 
-Markers: TR("x"), TR_NOOP("x"), TRN("one", "other", n), TRN_NOOP("one", "other").
+Markers: TR("x"), TR_NOOP("x"), TRN("one", "other", n), TRN_NOOP("one", "other"), TRC("ctx", "x")
+(context key "ctx\x04x": same English, other meaning).
 Keys are the English text. Plural keys are "one||other" with a list of forms as value.
 """
 import json
@@ -23,7 +24,7 @@ EXTS = (".c", ".h", ".m", ".mm", ".cpp")
 
 LIT = r'"(?:[^"\\\n]|\\.)*"'
 LITS = rf'{LIT}(?:\s*{LIT})*'
-RX = re.compile(rf'\b(TR|TR_NOOP|TRN|TRN_NOOP)\s*\(\s*({LITS})(?:\s*,\s*({LITS}))?')
+RX = re.compile(rf'\b(TR|TR_NOOP|TRN|TRN_NOOP|TRC)\s*\(\s*({LITS})(?:\s*,\s*({LITS}))?')
 
 
 def c_unescape(lits):
@@ -61,6 +62,33 @@ def c_unescape(lits):
     return b"".join(out).decode("utf-8", "replace")
 
 
+def strip_comments(src):
+    """C comments -> spaces (newlines kept, so line numbers stay); string and char literals untouched"""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        c = src[i]
+        if c in "\"'":
+            j = i + 1
+            while j < n and src[j] != c and src[j] != "\n":
+                j += 2 if src[j] == "\\" else 1
+            out.append(src[i:j + 1])
+            i = j + 1
+        elif src.startswith("//", i):
+            j = src.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(re.sub(r"[^\n]", " ", src[i:j]))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def scan(dirs):
     keys, where = {}, {}
     for d in dirs:
@@ -70,10 +98,14 @@ def scan(dirs):
                 if not f.endswith(EXTS) or f == "ds_i18n.h":
                     continue
                 p = os.path.join(root, f)
-                src = open(p, encoding="utf-8", errors="replace").read()
+                src = strip_comments(open(p, encoding="utf-8", errors="replace").read())
                 for m in RX.finditer(src):
                     kind, a, b = m.group(1), m.group(2), m.group(3)
-                    if kind in ("TRN", "TRN_NOOP"):
+                    if kind == "TRC":
+                        if not b:
+                            continue
+                        key = c_unescape(a) + "\x04" + c_unescape(b)
+                    elif kind in ("TRN", "TRN_NOOP"):
                         if not b:
                             continue
                         key = c_unescape(a) + "||" + c_unescape(b)
@@ -111,6 +143,8 @@ def bad_entry(key, val, code):
         return "not a plural key, value must be a string"
     if not val:
         return "empty"
+    if "\x04" in key:
+        key = key.split("\x04", 1)[1]
     if sig(val) != sig(key):
         return f"conversions/tags differ: {sig(key)} vs {sig(val)}"
     return None

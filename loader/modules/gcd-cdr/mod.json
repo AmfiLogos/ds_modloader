@@ -31,5 +31,52 @@
   "gcd-cdr-patch"
  ],
  "description": "Cooldown reduction also shortens the global cooldown, the same way it shortens skill cooldowns.",
- "scope": "gameplay"
+ "scope": "gameplay",
+ "i18n": {
+  "ko": {
+   "name": "전역 재사용 대기 시간에도 감소 적용",
+   "short_name": "전역 재사용 대기 시간",
+   "description": "스킬 재사용 대기 시간 감소가 스킬 재사용 대기 시간과 같은 방식으로 전역 재사용 대기 시간도 줄입니다."
+  },
+  "fr": {
+   "name": "Recharge globale avec réduction de recharge",
+   "short_name": "Temps de recharge global",
+   "description": "La réduction du temps de recharge raccourcit aussi le temps de recharge global, comme pour les compétences."
+  },
+  "de": {
+   "name": "Globale Abklingzeit nutzt Abklingzeitreduktion",
+   "short_name": "Globale Abklingzeit",
+   "description": "Abklingzeitreduktion verkürzt auch die globale Abklingzeit, genauso wie die Abklingzeiten von Skills."
+  },
+  "ru": {
+   "name": "Глобальное время восстановления сокращается",
+   "short_name": "Глобальное время восстановления",
+   "description": "Снижение времени восстановления сокращает и глобальное время восстановления, так же как время восстановления навыков."
+  },
+  "zh-Hans": {
+   "name": "冷却时间降低作用于全局冷却",
+   "short_name": "全局冷却",
+   "description": "冷却时间降低同样会缩短全局冷却，与缩短技能冷却的方式相同。"
+  },
+  "zh-Hant": {
+   "name": "全域冷卻會套用冷卻時間減少",
+   "short_name": "全域冷卻",
+   "description": "冷卻時間減少也會縮短全域冷卻，與縮短技能冷卻的方式相同。"
+  },
+  "ja": {
+   "name": "全体クールタイムにクールタイム短縮を適用",
+   "short_name": "全体クールタイム",
+   "description": "クールタイム短縮は、スキルのクールタイムを短くするのと同じように、全体のクールタイムも短くします。"
+  },
+  "es": {
+   "name": "Enfriamiento global con reducción de enfriamiento",
+   "short_name": "Enfriamiento global",
+   "description": "La reducción de enfriamiento también acorta el enfriamiento global, igual que acorta los enfriamientos de habilidades."
+  },
+  "pt-BR": {
+   "name": "Recarga global usa redução de recarga",
+   "short_name": "Recarga global",
+   "description": "A redução de recarga também encurta a recarga global, do mesmo jeito que encurta as recargas de habilidades."
+  }
+ }
 }

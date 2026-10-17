@@ -157,6 +157,10 @@ BepInEx, MelonLoader (names: kept), Steam Cloud.
 this branch. Then `python3 tools/i18n_tool.py extract loader/lang loader/src loader/ui loader/start app/stub`.
 
 ## Tests run
+2026-10-17 (9 translations, TRC): `loader/test/i18n/run.sh` now also builds `lang_test.c` (shipped fr.json + ja.json: dsi_dropped() 0, all
+158 en.json keys resolve; TRC context key; every mod.json fr name through the loader JSON reader). run_tests 31/31, cloud 25 ok,
+`loader/build.sh` + `build_mods.sh` with the i18n pins (lang/ in multiplayer + custom-modes, not in "files", no `\u`), Windows kit
+`files/lang`, `app/build_app.sh` (`Resources/dsml/lang`). The pin files still point at the old commits.
 2026-10-17 (core v2 + API 4): `loader/test/run_tests.sh` 31/31, `loader/test/cloud/run.sh` 25 ok, `loader/test/i18n/run.sh`
 ok, `loader/build.sh`, `loader/modules/build_mods.sh` (check OK), `loader/start/win/build_win.sh`, winbie, ui test build,
 Mac stub compile; en.json 159 keys (same keys as before). Earlier:

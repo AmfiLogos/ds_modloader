@@ -45,6 +45,7 @@
 #define dsi_generation DSI_CAT(DSI_PREFIX, generation)
 #define dsi_tr DSI_CAT(DSI_PREFIX, tr)
 #define dsi_trn DSI_CAT(DSI_PREFIX, trn)
+#define dsi_trc DSI_CAT(DSI_PREFIX, trc)
 #define dsi_lang_from_usersetting DSI_CAT(DSI_PREFIX, lang_from_usersetting)
 #define dsi_utf8_clip DSI_CAT(DSI_PREFIX, utf8_clip)
 #define dsi_utf8_fix_end DSI_CAT(DSI_PREFIX, utf8_fix_end)
@@ -76,6 +77,8 @@ DSI_HIDDEN const char *dsi_code_of(int game_lang);
 DSI_HIDDEN unsigned dsi_generation(void);         /* +1 on every change; for caches */
 DSI_HIDDEN const char *dsi_tr(const char *en) DSI_FMT1;
 DSI_HIDDEN const char *dsi_trn(const char *one, const char *other, long n) DSI_FMT1 DSI_FMT2;
+/* same English, other meaning: TRC("verb", "Host"); key in the file is "verb\u0004Host" */
+DSI_HIDDEN const char *dsi_trc(const char *ctx, const char *en) DSI_FMT2;
 /* LanguageType from the text of UserSetting.json (GeneralSettingData.SaveCurrentLanguageType), or 0 */
 DSI_HIDDEN int dsi_lang_from_usersetting(const char *json_text);
 /* cut s so it fits cap bytes (cap includes the NUL) without splitting a UTF-8 character */
@@ -92,6 +95,7 @@ DSI_HIDDEN int dsi_dropped(void);
 
 #define TR(s) dsi_tr(s)
 #define TRN(one, other, n) dsi_trn(one, other, (long)(n))
+#define TRC(ctx, s) dsi_trc(ctx, s)
 /* marks a string for the extractor without translating it now (tables of English keys) */
 #define TR_NOOP(s) (s)
 /* plural pair for a table initializer: { TRN_NOOP("%d file", "%d files") } -> "%d file", "%d files" */
@@ -333,7 +337,8 @@ static void dsi_load(DsiLang *L, int lang) {
         if (key[0] != '_' && nf > 0) {
             /* plural key "one||other": every form must match the "other" English form */
             const char *bar = strstr(key, "||");
-            const char *en = bar ? bar + 2 : key;
+            const char *ctx = strchr(key, '\x04');
+            const char *en = bar ? bar + 2 : ctx ? ctx + 1 : key;
             int good = 1;
             for (i = 0; i < nf; i++) {
                 if (bar) {
@@ -344,7 +349,7 @@ static void dsi_load(DsiLang *L, int lang) {
                     memcpy(one, key, ol);
                     one[ol] = 0;
                     if (!dsi_same_sig(en, forms[i]) && !dsi_same_sig(one, forms[i])) good = 0;
-                } else if (!dsi_same_sig(en, forms[i]) || !forms[i][0]) {
+                } else if (nf != 1 || !dsi_same_sig(en, forms[i]) || !forms[i][0]) {
                     good = 0;
                 }
             }
@@ -396,6 +401,15 @@ const char *dsi_tr(const char *en) {
     const DsiEnt *e;
     if (!en || !dsi_cur) return en;
     e = dsi_find(&dsi_l[dsi_cur], en);
+    return e ? e->val[0] : en;
+}
+
+const char *dsi_trc(const char *ctx, const char *en) {
+    char key[1024];
+    const DsiEnt *e;
+    if (!en || !dsi_cur) return en;
+    snprintf(key, sizeof key, "%s\x04%s", ctx, en);
+    e = dsi_find(&dsi_l[dsi_cur], key);
     return e ? e->val[0] : en;
 }
 
