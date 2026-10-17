@@ -709,9 +709,10 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
     if (!any) return 0;
     if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return -1; }
     if (dsl_engine_init()) return -1;
+    dsl_engine_batch(1);                                             /* until the early starts are done: none of GameAssembly runs */
     if (dsl_core_prereq) {
         char why[sizeof status_why] = "";
-        if (dsl_core_prereq(why, sizeof why)) { mods_off("start_condition_failed", why); return -1; }
+        if (dsl_core_prereq(why, sizeof why)) { mods_off("start_condition_failed", why); dsl_engine_batch(0); return -1; }
     }
     if (want_init) {
         void *ii = dsl_ga_sym("il2cpp_init"), *iu = dsl_ga_sym("il2cpp_init_utf16");
@@ -728,6 +729,7 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
         if (r) { fail(p, "dsl_module_early", r); continue; }
         dsl_log("%s: early start done (%d hook(s))", p->id, dsl_hook_count(p->idx));
     }
+    dsl_engine_batch(0);
     if (!want_init) { guard_leave("_codepatch"); run_init(); write_modset(); dsl_engine_set_late(); }
     return 0;
 }

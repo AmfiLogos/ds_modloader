@@ -66,6 +66,7 @@ int dsl_engine_init(void) {
     return 0;
 }
 
+void dsl_engine_batch(int on) { (void)on; }                         /* Windows only (MinHook's thread freeze per hook) */
 void dsl_engine_set_late(void) { pthread_mutex_lock(&lock); if (!late) dsl_log("engine: game code is running: new stubs go to the late page"); late = 1; pthread_mutex_unlock(&lock); }
 
 static int write_ga(uintptr_t addr, const void *src, size_t n) {   /* one GameAssembly site (file-backed page) */

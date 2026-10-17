@@ -28,6 +28,7 @@ void dsl_mark_codepatch(void);
 
 /* hook engine (dsl_engine.c): the only code that writes GameAssembly code or hook stubs in this process */
 int dsl_engine_init(void);               /* after GameAssembly is mapped; 0 = ok */
+void dsl_engine_batch(int on);           /* 1: hooks are queued (no game code can run yet), 0: all enabled at once */
 void dsl_engine_set_late(void);          /* game code may run on other threads: new stubs go to the late page */
 int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who);
 int dsl_unhook(int owner, void *target, const char *who);

@@ -41,6 +41,26 @@ void dsl_engine_set_late(void) {
     ReleaseSRWLockExclusive(&lock);
 }
 
+/* Batch (GameAssembly mapped, DllMain: none of its code can run yet): MH_EnableHook freezes every other thread for
+   each hook, and MinHook finds them with a system-wide thread snapshot (CreateToolhelp32Snapshot): about 33 ms per
+   hook on a Windows VM, 203 multiplayer hooks = 6.7 s of a black window before the first frame (VM 2026-10-17).
+   In the batch the hooks are queued and enabled together by one MH_ApplyQueued (one freeze). */
+static int batch, queued;
+void dsl_engine_batch(int on) {
+    AcquireSRWLockExclusive(&lock);
+    if (!on && batch && queued) {
+        LARGE_INTEGER f, a, b; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&a);
+        MH_STATUS s = MH_ApplyQueued();
+        QueryPerformanceCounter(&b);
+        dsl_log("engine: %d hook(s) enabled at once (one thread freeze, %.1f ms)%s", queued, (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart,
+                s == MH_OK ? "" : ": MinHook apply FAILED");
+        if (s != MH_OK) for (int i = 0; i < nh; i++) if (H[i].active) { MH_STATUS e = MH_EnableHook((void *)H[i].site); if (e != MH_OK && e != MH_ERROR_ENABLED) dsl_log("engine: hook %s not enabled (%d)", H[i].name, e); }
+        queued = 0;
+    }
+    batch = on && !late;
+    ReleaseSRWLockExclusive(&lock);
+}
+
 static Hook *find_site(uintptr_t site) { for (int i = 0; i < nh; i++) if (H[i].site == site) return &H[i]; return NULL; }
 
 #define MAXPT 256
@@ -117,8 +137,9 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     if (s != MH_OK) { dsl_log("%s: hook %#llx failed (MinHook create %d)", who, (unsigned long long)rva, s); return -1; }
     make_thunk(t, tramp, repl);
     dsl_mark_codepatch();
-    s = MH_EnableHook(target);
+    s = batch ? MH_QueueEnableHook(target) : MH_EnableHook(target);
     if (s != MH_OK) { MH_RemoveHook(target); dsl_log("%s: hook %#llx failed (MinHook enable %d)", who, (unsigned long long)rva, s); return -1; }
+    if (batch) queued++;
     Hook *n = &H[nh++];
     *n = (Hook){ site, t, tramp, owner, 1, "" };
     snprintf(n->name, sizeof n->name, "%s", who);

@@ -517,7 +517,7 @@ static int world_guid(char *out);
 static char session_why[MAXP_REG][200];
 const char *dsl_busy_reason(void) {
     for (int i = 0; i < MAXP_REG; i++) if (session_why[i][0]) return session_why[i];
-    if (dsl_soft_busy()) return TR("the game is restarting with new mods");      /* A during a restart, B until swap + fade in are done */
+    if (dsl_soft_busy()) return TR("mods are being applied");      /* A during a restart, B until swap + fade in are done */
     return NULL;
 }
 static void session_busy_set(DSLPlugin *self, const char *reason) {
@@ -593,13 +593,13 @@ static int apply_ids(const char *const *ids, int n, const char *env, char *why, 
         if (dsl_net_install_start(nk)) { snprintf(why, cap, TR("the %s download could not start"), hn); return -1; }
         bie_pending_set(ids, n, env); bp_kind = nk;
         const DSLUi *u = dsl_ui_kit(); char t[300];
-        snprintf(t, sizeof t, TR("Preparing mods (first start)\nDownloading %s (%s). The game restarts with the new mods when it is ready."), hn, dsl_net_size(nk)); dsi_utf8_fix_end(t);
+        snprintf(t, sizeof t, TR("Preparing mods (first start)\nDownloading %s (%s). The new mods are applied when it is ready."), hn, dsl_net_size(nk)); dsi_utf8_fix_end(t);
         if (u) u->notice(t, TR("OK"), NULL, NULL, NULL, NULL);
         dsl_log("reg: Apply waits for the %s download", hn); return 0;
     }
     if (first) { setenv("DSL_SOFT_TIMEOUT", "300", 1); tip_first_run = nk; } else { unsetenv("DSL_SOFT_TIMEOUT"); tip_first_run = 0; }
     dsl_log("reg: Apply: %s -> soft restart%s", kk, dsl_soft_prewarm_state() ? " (a prewarmed game waits)" : "");
-    if (dsl_soft_apply(p, envl)) { snprintf(why, cap, "%s", TR("the game cannot restart right now (loading, or a restart already runs)")); return -1; }
+    if (dsl_soft_apply(p, envl)) { snprintf(why, cap, "%s", TR("mods cannot be applied right now (the game is loading, or mods are being applied)")); return -1; }
     return 0;
 }
 
@@ -993,7 +993,7 @@ void dsl_reg_after_init(void) {
         char t[512] = ""; int k = 0;
         for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[128]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
         dsi_utf8_fix_end(t);
-        if (k) dsl_soft_progress(10, TR_NOOP("Loading %s"), t); else dsl_soft_progress(10, TR_NOOP("Loading the game"), NULL);
+        if (k) dsl_soft_progress(10, TR_NOOP("Loading %s"), t); else dsl_soft_progress(10, TR_NOOP("Loading mods"), NULL);
     }
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
