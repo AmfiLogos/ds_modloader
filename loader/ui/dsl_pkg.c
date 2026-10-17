@@ -103,7 +103,9 @@ static int install_zip(const char *um, const char *name, char *id, size_t icap) 
     int is_mod = src[0] != 0, res = 0;
     if (is_mod) {
         snprintf(dst, sizeof dst, "%s/%s", um, id);
-        if (!(exists(dst) && retire(dst, id)) && rename(src, dst) == 0) res = 1;
+        /* test only: DSL_PKG_TEST_INUSE=<id> acts as Windows does for a loaded DLL (wine lets the folder move) */
+        const char *tin = getenv("DSL_PKG_TEST_INUSE"); int inuse = tin && *tin && exists(dst) && !strcmp(tin, id);
+        if (!inuse && !(exists(dst) && retire(dst, id)) && rename(src, dst) == 0) res = 1;
         else {                                                         /* the old version is in use: next start */
             char pd[1400], pdst[1500]; snprintf(pd, sizeof pd, "%s/.pending", um); mkdir_(pd);
             snprintf(pdst, sizeof pdst, "%s/%s", pd, id);

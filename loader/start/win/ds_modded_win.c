@@ -165,6 +165,7 @@ static void apply_pending(const wchar_t *md) {
             wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
             _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, fd.cFileName, ts);
             if (!MoveFileW(dst, old)) { logf_("mods: %s still in use (%lu): the new version waits", id, GetLastError()); continue; }
+            log_line(L"install_dirs.log", rd); log_tree(old);          /* the uninstall removes the retired copy too */
         }
         if (MoveFileW(src, dst)) { log_tree(dst); logf_("mods: new version of %s installed (from .pending)", id); }
         else logf_("mods: cannot move the new version of %s (%lu)", id, GetLastError());

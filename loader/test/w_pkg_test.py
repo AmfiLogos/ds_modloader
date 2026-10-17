@@ -52,6 +52,7 @@ def start():
     if not subprocess.run(['pgrep', '-f', 'dsmp_guard.py'], capture_output=True).stdout:
         subprocess.Popen(['python3', f'{H}/ds_multiplayer/win/tools/dsmp_guard.py', '7200'], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     env = dict(os.environ, DSRIG_PORT=str(w.PORT), DSMP_GUARD_TAG='1', DSL_NO_ALERT='1', DSL_SOFT_TEST='1', WINEDLLOVERRIDES='winhttp=n,b')
+    env['DSL_PKG_TEST_INUSE'] = 'gcd-cdr'                       # wine does not lock a loaded DLL's folder; Windows does
     for k in ('DSRIG_DIR', 'DSRIG_RANGES', 'DSL_MODS_DIR', 'DSL_PROFILE', 'DSL_LOG_DIR', 'DSML_SESSION', 'DSML_USER_MODS_DIR'): env.pop(k, None)
     subprocess.Popen(['nice', '-n', '19', f'{w.C}/wine', '--bottle', w.BOTTLE, w.WROOT + '\\Dungeon Settlers Modded.exe', '-batchmode', '-nographics'],
                      env=env, stdout=open(f'{LW}/build/win/w_pkg_wine.out', 'a'), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
