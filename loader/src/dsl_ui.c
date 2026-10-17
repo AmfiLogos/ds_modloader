@@ -416,6 +416,8 @@ static void fit_one(FitE *e, Obj t, float w, float h) {
         CALL(m_tmp_fsmax, void, Obj, float)(t, e->size, m_tmp_fsmax);
         if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
         fit_auto(t, 1);
+        char tx[64] = ""; utf8_of(tmp_get(t), tx, sizeof tx);
+        dsl_log("ui: text fit: \"%s\" is too long for %.0fx%.0f: auto size %.0f-%.0f%s", tx, w, h, mn, e->size, e->on == 2 ? ", two lines" : "");
     }
 }
 /* once per frame (after the modules' frame): changed texts now; every text's rect every 15 frames (a later layout) */
