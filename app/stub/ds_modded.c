@@ -57,7 +57,6 @@ void dsl_log(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
     fputc('\n', f); fclose(f);
 }
-#include "../../loader/src/dsl_json.c"
 #include "../../loader/start/mac/dsl_update_mac.c"
 #include "../../loader/start/dsl_update_start.c"
 
