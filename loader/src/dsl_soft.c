@@ -80,7 +80,7 @@ static int (*get_fsmode)(void); static void (*set_fsmode)(int);         /* Scree
 /* B boot speed: the Unity splash is cancelled and frames are uncapped while hidden (the boot is frame bound:
    one loading step per frame); a prewarm B waiting at the title runs at DSL_SOFT_IDLE_FPS (10). The game's own frame
    cap and vsync come back at the swap. */
-static int (*splash_done)(void); static void (*splash_cancel)(void);
+static _Bool (*splash_done)(void); static void (*splash_cancel)(void);    /* bool: only the low byte is set (Windows x64) */
 static void (*set_fps)(int); static int (*get_fps)(void);              /* icalls (the managed getters are stripped) */
 static void (*set_vsync)(int); static int (*get_vsync)(void);
 static void (*set_blp)(int); static int (*get_blp)(void);              /* Application.backgroundLoadingPriority */

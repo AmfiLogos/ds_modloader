@@ -33,7 +33,7 @@ static char tsv[1400], sa[1100]; static size_t sa_n;               /* record fil
 static int on, skipped, checked;
 static Obj (*o_load)(Obj, uint32_t, uint64_t, const void *);
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);   /* Unity 6: pointer-size handles */
-static int (*is_done)(Obj, const void *); static Obj (*get_bundle)(Obj, const void *);
+static _Bool (*is_done)(Obj, const void *); static Obj (*get_bundle)(Obj, const void *);
 #define NPEND 64
 static struct { uintptr_t h; Rec r; } pend[NPEND]; static int npend;
 
