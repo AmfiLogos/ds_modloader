@@ -16,17 +16,26 @@ fails=0
 python3 $D/rig/wine_lease.py take winstart --pid $$ || { print "wine busy or the wine lock is taken"; exit 2; }
 unlock() { python3 $D/rig/wine_lease.py release winstart >/dev/null }
 trap unlock EXIT
-python3 $W/wloader.py install $L/build/win/kit | tail -1
 check() { if eval "$2"; then print "PASS $1"; else print "FAIL $1"; fails=$((fails+1)); fi }
+# install.bat installs only into a new, empty or own folder: an earlier test's leftovers (an uninstall keeps profiles\)
+# go aside first (never deleted)
+R=${P:h:h}
+if [[ -d $R && ! -f $R/dsmodded_install.txt && ! -f "$R/Dungeon Settlers Modded.exe" ]]; then
+  mkdir -p ${R:h}/old_winstart && mv $R ${R:h}/old_winstart/$(date +%Y%m%d-%H%M%S) && print "moved aside: $R (not an install of ours)"
+fi
+python3 $W/wloader.py install $L/build/win/kit | tail -1
+check "install: starter and game copy in place" '[[ -f "$R/Dungeon Settlers Modded.exe" && -f $R/game/GameAssembly.dll ]]'
+(( fails )) && { print "== $fails failed (install)"; exit 1; }
 run() {  # run <case> <env...>: one start, until the title (control port) or 80 s after mods-off
   local n=$1; shift
+  [[ -f $P/dsload.log ]] && mkdir -p $P/old && mv $P/dsload.log $P/old/dsload.$(date +%s).log   # no stale log is ever read
   env "$@" python3 $W/wloader.py start >/dev/null 2>&1
   for i in {1..30}; do sleep 6
     r=$(cd $W && python3 -c 'import wloader as w; print(w.cmd({"cmd":"status"},timeout=5).get("boot_ready"))' 2>/dev/null)
     [[ $r == True ]] && break
     (( i > 12 )) && grep -q "START CONDITION FAILED" "$P/dsload.log" 2>/dev/null && break
   done
-  TITLE=$r; LOG=$(cat "$P/dsload.log"); STATUS=$(cat "$P/dsload_status.json")
+  TITLE=$r; LOG=$(cat "$P/dsload.log" 2>/dev/null); STATUS=$(cat "$P/dsload_status.json" 2>/dev/null)
   python3 $W/wloader.py stop >/dev/null 2>&1
 }
 has() { print -r -- "$LOG" | grep -q -- "$1" }
