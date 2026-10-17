@@ -135,7 +135,8 @@ def start_a(profile, extra_env=None):
     prep()
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'USER': os.environ.get('USER', ''),
            'LOGNAME': os.environ.get('LOGNAME', ''), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': os.environ.get('TMPDIR', '/tmp'),
-           'DSRIG_DIR': I, 'DSL_LOG_DIR': I, 'DSRIG_FPS': '60', 'DYLD_INSERT_LIBRARIES': os.path.join(I, r.DYLIB_REL),
+           'DSRIG_DIR': I, 'DSL_LOG_DIR': I, 'DSRIG_FPS': '60', 'DYLD_INSERT_LIBRARIES': os.environ.get('LRIG_DYLIB') or os.path.join(I, r.DYLIB_REL),
+           'DSL_NOTCH': '0',                              # the notch fix covers the screen: off in tests (as lrig.py)
            'DSL_PROFILE': profile, 'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1'}
     env.update({k: v for k, v in os.environ.items() if k.startswith('DSL_SOFT_') and k not in env})   # e.g. DSL_SOFT_BOOTLOG=1
     env.update(extra_env or {})
