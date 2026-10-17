@@ -20,6 +20,7 @@ for d in $SRC/mac/*(/); do
     if [[ -f $ST/$f ]] && ! cmp -s $ST/$f $SRC/win/$id/$f; then echo "package_mods: $id: $f differs between mac and win" >&2; exit 1; fi
     mkdir -p $ST/${f:h}; cp $SRC/win/$id/$f $ST/$f
   done
+  mkdir -p $ST/licenses; cp $L/../licenses/LICENSE.txt $L/../licenses/THIRD_PARTY_NOTICES.txt $ST/licenses/   # in every release file
   xattr -cr $ST
   # fixed order and dates: the same set gives the same zip bytes
   find $ST -exec touch -h -t 202601010000 {} +

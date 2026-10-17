@@ -35,7 +35,7 @@ for /f "usebackq delims=" %%f in (`type "%ROOT%\install_files.log"`) do if exist
 if defined OLDCP chcp %OLDCP% >nul
 rem then the folders our install made, deepest first: rd without /s removes a folder only when it is empty (each pass
 rem removes one level), so a folder that still holds a file nobody of ours made stays; profiles\ is never touched
-for %%r in (game mods update retired cache) do if exist "%ROOT%\%%r\" (
+for %%r in (game mods update retired cache licenses) do if exist "%ROOT%\%%r\" (
   for /l %%i in (1,1,12) do for /f "delims=" %%d in ('dir /s /b /ad "%ROOT%\%%r" 2^>nul') do rd "%%d" 2>nul
   rd "%ROOT%\%%r" 2>nul
 )

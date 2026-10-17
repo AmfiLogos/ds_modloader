@@ -35,6 +35,8 @@ mkdir -p "$C/MacOS" "$C/Resources/dsml/mods"
 cp "$OUTDIR/ds_modded" "$C/MacOS/DS Modded"
 cp "$HELPER" "$C/MacOS/dsml-helper"
 cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
+mkdir -p "$C/Resources/licenses"                                  # licenses/: our license + third-party notices, in every release file
+cp "$REPO/licenses/LICENSE.txt" "$REPO/licenses/THIRD_PARTY_NOTICES.txt" "$C/Resources/licenses/"
 cp "$REPO/loader/build/dsload.dylib" "$C/Resources/dsml/dsload.dylib"
 cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"      # BepInEx at first use (kind "bepinex" mods)
 cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)

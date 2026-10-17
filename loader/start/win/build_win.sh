@@ -46,6 +46,7 @@ K=$O/kit; [[ -d $K ]] && mv $K $O/old/kit-$(date +%Y%m%d-%H%M%S)
 mkdir -p $K/files/mods
 cp kit/install.bat kit/uninstall.bat kit/README.txt $K/
 cp kit/find_game.bat kit/copy_exclude.txt $K/files/
+mkdir -p $K/files/licenses; cp $L/../licenses/LICENSE.txt $L/../licenses/THIRD_PARTY_NOTICES.txt $K/files/licenses/   # into the install folder licenses\
 cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
 print 25846389 > $K/files/BUILD.txt
 print ${DSM_RELEASE:-$(head -1 $L/../RELEASE)} > $K/files/RELEASE     # the kit release (auto-update compares it)

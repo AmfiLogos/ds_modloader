@@ -257,6 +257,8 @@ Section "Uninstall"
   Call un.RemoveEmptyDirs
   Push "$INSTDIR\cache"
   Call un.RemoveEmptyDirs
+  Push "$INSTDIR\licenses"
+  Call un.RemoveEmptyDirs
   Delete "$INSTDIR\install_files.log"
   Delete "$INSTDIR\install_files.prev.log"
   Delete "$INSTDIR\install_dirs.log"

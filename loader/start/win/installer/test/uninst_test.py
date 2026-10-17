@@ -33,6 +33,7 @@ try:
     r = wine([w.winpath(setup), "/S", "/D=C:\\USERDIR_José"], timeout=900)
     check("1 install into a folder with other files: own subfolder", r.returncode == 0 and os.path.exists(f"{I}/game/DungeonSettlers.exe")
           and os.path.exists(f"{I}/dsmodded_install.txt") and os.path.exists(f"{I}/install_files.log"), f"rc {r.returncode}")
+    check("1 licenses in the install folder", os.path.exists(f"{I}/licenses/LICENSE.txt") and os.path.exists(f"{I}/licenses/THIRD_PARTY_NOTICES.txt"))
     check("1 the other files untouched", open(f"{U}/notes.txt").read() == "user file\n" and os.path.exists(f"{U}/photos/a.jpg"))
     # 2
     r = wine([w.winpath(setup), "/S", f"/D=C:\\FULLDIR\\{NAME}"], timeout=300)

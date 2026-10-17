@@ -175,6 +175,7 @@ static int write_lists(void) {
     list_tree(game); _snwprintf(x, MAX_PATH, L"%ls\\mods", root); list_tree(x);
     _snwprintf(x, MAX_PATH, L"%ls\\Dungeon Settlers Modded.exe", root); list_tree(x);
     _snwprintf(x, MAX_PATH, L"%ls\\RELEASE", root); list_tree(x);
+    _snwprintf(x, MAX_PATH, L"%ls\\licenses", root); list_tree(x);
     fclose(lf_files); fclose(lf_dirs);
     return 0;
 }
