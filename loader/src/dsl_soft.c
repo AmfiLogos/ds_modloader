@@ -758,7 +758,8 @@ void dsl_soft_install(void) {
           set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
           set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
           set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
-          if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (frames uncapped, loading priority High until the title)"); }
+          splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
+          if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (splash %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel ? "cancelled" : "MISSING"); }
           else SLOG("A: boot speed-up off (game functions missing)");
       } }
     if (role_b && !getenv("DSL_SOFT_NOFAST")) {
