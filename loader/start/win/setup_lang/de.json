@@ -1,5 +1,5 @@
 {
-  "S_WELCOME": "Dies installiert {NAME}: einen Mod-Loader für Dungeon Settlers, mit den Mods Multiplayer, Custom Modes, Schwierigkeit Hell und Abklingzeit.\n\nEr startet eine Kopie des Spiels. Das Spiel in Steam, deine normalen Spielstände und deine Einstellungen ändern sich nicht.\n\nBeende Dungeon Settlers, bevor du fortfährst.",
+  "S_WELCOME": "Dies installiert {NAME}: einen Mod-Loader für Dungeon Settlers, mit den Mods Multiplayer, Units Laboratory, Schwierigkeit Hell und Abklingzeit.\n\nEr startet eine Kopie des Spiels. Das Spiel in Steam, deine normalen Spielstände und deine Einstellungen ändern sich nicht.\n\nBeende Dungeon Settlers, bevor du fortfährst.",
   "S_GAME_HEADER": "Spielordner",
   "S_GAME_SUB": "Wo Steam Dungeon Settlers installiert hat.",
   "S_GAME_TOP": "Das ist der Ordner von Dungeon Settlers in Steam (er enthält DungeonSettlers.exe). Er wird nur gelesen, nie verändert.\n\nSo findest du ihn: Klicke in Steam mit der rechten Maustaste auf Dungeon Settlers, dann auf Verwalten und dann auf Lokale Dateien durchsuchen.",

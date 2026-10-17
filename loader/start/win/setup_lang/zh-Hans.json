@@ -1,5 +1,5 @@
 {
-  "S_WELCOME": "此程序将安装 {NAME}：一个 Dungeon Settlers 的模组加载器，包含多人游戏、自定义模式、地狱难度和冷却时间模组。\n\n它运行的是游戏的一个副本。Steam 中的游戏、你的普通存档和设置都不会被更改。\n\n继续之前，请退出 Dungeon Settlers。",
+  "S_WELCOME": "此程序将安装 {NAME}：一个 Dungeon Settlers 的模组加载器，包含多人游戏、单位实验室、地狱难度和冷却时间模组。\n\n它运行的是游戏的一个副本。Steam 中的游戏、你的普通存档和设置都不会被更改。\n\n继续之前，请退出 Dungeon Settlers。",
   "S_GAME_HEADER": "游戏文件夹",
   "S_GAME_SUB": "Steam 安装 Dungeon Settlers 的位置。",
   "S_GAME_TOP": "这是 Steam 中 Dungeon Settlers 的文件夹（里面有 DungeonSettlers.exe）。它只会被读取，不会被更改。\n\n查找方法：在 Steam 中右键点击 Dungeon Settlers，依次点击“管理”、“浏览本地文件”。",

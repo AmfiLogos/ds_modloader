@@ -1,6 +1,6 @@
 {
   "_note": "Texts of Setup.exe (S_*), install.bat (B_*) and uninstall.bat (U_*). gen_setup_lang.py makes the installer's lang.nsh and the kit's files\\lang\\setup_<code>.bat from these files. Keep {NAME} (Dungeon Settlers Modded), {INSTDIR} (the install folder) and {BUILD} (the Steam build number) as they are. B_ and U_ texts: no % \" ! characters.",
-  "S_WELCOME": "This installs {NAME}: a mod loader for Dungeon Settlers, with the Multiplayer, Custom Modes, Hell difficulty and cooldown mods.\n\nIt plays a copy of the game. Steam's game, your normal saves and your settings do not change.\n\nQuit Dungeon Settlers before you continue.",
+  "S_WELCOME": "This installs {NAME}: a mod loader for Dungeon Settlers, with the Multiplayer, Units Laboratory, Hell difficulty and cooldown mods.\n\nIt plays a copy of the game. Steam's game, your normal saves and your settings do not change.\n\nQuit Dungeon Settlers before you continue.",
   "S_GAME_HEADER": "Game folder",
   "S_GAME_SUB": "Where Steam installed Dungeon Settlers.",
   "S_GAME_TOP": "This is the folder of Dungeon Settlers in Steam (it has DungeonSettlers.exe). It is only read, never changed.\n\nTo find it: in Steam, right-click Dungeon Settlers, click Manage, then Browse local files.",
