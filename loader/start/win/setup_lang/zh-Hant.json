@@ -33,7 +33,7 @@
   "B_RUNNING": "Dungeon Settlers 正在執行。請關閉遊戲，然後再執行一次 install.bat。",
   "B_BASELIB_MISSING": "缺少遊戲檔案 baselib.dll。",
   "B_BASELIB_CHANGED": "遊戲檔案 baselib.dll 不是原始檔案。",
-  "B_VERIFY": "在 Steam 中於 Dungeon Settlers 上按右鍵，依序點選「內容」、「已安裝的檔案」、「驗證遊戲檔案完整性」。",
+  "B_VERIFY": "在 Steam 中於 Dungeon Settlers 上按右鍵，依序點選「內容」、「已安裝檔案」、「驗證遊戲檔案的完整性」。",
   "B_RUN_AGAIN": "然後再執行一次 install.bat。",
   "B_HAVE_COPY": "遊戲副本已存在（組建 {BUILD}）。",
   "B_COPYING": "正在複製遊戲（約 700 MB，需要一兩分鐘）...",

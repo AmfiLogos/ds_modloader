@@ -33,7 +33,7 @@
   "B_RUNNING": "Dungeon Settlers läuft. Schließe das Spiel und führe install.bat dann erneut aus.",
   "B_BASELIB_MISSING": "Die Spieldatei baselib.dll fehlt.",
   "B_BASELIB_CHANGED": "Die Spieldatei baselib.dll ist nicht das Original.",
-  "B_VERIFY": "Klicke in Steam mit der rechten Maustaste auf Dungeon Settlers, dann auf Eigenschaften, Installierte Dateien, Spieldateien auf Fehler überprüfen.",
+  "B_VERIFY": "Klicke in Steam mit der rechten Maustaste auf Dungeon Settlers, dann auf Eigenschaften, Installierte Dateien, Dateien auf Fehler überprüfen.",
   "B_RUN_AGAIN": "Führe install.bat dann erneut aus.",
   "B_HAVE_COPY": "Die Spielkopie ist bereits vorhanden (Build {BUILD}).",
   "B_COPYING": "Das Spiel wird kopiert (etwa 700 MB, das dauert ein bis zwei Minuten) ...",
