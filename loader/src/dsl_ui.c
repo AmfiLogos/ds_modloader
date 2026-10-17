@@ -1098,55 +1098,6 @@ void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
     if (w) rt_set((Obj)w, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ wd, h }, (V2){ -right, -top });
 }
 
-/* ------------------------------------------------------------------ boot logos (fast boot, dsl_soft.c drives the timing)
-   The Unity splash is cancelled in a fast boot; this draws the same two logos (the game's splash sprites "CanOpeners" and
-   "WhisperGames", loaded with the player settings) on the splash background colour, over everything, while the boot goes
-   on. idx 0 / 1 = that logo at alpha; -1 = remove. 1 = shown, 0 = not (yet), -1 = cannot (sprites not found). */
-static uintptr_t h_bl_root, h_bl_logo, h_bl_spr[2];
-static int bl_state;                                                 /* 0 none, 1 built, 2 removed, -1 failed */
-int dsl_ui_boot_logo(int idx, float alpha) {
-    if (idx < 0) {
-        Obj r = hget(h_bl_root); if (r) destroy_obj(go_of(r));
-        hfree(&h_bl_root); hfree(&h_bl_logo); hfree(&h_bl_spr[0]); hfree(&h_bl_spr[1]);
-        if (bl_state == 1) bl_state = 2;
-        return 0;
-    }
-    if (bl_state == -1 || bl_state == 2 || idx > 1) return bl_state == -1 ? -1 : 0;
-    if (bl_state == 0) {
-        static const char *const names[2] = { "CanOpeners", "WhisperGames" };
-        if (!K.Canvas || !K.Image || !K.Sprite || !m_cv_mode) { bl_state = -1; return -1; }
-        Obj arr = find_all(K.Sprite); int n = arr_n(arr);
-        for (int i = 0; i < n; i++) { Obj sp = arr_at(arr, i); char nm[64]; obj_name(sp, nm, sizeof nm);
-            for (int k = 0; k < 2; k++) if (!hget(h_bl_spr[k]) && !strcmp(nm, names[k])) hset(&h_bl_spr[k], sp); }
-        if (!hget(h_bl_spr[0]) || !hget(h_bl_spr[1])) { dsl_log("ui: boot logos: splash sprites not found (%d sprites loaded): no logos", n); bl_state = -1; return -1; }
-        Obj g = new_go("dsl_boot_logos", NULL); if (!g) { bl_state = -1; return -1; }
-        if (m_obj_dontdestroy) CALL(m_obj_dontdestroy, void, Obj)(g, m_obj_dontdestroy);
-        Obj cv = comp_add(g, K.Canvas); if (!cv) { bl_state = -1; return -1; }
-        CALL(m_cv_mode, void, Obj, int)(cv, 0, m_cv_mode);
-        if (m_cv_order) CALL(m_cv_order, void, Obj, int)(cv, 32700, m_cv_order);          /* over the loading screen */
-        Obj bg = new_rect("bg", g), bi = bg ? comp_add(bg, K.Image) : NULL;
-        if (bi) { img_set(bi, NULL, (Col){ 0.1216f, 0.1216f, 0.1255f, 1 }, 0); gr_raycast(bi, 1); stretch(bg); }   /* the splash background */
-        Obj lr = new_rect("logo", g), li = lr ? comp_add(lr, K.Image) : NULL;
-        if (!li) { destroy_obj(g); bl_state = -1; return -1; }
-        hset(&h_bl_root, cv); hset(&h_bl_logo, li); bl_state = 1;
-        dsl_log("ui: boot logos built (splash sprites found)");
-    }
-    Obj li = hget(h_bl_logo), sp = hget(h_bl_spr[idx]); if (!li || !sp) { bl_state = -1; return -1; }
-    /* size in screen pixels (overlay canvas without scaler: 1 unit = 1 pixel): the sprite (its art has wide transparent margins) fits 90 % of the width and
-       60 % of the height, its own aspect kept */
-    static int (*sw)(void), (*sh)(void); static void *m_spr_rect;
-    if (!sw) { void *(*ic)(const char *) = dsl_ga_sym("il2cpp_resolve_icall");
-               if (ic) { sw = ic("UnityEngine.Screen::get_width"); sh = ic("UnityEngine.Screen::get_height"); }
-               m_spr_rect = OPT(K.Sprite, "get_rect", 0); }
-    typedef struct { float x, y, w, h; } RectF;
-    RectF sr = m_spr_rect ? CALL(m_spr_rect, RectF, Obj)(sp, m_spr_rect) : (RectF){ 0, 0, 2, 1 };
-    float W = sw ? (float)sw() : 960, H = sh ? (float)sh() : 540, a = sr.h > 0 ? sr.w / sr.h : 2;
-    float lw = W * 0.9f, lh = lw / a; if (lh > H * 0.6f) { lh = H * 0.6f; lw = lh * a; }
-    rt_set(tr_of(li), (V2){ 0.5f, 0.5f }, (V2){ 0.5f, 0.5f }, (V2){ 0.5f, 0.5f }, (V2){ lw, lh }, (V2){ 0, 0 });
-    img_set(li, sp, (Col){ 1, 1, 1, alpha < 0 ? 0 : alpha > 1 ? 1 : alpha }, 0);
-    return 1;
-}
-
 /* ------------------------------------------------------------------ frame tick */
 static void run_queue(void) {
     uint32_t q[QMAX]; int n = nq; memcpy(q, queue, (size_t)n * sizeof *q); nq = 0;

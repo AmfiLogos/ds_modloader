@@ -99,7 +99,6 @@ static int hexeq(const unsigned char *a, const char *hex) {
     for (size_t i = 0; hex[2 * i]; i++) { unsigned v; if (sscanf(hex + 2 * i, "%2x", &v) != 1 || a[i] != v) return 0; }
     return 1;
 }
-
 void dsl_fastboot_install(const char *logdir) {
     const char *e = getenv("DSL_FASTBOOT");
     if (e && *e == '0') { dsl_log("fastboot: off (DSL_FASTBOOT=0)"); return; }

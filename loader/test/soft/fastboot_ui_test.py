@@ -3,7 +3,8 @@
   fastboot_ui_test.py <out>
 One fast boot with the default mods + the uikit-demo driver (real mouse events through the stock input path):
   1 boot time: process start -> title ready (scene 1, not busy) about 3 s
-  2 the splash's two logos were drawn: one frame of each (DSL_FASTBOOT_SHOTS) written as PNG files into <out>/shots
+  2 Unity's own splash is drawn over the boot: a frame (every 0.25 s, DSL_FASTBOOT_SHOTS) shows the first logo at exactly
+    the place and size of a stock boot's frame of this copy (960x540: logo box 383,233-577,308, measured 2026-10-17)
   3 the Auto-update switch first shows after the boot is done (never under the loading screen)
   4 hover over the switch: no tooltip; a real click flips it, a second click flips it back
   5 in a world the switch is hidden
@@ -54,7 +55,7 @@ try:
     mj = os.path.join(I, 'mp.json')
     if os.path.exists(mj): os.replace(mj, os.path.join(OUT, 'mp.json.aside'))
     os.environ.update({'LRIG_DYLIB': os.path.join(LW, 'build', 'dsload.dylib'), 'DSL_MODS_DIR': MD, 'DSL_PROFILE': prof,
-                       'DSML_ROOT': ROOT, 'DSL_UPDATE': '0', 'DSL_FASTBOOT_SHOTS': SHOTS, 'DSL_UIKIT_TEST': DRV})
+                       'DSML_ROOT': ROOT, 'DSL_UPDATE': '0', 'DSL_FASTBOOT_SHOTS': SHOTS, 'DSL_SHOT_EVERY': '0.25', 'DSL_UIKIT_TEST': DRV})
     os.environ.pop('DSML_SESSION', None)
     t0 = time.time(); r.start(X, window=True, fps=60); title = None
     while time.time() - t0 < 120:
@@ -68,8 +69,14 @@ try:
     time.sleep(2)
     L = open(os.path.join(I, 'dsload.log'), errors='replace').read()
     shots = sorted(f for f in os.listdir(SHOTS) if f.endswith('.png'))
-    check('2 both splash logos drawn (one frame each)', len([f for f in shots if f.startswith('logo1')]) == 1 and len([f for f in shots if f.startswith('logo2')]) == 1,
-          f'{shots}; {next((l[13:] for l in L.splitlines() if "boot logos" in l and "A:" in l), "no logo line")}')
+    from PIL import Image, ImageChops
+    def box(p):
+        im = Image.open(p).convert('RGB'); bg = Image.new('RGB', im.size, im.getpixel((5, 5)))
+        return im.size, ImageChops.difference(im, bg).point(lambda v: 255 if v > 24 else 0).getbbox()
+    boxes = {f: box(os.path.join(SHOTS, f)) for f in shots}
+    hit = [f for f, b in boxes.items() if b == ((960, 540), (383, 233, 577, 308))]
+    check('2 Unity splash drawn over the boot: the first logo at the stock place and size', hit,
+          f'{len(shots)} frames, logo frames {hit[:3]}; {next((l[13:] for l in L.splitlines() if "A: splash begun" in l), "no splash line")}')
     lb = [l for l in L.splitlines() if 'A: boot done' in l]; lc = [l for l in L.splitlines() if 'update: title corner shown' in l]
     check('3 the Auto-update switch first shows after the boot is done', lb and lc and ts(lc[0]) >= ts(lb[0]), f'boot done {lb[0][:12] if lb else "-"}, corner {lc[0][:12] if lc else "never"}')
     D = Drv(DRV)
