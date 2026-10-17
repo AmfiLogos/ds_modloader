@@ -98,13 +98,18 @@ static GSave G[MAXG]; static int ng;
 static char extra[64][256]; static int nextra;          /* new save names of game worlds (SaveFile), routed to the game */
 static char gworld[64][40]; static int ngworld;         /* game worlds seen loaded (manual save names have no guid) */
 
+/* "mp_*" = a multiplayer temporary save (mp_sync join point, mp_fullcheck full-state check, test saves): the mod writes
+   it through the game's Save and reads it back from <DSML_DATA>/Saves by path. Never a game save, never routed to the
+   game folder, even when its world is a game world (bug 2026-10-18: a guest's full check with the guid of one of its
+   game saves went to the game folder, Steam Cloud synced, and was never deleted). */
+static int mp_temp(const char *name) { return !strncasecmp(name, "mp_", 3); }
 static GSave *g_find(const char *name) { for (int i = 0; i < ng; i++) if (!strcasecmp(G[i].name, name)) return &G[i]; return NULL; }
 static void scan_game_locked(void) {
     static GSave old[MAXG]; int nold = ng; memcpy(old, G, sizeof(GSave) * (size_t)ng);
     ng = 0;
     DIR *d = opendir(game_d); struct dirent *de; if (!d) return;
     while ((de = readdir(d)) && ng < MAXG) {
-        if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
+        if (de->d_name[0] == '.' || !is_json(de->d_name) || mp_temp(de->d_name)) continue;
         char p[1500]; struct stat st; snprintf(p, sizeof p, "%s" SEP "%s", game_d, de->d_name);
         if (stat(p, &st) || !S_ISREG(st.st_mode)) continue;
         GSave *s = &G[ng]; memset(s, 0, sizeof *s);
@@ -229,7 +234,7 @@ static uint8_t my_savefile(void *data, const void *mi) {
                  *(const uint32_t *)b, *(const uint16_t *)(b + 4), *(const uint16_t *)(b + 6), b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
         utf8_of(AT(data, off_name, Obj), nm, sizeof nm);
         pthread_mutex_lock(&mu);
-        int game = guid_is_game_locked(g), known = is_game_locked(nm);
+        int game = guid_is_game_locked(g) && !mp_temp(nm), known = is_game_locked(nm);
         if (game && !known && nm[0] && nextra < 64) snprintf(extra[nextra++], 256, "%s", nm);
         pthread_mutex_unlock(&mu);
         dsl_log("saves: saving %s (world %s) to the %s folder", nm, g, game ? "game's" : "modded");
