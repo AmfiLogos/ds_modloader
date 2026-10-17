@@ -51,31 +51,38 @@ static void apply_frame(void) {
     NSScreen *s = w.screen ? w.screen : NSScreen.mainScreen;
     if (!has_notch(s)) return;
     applying = YES;
-    NSWindowCollectionBehavior cb = w.collectionBehavior;
-    if (!(cb & NSWindowCollectionBehaviorFullScreenNone)) {
-        w.collectionBehavior = (cb & ~(NSWindowCollectionBehaviorFullScreenPrimary | NSWindowCollectionBehaviorFullScreenAuxiliary))
-                               | NSWindowCollectionBehaviorFullScreenNone;
-        static int m; if (++m <= 3) dsl_log("notch: native full screen off for the game window");
+    /* no exception may leave this function: it runs inside notifications Unity posts during its own start, and an
+       exception unwinding through Unity stops the start (black window, v0.1.11 on a notched screen) */
+    @try {
+        NSWindowCollectionBehavior cb = w.collectionBehavior;
+        if (!(cb & NSWindowCollectionBehaviorFullScreenNone)) {
+            w.collectionBehavior = (cb & ~(NSWindowCollectionBehaviorFullScreenPrimary | NSWindowCollectionBehaviorFullScreenAuxiliary))
+                                   | NSWindowCollectionBehaviorFullScreenNone;
+            static int m; if (++m <= 3) dsl_log("notch: native full screen off for the game window");
+        }
+        if (w.styleMask & NSWindowStyleMaskFullScreen) {           /* leave native full screen first; the exit notification re-applies */
+            [w toggleFullScreen:nil];
+            dsl_log("notch: the game window was in native full screen: leaving it");
+            return;
+        }
+        NSRect f = s.frame;
+        if (w.styleMask != NSWindowStyleMaskBorderless || !NSEqualRects(w.frame, f)) {
+            w.styleMask = NSWindowStyleMaskBorderless;
+            w.acceptsMouseMovedEvents = YES;
+            [w setFrame:f display:YES];
+            [w makeKeyAndOrderFront:nil];
+            if (w.canBecomeMainWindow) [w makeMainWindow];         /* a borderless NSWindow may refuse: AppKit asserts */
+            static int n;                                           /* the game may set its size again: log the first 5 */
+            if (++n <= 5) dsl_log("notch: game window borderless over the whole screen {%.0f,%.0f %.0fx%.0f} (notch band %.0f pt)%s",
+                                  w.frame.origin.x, w.frame.origin.y, w.frame.size.width, w.frame.size.height, s.safeAreaInsets.top,
+                                  n == 5 ? "; further re-applies not logged" : "");
+        }
+        restore_first_responder(w);
+    } @catch (NSException *e) {
+        static int k; if (++k <= 3) dsl_log("notch: window change refused by AppKit (%s: %s); the game goes on", e.name.UTF8String, e.reason.UTF8String);
+    } @finally {
+        applying = NO;
     }
-    if (w.styleMask & NSWindowStyleMaskFullScreen) {               /* leave native full screen first; the exit notification re-applies */
-        [w toggleFullScreen:nil];
-        dsl_log("notch: the game window was in native full screen: leaving it");
-        applying = NO; return;
-    }
-    NSRect f = s.frame;
-    if (w.styleMask != NSWindowStyleMaskBorderless || !NSEqualRects(w.frame, f)) {
-        w.styleMask = NSWindowStyleMaskBorderless;
-        w.acceptsMouseMovedEvents = YES;
-        [w setFrame:f display:YES];
-        [w makeKeyAndOrderFront:nil];
-        [w makeMainWindow];
-        static int n;                                               /* the game may set its size again: log the first 5 */
-        if (++n <= 5) dsl_log("notch: game window borderless over the whole screen {%.0f,%.0f %.0fx%.0f} (notch band %.0f pt)%s",
-                              w.frame.origin.x, w.frame.origin.y, w.frame.size.width, w.frame.size.height, s.safeAreaInsets.top,
-                              n == 5 ? "; further re-applies not logged" : "");
-    }
-    restore_first_responder(w);
-    applying = NO;
 }
 static void apply_presentation(void) {
     if (!NSApp.isActive) return;
