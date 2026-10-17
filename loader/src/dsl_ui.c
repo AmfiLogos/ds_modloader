@@ -361,15 +361,17 @@ static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
    down to 8-18); long text keeps its size and its box grows (ContentSizeFitter, preferred height). It never changes the
    size per language. Here: every text styled by txt_style keeps its design size. Once per frame, a text whose content or
    rect changed is measured at that size (TMP preferredWidth / preferredHeight). It fits: as before, no auto size (English
-   that fits looks exactly as before). It does not fit: auto size from the design size down to fit_min(), and a one-line
-   label wraps when its rect holds two lines. Same code as multiplayer's mpmenu.c. */
+   that fits looks exactly as before). It does not fit: auto size from the design size down to fit_min() (0.75 x, the
+   game's), and a one-line label wraps when its rect holds two lines. Still too long at 0.75: the game's way for long
+   text, the text keeps its design size and wraps to more lines (the line grows; it draws past its rect, centred); a box
+   we own grows to DSLUi.text_height. Same code as multiplayer's mpmenu.c. */
 #define FIT_N 2048                                                   /* open addressing by object address */
 typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi, stock; } FitE;
 typedef struct { float x, y, w, h; } FRect;
 static FitE fit_tab[FIT_N];
 static int fit_count;
 static int fit_ok(void) { return m_tmp_fsmin && m_tmp_fsmax && m_tmp_pw && m_tmp_ph && m_rt_rect && m_tmp_getsize && m_tmp_getauto; }
-static float fit_min(float size) { float m = (float)(int)(size * 0.6f + 0.5f); return m < 8 ? (size < 8 ? size : 8) : m; }
+static float fit_min(float size) { float m = (float)(int)(size * 0.75f + 0.5f); return m < 8 ? (size < 8 ? size : 8) : m; }   /* the game's 0.75 */
 static FitE *fit_find(Obj t, int add) {
     if (!t || !fit_ok()) return NULL;
     size_t i = ((uintptr_t)t >> 4) * 2654435761u % FIT_N, tomb = (size_t)-1;
@@ -389,11 +391,21 @@ static FitE *fit_find(Obj t, int add) {
 static void fit_drop(FitE *e) { hfree(&e->h); memset(e, 0, sizeof *e); e->t = (Obj)1; fit_count--; }
 static uint32_t fit_hash(const char *s) { uint32_t h = 2166136261u; for (; s && *s; s++) h = (h ^ (uint8_t)*s) * 16777619u; return h; }
 static void fit_auto(Obj t, int on) { CALL(m_tmp_auto, void, Obj, bool)(t, on != 0, m_tmp_auto); }
+static void fit_set(Obj t, int autosize, float size, int wrap) {    /* as styled at this size, wrap on / off */
+    fit_auto(t, autosize); CALL(m_tmp_size, void, Obj, float)(t, size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, wrap, m_tmp_wrap);
+}
+typedef struct { float x, y; } FV2;
+static FV2 fit_pref(Obj t, float w) {                                /* preferred width / height, wrapped at w (<= 0: its rect) */
+    if (w > 0 && m_tmp_prefv) return CALL(m_tmp_prefv, FV2, Obj, float, float)(t, w, 100000.f, m_tmp_prefv);
+    void *pw = vmi(t, m_tmp_pw), *ph = vmi(t, m_tmp_ph);
+    return (FV2){ CALL(pw, float, Obj)(t, pw), CALL(ph, float, Obj)(t, ph) };
+}
 static void fit_style(Obj t, float size, int wrap) {
     FitE *e = fit_find(t, 1); if (!e) return;
     CALL(m_tmp_fsmax, void, Obj, float)(t, size, m_tmp_fsmax);       /* the design size */
     CALL(m_tmp_fsmin, void, Obj, float)(t, fit_min(size), m_tmp_fsmin);
     if (e->size == size && e->wrap == (wrap != 0) && e->on) {        /* styled again the same way: keep the fit (no flicker) */
+        if (e->on == 4) { fit_set(t, 0, size, 1); return; }           /* grows: design size, more lines */
         fit_auto(t, 1); if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
         return;
     }
@@ -405,13 +417,23 @@ static void fit_text(Obj t, const char *s) {
 }
 static void fit_one(FitE *e, Obj t, float w, float h) {
     if (w < 4 || h < 4) return;                                       /* not placed yet */
-    if (e->on) { fit_auto(t, 0); CALL(m_tmp_size, void, Obj, float)(t, e->size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, e->wrap, m_tmp_wrap); }
+    if (e->on) fit_set(t, 0, e->size, e->wrap);
     void *pw = vmi(t, m_tmp_pw), *ph = vmi(t, m_tmp_ph);
     int over = !e->wrap ? CALL(pw, float, Obj)(t, pw) > w + 1 : CALL(ph, float, Obj)(t, ph) > h * 1.1f + 2;
     e->on = 0;
     if (over) {
         float mn = fit_min(e->size);
-        e->on = !e->wrap && !e->multi && h >= 2.7f * mn ? 2 : 1;      /* 2: a one-line label that may use two lines */
+        int two = !e->wrap && !e->multi && h >= 2.7f * mn;           /* a one-line label that may use two lines */
+        fit_set(t, 0, mn, e->wrap || two);                           /* does it fit at 0.75? */
+        int fits = e->wrap || two ? fit_pref(t, w).y <= h * 1.1f + 2 : fit_pref(t, 0).x <= w + 1;
+        fit_set(t, 0, e->size, e->wrap);
+        if (!fits) {                                                 /* the game's long text: design size, more lines */
+            e->on = 4; fit_set(t, 0, e->size, 1);
+            char tx[64] = ""; utf8_of(tmp_get(t), tx, sizeof tx);
+            dsl_log("ui: text fit: \"%s\" is too long for %.0fx%.0f even at %.0f: size %.0f, wraps (%.0f high)", tx, w, h, mn, e->size, fit_pref(t, w).y);
+            return;
+        }
+        e->on = two ? 2 : 1;                                         /* 2: a one-line label that may use two lines */
         CALL(m_tmp_fsmin, void, Obj, float)(t, mn, m_tmp_fsmin);
         CALL(m_tmp_fsmax, void, Obj, float)(t, e->size, m_tmp_fsmax);
         if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
@@ -1060,12 +1082,18 @@ static void k_place(DSLObj o, float x, float y, float w_, float h) {
     if (w->kind == W_SCROLL) { V2 s = rt_size(hget(w->h_rt)); CALL(m_rt_size, void, Obj, V2)(hget(w->h_rt), (V2){ w_, s.y < h ? h : s.y }, m_rt_size); }
 }
 /* preferred height of a text widget's text at width w (0 = its own width), at its design size: a caller grows its box */
-typedef struct { float x, y; } FV2;
 static float k_text_height(DSLObj o, float w) {
     W *wd = w_of(o); Obj t = wd ? hget(wd->h_label) : NULL;
     if (!t && o) t = isa((Obj)o, K.TMP_Text) ? (Obj)o : comp_get((Obj)o, K.TMP_Text);
     if (!t || !isa(t, K.TMP_Text)) return 0;
     if (w <= 0 && m_rt_rect) { Obj rt = tr_of(t); if (isa(rt, K.RectTransform)) w = CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect).w; }
+    FitE *e = fit_find(t, 0);
+    if (e && e->size >= 1 && w > 0) {                                /* a fitted text: at its design size, wrapped at w, then its fit again */
+        fit_set(t, 0, e->size, 1); float ph = fit_pref(t, w).y;
+        if (!e->on || e->on == 4) fit_set(t, 0, e->size, e->on == 4 ? 1 : e->wrap);
+        else { CALL(m_tmp_wrap, void, Obj, int)(t, e->on == 2 ? 1 : e->wrap, m_tmp_wrap); fit_auto(t, 1); }
+        return ph;
+    }
     if (m_tmp_prefv && w > 0) return CALL(m_tmp_prefv, FV2, Obj, float, float)(t, w, 100000.f, m_tmp_prefv).y;
     void *ph = m_tmp_ph ? vmi(t, m_tmp_ph) : NULL;
     return ph ? CALL(ph, float, Obj)(t, ph) : 0;
