@@ -68,11 +68,16 @@ put $G/gcd-cdr.dylib
 cp modules/gcd-cdr/mod.json $G/; cp modules/gcd-cdr/rva/*.tsv $G/rva/
 echo "built $G"
 
-# hell-difficulty (code half; the table half is applied to the copy, see modules/hell-difficulty/hell.c)
+# hell-difficulty: code half + table half (hell_data.c rebuilds the Hell table bundle from the player's stock one and the
+# delta rva/<build>_mac_tables.dsdelta; without the delta the module turns Hell off). The delta is made from the stock
+# Mac table bundle (game file, read only; HELL_STOCK_MAC) by modules/hell-difficulty/tools/hell_delta.py, as build_mods.sh does.
 E=build/mods/hell-difficulty; mkdir -p $E/rva
 nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/hell-difficulty.dylib -o $E/hell-difficulty.dylib.tmp modules/hell-difficulty/hell.c
 put $E/hell-difficulty.dylib
 cp modules/hell-difficulty/mod.json $E/; cp modules/hell-difficulty/rva/*.tsv $E/rva/
+HM=${HELL_STOCK_MAC:-$HOME/DungeonSettlers_HellDifficulty/b25846389/stock/table_assets_all_ee685f7db1494c1e6bf42e948951b8dc.bundle}
+if [[ -f $HM ]] && nice -n 19 /usr/local/bin/python3 modules/hell-difficulty/tools/hell_delta.py "$HM" $E/rva/25846389_mac_tables.dsdelta | tail -1; then :
+else echo "WARNING: no Hell table delta (stock Mac table bundle $HM missing): Hell stays off with this build" >&2; fi
 echo "built $E"
 
 # floor-logger (API 1, unchanged binary)

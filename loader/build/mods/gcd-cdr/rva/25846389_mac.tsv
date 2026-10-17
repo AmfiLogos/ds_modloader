@@ -1,6 +1,0 @@
-# Per-build table, GameAssembly arm64 build 25846389 (DS_B.0.4.29). name <TAB> rva.
-# From ~/ds_skill_truth/dump_25846389/dump.cs + disassembly of CooldownCondition.<OnSuccessCondition>d__2.MoveNext (0x8A4FE4),
-# which loads the GetComponent<StatusReader> MethodInfo from 0x6691B40, calls 0x185FEDC, then StatusReader.GetValue.
-EntityExtensions.GetComponent<object>	0x185FEDC
-slot.GetComponent<StatusReader>	0x6691B40
-il2cpp_codegen_initialize_runtime_metadata	0x6FB6FC

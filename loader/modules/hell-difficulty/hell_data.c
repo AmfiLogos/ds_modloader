@@ -153,12 +153,13 @@ static void *my_load(void *path, uint32_t crc, uint64_t off, const void *mi) {
     return o_load(path, crc, off, mi);
 }
 
-/* dsl_plugin_init part: build / check the Hell bundle, then the load hook. 0 = ok (or no delta for this OS: nothing to do) */
+/* dsl_plugin_init part: build / check the Hell bundle, then the load hook. 0 = ok. No delta = Hell off (its code half alone
+   would offer a difficulty the tables do not know) */
 int hell_tables_init(const DSLHost *host, DSLPlugin *self) {
     DH = host; DME = self;
     char dp[1200]; snprintf(dp, sizeof dp, "%s/rva/%s_" DELTA_OS "_tables.dsdelta", host->module_dir(self), host->game_build);
     size_t dn = 0; uint8_t *d = slurp(dp, &dn);
-    if (!d) { host->log(self, "Hell tables: no delta %s: table half not applied by this module", dp); return 0; }
+    if (!d) { host->log(self, "Hell tables: no delta %s (build the mods with loader/modules/build_mods.sh): Hell OFF", dp); return 13; }
     int rc = 10; uint8_t *raw = NULL, *src = NULL, *out = NULL;
     if (dn < 8 + 4 + 8 + 32 + 8 + 32 + 2 || memcmp(d, "DSDLT1\0\0", 8) || d[8] != 1) { host->log(self, "Hell tables: %s is not a delta file", dp); goto done; }
     const uint8_t *p = d + 12; uint64_t src_size = le64(p); const uint8_t *src_sha = p + 8; p += 40;

@@ -1,6 +1,0 @@
-# Hell difficulty, GameAssembly arm64 build 25846389: in-place code patches.
-# Generated from ~/DungeonSettlers_HellDifficulty/b25846389/apply_hell.py DYLIB_PATCHES (owner's byte patch).
-# patch <rva> <expected hex> <new hex> <note>   |   name <TAB> rva (functions used by the module)
-RecruitHelper.DetermineInitialEquipments	0xd5c58c
-RecruitHelper.ParseItems	0xd60228
-DetermineInitialEquipments.ParseItems_return	0xd5c630
