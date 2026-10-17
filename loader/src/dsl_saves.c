@@ -94,7 +94,7 @@ static char gworld[64][40]; static int ngworld;         /* game worlds seen load
 
 static GSave *g_find(const char *name) { for (int i = 0; i < ng; i++) if (!strcasecmp(G[i].name, name)) return &G[i]; return NULL; }
 static void scan_game_locked(void) {
-    GSave old[MAXG]; int nold = ng; memcpy(old, G, sizeof(GSave) * (size_t)ng);
+    static GSave old[MAXG]; int nold = ng; memcpy(old, G, sizeof(GSave) * (size_t)ng);
     ng = 0;
     DIR *d = opendir(game_d); struct dirent *de; if (!d) return;
     while ((de = readdir(d)) && ng < MAXG) {
@@ -249,7 +249,7 @@ static uint8_t my_quar(Obj path, Obj why, const void *mi) {
 static char differ[8][64]; static int ndiffer; static int differ_told;
 static int same_bytes(const char *a, const char *b) {
     FILE *x = fopen(a, "rb"), *y = fopen(b, "rb"); int same = x && y;
-    char p[65536], q[65536];
+    static char p[65536], q[65536];                      /* start only (main thread) */
     while (same) {
         size_t n = fread(p, 1, sizeof p, x), m = fread(q, 1, sizeof q, y);
         if (n != m || memcmp(p, q, n)) same = 0;
@@ -260,7 +260,7 @@ static int same_bytes(const char *a, const char *b) {
 }
 static void move_old_copies(void) {
     DIR *d = opendir(mod_d); struct dirent *de; if (!d) return;
-    char names[MAXG][256]; int n = 0;
+    static char names[MAXG][256]; int n = 0;             /* start only */
     while ((de = readdir(d)) && n < MAXG) if (de->d_name[0] != '.' && is_json(de->d_name)) snprintf(names[n++], 256, "%s", de->d_name);
     closedir(d);
     for (int i = 0; i < n; i++) {
