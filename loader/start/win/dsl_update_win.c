@@ -273,12 +273,30 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
         if (!dsl_uos_exists(s)) { snprintf(why, wn, TR("the kit has no %s"), ONE[i].from); return -1; }
         if (swap_in(s, d, b, mv)) { snprintf(why, wn, TR("%s could not be replaced"), ONE[i].to); return -1; }
     }
-    /* the kit's mods, file by file; the player's other mods stay */
-    char sm[1500], dm[1300], bm[1300]; int nf = 0;
+    /* the kit's mods, file by file; each mod folder the kit brings is replaced whole: its files the new kit lacks go to the
+       backup first (a file only the old version had could still be read or loaded). The player's other mods stay. */
+    char sm[1500], dm[1300], bm[1300]; int nf = 0, nx = mv->n;
     snprintf(sm, sizeof sm, "%s\\mods", fdir); snprintf(dm, sizeof dm, "%s\\mods", root); snprintf(bm, sizeof bm, "%s\\mods", backup);
+    if (is_dir(sm)) {
+        char pat[1600]; snprintf(pat, sizeof pat, "%s\\*", sm); wchar_t wp[1600]; wide(pat, wp, 1600);
+        WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(wp, &fd); int r = 0;
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+                char nm[600], s[2200], d[2000], b[2000];
+                if (!WideCharToMultiByte(CP_ACP, 0, fd.cFileName, -1, nm, sizeof nm, NULL, NULL)) { r = -1; break; }
+                snprintf(s, sizeof s, "%s\\%s", sm, nm); snprintf(d, sizeof d, "%s\\%s", dm, nm); snprintf(b, sizeof b, "%s\\%s", bm, nm);
+                if (is_dir(d) && (r = retire_extra(s, d, b, "", mv))) break;
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        if (r) { snprintf(why, wn, TR("the mods could not be replaced")); return -1; }
+    }
+    nx = mv->n - nx;
     prog(mv, 75);
     if (is_dir(sm) && swap_tree(sm, dm, bm, "", mv, &nf)) { snprintf(why, wn, TR("the mods could not be replaced")); return -1; }
-    dsl_log("update: Windows kit installed: baselib.dll, the starter, RELEASE and %d mod file(s) (old ones in %s)", nf, backup);
+    dsl_log("update: Windows kit installed: baselib.dll, the starter, RELEASE and %d mod file(s), %d old mod file(s) the kit "
+            "no longer has moved out (old ones in %s)", nf, nx, backup);
     return 0;
 }
 

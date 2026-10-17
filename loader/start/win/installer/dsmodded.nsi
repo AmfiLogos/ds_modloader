@@ -30,37 +30,89 @@ VIAddVersionKey "ProductVersion" "${VER}"
 VIAddVersionKey "LegalCopyright" "MIT license"
 
 Var GameDir
+Var LangType                                  ; the game's LanguageType 0..9 of the texts (install.bat gets it too)
 
 !define MUI_ICON "${ICON}"
 !define MUI_UNICON "${ICON}"
 !define MUI_ABORTWARNING
-!define MUI_WELCOMEPAGE_TEXT "This installs ${NAME}: a mod loader for Dungeon Settlers, with the Multiplayer, Custom Modes, Hell difficulty and cooldown mods.$\r$\n$\r$\nIt plays a copy of the game. Steam's game, your normal saves and your settings do not change.$\r$\n$\r$\nQuit Dungeon Settlers before you continue."
+!define MUI_WELCOMEPAGE_TEXT "$(S_WELCOME)"
 !insertmacro MUI_PAGE_WELCOME
 
-!define MUI_PAGE_HEADER_TEXT "Game folder"
-!define MUI_PAGE_HEADER_SUBTEXT "Where Steam installed Dungeon Settlers."
-!define MUI_DIRECTORYPAGE_TEXT_TOP "This is the folder of Dungeon Settlers in Steam (it has DungeonSettlers.exe). It is only read, never changed.$\r$\n$\r$\nTo find it: in Steam, right-click Dungeon Settlers, click Manage, then Browse local files."
-!define MUI_DIRECTORYPAGE_TEXT_DESTINATION "Dungeon Settlers game folder"
+!define MUI_PAGE_HEADER_TEXT "$(S_GAME_HEADER)"
+!define MUI_PAGE_HEADER_SUBTEXT "$(S_GAME_SUB)"
+!define MUI_DIRECTORYPAGE_TEXT_TOP "$(S_GAME_TOP)"
+!define MUI_DIRECTORYPAGE_TEXT_DESTINATION "$(S_GAME_DEST)"
 !define MUI_DIRECTORYPAGE_VARIABLE $GameDir
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE GameDirLeave
 !insertmacro MUI_PAGE_DIRECTORY
 
-!define MUI_PAGE_HEADER_TEXT "Install folder"
-!define MUI_PAGE_HEADER_SUBTEXT "Where the modded copy of the game goes (about 1 GB)."
-!define MUI_DIRECTORYPAGE_TEXT_TOP "${NAME} goes into its own folder named $\"${NAME}$\" (added to the folder you choose when its name is different). That folder must be new, empty or an earlier ${NAME} install."
+!define MUI_PAGE_HEADER_TEXT "$(S_INST_HEADER)"
+!define MUI_PAGE_HEADER_SUBTEXT "$(S_INST_SUB)"
+!define MUI_DIRECTORYPAGE_TEXT_TOP "$(S_INST_TOP)"
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE InstDirLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${NAME}.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Play now"
+!define MUI_FINISHPAGE_RUN_TEXT "$(S_PLAY)"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
+; the game's 10 languages (LanguageType order); the first is the default. The texts: lang.nsh, made by
+; setup_lang/gen_setup_lang.py (make_installer.sh) from setup_lang/<code>.json
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "Korean"
+!insertmacro MUI_LANGUAGE "French"
+!insertmacro MUI_LANGUAGE "German"
+!insertmacro MUI_LANGUAGE "Russian"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+!insertmacro MUI_LANGUAGE "TradChinese"
+!insertmacro MUI_LANGUAGE "Japanese"
+!insertmacro MUI_LANGUAGE "Spanish"
+!insertmacro MUI_LANGUAGE "PortugueseBR"
+!include "${LANGNSH}"
+
+; SetLang <starter exe>: the language the way the game picks it (its saved language, else the Windows display language,
+; else English): the starter's --lang <install folder> gives the game's LanguageType as its exit code
+!macro SetLang EXE
+  StrCpy $LangType 0
+  ${If} ${FileExists} "${EXE}"
+    ClearErrors
+    ExecWait '"${EXE}" --lang "$INSTDIR"' $0
+    ${IfNot} ${Errors}
+    ${AndIf} $0 >= 0
+    ${AndIf} $0 <= 9
+      StrCpy $LangType $0
+    ${EndIf}
+  ${EndIf}
+  ${Select} $LangType
+    ${Case} 1
+      StrCpy $LANGUAGE ${LANG_KOREAN}
+    ${Case} 2
+      StrCpy $LANGUAGE ${LANG_FRENCH}
+    ${Case} 3
+      StrCpy $LANGUAGE ${LANG_GERMAN}
+    ${Case} 4
+      StrCpy $LANGUAGE ${LANG_RUSSIAN}
+    ${Case} 5
+      StrCpy $LANGUAGE ${LANG_SIMPCHINESE}
+    ${Case} 6
+      StrCpy $LANGUAGE ${LANG_TRADCHINESE}
+    ${Case} 7
+      StrCpy $LANGUAGE ${LANG_JAPANESE}
+    ${Case} 8
+      StrCpy $LANGUAGE ${LANG_SPANISH}
+    ${Case} 9
+      StrCpy $LANGUAGE ${LANG_PORTUGUESEBR}
+    ${CaseElse}
+      StrCpy $LANGUAGE ${LANG_ENGLISH}
+  ${EndSelect}
+!macroend
 
 Function .onInit
   InitPluginsDir
+  File "/oname=$PLUGINSDIR\dsm_lang.exe" "${KIT}\files\${NAME}.exe"
+  !insertmacro SetLang "$PLUGINSDIR\dsm_lang.exe"
   ${GetParameters} $0
   ClearErrors
   ${GetOptions} $0 "/GAME=" $GameDir
@@ -92,7 +144,7 @@ FunctionEnd
 
 Function GameDirLeave
   ${IfNot} ${FileExists} "$GameDir\DungeonSettlers.exe"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "DungeonSettlers.exe is not in this folder. Choose the Dungeon Settlers folder of Steam."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(S_NO_EXE)"
     Abort
   ${EndIf}
 FunctionEnd
@@ -154,7 +206,7 @@ Function PathOk
   ${EndIf}
 FunctionEnd
 
-!define BADPATH_TEXT "The game will not start from this folder:$\r$\n$INSTDIR$\r$\n$\r$\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).$\r$\nChoose a folder with plain letters only, for example C:\Games\${NAME}."
+!define BADPATH_TEXT "$(S_BADPATH)"
 
 Function InstDirLeave
   Call OwnFolder
@@ -166,7 +218,7 @@ Function InstDirLeave
     Abort
   ${EndIf}
   ${If} $0 == 0
-    MessageBox MB_OK|MB_ICONEXCLAMATION "$INSTDIR already holds other files.$\r$\nChoose another folder: ${NAME} needs a new or empty folder of its own."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(S_OTHER_FILES)"
     Abort
   ${EndIf}
 FunctionEnd
@@ -177,14 +229,14 @@ Section "Install"
   Pop $1
   Pop $0
   ${If} $1 == 0
-    DetailPrint "The game will not start from $INSTDIR (letters it cannot read). Nothing was changed."
+    DetailPrint "$(S_BADPATH_LOG)"
     MessageBox MB_OK|MB_ICONSTOP "${BADPATH_TEXT}" /SD IDOK
     SetErrorLevel 4
     Quit
   ${EndIf}
   ${If} $0 == 0
-    DetailPrint "$INSTDIR already holds other files. Nothing was changed."
-    MessageBox MB_OK|MB_ICONSTOP "$INSTDIR already holds other files. Nothing was changed. Choose a new or empty folder." /SD IDOK
+    DetailPrint "$(S_OTHER_FILES_LOG)"
+    MessageBox MB_OK|MB_ICONSTOP "$(S_OTHER_FILES_STOP)" /SD IDOK
     SetErrorLevel 3
     Quit
   ${EndIf}
@@ -193,12 +245,14 @@ Section "Install"
   CreateDirectory "$INSTDIR"
   System::Call 'kernel32::SetEnvironmentVariable(t "DSMODDED_NOPAUSE", t "1")'
   System::Call 'kernel32::SetEnvironmentVariable(t "DSMODDED_ROOT", t "$INSTDIR")'
-  DetailPrint "Copying the game (about 700 MB). This takes a minute or two."
-  nsExec::ExecToLog '"$SYSDIR\cmd.exe" /c call "$PLUGINSDIR\kit\install.bat" "$GameDir"'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSMODDED_LANG", t "$LangType")'
+  DetailPrint "$(S_COPYING)"
+  ; /U: install.bat's lines reach this list as UTF-16, whatever their language (nsExec reads UTF-16 output)
+  nsExec::ExecToLog '"$SYSDIR\cmd.exe" /U /c call "$PLUGINSDIR\kit\install.bat" "$GameDir"'
   Pop $0
   ${If} $0 != 0
     SetDetailsView show
-    MessageBox MB_OK|MB_ICONSTOP "The install did not finish. The reason is in the list above." /SD IDOK
+    MessageBox MB_OK|MB_ICONSTOP "$(S_FAILED)" /SD IDOK
     SetErrorLevel 1
     ${IfThen} ${Silent} ${|} Quit ${|}
     Abort
@@ -221,14 +275,18 @@ Section "Install"
   WriteRegStr HKCU "${UKEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
   WriteRegDWORD HKCU "${UKEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UKEY}" "NoRepair" 1
-  DetailPrint "Done. Double-click ${NAME} on your desktop to play."
+  DetailPrint "$(S_DONE)"
 SectionEnd
+
+Function un.onInit
+  !insertmacro SetLang "$INSTDIR\${NAME}.exe"
+FunctionEnd
 
 Section "Uninstall"
   Call un.TasklistGame
   Pop $0
   ${If} $0 == 1
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Dungeon Settlers is running. Close the game, then uninstall again." /SD IDOK
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(S_UN_RUNNING)" /SD IDOK
     SetErrorLevel 1
     Abort
   ${EndIf}
@@ -236,7 +294,7 @@ Section "Uninstall"
   ; empty folders of install_dirs.log (deepest first). Saves (profiles\) and files that nobody of ours made stay.
   ; Never RMDir /r.
   ${IfNot} ${FileExists} "$INSTDIR\install_files.log"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "This folder has no install file list. Nothing was removed." /SD IDOK
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(S_UN_NO_LIST)" /SD IDOK
     SetErrorLevel 1
     Abort
   ${EndIf}
@@ -313,10 +371,10 @@ Section "Uninstall"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   ${If} ${FileExists} "$INSTDIR\game\GameAssembly.dll"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Some files could not be removed. Close the game, then uninstall again." /SD IDOK
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(S_UN_LEFT)" /SD IDOK
     SetErrorLevel 1
   ${ElseIf} ${FileExists} "$INSTDIR\profiles\*.*"
-    MessageBox MB_OK "${NAME} is removed. Steam's game was never changed.$\r$\nYour modded saves stay in $INSTDIR\profiles. You can delete that folder if you do not need them." /SD IDOK
+    MessageBox MB_OK "$(S_UN_DONE)" /SD IDOK
   ${EndIf}
 SectionEnd
 

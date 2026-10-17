@@ -14,6 +14,11 @@
 // says "default_on": false (Hell difficulty ships off by default, PLAN_V13 section 7). The Mods window owns the file after.
 // Log: PROFILE\starter.log. --dry: print the environment and the command line instead of starting the game.
 // --pathcheck <folder>: exit 3 when the game cannot start from that folder (path_ok), else 0; no window (install.bat).
+// --lang <folder>: exit code = the language (game LanguageType 0..9) for the install in <folder> (pick_lang); Setup.exe and
+//   its uninstaller. --conlang <folder>: the same for a console (install.bat, uninstall.bat): Chinese, Japanese and Korean
+//   only where the console can show their letters, else English (0).
+// --freshmods <kit mods folder>: every ROOT\mods\<id> the kit brings goes to ROOT\retired whole (install.bat, before it
+//   copies the kit's mods): no file of an older version stays. The player's other mods stay. Exit 1 = a folder in use.
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -197,8 +202,26 @@ static int write_lists(void) {
     _snwprintf(x, MAX_PATH, L"%ls\\Dungeon Settlers Modded.exe", root); list_tree(x);
     _snwprintf(x, MAX_PATH, L"%ls\\RELEASE", root); list_tree(x);
     _snwprintf(x, MAX_PATH, L"%ls\\licenses", root); list_tree(x);
+    _snwprintf(x, MAX_PATH, L"%ls\\retired", root); list_tree(x);    /* old mod folders (--freshmods, packages): ours */
     fclose(lf_files); fclose(lf_dirs);
     return 0;
+}
+static int read_mod_id(const wchar_t *dir, char *id, size_t n);
+static int fresh_mods(const wchar_t *kit) {
+    wchar_t pat[MAX_PATH], ts[32]; _snwprintf(pat, MAX_PATH, L"%ls\\*", kit); stamp(ts, 32);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd); int bad = 0;
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+        wchar_t s[MAX_PATH], d[MAX_PATH], rd[MAX_PATH], old[MAX_PATH]; char id[64];
+        _snwprintf(s, MAX_PATH, L"%ls\\%ls", kit, fd.cFileName); _snwprintf(d, MAX_PATH, L"%ls\\mods\\%ls", root, fd.cFileName);
+        if (!read_mod_id(s, id, sizeof id) || !exists(d)) continue;
+        _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
+        _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, fd.cFileName, ts);
+        if (!MoveFileW(d, old)) bad = 1;
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return bad;
 }
 static void log_tree(const wchar_t *p) {
     DWORD at = GetFileAttributesW(p); if (at == INVALID_FILE_ATTRIBUTES) return;
@@ -481,12 +504,25 @@ static char *slurp_w(const wchar_t *p) {
     size_t r = fread(b, 1, (size_t)n, f); b[r] = 0; fclose(f);
     return b;
 }
-static void setup_lang(void) {
-    wchar_t ld[MAX_PATH], us[MAX_PATH]; char l8[MAX_PATH * 3];
-    _snwprintf(ld, MAX_PATH, L"%ls\\lang", game);
-    if (!WideCharToMultiByte(CP_UTF8, 0, ld, -1, l8, sizeof l8, NULL, NULL)) l8[0] = 0;   /* ds_i18n.h opens the folder as UTF-8 (_wfopen) */
-    dsi_set_dir(l8);
-    _snwprintf(us, MAX_PATH, L"%ls\\UserSetting.json", data);
+/* the language the way the game picks it: the language saved in UserSetting.json (the modded copy's in <r>, else the
+   normal game's), else the Windows display language, else English. from = where it came from (log). */
+static int ui_lang(void) {
+    LANGID l = GetUserDefaultUILanguage();
+    switch (PRIMARYLANGID(l)) {
+    case LANG_KOREAN: return 1;
+    case LANG_FRENCH: return 2;
+    case LANG_GERMAN: return 3;
+    case LANG_RUSSIAN: return 4;
+    case LANG_CHINESE: return (l == 0x0404 || l == 0x0C04 || l == 0x1404 || l == 0x7C04) ? 6 : 5;   /* TW, HK, MO, Hant */
+    case LANG_JAPANESE: return 7;
+    case LANG_SPANISH: return 8;
+    case LANG_PORTUGUESE: return 9;
+    }
+    return 0;
+}
+static int pick_lang(const wchar_t *r, wchar_t *from, size_t fn) {
+    wchar_t us[MAX_PATH];
+    _snwprintf(us, MAX_PATH, L"%ls\\profiles\\modded\\data\\UserSetting.json", r);
     char *t = slurp_w(us);
     if (!t) {
         wchar_t *low = NULL;
@@ -495,10 +531,27 @@ static void setup_lang(void) {
             t = slurp_w(us);
         }
     }
-    int lang = dsi_lang_from_usersetting(t);
+    int saved = t && strstr(t, "\"SaveCurrentLanguageType\""), lang = saved ? dsi_lang_from_usersetting(t) : ui_lang();
     free(t);
+    _snwprintf(from, fn, L"%ls", saved ? us : L"the Windows display language");
+    return lang;
+}
+/* a console shows Chinese, Japanese or Korean letters when its code page is that language's (its font has them) or in
+   Windows Terminal (font fallback); else the console text stays English */
+static int console_lang(int lang) {
+    static const UINT cp[10] = { 0, 949, 0, 0, 0, 936, 950, 932, 0, 0 };   /* ko, zh-Hans, zh-Hant, ja */
+    UINT want = lang >= 0 && lang < 10 ? cp[lang] : 0;
+    if (!want || GetOEMCP() == want || GetEnvironmentVariableW(L"WT_SESSION", NULL, 0)) return lang;
+    return 0;
+}
+static void setup_lang(void) {
+    wchar_t ld[MAX_PATH], from[MAX_PATH]; char l8[MAX_PATH * 3];
+    _snwprintf(ld, MAX_PATH, L"%ls\\lang", game);
+    if (!WideCharToMultiByte(CP_UTF8, 0, ld, -1, l8, sizeof l8, NULL, NULL)) l8[0] = 0;   /* ds_i18n.h opens the folder as UTF-8 (_wfopen) */
+    dsi_set_dir(l8);
+    int lang = pick_lang(root, from, MAX_PATH);
     dsi_set_lang(lang);
-    logf_("language %d (%s) from %ls, texts %s: %d loaded, %d dropped", lang, dsi_code(), exists(us) ? us : L"no UserSetting.json", l8, dsi_loaded(), dsi_dropped());
+    logf_("language %d (%s) from %ls, texts %s: %d loaded, %d dropped", lang, dsi_code(), from, l8, dsi_loaded(), dsi_dropped());
 }
 
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
@@ -512,6 +565,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     _snwprintf(game, MAX_PATH, L"%ls\\game", root);
     for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--lists")) return write_lists();   /* install.bat: no game start */
     for (int i = 1; i + 1 < argc; i++) if (!wcscmp(argv[i], L"--pathcheck")) return path_ok(argv[i + 1]) ? 0 : 3;
+    for (int i = 1; i + 1 < argc; i++) {                         /* Setup.exe, install.bat, uninstall.bat: no game start */
+        wchar_t from[MAX_PATH];
+        if (!wcscmp(argv[i], L"--lang")) return pick_lang(argv[i + 1], from, MAX_PATH);
+        if (!wcscmp(argv[i], L"--conlang")) return console_lang(pick_lang(argv[i + 1], from, MAX_PATH));
+        if (!wcscmp(argv[i], L"--freshmods")) return fresh_mods(argv[i + 1]);
+    }
     _snwprintf(profile, MAX_PATH, L"%ls\\profiles\\modded", root);
     _snwprintf(data, MAX_PATH, L"%ls\\data", profile);
     mkdirs(data);

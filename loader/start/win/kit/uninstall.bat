@@ -6,20 +6,23 @@ echo  Dungeon Settlers Modded - uninstall
 echo  ===================================
 echo.
 set "ROOT=%LOCALAPPDATA%\Dungeon Settlers Modded"
+rem the texts in the game's language (install.bat's way), read before the game copy (and its lang folder) goes
+call :texts
+call :lang "%ROOT%\Dungeon Settlers Modded.exe" "%ROOT%\game\lang"
 if not exist "%ROOT%" (
-  echo  Dungeon Settlers Modded is not installed.
+  call :say U_NOT_INSTALLED
   goto done
 )
 tasklist /fi "imagename eq DungeonSettlers.exe" 2>nul | find /i "DungeonSettlers.exe" >nul
 if not errorlevel 1 (
-  echo  Dungeon Settlers is running. Close the game, then run the uninstall again.
+  call :say U_RUNNING
   goto fail
 )
 rem only what the install put there (install_files.log), then its empty folders (install_dirs.log, deepest first).
 rem Saves and logs (profiles\), player mods and any other file stay.
 if not exist "%ROOT%\install_files.log" (
-  echo  This install has no file list ^(an older kit^). Nothing was removed.
-  echo  Install this kit once over it, then uninstall again.
+  call :say U_NO_LIST
+  call :say U_NO_LIST_2
   goto fail
 )
 rem the game copy (marker inside) and the auto-update folder are ours from top to bottom: every file in them goes
@@ -49,12 +52,13 @@ for %%f in (lnk bat) do if exist "%DESK%\Dungeon Settlers Modded.%%f" del /q "%D
 set "STARTM=%APPDATA%\Microsoft\Windows\Start Menu\Programs"
 if exist "%STARTM%\Dungeon Settlers Modded.lnk" del /q "%STARTM%\Dungeon Settlers Modded.lnk"
 if exist "%ROOT%\game\GameAssembly.dll" (
-  echo  Some files could not be removed. Close the game, then run the uninstall again.
+  call :say U_LEFT
   goto fail
 )
-echo  Done. The modded game copy is removed. Steam's game was never changed.
-echo  Your modded saves are kept in %ROOT%\profiles
-echo  You can delete that folder if you do not need them.
+call :say U_DONE
+call :say U_SAVES
+echo  %ROOT%\profiles
+call :say U_SAVES_2
 :done
 echo.
 if not defined DSMODDED_NOPAUSE pause
@@ -64,3 +68,38 @@ exit /b 0
 echo.
 if not defined DSMODDED_NOPAUSE pause
 exit /b 1
+
+rem ---- texts: English here; game\lang\setup_<code>.bat has the other languages (made from setup_lang\<code>.json)
+:texts
+set "U_NOT_INSTALLED=Dungeon Settlers Modded is not installed."
+set "U_RUNNING=Dungeon Settlers is running. Close the game, then run the uninstall again."
+set "U_NO_LIST=This install has no file list (an older kit). Nothing was removed."
+set "U_NO_LIST_2=Install this kit once over it, then uninstall again."
+set "U_LEFT=Some files could not be removed. Close the game, then run the uninstall again."
+set "U_DONE=Done. The modded game copy is removed. Steam's game was never changed."
+set "U_SAVES=Your modded saves are kept in this folder:"
+set "U_SAVES_2=You can delete that folder if you do not need them."
+exit /b 0
+
+rem :lang <starter> <lang folder>: as in install.bat (the starter's --conlang; the UTF-8 file read with code page 65001)
+:lang
+if not exist "%~1" exit /b 0
+start "" /wait "%~1" --conlang "%ROOT%"
+set "LN=%errorlevel%"
+set "LC="
+for %%a in (1.ko 2.fr 3.de 4.ru 5.zh-Hans 6.zh-Hant 7.ja 8.es 9.pt-BR) do for /f "tokens=1,2 delims=." %%b in ("%%a") do if "%%b"=="%LN%" set "LC=%%c"
+if not defined LC exit /b 0
+if not exist "%~2\setup_%LC%.bat" exit /b 0
+set "OLDCP="
+for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
+chcp 65001 >nul
+call "%~2\setup_%LC%.bat"
+if defined OLDCP chcp %OLDCP% >nul
+exit /b 0
+
+rem :say <text name>: one line of text, shown as it is (delayed expansion)
+:say
+setlocal EnableDelayedExpansion
+echo  !%~1!
+endlocal
+exit /b 0
