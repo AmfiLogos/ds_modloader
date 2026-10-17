@@ -32,10 +32,10 @@ static Rec *recs; static int nrec, caprec;
 static char tsv[1400], sa[1100]; static size_t sa_n;               /* record file; StreamingAssets prefix ('/' only) */
 static int on, skipped, checked;
 static Obj (*o_load)(Obj, uint32_t, uint64_t, const void *);
-static uint32_t (*gc_new)(Obj, int); static Obj (*gc_get)(uint32_t); static void (*gc_free)(uint32_t);
+static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);   /* Unity 6: pointer-size handles */
 static int (*is_done)(Obj, const void *); static Obj (*get_bundle)(Obj, const void *);
 #define NPEND 64
-static struct { uint32_t h; Rec r; } pend[NPEND]; static int npend;
+static struct { uintptr_t h; Rec r; } pend[NPEND]; static int npend;
 
 static void utf8_of(Obj s, char *out, size_t n) {                          /* System.String (UTF-16) -> UTF-8, '\\' -> '/' */
     size_t k = 0; int32_t len = s ? AT(s, 0x10, int32_t) : 0; const uint16_t *c = s ? (const uint16_t *)((char *)s + 0x14) : NULL;
