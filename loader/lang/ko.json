@@ -22,6 +22,9 @@
  "%s off": "%s 끔",
  "%s on": "%s 켬",
  "%s, %s": "%s, %s",
+ "%s: the old modded copy is NEWER than your game save.": "%s: 예전 모드 사본이 일반 세이브보다 더 최신입니다.",
+ "%s: your game save is newer than the old modded copy.": "%s: 일반 세이브가 예전 모드 사본보다 더 최신입니다.",
+ "(and %d more)": "(그 외 %d개)",
  "Almost done": "거의 완료",
  "Apply": "적용",
  "Applying mods": "모드 적용 중",
@@ -139,13 +142,15 @@
  "The mod update (%s) did not start. The old mods are back.": "모드 업데이트(%s)는 시작되지 않았습니다. 기존 모드가 복구되었습니다.",
  "The mod update (%s) was cut off. Nothing changed.": "모드 업데이트(%s)가 중단되었습니다. 변경된 것은 없습니다.",
  "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.": "모드용 게임 사본이 없거나 불완전합니다.\nDungeon Settlers Modded 키트의 install.bat을 다시 실행하십시오.",
- "The modded game now plays your game saves directly. Your old modded copy of %s was different from your game save. It was set aside, not deleted:\n%s||The modded game now plays your game saves directly. Your old modded copies of %s were different from your game saves. They were set aside, not deleted:\n%s": [
-  "이제 모드 게임에서 일반 세이브를 바로 플레이합니다. %s의 예전 모드 사본이 일반 세이브와 달라서 삭제하지 않고 따로 보관했습니다:\n%s"
+ "The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted.": [
+  "이제 모드 게임에서 일반 세이브를 바로 플레이합니다. 월드 %d개의 예전 모드 사본이 일반 세이브와 달라서 삭제하지 않고 따로 보관했습니다."
  ],
  "The mods could not be applied: %s": "모드를 적용할 수 없습니다: %s",
  "The mods did not change: %s": "모드가 바뀌지 않았습니다: %s",
  "The mods folder has no new mods.": "모드 폴더에 새 모드가 없습니다.",
  "The mods for this world could not be saved.": "이 월드의 모드를 저장할 수 없습니다.",
+ "The old modded copies are in this folder:\n%s": "예전 모드 사본은 이 폴더에 있습니다:\n%s",
+ "The old modded copy is this file:\n%s": "예전 모드 사본은 이 파일입니다:\n%s",
  "The update to %s could not be installed (%s). You still have %s.": "%s 업데이트를 설치할 수 없습니다(%s). 현재 %s 버전이 그대로 남아 있습니다.",
  "The update to %s could not be installed (%s). You still have the old version.": "%s 업데이트를 설치할 수 없습니다(%s). 기존 버전이 그대로 남아 있습니다.",
  "The update to %s did not start. You have %s again.": "%s 업데이트는 시작되지 않았습니다. %s 버전으로 되돌아갔습니다.",
@@ -154,6 +159,7 @@
  "The world cannot be loaded now: %s": "지금은 이 월드를 불러올 수 없습니다: %s",
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "이 Dungeon Settlers Modded 사본은 불완전합니다(모드 로더가 없습니다). 다시 내려받으십시오.",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "이 게임은 빌드 %s이지만 런처는 이 월드를 빌드 %s용으로 시작했습니다. 모드는 꺼진 상태로 유지됩니다. 런처에서 월드를 다시 시작하십시오.",
+ "This save is also used by Dungeon Settlers without mods. Delete it there too?": "이 세이브는 모드 없는 Dungeon Settlers에서도 사용됩니다. 그곳에서도 삭제할까요?",
  "This world is one of your game saves.": "이 월드는 일반 세이브입니다.",
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "이 월드는 일반 세이브입니다. 다음 모드는 월드에 저장되는 내용을 바꿉니다: %s.\n\n지금 플레이하면 나중에 모드 로더 없이 게임에서 불러올 때 월드가 망가질 수 있습니다."

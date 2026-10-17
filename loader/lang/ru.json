@@ -26,6 +26,9 @@
  "%s off": "%s выкл.",
  "%s on": "%s вкл.",
  "%s, %s": "%s, %s",
+ "%s: the old modded copy is NEWER than your game save.": "%s: старая копия с модами НОВЕЕ, чем ваше сохранение.",
+ "%s: your game save is newer than the old modded copy.": "%s: ваше сохранение новее, чем старая копия с модами.",
+ "(and %d more)": "(и ещё %d)",
  "Almost done": "Почти готово",
  "Apply": "Применить",
  "Applying mods": "Применение модов",
@@ -151,15 +154,17 @@
  "The mod update (%s) did not start. The old mods are back.": "Обновление модов (%s) не запустилось. Старые моды возвращены.",
  "The mod update (%s) was cut off. Nothing changed.": "Обновление модов (%s) прервано. Ничего не изменилось.",
  "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.": "Копия игры с модами отсутствует или неполна.\nЗапустите install.bat из комплекта Dungeon Settlers Modded ещё раз.",
- "The modded game now plays your game saves directly. Your old modded copy of %s was different from your game save. It was set aside, not deleted:\n%s||The modded game now plays your game saves directly. Your old modded copies of %s were different from your game saves. They were set aside, not deleted:\n%s": [
-  "Игра с модами теперь открывает ваши обычные сохранения напрямую. Ваша старая копия «%s» с модами отличалась от сохранения. Она отложена, а не удалена:\n%s",
-  "Игра с модами теперь открывает ваши обычные сохранения напрямую. Ваши старые копии с модами (%s) отличались от сохранений. Они отложены, а не удалены:\n%s",
-  "Игра с модами теперь открывает ваши обычные сохранения напрямую. Ваши старые копии с модами (%s) отличались от сохранений. Они отложены, а не удалены:\n%s"
+ "The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted.": [
+  "Игра с модами теперь открывает ваши обычные сохранения напрямую. %d старая копия мира с модами отличалась от сохранения. Она отложена, а не удалена.",
+  "Игра с модами теперь открывает ваши обычные сохранения напрямую. %d старые копии миров с модами отличались от сохранений. Они отложены, а не удалены.",
+  "Игра с модами теперь открывает ваши обычные сохранения напрямую. %d старых копий миров с модами отличались от сохранений. Они отложены, а не удалены."
  ],
  "The mods could not be applied: %s": "Не удалось применить моды: %s",
  "The mods did not change: %s": "Моды не изменились: %s",
  "The mods folder has no new mods.": "В папке модов нет новых модов.",
  "The mods for this world could not be saved.": "Не удалось сохранить моды для этого мира.",
+ "The old modded copies are in this folder:\n%s": "Старые копии с модами лежат в этой папке:\n%s",
+ "The old modded copy is this file:\n%s": "Старая копия с модами — этот файл:\n%s",
  "The update to %s could not be installed (%s). You still have %s.": "Обновление до %s не удалось установить (%s). У вас по-прежнему версия %s.",
  "The update to %s could not be installed (%s). You still have the old version.": "Обновление до %s не удалось установить (%s). У вас по-прежнему старая версия.",
  "The update to %s did not start. You have %s again.": "Обновление до %s не запустилось. У вас снова версия %s.",
@@ -168,6 +173,7 @@
  "The world cannot be loaded now: %s": "Сейчас нельзя загрузить мир: %s",
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "Эта копия Dungeon Settlers Modded неполная (внутри нет загрузчика модов). Скачайте её снова.",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "Эта версия игры — сборка %s, а лаунчер запустил этот мир для сборки %s. Моды остаются выключенными. Запустите мир из лаунчера снова.",
+ "This save is also used by Dungeon Settlers without mods. Delete it there too?": "Это сохранение используется и в Dungeon Settlers без модов. Удалить его и там?",
  "This world is one of your game saves.": "Этот мир — одно из ваших обычных сохранений.",
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "Этот мир — одно из ваших обычных сохранений. Этот мод меняет то, что сохраняет мир: %s.\n\nЕсли играть в него сейчас, мир может сломаться, когда вы позже загрузите его в игре без загрузчика модов.",

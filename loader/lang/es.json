@@ -24,6 +24,9 @@
  "%s off": "%s desactivado",
  "%s on": "%s activado",
  "%s, %s": "%s, %s",
+ "%s: the old modded copy is NEWER than your game save.": "%s: la copia antigua con mods es MÁS RECIENTE que tu partida.",
+ "%s: your game save is newer than the old modded copy.": "%s: tu partida es más reciente que la copia antigua con mods.",
+ "(and %d more)": "(y %d más)",
  "Almost done": "Casi listo",
  "Apply": "Aplicar",
  "Applying mods": "Aplicando mods",
@@ -145,14 +148,16 @@
  "The mod update (%s) did not start. The old mods are back.": "La actualización de mods (%s) no se inició. Los mods antiguos están de vuelta.",
  "The mod update (%s) was cut off. Nothing changed.": "La actualización de mods (%s) se interrumpió. No cambió nada.",
  "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.": "Falta la copia del juego con mods o está incompleta.\nVuelve a ejecutar install.bat del kit de Dungeon Settlers Modded.",
- "The modded game now plays your game saves directly. Your old modded copy of %s was different from your game save. It was set aside, not deleted:\n%s||The modded game now plays your game saves directly. Your old modded copies of %s were different from your game saves. They were set aside, not deleted:\n%s": [
-  "El juego con mods ahora juega tus partidas normales directamente. Tu antigua copia con mods de %s era distinta de tu partida. Se apartó, no se borró:\n%s",
-  "El juego con mods ahora juega tus partidas normales directamente. Tus antiguas copias con mods de %s eran distintas de tus partidas. Se apartaron, no se borraron:\n%s"
+ "The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted.": [
+  "El juego con mods ahora juega tus partidas normales directamente. %d copia antigua con mods de un mundo era distinta de tu partida. Se apartó, no se borró.",
+  "El juego con mods ahora juega tus partidas normales directamente. %d copias antiguas con mods de mundos eran distintas de tus partidas. Se apartaron, no se borraron."
  ],
  "The mods could not be applied: %s": "No se pudieron aplicar los mods: %s",
  "The mods did not change: %s": "Los mods no cambiaron: %s",
  "The mods folder has no new mods.": "La carpeta de mods no tiene mods nuevos.",
  "The mods for this world could not be saved.": "No se pudieron guardar los mods de este mundo.",
+ "The old modded copies are in this folder:\n%s": "Las copias antiguas con mods están en esta carpeta:\n%s",
+ "The old modded copy is this file:\n%s": "La copia antigua con mods es este archivo:\n%s",
  "The update to %s could not be installed (%s). You still have %s.": "No se pudo instalar la actualización a %s (%s). Todavía tienes %s.",
  "The update to %s could not be installed (%s). You still have the old version.": "No se pudo instalar la actualización a %s (%s). Todavía tienes la versión antigua.",
  "The update to %s did not start. You have %s again.": "La actualización a %s no se inició. Vuelves a tener %s.",
@@ -161,6 +166,7 @@
  "The world cannot be loaded now: %s": "El mundo no se puede cargar ahora: %s",
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "Esta copia de Dungeon Settlers Modded está incompleta (no tiene cargador de mods dentro). Vuelve a descargarla.",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "Este juego es la versión %s, pero el launcher inició este mundo para la versión %s. Los mods siguen desactivados. Vuelve a iniciar el mundo desde el launcher.",
+ "This save is also used by Dungeon Settlers without mods. Delete it there too?": "Dungeon Settlers sin mods también usa esta partida. ¿Eliminarla también allí?",
  "This world is one of your game saves.": "Este mundo es una de tus partidas normales.",
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "Este mundo es una de tus partidas normales. Este mod cambia lo que guarda el mundo: %s.\n\nSi lo juegas ahora, el mundo podría romperse cuando lo cargues más tarde en el juego sin el cargador de mods.",

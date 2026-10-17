@@ -488,6 +488,20 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   (LoadCampaignRequested)` (no loading screen yet); `dsl_world.c` holds loads that did not come that way. Asked once per
   world and mod set: worlds.json `"save_warned": {guid: "a+b"}` (`dsl_reg.c`). A world registered with another set is
   left to the world check (flow K) first.
+- Delete (owner 2026-10-17, branch savesync2): a game save is the normal game's file too. After the game's own delete
+  confirm, a game world (`SaveLoadView.CompleteDeleteConfirmation`, the world's delete button) or a game save
+  (`SaveLoadView.ConfirmRemove`) asks once more in the game's notice box: "This save is also used by Dungeon Settlers
+  without mods. Delete it there too?" Delete / Cancel (Cancel = the view's own "not confirmed", nothing deleted).
+  Modded-only saves: the stock flow. Build 25846389 has the world's delete OFF (`CampaignSaveDeletionService.IsAvailable`
+  returns false: no world delete button), so the save's remove is the delete players see; the world hooks wait for a
+  build that turns it on (untested in the game until then). Before this, a game world's delete removed nothing: the stock
+  `CampaignSaveDeletionService` lists one folder (`GetCampaignSavePath(<name>)`'s); `DeleteCampaignSaves` of a game
+  world now routes that one lookup to the game folder. Autosave pruning (`CleanupAutoSaves`, `KeepOnlyRetained...`)
+  is not asked (the normal game prunes the same way).
+- Set-aside notice: per world, which file is newer (file times) and where the copy is (one copy: its file; more: the
+  folder). The kit's box holds 1 KB: lines past that become "(and N more)".
+- Test requests (DSL_SOFT_TEST): `<log dir>/softrestart/saves_request.json` `{"cmd":"del_world","guid":..}` /
+  `{"cmd":"del_save","name":..}` (the game's own box answered Yes on the open Load list); answers: warn_load / warn_cancel.
 - Removed: the title button "Import a save", its code and texts (14 keys pruned from lang/). Kept: the cloud backup.
 - Packaging: `modules/scan_saves.py` fails a build when a save or player file is inside (folders Saves / profiles /
   instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,

@@ -22,6 +22,9 @@
  "%s off": "%s 關閉",
  "%s on": "%s 開啟",
  "%s, %s": "%s、%s",
+ "%s: the old modded copy is NEWER than your game save.": "%s：舊模組副本比你的遊戲存檔更新。",
+ "%s: your game save is newer than the old modded copy.": "%s：你的遊戲存檔比舊模組副本更新。",
+ "(and %d more)": "（還有 %d 個）",
  "Almost done": "即將完成",
  "Apply": "套用",
  "Applying mods": "正在套用模組",
@@ -139,13 +142,15 @@
  "The mod update (%s) did not start. The old mods are back.": "模組更新（%s）未能啟動。舊模組已恢復。",
  "The mod update (%s) was cut off. Nothing changed.": "模組更新（%s）中途中斷。沒有任何變更。",
  "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.": "模組版遊戲副本遺失或不完整。\n請再次從 Dungeon Settlers Modded 套件執行 install.bat。",
- "The modded game now plays your game saves directly. Your old modded copy of %s was different from your game save. It was set aside, not deleted:\n%s||The modded game now plays your game saves directly. Your old modded copies of %s were different from your game saves. They were set aside, not deleted:\n%s": [
-  "模組版遊戲現在直接遊玩你的遊戲存檔。%s 的舊模組副本與你的遊戲存檔不同，已移到別處保留，沒有刪除：\n%s"
+ "The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted.": [
+  "模組版遊戲現在直接遊玩你的遊戲存檔。%d 個世界的舊模組副本與你的遊戲存檔不同，已移到別處保留，沒有刪除。"
  ],
  "The mods could not be applied: %s": "無法套用模組：%s",
  "The mods did not change: %s": "模組未變更：%s",
  "The mods folder has no new mods.": "模組資料夾中沒有新模組。",
  "The mods for this world could not be saved.": "無法保存此世界的模組。",
+ "The old modded copies are in this folder:\n%s": "舊模組副本在這個資料夾中：\n%s",
+ "The old modded copy is this file:\n%s": "舊模組副本是這個檔案：\n%s",
  "The update to %s could not be installed (%s). You still have %s.": "無法安裝 %s 的更新（%s）。你仍保有 %s。",
  "The update to %s could not be installed (%s). You still have the old version.": "無法安裝 %s 的更新（%s）。你仍保有舊版本。",
  "The update to %s did not start. You have %s again.": "%s 的更新未能啟動。你已回到 %s。",
@@ -154,6 +159,7 @@
  "The world cannot be loaded now: %s": "目前無法載入此世界：%s",
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "此份 Dungeon Settlers Modded 不完整（內部沒有模組載入器）。請重新下載。",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "此遊戲為版本 %s，但啟動器是為版本 %s 啟動此世界。模組維持關閉。請再次從啟動器開啟此世界。",
+ "This save is also used by Dungeon Settlers without mods. Delete it there too?": "無模組的 Dungeon Settlers 也在使用此存檔。也在那裡刪除嗎？",
  "This world is one of your game saves.": "此世界是你的遊戲存檔之一。",
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "此世界是你的遊戲存檔之一。下列模組會改變世界儲存的內容：%s。\n\n如果現在遊玩，之後在沒有模組載入器的遊戲中載入時，世界可能會損壞。"

@@ -13,7 +13,13 @@
 //   TryQuarantineCorruptSaveFile(p,r) never moves a game file out of the game folder (the normal game owns it)
 // Start: a modded save with the NAME of a game save (the old first-start copy of app/stub/ds_modded.c, one file per world)
 // is moved to <DSML_DATA>/Mods/save_copies/, never deleted. The same bytes: nothing to say. Different bytes (the copy was
-// played): one notice at the title says where it is kept.
+// played): one notice at the title says, per world, which file is newer (file times) and where the copy is kept.
+// Delete (owner 2026-10-17): a game save is the normal game's file too. After the game's own delete confirm, a game
+// world (the world's delete button: SaveLoadView.CompleteDeleteConfirmation) or a game save (the save's remove:
+// SaveLoadView.ConfirmRemove) asks once more in the game's notice box: "also used by Dungeon Settlers without mods.
+// Delete it there too?" Delete / Cancel. Cancel = nothing deleted. Modded-only saves: the game's flow, no question.
+// CampaignSaveLoader.DeleteCampaignSaves of a game world deletes in the game folder (the stock service only reads the
+// folder of GetCampaignSavePath(<any name>): routed once to the game folder for that call).
 // Warning (owner: "a warning if some mods modify the game in a profound way that playing without the modloader would
 // break the game"): loading a game save while a mod with mod.json "save_dependent": true runs asks first, with the
 // game's notice box: which mods, Load / Cancel. Kept per world and mod set (worlds.json "save_warned", dsl_reg.c), so it
@@ -205,7 +211,9 @@ static Obj my_all(const void *mi) {
     return r ? r : a;
 }
 static Obj (*o_path)(Obj name, const void *mi);
+static _Thread_local int del_route;                                  /* DeleteCampaignSaves of a game world: its folder lookup */
 static Obj my_path(Obj name, const void *mi) {
+    if (on && del_route) { del_route = 0; char nm[300]; utf8_of(name, nm, sizeof nm); return game_path(nm[0] ? nm : "x"); }
     if (on && name) {
         char nm[300]; utf8_of(name, nm, sizeof nm);
         if (dsl_saves_is_game(nm)) { dsl_saves_routed++; return game_path(nm); }
@@ -246,7 +254,7 @@ static uint8_t my_quar(Obj path, Obj why, const void *mi) {
 }
 
 /* ------------------------------------------------------------------ start: old first-start copies */
-static char differ[8][64]; static int ndiffer; static int differ_told;
+static char differ[8][64], differ_path[8][1600]; static int differ_newer[8]; static int ndiffer; static int differ_told;
 static int same_bytes(const char *a, const char *b) {
     FILE *x = fopen(a, "rb"), *y = fopen(b, "rb"); int same = x && y;
     static char p[65536], q[65536];                      /* start only (main thread) */
@@ -267,13 +275,18 @@ static void move_old_copies(void) {
         char gp[1500], mp[1500]; struct stat st;
         snprintf(gp, sizeof gp, "%s" SEP "%s", game_d, names[i]); snprintf(mp, sizeof mp, "%s" SEP "%s", mod_d, names[i]);
         if (stat(gp, &st) || !S_ISREG(st.st_mode)) continue;
+        struct stat ms; int newer = !stat(mp, &ms) && ms.st_mtime > st.st_mtime;   /* the copy last saved after the game save */
         int same = same_bytes(gp, mp);
         mkdir(copies_d, 0755);
         char ts[32], cp[1600]; time_t t = time(NULL); strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", localtime(&t));
         snprintf(cp, sizeof cp, "%s" SEP "%.*s-modded-copy-%s.json", copies_d, (int)(strlen(names[i]) - 5), names[i], ts);
         if (rename(mp, cp)) { dsl_log("saves: %s is in both folders; moving the modded copy aside FAILED: the game's save is listed", names[i]); continue; }
-        dsl_log("saves: %s is in both folders (%s): the game's save is listed, the modded copy is kept as %s", names[i], same ? "same bytes" : "DIFFERENT", cp);
-        if (!same && ndiffer < 8) { char g[40], clan[64]; if (!file_header(cp, g, clan) || !clan[0]) snprintf(clan, sizeof clan, "%.40s", names[i]); snprintf(differ[ndiffer++], 64, "%s", clan); }
+        dsl_log("saves: %s is in both folders (%s%s): the game's save is listed, the modded copy is kept as %s", names[i], same ? "same bytes" : "DIFFERENT",
+                same ? "" : newer ? ", the modded copy is NEWER" : ", the game save is newer", cp);
+        if (!same && ndiffer < 8) {
+            char g[40], clan[64]; if (!file_header(cp, g, clan) || !clan[0]) snprintf(clan, sizeof clan, "%.40s", names[i]);
+            snprintf(differ[ndiffer], 64, "%s", clan); snprintf(differ_path[ndiffer], sizeof differ_path[0], "%s", cp); differ_newer[ndiffer++] = newer;
+        }
     }
 }
 
@@ -366,33 +379,151 @@ int dsl_saves_load_gate(const char *name) {
     if (w_pass || !needs_warning(name, g, key, sizeof key)) return 0;
     return hold(name, g, key, 3);                                            /* after the stock box that closes the load */
 }
+/* ------------------------------------------------------------------ delete: a game save is the normal game's file too */
+typedef struct { uint64_t lo, hi; } DGuid;                /* System.Guid by value (same ABI as the game's method) */
+static void guid_str(DGuid v, char g[40]) {
+    const uint8_t *b = (const uint8_t *)&v;
+    snprintf(g, 40, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             *(const uint32_t *)b, *(const uint16_t *)(b + 4), *(const uint16_t *)(b + 6), b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+}
+static void (*o_complete)(Obj view, DGuid g, int32_t version, uint8_t confirmed, const void *mi);
+static void (*o_remove)(Obj view, Obj name, const void *mi);
+static Obj (*o_delcamp)(Obj loader, DGuid g, const void *mi);
+static void *a_complete, *a_remove;                       /* the game's methods (hooked): the test calls them */
+static struct { int open, kind; uintptr_t h_view; DGuid g; int32_t version; char name[300], what[300]; } D;   /* kind 1 world, 2 save */
+static void del_yes(void *ud, DSLObj w) {
+    (void)ud; (void)w; if (!D.open) return; D.open = 0;
+    Obj v = D.h_view ? gc_get(D.h_view) : NULL;
+    dsl_log("saves: delete answered Delete for %s: deleted in the game's folder too", D.what);
+    if (v && D.kind == 1) o_complete(v, D.g, D.version, 1, NULL);
+    else if (v && D.kind == 2) o_remove(v, str_new(D.name), NULL);
+    if (D.h_view) { gc_free(D.h_view); D.h_view = 0; }
+}
+static void del_no(void *ud, DSLObj w) {
+    (void)ud; (void)w; if (!D.open) return; D.open = 0;
+    Obj v = D.h_view ? gc_get(D.h_view) : NULL;
+    dsl_log("saves: delete answered Cancel for %s: nothing deleted", D.what);
+    if (v && D.kind == 1) o_complete(v, D.g, D.version, 0, NULL);       /* the view's own "not confirmed" (buttons back) */
+    if (D.h_view) { gc_free(D.h_view); D.h_view = 0; }
+}
+static int del_ask(Obj view, int kind, const char *what) {
+    const DSLUi *u = dsl_ui_kit(); if (!u || !gc_new) { dsl_log("saves: no kit: delete of %s not asked, NOT deleted", what); return 0; }
+    D.open = 1; D.kind = kind; D.h_view = gc_new(view, 0); snprintf(D.what, sizeof D.what, "%s", what);
+    dsl_log("saves: delete question shown for %s", what);
+    u->notice(TR("This save is also used by Dungeon Settlers without mods. Delete it there too?"), TR("Delete"), TR("Cancel"), del_yes, del_no, NULL);
+    return 1;
+}
+/* the world's delete button, after the game's own confirm (confirmed = its Yes) */
+static void my_complete(Obj view, DGuid g, int32_t version, uint8_t confirmed, const void *mi) {
+    if (on && confirmed && view && !D.open) {
+        char gs[40]; guid_str(g, gs);
+        pthread_mutex_lock(&mu); int game = guid_is_game_locked(gs); pthread_mutex_unlock(&mu);
+        if (game) { D.g = g; D.version = version; char w[80]; snprintf(w, sizeof w, "world %s", gs); if (del_ask(view, 1, w)) return; }
+    } else if (on && confirmed && D.open) { dsl_log("saves: delete held: a delete question is still open"); o_complete(view, g, version, 0, mi); return; }
+    o_complete(view, g, version, confirmed, mi);
+}
+/* the save's remove, after the game's own confirm */
+static void my_remove(Obj view, Obj name, const void *mi) {
+    if (on && view && name) {
+        char nm[300]; utf8_of(name, nm, sizeof nm);
+        pthread_mutex_lock(&mu); int game = g_find(nm) != NULL; pthread_mutex_unlock(&mu);
+        if (game && D.open) { dsl_log("saves: remove of %s held: a delete question is still open", nm); return; }
+        if (game) { snprintf(D.name, sizeof D.name, "%s", nm); char w[340]; snprintf(w, sizeof w, "save %s", nm); if (del_ask(view, 2, w)) return; }
+    }
+    o_remove(view, name, mi);
+}
+/* the world's saves deleted: a game world's are in the game folder (the stock service lists one folder) */
+static Obj my_delcamp(Obj loader, DGuid g, const void *mi) {
+    char gs[40]; guid_str(g, gs);
+    pthread_mutex_lock(&mu); int game = on && guid_is_game_locked(gs); pthread_mutex_unlock(&mu);
+    if (game) { del_route = 1; dsl_log("saves: deleting world %s in the game's folder", gs); }
+    Obj r = o_delcamp(loader, g, mi);
+    del_route = 0;
+    return r;
+}
+
 /* test requests (dsl_reg.c): the question answered */
 void dsl_saves_test_answer(int load) {                    /* no question open: closes the kit's notice (the set-aside one) */
     const DSLUi *u = dsl_ui_kit();
-    if (w_open) { if (load) on_load(NULL, NULL); else on_cancel(NULL, NULL); } else dsl_log("saves test: no question open: notice closed");
+    if (D.open) { if (load) del_yes(NULL, NULL); else del_no(NULL, NULL); }
+    else if (w_open) { if (load) on_load(NULL, NULL); else on_cancel(NULL, NULL); } else dsl_log("saves test: no question open: notice closed");
     if (u && u->notice_close) u->notice_close();
+}
+/* test only (DSL_SOFT_TEST=1): <log dir>/softrestart/saves_request.json
+   {"cmd":"del_world","guid":..} = the world's delete answered Yes in the game's own box (the open Load list's view);
+   {"cmd":"del_save","name":..}  = the save's remove answered Yes */
+static int guid_parse(const char *s, DGuid *out) {
+    uint8_t b[16]; int k = 0;
+    for (const char *p = s; *p && k < 32; p++) {
+        if (*p == '-') continue;
+        int v = *p >= '0' && *p <= '9' ? *p - '0' : *p >= 'a' && *p <= 'f' ? *p - 'a' + 10 : *p >= 'A' && *p <= 'F' ? *p - 'A' + 10 : -1;
+        if (v < 0) return 0;
+        if (k % 2) b[k / 2] |= (uint8_t)v; else b[k / 2] = (uint8_t)(v << 4);
+        k++;
+    }
+    if (k != 32) return 0;
+    uint8_t g[16] = { b[3], b[2], b[1], b[0], b[5], b[4], b[7], b[6], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15] };   /* Guid: int, short, short, 8 bytes */
+    memcpy(out, g, 16); return 1;
+}
+static void test_frame(void) {
+    static int t_on = -1; static unsigned f;
+    if (t_on < 0) t_on = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1';
+    if (!t_on || ++f % 5) return;
+    char p[1300]; snprintf(p, sizeof p, "%s/softrestart/saves_request.json", dsl_log_dir());
+    FILE *fp = fopen(p, "rb"); if (!fp) return;
+    char t[2048]; size_t n = fread(t, 1, sizeof t - 1, fp); t[n] = 0; fclose(fp); remove(p);
+    JNode *j = json_parse(t); const char *c = j ? json_str(j, "cmd") : NULL;
+    static Obj (*find)(Obj, uint8_t, const void *); static Obj t_view; static int32_t o_pend = -1, o_ver = -1;
+    if (!t_view) {
+        void *kv = dsl_find_class("Refactor", "SaveLoadView"), *ko = dsl_find_class("UnityEngine", "Object");
+        void *mf = ko ? dsl_find_method(ko, "FindObjectOfType", 2) : NULL; find = mf ? dsl_method_address(mf) : NULL;
+        void *(*ct)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*to)(void *) = dsl_ga_sym("il2cpp_type_get_object");
+        if (ct && to && kv) t_view = to(ct(kv));
+        o_pend = kv ? dsl_field_offset(kv, "_pendingDeleteCampaign") : -1; o_ver = kv ? dsl_field_offset(kv, "_deleteConfirmationVersion") : -1;
+    }
+    Obj v = find && t_view ? find(t_view, 0, NULL) : NULL;
+    dsl_log("saves test: request %s (view %s)", c ? c : "?", v ? "open" : "MISSING");
+    if (v && c && !strcmp(c, "del_world") && a_complete && o_pend >= 0 && o_ver >= 0) {
+        DGuid g; if (!json_str(j, "guid") || !guid_parse(json_str(j, "guid"), &g)) { dsl_log("saves test: bad guid"); json_free(j); return; }
+        int32_t ver = AT(v, o_ver, int32_t) + 1; AT(v, o_ver, int32_t) = ver; memcpy((char *)v + o_pend, &g, 16);   /* as CheckDeleteCampaign leaves them */
+        ((void (*)(Obj, DGuid, int32_t, uint8_t, const void *))a_complete)(v, g, ver, 1, NULL);
+    } else if (v && c && !strcmp(c, "del_save") && a_remove && json_str(j, "name"))
+        ((void (*)(Obj, Obj, const void *))a_remove)(v, str_new(json_str(j, "name")), NULL);
+    if (j) json_free(j);
 }
 
 /* the title tick (dsl_reg.c dsl_frame_hook) */
 int dsl_reg_scene(void);
 void dsl_saves_frame(void) {
     if (!on) return;
+    test_frame();
     if (w_pending && --w_frames <= 0) ask();
     if (ndiffer && !differ_told && dsl_reg_scene() == 1 && dsl_soft_title_idle()) {
         const DSLUi *u = dsl_ui_kit(); if (!u) return;
         differ_told = 1;
-        char list[600] = "", t[700], b[1600];
+        /* per world: which file is newer; where the copy is (one copy: its file; more: their folder). The kit's box
+           holds 1 KB: lines that do not fit are left out ("and N more"), the folder always shows. */
+        static char b[1024]; char t[1800];
+        snprintf(b, sizeof b, TRN("The modded game now plays your game saves directly. %d old modded copy of a world was different "
+                                  "from your game save. It was set aside, not deleted.",
+                                  "The modded game now plays your game saves directly. %d old modded copies of worlds were different "
+                                  "from your game saves. They were set aside, not deleted.", ndiffer), ndiffer);
+        char where[1700];
+        if (ndiffer == 1) snprintf(where, sizeof where, TR("The old modded copy is this file:\n%s"), differ_path[0]);
+        else snprintf(where, sizeof where, TR("The old modded copies are in this folder:\n%s"), copies_d);
+        int shown = 0;
         for (int i = 0; i < ndiffer; i++) {
-            if (!i) snprintf(list, sizeof list, "%s", differ[i]);
-            else { snprintf(t, sizeof t, i + 1 == ndiffer ? TR("%s and %s") : TR("%s, %s"), list, differ[i]); snprintf(list, sizeof list, "%s", t); }
+            snprintf(t, sizeof t, differ_newer[i] ? TR("%s: the old modded copy is NEWER than your game save.")
+                                                  : TR("%s: your game save is newer than the old modded copy."), differ[i]);
+            if (strlen(b) + 2 + strlen(t) + 2 + strlen(where) + 40 >= sizeof b) break;
+            strlcat(b, "\n\n", sizeof b); strlcat(b, t, sizeof b); shown++;
         }
-        snprintf(b, sizeof b, TRN("The modded game now plays your game saves directly. Your old modded copy of %s was different "
-                                  "from your game save. It was set aside, not deleted:\n%s",
-                                  "The modded game now plays your game saves directly. Your old modded copies of %s were different "
-                                  "from your game saves. They were set aside, not deleted:\n%s", ndiffer), list, copies_d);
+        if (shown < ndiffer) { snprintf(t, sizeof t, TR("(and %d more)"), ndiffer - shown); strlcat(b, "\n", sizeof b); strlcat(b, t, sizeof b); }
+        strlcat(b, "\n\n", sizeof b); strlcat(b, where, sizeof b);
         dsi_utf8_fix_end(b);
         u->notice(b, TR("OK"), NULL, NULL, NULL, NULL);
-        dsl_log("saves: told the player about %d set-aside modded copy(ies)", ndiffer);
+        int nn = 0; for (int i = 0; i < ndiffer; i++) nn += differ_newer[i];
+        dsl_log("saves: told the player about %d set-aside modded copy(ies), %d newer than the game save", ndiffer, nn);
     }
 }
 
@@ -446,6 +577,16 @@ void dsl_saves_install(void) {
     void *a_add = meth("Refactor.Main", "EventQueue", "AddEvent", 1);
     if (!a_add || off_campaign < 0 || hk(a_add, (void *)my_add, (void **)&o_add, "loader saves EventQueue.AddEvent")) {
         o_add = a_add; dsl_log("saves: load-request hook off: the warning comes after the loading screen opens (world check)");
+    }
+    /* delete: the question after the game's own confirm; a game world's files deleted in the game folder only with it */
+    a_complete = meth("Refactor", "SaveLoadView", "CompleteDeleteConfirmation", 3); a_remove = meth("Refactor", "SaveLoadView", "ConfirmRemove", 1);
+    void *a_delcamp = meth("Refactor", "CampaignSaveLoader", "DeleteCampaignSaves", 1);
+    if (hk(a_complete, (void *)my_complete, (void **)&o_complete, "loader saves SaveLoadView.CompleteDeleteConfirmation")) {
+        a_complete = NULL; dsl_log("saves: world delete question off: a game world's delete removes nothing in the game's folder");
+    } else if (hk(a_delcamp, (void *)my_delcamp, (void **)&o_delcamp, "loader saves CampaignSaveLoader.DeleteCampaignSaves"))
+        dsl_log("saves: world delete routing off: a game world's delete removes nothing in the game's folder");
+    if (hk(a_remove, (void *)my_remove, (void **)&o_remove, "loader saves SaveLoadView.ConfirmRemove")) {
+        a_remove = NULL; dsl_log("saves: save remove question off");
     }
     dsl_log("saves: on: %d game save(s) in %s are listed and played in place; modded-only saves in %s", n, game_d, mod_d);
 }

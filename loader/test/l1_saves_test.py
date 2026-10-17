@@ -12,6 +12,10 @@ Real breaks this catches:
  B  modded copy with hell-difficulty (save_dependent): loading the game save asks first (no loading screen); Cancel = not
     loaded; again + Load = loaded, the answer kept in worlds.json "save_warned".
  C  same mods again: no question.
+ D  delete (owner 2026-10-17): the save's remove answered Yes in the game's own box asks once more ("also used by
+    Dungeon Settlers without mods"); Cancel = the game file stays; Delete = the game file is deleted in the game folder.
+    (The world's delete button is off in build 25846389: CampaignSaveDeletionService.IsAvailable returns false.)
+ The set-aside notice of run A names the newer file (the modded copy) and the copy's path.
 Output: ~/ds_launcher/loader/test_env/l1_out/saves (or argv[1]): logs, shots, summary.json."""
 import json, os, sys, time, glob, shutil, signal, subprocess, threading, hashlib, socket
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -144,6 +148,12 @@ def wait_line(s, mark, limit=30):
     return False
 
 
+def sreq(obj):
+    """a test request read by dsl_saves.c (DSL_SOFT_TEST)"""
+    tmp = os.path.join(T.SDIR, 'saves_request.json.tmp')
+    open(tmp, 'w').write(json.dumps(obj)); os.replace(tmp, os.path.join(T.SDIR, 'saves_request.json'))
+
+
 def load_and_wait(name, limit=180):
     r.send(X, {'cmd': 'load_save', 'name': name}, timeout=20, connect_wait=0)
     return T.wait(lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', 0) > 0, 'world ' + name, limit)
@@ -177,6 +187,10 @@ def main():
         check('A: old modded copy set aside (same bytes), not deleted; gone from the modded folder',
               len(copies) == 1 and open(copies[0], 'rb').read() == stale and not os.path.exists(os.path.join(MSAVES, ELVEN + '.json')), copies)
         check('A: the player is told once (different bytes)', T.wait_log('saves: told the player about 1 set-aside', 20))
+        L = T.dlog()
+        check('A: the notice says the modded copy is the newer file and where it is',
+              'the old modded copy is NEWER than your game save' in L and len(copies) == 1 and copies[0] in L,
+              [l for l in L.splitlines() if 'NEWER' in l or 'save_copies' in l][-3:])
         T.shot('A0_title_set_aside_notice'); T.request({'cmd': 'warn_cancel'}); time.sleep(1.5)
         r.send(X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
         check('A: Load list in two groups (1 game save, 1 modded save)', T.wait_log('groups: 1 game, 1 modded', 20),
@@ -241,6 +255,23 @@ def main():
         mark = len(T.dlog())
         r.send(X, {'cmd': 'load_save', 'name': ELVEN}, timeout=20, connect_wait=0); st = T.wait(lambda s: s.get('scene') == 2, 'world (C)', 180)
         check('C: same world, same mods: no question again', st.get('scene') == 2 and 'saves: warning shown' not in T.dlog()[mark:], T.dlog()[mark:][-300:])
+        stop_all()
+        # ---------------------------------------------------------------- D
+        start_modded(('multiplayer', 'gcd-cdr'))
+        r.send(X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0); time.sleep(3)
+        gfile = os.path.join(GSAVES, ELVEN + '.json')
+        mark = len(T.dlog()); sreq({'cmd': 'del_save', 'name': ELVEN})
+        check('D: deleting a game save asks first', wait_line('saves: delete question shown for save ' + ELVEN, mark, 20), T.dlog()[mark:][-400:])
+        time.sleep(1.5); T.shot('D1_delete_question')
+        T.request({'cmd': 'warn_cancel'}); wait_line('delete answered Cancel', mark, 20); time.sleep(4)
+        check('D: Cancel = the game file is NOT deleted', os.path.exists(gfile), sorted(os.listdir(GSAVES)))
+        mark = len(T.dlog()); sreq({'cmd': 'del_save', 'name': ELVEN})
+        wait_line('saves: delete question shown', mark, 20); time.sleep(1.5); T.request({'cmd': 'warn_load'})
+        t0 = time.time()
+        while time.time() - t0 < 20 and os.path.exists(gfile): time.sleep(0.5)
+        check('D: Delete = the game file is deleted in the game folder (the modded save stays)',
+              not os.path.exists(gfile) and os.path.exists(os.path.join(MSAVES, MOON + '.json')),
+              (sorted(os.listdir(GSAVES)), [l for l in T.dlog()[mark:].splitlines() if 'saves' in l][-5:]))
     except Exception as e:
         check('run finished', False, repr(e))
     finally:

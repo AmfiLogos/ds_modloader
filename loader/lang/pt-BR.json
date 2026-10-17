@@ -24,6 +24,9 @@
  "%s off": "%s desativado",
  "%s on": "%s ativado",
  "%s, %s": "%s, %s",
+ "%s: the old modded copy is NEWER than your game save.": "%s: a cópia modificada antiga é MAIS RECENTE que o seu salvamento.",
+ "%s: your game save is newer than the old modded copy.": "%s: o seu salvamento é mais recente que a cópia modificada antiga.",
+ "(and %d more)": "(e mais %d)",
  "Almost done": "Quase pronto",
  "Apply": "Aplicar",
  "Applying mods": "Aplicando mods",
@@ -145,14 +148,16 @@
  "The mod update (%s) did not start. The old mods are back.": "A atualização de mods (%s) não iniciou. Os mods antigos voltaram.",
  "The mod update (%s) was cut off. Nothing changed.": "A atualização de mods (%s) foi interrompida. Nada mudou.",
  "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.": "A cópia modificada do jogo está faltando ou incompleta.\nExecute install.bat do kit do Dungeon Settlers Modded de novo.",
- "The modded game now plays your game saves directly. Your old modded copy of %s was different from your game save. It was set aside, not deleted:\n%s||The modded game now plays your game saves directly. Your old modded copies of %s were different from your game saves. They were set aside, not deleted:\n%s": [
-  "O jogo modificado agora joga seus salvamentos do jogo diretamente. Sua cópia modificada antiga de %s era diferente do seu salvamento. Ela foi guardada à parte, não apagada:\n%s",
-  "O jogo modificado agora joga seus salvamentos do jogo diretamente. Suas cópias modificadas antigas de %s eram diferentes dos seus salvamentos. Elas foram guardadas à parte, não apagadas:\n%s"
+ "The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted.": [
+  "O jogo modificado agora joga seus salvamentos do jogo diretamente. %d cópia modificada antiga de um mundo era diferente do seu salvamento. Ela foi guardada à parte, não apagada.",
+  "O jogo modificado agora joga seus salvamentos do jogo diretamente. %d cópias modificadas antigas de mundos eram diferentes dos seus salvamentos. Elas foram guardadas à parte, não apagadas."
  ],
  "The mods could not be applied: %s": "Não foi possível aplicar os mods: %s",
  "The mods did not change: %s": "Os mods não mudaram: %s",
  "The mods folder has no new mods.": "A pasta de mods não tem novos mods.",
  "The mods for this world could not be saved.": "Não foi possível salvar os mods deste mundo.",
+ "The old modded copies are in this folder:\n%s": "As cópias modificadas antigas estão nesta pasta:\n%s",
+ "The old modded copy is this file:\n%s": "A cópia modificada antiga é este arquivo:\n%s",
  "The update to %s could not be installed (%s). You still have %s.": "Não foi possível instalar a atualização para %s (%s). Você ainda tem %s.",
  "The update to %s could not be installed (%s). You still have the old version.": "Não foi possível instalar a atualização para %s (%s). Você ainda tem a versão antiga.",
  "The update to %s did not start. You have %s again.": "A atualização para %s não iniciou. Você tem %s de novo.",
@@ -161,6 +166,7 @@
  "The world cannot be loaded now: %s": "O mundo não pode ser carregado agora: %s",
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "Esta cópia do Dungeon Settlers Modded está incompleta (sem carregador de mods dentro). Baixe de novo.",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "Este jogo é a build %s, mas o launcher iniciou este mundo para a build %s. Os mods continuam desativados. Inicie o mundo pelo launcher de novo.",
+ "This save is also used by Dungeon Settlers without mods. Delete it there too?": "Este salvamento também é usado pelo Dungeon Settlers sem mods. Excluir lá também?",
  "This world is one of your game saves.": "Este mundo é um dos seus salvamentos do jogo.",
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "Este mundo é um dos seus salvamentos do jogo. Este mod muda o que o mundo salva: %s.\n\nSe você jogar agora, o mundo pode quebrar quando você carregá-lo depois no jogo sem o carregador de mods.",
