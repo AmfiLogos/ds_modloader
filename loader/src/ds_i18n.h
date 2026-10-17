@@ -16,6 +16,7 @@
  * Codes follow the game's LanguageType (Refactor.Setting.LanguageType):
  *   0 en, 1 ko, 2 fr, 3 de, 4 ru, 5 zh-Hans, 6 zh-Hant, 7 ja, 8 es, 9 pt-BR.
  *
+ * Windows: the folder name is UTF-8 (opened with _wfopen).
  * Use: exactly one .c file of each dylib/exe does  #define DSI_IMPLEMENTATION  before the include.
  * Not thread-safe: set the language and look up on one thread (the game's main thread).
  */
@@ -32,6 +33,34 @@
 
 #define DSI_LANGS 10
 
+/* -DDSI_PREFIX=xx_ renames the public functions (xx_tr ...): two string tables in one image (Windows rig DLL) */
+#ifdef DSI_PREFIX
+#define DSI_CAT2(a, b) a##b
+#define DSI_CAT(a, b) DSI_CAT2(a, b)
+#define dsi_set_dir DSI_CAT(DSI_PREFIX, set_dir)
+#define dsi_set_lang DSI_CAT(DSI_PREFIX, set_lang)
+#define dsi_lang DSI_CAT(DSI_PREFIX, lang)
+#define dsi_code DSI_CAT(DSI_PREFIX, code)
+#define dsi_code_of DSI_CAT(DSI_PREFIX, code_of)
+#define dsi_generation DSI_CAT(DSI_PREFIX, generation)
+#define dsi_tr DSI_CAT(DSI_PREFIX, tr)
+#define dsi_trn DSI_CAT(DSI_PREFIX, trn)
+#define dsi_lang_from_usersetting DSI_CAT(DSI_PREFIX, lang_from_usersetting)
+#define dsi_utf8_clip DSI_CAT(DSI_PREFIX, utf8_clip)
+#define dsi_utf8_fix_end DSI_CAT(DSI_PREFIX, utf8_fix_end)
+#define dsi_loaded DSI_CAT(DSI_PREFIX, loaded)
+#define dsi_dropped DSI_CAT(DSI_PREFIX, dropped)
+#endif
+
+/* the compiler checks printf arguments against the English key */
+#if defined(__GNUC__) || defined(__clang__)
+#define DSI_FMT1 __attribute__((format_arg(1)))
+#define DSI_FMT2 __attribute__((format_arg(2)))
+#else
+#define DSI_FMT1
+#define DSI_FMT2
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -45,8 +74,8 @@ DSI_HIDDEN int dsi_lang(void);                    /* current LanguageType */
 DSI_HIDDEN const char *dsi_code(void);            /* "en", "fr", "zh-Hans", ... */
 DSI_HIDDEN const char *dsi_code_of(int game_lang);
 DSI_HIDDEN unsigned dsi_generation(void);         /* +1 on every change; for caches */
-DSI_HIDDEN const char *dsi_tr(const char *en);
-DSI_HIDDEN const char *dsi_trn(const char *one, const char *other, long n);
+DSI_HIDDEN const char *dsi_tr(const char *en) DSI_FMT1;
+DSI_HIDDEN const char *dsi_trn(const char *one, const char *other, long n) DSI_FMT1 DSI_FMT2;
 /* LanguageType from the text of UserSetting.json (GeneralSettingData.SaveCurrentLanguageType), or 0 */
 DSI_HIDDEN int dsi_lang_from_usersetting(const char *json_text);
 /* cut s so it fits cap bytes (cap includes the NUL) without splitting a UTF-8 character */
@@ -65,12 +94,27 @@ DSI_HIDDEN int dsi_dropped(void);
 #define TRN(one, other, n) dsi_trn(one, other, (long)(n))
 /* marks a string for the extractor without translating it now (tables of English keys) */
 #define TR_NOOP(s) (s)
+/* plural pair for a table initializer: { TRN_NOOP("%d file", "%d files") } -> "%d file", "%d files" */
+#define TRN_NOOP(one, other) one, other
 
 #ifdef DSI_IMPLEMENTATION
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <wchar.h>
+/* declared here so the implementation file does not need <windows.h> */
+__declspec(dllimport) int __stdcall MultiByteToWideChar(unsigned int, unsigned long, const char *, int, wchar_t *, int);
+static FILE *dsi_fopen(const char *utf8_path) {
+    wchar_t w[1200];
+    if (MultiByteToWideChar(65001u /* CP_UTF8 */, 0, utf8_path, -1, w, 1200) <= 0) return NULL;
+    return _wfopen(w, L"rb");
+}
+#else
+#define dsi_fopen(p) fopen((p), "rb")
+#endif
 
 static const char *const dsi_codes[DSI_LANGS] = {
     "en", "ko", "fr", "de", "ru", "zh-Hans", "zh-Hant", "ja", "es", "pt-BR"};
@@ -245,7 +289,7 @@ static void dsi_load(DsiLang *L, int lang) {
     L->tried = 1;
     if (!dsi_dir[0] || lang <= 0) return;
     snprintf(path, sizeof path, "%s/%s.json", dsi_dir, dsi_codes[lang]);
-    f = fopen(path, "rb");
+    f = dsi_fopen(path);
     if (!f) return;
     fseek(f, 0, SEEK_END);
     len = ftell(f);

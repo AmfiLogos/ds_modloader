@@ -9,6 +9,7 @@
                                                  exit 1 on a bad entry or a broken file
   i18n_tool.py prune <lang_dir>                  drop stale keys (no longer in en.json) from every language
 
+Markers: TR("x"), TR_NOOP("x"), TRN("one", "other", n), TRN_NOOP("one", "other").
 Keys are the English text. Plural keys are "one||other" with a list of forms as value.
 """
 import json
@@ -22,7 +23,7 @@ EXTS = (".c", ".h", ".m", ".mm", ".cpp")
 
 LIT = r'"(?:[^"\\\n]|\\.)*"'
 LITS = rf'{LIT}(?:\s*{LIT})*'
-RX = re.compile(rf'\b(TR|TR_NOOP|TRN)\s*\(\s*({LITS})(?:\s*,\s*({LITS}))?')
+RX = re.compile(rf'\b(TR|TR_NOOP|TRN|TRN_NOOP)\s*\(\s*({LITS})(?:\s*,\s*({LITS}))?')
 
 
 def c_unescape(lits):
@@ -44,6 +45,10 @@ def c_unescape(lits):
                 while i < len(s) and i - j < 3 and s[i] in "01234567":
                     i += 1
                 b.append(int(s[j:i], 8) & 0xFF)
+            elif n in "uU":
+                k = 4 if n == "u" else 8
+                b += chr(int(s[i:i + k], 16)).encode("utf-8")
+                i += k
             elif n == "x":
                 j = i
                 while i < len(s) and s[i] in "0123456789abcdefABCDEF":
@@ -68,7 +73,7 @@ def scan(dirs):
                 src = open(p, encoding="utf-8", errors="replace").read()
                 for m in RX.finditer(src):
                     kind, a, b = m.group(1), m.group(2), m.group(3)
-                    if kind == "TRN":
+                    if kind in ("TRN", "TRN_NOOP"):
                         if not b:
                             continue
                         key = c_unescape(a) + "||" + c_unescape(b)

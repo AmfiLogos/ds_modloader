@@ -26,6 +26,9 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
 int dsl_core_ga_mapped(uintptr_t base, const char *ga_path);
 void dsl_core_ga_differs(const char *ga_id, const char *found_build);   /* mapped image != the file read at start */
 const char *dsl_core_logdir(void);
+/* Optional, set by the start part before dsl_core_log_open: this binary's path in UTF-8 when self_path is in another
+   encoding (Windows: GetModuleFileNameA gives the ANSI code page; ds_i18n.h opens the lang folder as UTF-8). */
+extern char dsl_core_self_utf8[1024];
 /* Optional start-part condition, run by dsl_core_ga_mapped after the engine is up and before any module hook
    (Windows: the save-folder redirect). Non-zero = every module off this session; why = the player's message. */
 extern int (*dsl_core_prereq)(char *why, size_t n);

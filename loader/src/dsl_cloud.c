@@ -64,34 +64,38 @@ static struct {
     bool (*app)(void *);
 } A;
 
-/* tr = 1: the game's language (TR / TRN; main thread only), 0: English (the log; tests look for "cloud: Cloud backup: ") */
-#define T_(s) (tr ? TR(s) : (s))
+/* the status texts by code: one text, or a plural pair (%d saves, then %s = the time; TRN_NOOP marks it for the
+   extractor). tr = 1: the game's language (TR / TRN; main thread only), 0: English (the log; tests look for
+   "cloud: Cloud backup: ") */
+static const char *const CS_TEXT[] = {
+    [CS_STARTS] = TR_NOOP("Cloud backup starts once Steam is ready."),
+    [CS_WAIT_STEAM] = TR_NOOP("Cloud backup is waiting for Steam."),
+    [CS_OFF_CLOUD] = TR_NOOP("Cloud backup is off: Steam Cloud is turned off for this game or this account."),
+    [CS_WAIT_FOLDER] = TR_NOOP("Cloud backup is waiting: the modded save folder is missing."),
+    [CS_NO_STEAM] = TR_NOOP("Cloud backup is off: Steam is not running."),
+    [CS_OFF_ENV] = TR_NOOP("Cloud backup is off (DSL_CLOUD=0)."),
+};
+static const char *const CS_PLURAL[][2] = {
+    [CS_PAUSED] = { TRN_NOOP("Cloud backup paused: Steam Cloud is almost full, so %d save is only on this computer. The game's own saves get the space first.",
+                             "Cloud backup paused: Steam Cloud is almost full, so %d saves are only on this computer. The game's own saves get the space first.") },
+    [CS_FAILED] = { TRN_NOOP("Cloud backup failed for %d save at %s. It will try again in a moment.",
+                             "Cloud backup failed for %d saves at %s. It will try again in a moment.") },
+    [CS_OK] = { TRN_NOOP("Cloud backup: %d save in your Steam Cloud, checked at %s.",
+                         "Cloud backup: %d saves in your Steam Cloud, checked at %s.") },
+};
+#define CS_COUNT(t) ((int)(sizeof t / sizeof t[0]))
 static void status_text(int code, int n, const char *tm, int tr, char *b, size_t cap) {
-    switch (code) {
-    case CS_WAIT_STEAM: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is waiting for Steam."))); break;
-    case CS_OFF_CLOUD: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is off: Steam Cloud is turned off for this game or this account."))); break;
-    case CS_WAIT_FOLDER: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is waiting: the modded save folder is missing."))); break;
-    case CS_PAUSED:
-        snprintf(b, cap, tr ? TRN("Cloud backup paused: Steam Cloud is almost full, so %d save is only on this computer. The game's own saves get the space first.",
-                                  "Cloud backup paused: Steam Cloud is almost full, so %d saves are only on this computer. The game's own saves get the space first.", n)
-                    : n == 1 ? "Cloud backup paused: Steam Cloud is almost full, so %d save is only on this computer. The game's own saves get the space first."
-                             : "Cloud backup paused: Steam Cloud is almost full, so %d saves are only on this computer. The game's own saves get the space first.", n);
-        break;
-    case CS_FAILED:
-        snprintf(b, cap, tr ? TRN("Cloud backup failed for %d save at %s. It will try again in a moment.", "Cloud backup failed for %d saves at %s. It will try again in a moment.", n)
-                    : n == 1 ? "Cloud backup failed for %d save at %s. It will try again in a moment." : "Cloud backup failed for %d saves at %s. It will try again in a moment.", n, tm);
-        break;
-    case CS_OK:
-        snprintf(b, cap, tr ? TRN("Cloud backup: %d save in your Steam Cloud, checked at %s.", "Cloud backup: %d saves in your Steam Cloud, checked at %s.", n)
-                    : n == 1 ? "Cloud backup: %d save in your Steam Cloud, checked at %s." : "Cloud backup: %d saves in your Steam Cloud, checked at %s.", n, tm);
-        break;
-    case CS_NO_STEAM: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is off: Steam is not running."))); break;
-    case CS_OFF_ENV: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup is off (DSL_CLOUD=0)."))); break;
-    default: snprintf(b, cap, "%s", T_(TR_NOOP("Cloud backup starts once Steam is ready."))); break;
+    if (code >= 0 && code < CS_COUNT(CS_PLURAL) && CS_PLURAL[code][0]) {
+        const char *one = CS_PLURAL[code][0], *other = CS_PLURAL[code][1];
+        if (code == CS_PAUSED) snprintf(b, cap, tr ? TRN(one, other, n) : n == 1 ? one : other, n);   /* only %d */
+        else snprintf(b, cap, tr ? TRN(one, other, n) : n == 1 ? one : other, n, tm);                /* %d then %s */
+    } else {
+        const char *t = code >= 0 && code < CS_COUNT(CS_TEXT) && CS_TEXT[code] ? CS_TEXT[code] : CS_TEXT[CS_STARTS];
+        snprintf(b, cap, "%s", tr ? TR(t) : t);
     }
     if (tr) dsi_utf8_fix_end(b);
 }
-#undef T_
+#undef CS_COUNT
 static void set_status(int code, int n, const char *tm) {
     pthread_mutex_lock(&mu);
     int changed = code != st_code || n != st_n || strcmp(tm ? tm : "", st_tm);

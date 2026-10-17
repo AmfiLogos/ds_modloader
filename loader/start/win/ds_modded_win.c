@@ -269,7 +269,7 @@ static char *slurp_w(const wchar_t *p) {
 static void setup_lang(void) {
     wchar_t ld[MAX_PATH], us[MAX_PATH]; char l8[MAX_PATH * 3];
     _snwprintf(ld, MAX_PATH, L"%ls\\lang", game);
-    WideCharToMultiByte(CP_ACP, 0, ld, -1, l8, sizeof l8, NULL, NULL);   /* ds_i18n.h opens files with fopen (ANSI) */
+    if (!WideCharToMultiByte(CP_UTF8, 0, ld, -1, l8, sizeof l8, NULL, NULL)) l8[0] = 0;   /* ds_i18n.h opens the folder as UTF-8 (_wfopen) */
     dsi_set_dir(l8);
     _snwprintf(us, MAX_PATH, L"%ls\\UserSetting.json", data);
     char *t = slurp_w(us);

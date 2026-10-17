@@ -1,4 +1,10 @@
-// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 3.
+// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 4.
+// API 4 = API 3, same DSLHost layout, plus one behaviour: title_add_button called again with the same self, click
+// and ud relabels that button (new label / tip) instead of adding a second one. A module that relabels after a
+// language change checks host->api_version >= 4 first (an API 3 loader would add a second button).
+// The loader loads every module whose dsl_plugin_api_version (and mod.json "api") is 1..DSL_API_VERSION, so API 1,
+// 2 and 3 modules load exactly as before. A module built with this header exports 4 and is refused by older loaders
+// (API 3); set mod.json "api" to the lowest API the module needs.
 // API 3 = API 2 + soft restart, session busy, Mods window tabs, title buttons, load-list rows / filter and the
 // dsl_ui widget kit (all appended to DSLHost; check host->size before use, or use the dsl_* wrappers below).
 // API 2 = API 1 (~/DungeonSettlersMods/loader/sdk/dsl_sdk.h) + fields appended to DSLHost + two optional
@@ -29,7 +35,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_API_VERSION 3
+#define DSL_API_VERSION 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -167,7 +173,8 @@ typedef struct DSLHost {
     /* Title screen button in the stock column style (clone of SubUI_TitleMenuButton), below the stock column and the
        multiplayer clones. order: lower = higher up (the loader's "Mods" = 100). tip = game tooltip body or NULL.
        Calling it again with the same self, click and ud gives that button a new label / tip (e.g. after the game's
-       language changed) instead of adding a second button. */
+       language changed) instead of adding a second button: API 4 (host->api_version >= 4); an API 3 loader adds
+       a second button, so do not call it again there. */
     int (*title_add_button)(DSLPlugin *self, const char *label, int order, const char *tip,
                             void (*click)(void *ud), void *ud);
 

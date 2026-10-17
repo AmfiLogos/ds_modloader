@@ -35,6 +35,7 @@ static char ga_path_s[1024];
 static FILE *lf;
 static pthread_mutex_t loglock = PTHREAD_MUTEX_INITIALIZER;
 static char logdir[1024], statedir[1100], modsdir[1024], profile_path[1100], self_path[1024];
+char dsl_core_self_utf8[1024];
 
 #define MAXP 32
 #define MAXT 512
@@ -752,7 +753,7 @@ const char *dsl_core_logdir(void) { return logdir; }
 static int lang_early_done;
 void dsl_lang_early(void) {
     if (lang_early_done) return; lang_early_done = 1;
-    char d[1100]; snprintf(d, sizeof d, "%s", self_path);
+    char d[1100]; snprintf(d, sizeof d, "%s", dsl_core_self_utf8[0] ? dsl_core_self_utf8 : self_path);   /* UTF-8 for dsi_set_dir */
     char *sl = strrchr(d, '/'), *bs = strrchr(d, '\\'); if (bs > sl) sl = bs;
     if (sl) { snprintf(sl, sizeof d - (size_t)(sl - d), "/lang"); dsi_set_dir(d); } else d[0] = 0;
     const char *dd = getenv("DSML_DATA"), *rd = getenv("DSRIG_DIR");

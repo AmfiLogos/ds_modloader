@@ -7,7 +7,13 @@ the translation passes add `loader/lang/<code>.json` later. No language file = E
 English.
 
 ## Shared core
-- `loader/src/ds_i18n.h` and `tools/i18n_tool.py`: copied unchanged from the i18n core.
+- `loader/src/ds_i18n.h` and `tools/i18n_tool.py`: copied unchanged from the i18n core (second version, 2026-10-17:
+  `TRN_NOOP(one, other)`, `\u` escapes in the extractor, `format_arg` on `dsi_tr` / `dsi_trn`, Windows `_wfopen`,
+  `-DDSI_PREFIX`, not used here). With `format_arg` the compiler checks printf arguments against the English key:
+  the Mac build, `build_mods.sh`, the Windows build and the test builds give no `-Wformat` warning.
+- Windows lang folder in UTF-8 (the core opens it with `_wfopen`): the starter converts with `CP_UTF8` (was `CP_ACP`);
+  baselib.dll fills `dsl_core_self_utf8` (`dsl_os.h`) from `GetModuleFileNameW` before `dsl_core_log_open`, and
+  `dsl_lang_early` takes the lang folder from it. `self_path` stays ANSI for the core's own `fopen` calls.
 - The implementation (`DSI_IMPLEMENTATION`) is in `loader/src/dsl_main.c` (dsload.dylib / baselib.dll), in
   `app/stub/ds_modded.c` (Mac starter) and `loader/start/win/ds_modded_win.c` (Windows starter). Test builds that link a
   loader file on its own define it too (`loader/test/cloud/cloud_test.c`, `loader/test/winbie/bie_fail_test.c`).
@@ -49,6 +55,7 @@ English.
   Mods window draws them.
 - Cloud status (`dsl_cloud.c`): built on the cloud thread before; now a code + numbers, made into text on the main
   thread (`dsl_cloud_status`); the log line stays English (`l1_cloud_test.py` looks for "cloud: Cloud backup: ").
+  The texts are two tables by code (`CS_TEXT` with `TR_NOOP`, `CS_PLURAL` with `TRN_NOOP`), each text written once.
 
 ## UTF-8
 - `dsl_ui.c str()` drops a cut last character before `il2cpp_string_new` (an invalid tail makes it return "");
@@ -86,8 +93,24 @@ English.
   (or one: `python3 loader/modules/hell-difficulty/tools/hell_delta.py <stock bundle> <out>.dsdelta`).
 
 ## For the other lanes
-- `title_add_button` again with the same self, click and ud = new label / tip for that button (documented in
-  `loader/sdk/dsl_sdk.h`; no API change). Multiplayer and Custom Modes call it again after their own language poll.
+- `title_add_button` again with the same self, click and ud = new label / tip for that button. This is API 4:
+  `DSL_API_VERSION` 4 in `loader/sdk/dsl_sdk.h` (same DSLHost layout; the header says what 4 means). Custom Modes
+  relabels only when `host->api_version >= 4` (`home/cm_i18n.c cm_i18n_loader_relabels`), so on an API 3 loader it
+  adds no second button.
+- The loader loads a module when its `dsl_plugin_api_version` and mod.json `"api"` are 1..`DSL_API_VERSION`
+  (`dsl_main.c` scan + open): API 1, 2 and 3 modules load as before (bundled mod.json files say 2 or 3; tests 31/31).
+  A module built with the new header exports 4, so an older loader (API 3) refuses it: modules ship with their loader.
+- `ds_multiplayer/sdk/dsl_sdk.h` (its own drifted copy, API 3): does NOT need the line now. Its only host is
+  `src/rig_main.c cm_host` (the standalone rig), which has no `title_add_button`; bumping it there would claim a
+  relabel that host does not do. The Windows multiplayer module build puts `-I$DSMP_ROOT/sdk` before `DSL_SDK`, so
+  multiplayer.dll is built against that copy (exports 3; loads fine). Custom Modes reads `host->api_version` at run
+  time, so the header it was built with does not matter.
+- Multiplayer's "Multiplayer" title button is NOT registered through `title_add_button`: mpmenu.c makes its own clone
+  of Credits (inserted at Load + 1) and, on a language change, destroys and rebuilds all its title clones itself
+  (`title_sync`, ds_multiplayer `ext/i18n_mpmenu/NOTES.md`). So `loader/modules/multiplayer/mp_module.c` needs no
+  relabel call; the loader finds that button by owner, not label. Its strings come from `mods/multiplayer/lang`
+  (dladdr on multiplayer.dylib), which `copy_lang.sh` fills from the mp pin (Mac `loader/build.sh`, both platforms
+  in `build_mods.sh`). The current mp pin (`mp_pin.txt`) has no `lang/` and no i18n yet: the pin moves later.
 - Load-row texts, filter labels and tab titles of modules are asked for / copied by the loader as before: owners
   translate them.
 
@@ -134,6 +157,9 @@ BepInEx, MelonLoader (names: kept), Steam Cloud.
 this branch. Then `python3 tools/i18n_tool.py extract loader/lang loader/src loader/ui loader/start app/stub`.
 
 ## Tests run
+2026-10-17 (core v2 + API 4): `loader/test/run_tests.sh` 31/31, `loader/test/cloud/run.sh` 25 ok, `loader/test/i18n/run.sh`
+ok, `loader/build.sh`, `loader/modules/build_mods.sh` (check OK), `loader/start/win/build_win.sh`, winbie, ui test build,
+Mac stub compile; en.json 159 keys (same keys as before). Earlier:
 `loader/test/run_tests.sh` 31/31, `loader/test/cloud/run.sh` 25 ok, `loader/test/i18n/run.sh` ok,
 `loader/build.sh` (all Mac modules), `loader/modules/build_mods.sh` (Mac + Windows, check OK), `package_mods.sh`,
 `loader/start/win/build_win.sh` (baselib.dll, starter, kit with `files/lang`), `loader/ui/test/build_test.sh`,
