@@ -20,6 +20,25 @@ static NSWindow *player_window(void) {
     for (NSWindow *w in NSApp.windows) if (pw && [w isKindOfClass:pw]) return w;
     return NSApp.mainWindow ? NSApp.mainWindow : NSApp.keyWindow;
 }
+/* Unity makes PlayerWindowView the first responder when it creates the window. Changing the style mask rebuilds the
+   frame view and resets the first responder to the window itself, and AppKit sends mouseMoved: to the first responder:
+   the game got no mouse moves (cursor stuck) until the first click. Give it back to the view; never take it from a
+   real view. */
+static void restore_first_responder(NSWindow *w) {
+    if (w.firstResponder != w) return;
+    Class pv = NSClassFromString(@"PlayerWindowView");
+    NSView *target = nil;
+    NSMutableArray<NSView *> *todo = [NSMutableArray array];
+    if (pv && w.contentView) [todo addObject:w.contentView];
+    while (todo.count && !target) {
+        NSView *v = todo.firstObject; [todo removeObjectAtIndex:0];
+        if ([v isKindOfClass:pv]) target = v; else [todo addObjectsFromArray:v.subviews];
+    }
+    if (!target) target = w.contentView;
+    if (target && [w makeFirstResponder:target]) {
+        static int m; if (++m <= 3) dsl_log("notch: mouse input back to %s", object_getClassName(target));
+    }
+}
 static BOOL has_notch(NSScreen *s) {
     if (@available(macOS 12.0, *)) return s && s.safeAreaInsets.top > 0;
     return NO;
@@ -55,6 +74,7 @@ static void apply_frame(void) {
                               w.frame.origin.x, w.frame.origin.y, w.frame.size.width, w.frame.size.height, s.safeAreaInsets.top,
                               n == 5 ? "; further re-applies not logged" : "");
     }
+    restore_first_responder(w);
     applying = NO;
 }
 static void apply_presentation(void) {
