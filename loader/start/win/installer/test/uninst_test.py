@@ -5,7 +5,8 @@ it installed (DSMP CrossOver bottle, silent runs, one wine copy: ~/ds_multiplaye
   2 /D=<folder named like ours that holds other files, no marker> -> refused, nothing changed
   3 a second Setup without /D           -> the same folder as before (InstallDirRegKey)
   4 install.bat (zip kit) into a folder with other files -> refused
-  5 uninstall with a player file in game\\ and mods\\ and a save in profiles\\ -> only the installed files go"""
+  5 after one game start: uninstall with a player mod in mods\\ and a save in profiles\\ -> the program goes (game copy
+    and what the starter made included), the player mod, the saves and the files around stay"""
 import os, signal, subprocess, sys, time
 H = os.path.expanduser("~")
 sys.path.insert(0, f"{H}/ds_multiplayer/win"); import wloader as w
@@ -46,15 +47,33 @@ try:
     r = wine(["cmd", "/c", "set DSMODDED_NOPAUSE=1&& set DSMODDED_ROOT=C:\\FULLDIR2&& call " + w.winpath(f"{kit}/install.bat")], timeout=300)
     check("4 install.bat into a folder with other files: refused", r.returncode != 0 and os.listdir(F2) == ["thesis.docx"]
           and "already holds other files" in r.stdout, f"rc {r.returncode}")
-    # 5
+    # 5 (after one game start + quit, the way a player uses it; the gate does the same)
+    env = dict(os.environ, DSRIG_PORT=str(w.PORT), DSMP_GUARD_TAG="1", DSL_NO_ALERT="1", WINEDLLOVERRIDES="winhttp=n,b")
+    subprocess.run(["nice", "-n", "19", f"{C}/wine", "--bottle", BOTTLE, "--no-wait", f"C:\\USERDIR\\{NAME}\\{NAME}.exe", "-batchmode", "-nographics"],
+                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    t0, title = time.time(), False
+    while time.time() - t0 < 300 and not title:
+        time.sleep(5)
+        try: title = w.cmd({"cmd": "status"}, timeout=5).get("boot_ready", False)
+        except Exception: pass
+    check("5 the installed game starts once (title)", title, f"{time.time() - t0:.0f} s")
+    try: w.cmd({"cmd": "quit"}, timeout=5)
+    except Exception: pass
+    time.sleep(3)
+    for pid, c in w.dsmp_pids():
+        if "USERDIR" in c:
+            try: os.kill(pid, signal.SIGKILL)
+            except Exception: pass
+    time.sleep(5)
     put(f"{I}/game/player_note.txt"); put(f"{I}/mods/my-own-mod/mod.json", "{}"); put(f"{I}/profiles/modded/data/Saves/w1.json", "{}")
     r = wine([f"C:\\USERDIR\\{NAME}\\Uninstall.exe", "/S"], timeout=600); time.sleep(10)
     check("5 installed files removed", not os.path.exists(f"{I}/game/DungeonSettlers.exe") and not os.path.exists(f"{I}/{NAME}.exe")
           and not os.path.exists(f"{I}/mods/multiplayer") and not os.path.exists(f"{I}/Uninstall.exe"))
-    check("5 player files, saves and the folder around stay", os.path.exists(f"{I}/game/player_note.txt") and os.path.exists(f"{I}/mods/my-own-mod/mod.json")
+    check("5 the game copy is gone (ours top to bottom), a player mod, saves and the folder around stay", not os.path.exists(f"{I}/game") and os.path.exists(f"{I}/mods/my-own-mod/mod.json")
           and os.path.exists(f"{I}/profiles/modded/data/Saves/w1.json") and os.path.exists(f"{U}/notes.txt") and os.path.exists(f"{U}/photos/a.jpg"))
     left = sorted(os.path.relpath(os.path.join(d, f), I) for d, _, fs in os.walk(I) for f in fs)
-    check("5 nothing else left", left == ["game/player_note.txt", "mods/my-own-mod/mod.json", "profiles/modded/data/Saves/w1.json"], str(left[:8]))
+    left = [x for x in left if not x.startswith("profiles/")]
+    check("5 nothing else left (outside profiles)", left == ["mods/my-own-mod/mod.json"], str(left[:12]))
 finally:
     for pid, c in w.dsmp_pids():
         if "USERDIR" in c or "FULLDIR" in c:

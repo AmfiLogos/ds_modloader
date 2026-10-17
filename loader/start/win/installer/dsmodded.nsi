@@ -194,12 +194,22 @@ Section "Uninstall"
     SetErrorLevel 1
     Abort
   ${EndIf}
-  ; only what the install put there: the files of install_files.log (inside this folder only), then the empty folders
-  ; of install_dirs.log (deepest first). Saves (profiles\), player mods and any other file stay. Never RMDir /r.
+  ; only what the install and the starter put there: the files of install_files.log (inside this folder only), then the
+  ; empty folders of install_dirs.log (deepest first). Saves (profiles\) and files that nobody of ours made stay.
+  ; Never RMDir /r.
   ${IfNot} ${FileExists} "$INSTDIR\install_files.log"
     MessageBox MB_OK|MB_ICONEXCLAMATION "This folder has no install file list. Nothing was removed." /SD IDOK
     SetErrorLevel 1
     Abort
+  ${EndIf}
+  ; the game copy is ours from top to bottom (install.bat made it, marker inside): whatever the game or its loader added
+  ; there later (BepInEx, MelonLoader, caches) joins the lists before they are read
+  ${If} ${FileExists} "$INSTDIR\game\dsmodded_build.txt"
+  ${OrIf} ${FileExists} "$INSTDIR\game\dsmodded_copy.txt"
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /a-d "$INSTDIR\game" >> "$INSTDIR\install_files.log"`
+    Pop $0
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /ad "$INSTDIR\game" >> "$INSTDIR\install_dirs.log"`
+    Pop $0
   ${EndIf}
   StrLen $5 "$INSTDIR\"
   ClearErrors
@@ -216,10 +226,18 @@ Section "Uninstall"
     ${EndIf}
   ${Loop}
   FileClose $6
-  ${If} ${FileExists} "$INSTDIR\install_dirs.log"
-    nsExec::Exec `"$SYSDIR\cmd.exe" /c for /f "delims=" %d in ('sort /r "$INSTDIR\install_dirs.log"') do @rd "%d" 2>nul`
-    Pop $0
-  ${EndIf}
+  ; then the folders our install made, deepest first; RMDir without /r removes a folder only when it is empty, so a
+  ; folder that still holds a file nobody of ours made stays (profiles\ is never touched)
+  Push "$INSTDIR\game"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\mods"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\update"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\retired"
+  Call un.RemoveEmptyDirs
+  Push "$INSTDIR\cache"
+  Call un.RemoveEmptyDirs
   Delete "$INSTDIR\install_files.log"
   Delete "$INSTDIR\install_files.prev.log"
   Delete "$INSTDIR\install_dirs.log"
@@ -238,6 +256,31 @@ Section "Uninstall"
     MessageBox MB_OK "${NAME} is removed. Steam's game was never changed.$\r$\nYour modded saves stay in $INSTDIR\profiles. You can delete that folder if you do not need them." /SD IDOK
   ${EndIf}
 SectionEnd
+
+; un.RemoveEmptyDirs <folder>: every empty folder below <folder>, children before parents, then <folder> itself when
+; empty. Never deletes a file.
+Function un.RemoveEmptyDirs
+  Exch $R0
+  Push $R1
+  Push $R2
+  ClearErrors
+  FindFirst $R1 $R2 "$R0\*.*"
+  ${DoUntil} ${Errors}
+    ${If} $R2 != "."
+    ${AndIf} $R2 != ".."
+    ${AndIf} ${FileExists} "$R0\$R2\*.*"
+      Push "$R0\$R2"
+      Call un.RemoveEmptyDirs
+    ${EndIf}
+    ClearErrors
+    FindNext $R1 $R2
+  ${Loop}
+  FindClose $R1
+  RMDir "$R0"
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
 
 Function un.TasklistGame
   nsExec::ExecToStack '"$SYSDIR\cmd.exe" /c tasklist /fi "imagename eq DungeonSettlers.exe" | find /i "DungeonSettlers.exe"'
