@@ -79,7 +79,7 @@ rem what an uninstall of ours leaves (profiles\ = saves, mods\ = the player's ow
 rem else in the folder is (a plain for loop: findstr /v /x does not work the same everywhere)
 set "FOREIGN="
 if not defined OURS if exist "%ROOT%\" for /f "delims=" %%e in ('dir /b /a "%ROOT%" 2^>nul') do (
-  if /i not "%%e"=="profiles" if /i not "%%e"=="mods" set "FOREIGN=1"
+  if /i not "%%e"=="profiles" if /i not "%%e"=="mods" if /i not "%%e"=="keep_settings" set "FOREIGN=1"
 )
 if defined FOREIGN goto notours
 if not exist "%ROOT%" mkdir "%ROOT%"
@@ -134,7 +134,7 @@ if errorlevel 2 goto copyfail
 rem what this install put there (the uninstall deletes exactly these files, then the empty folders): the starter writes
 rem the lists in UTF-16 (file names in any language; cmd's dir would write the OEM code page and lose them)
 if exist "%ROOT%\install_files.log" move /y "%ROOT%\install_files.log" "%ROOT%\install_files.prev.log" >nul
-start "" /wait "%ROOT%\Dungeon Settlers Modded.exe" --lists
+start "" /wait "%ROOT%\Dungeon Settlers Modded.exe" --lists "%~dp0files\mods"
 if not exist "%ROOT%\install_files.log" goto copyfail
 
 rem shortcuts "Dungeon Settlers Modded" on the desktop and in the Start menu

@@ -173,6 +173,7 @@ Function OwnFolder
       ${AndIf} $4 != ".."
       ${AndIf} $4 != "profiles"
       ${AndIf} $4 != "mods"
+      ${AndIf} $4 != "keep_settings"
         StrCpy $2 1
         ${Break}
       ${EndIf}
@@ -302,6 +303,20 @@ Section "Uninstall"
   ; file in them goes, whatever the game, its loader or an update added later (Unicode-safe walk, no list needed)
   ${If} ${FileExists} "$INSTDIR\game\dsmodded_build.txt"
   ${OrIf} ${FileExists} "$INSTDIR\game\dsmodded_copy.txt"
+    ; the player's BepInEx and MelonLoader settings go to keep_settings\ first (kept like the saves; install.bat puts
+    ; them back into a new game copy)
+    ${If} ${FileExists} "$INSTDIR\game\BepInEx\config\*.*"
+      CreateDirectory "$INSTDIR\keep_settings\BepInEx\config"
+      ClearErrors
+      CopyFiles /SILENT "$INSTDIR\game\BepInEx\config\*.*" "$INSTDIR\keep_settings\BepInEx\config"
+      ${IfThen} ${Errors} ${|} Goto keepfail ${|}
+    ${EndIf}
+    ${If} ${FileExists} "$INSTDIR\game\UserData\*.*"
+      CreateDirectory "$INSTDIR\keep_settings\UserData"
+      ClearErrors
+      CopyFiles /SILENT "$INSTDIR\game\UserData\*.*" "$INSTDIR\keep_settings\UserData"
+      ${IfThen} ${Errors} ${|} Goto keepfail ${|}
+    ${EndIf}
     Push "$INSTDIR\game"
     Call un.DeleteFilesUnder
   ${EndIf}
@@ -367,9 +382,10 @@ Section "Uninstall"
   Delete "$INSTDIR\install_files.log"
   Delete "$INSTDIR\install_files.prev.log"
   Delete "$INSTDIR\install_dirs.log"
-  ; the marker stays while our leftovers (saves, player mods) stay: a reinstall into this folder is accepted
+  ; the marker stays while our leftovers (saves, player mods, kept settings) stay: a reinstall into this folder is accepted
   ${IfNot} ${FileExists} "$INSTDIR\profiles\*.*"
   ${AndIfNot} ${FileExists} "$INSTDIR\mods\*.*"
+  ${AndIfNot} ${FileExists} "$INSTDIR\keep_settings\*.*"
     Delete "$INSTDIR\dsmodded_install.txt"
   ${EndIf}
   Delete "$INSTDIR\uninstall.bat"
@@ -385,6 +401,11 @@ Section "Uninstall"
   ${ElseIf} ${FileExists} "$INSTDIR\profiles\*.*"
     MessageBox MB_OK "$(S_UN_DONE)" /SD IDOK
   ${EndIf}
+  Return
+keepfail:                                     ; settings not kept: nothing of the game copy is deleted
+  MessageBox MB_OK|MB_ICONEXCLAMATION "$(S_UN_LEFT)" /SD IDOK
+  SetErrorLevel 1
+  Abort
 SectionEnd
 
 ; un.DeleteFilesUnder <folder>: every file below <folder> (folders stay for un.RemoveEmptyDirs). Only called for folders

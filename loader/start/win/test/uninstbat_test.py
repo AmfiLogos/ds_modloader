@@ -5,8 +5,10 @@ DSMP: wine, not real Windows; one wine copy: ~/ds_multiplayer/rig/wine_lease.py)
 folder (%LOCALAPPDATA%\\Dungeon Settlers Modded): the rig's install there goes aside first and comes back at the end.
   main   install.bat; files the starter makes later (download cache, retired\\ old mod folder); no saves. uninstall.bat
          started from the install folder: the folder is gone
-  other  install.bat; a save in profiles\\ and a player's own mod in mods\\. The kit's uninstall.bat (another folder):
-         only the save, the player's mod and the marker stay; ROOT\\uninstall.bat is gone
+  other  install.bat; a save in profiles\\, a player's own mod in mods\\, the player's BepInEx / MelonLoader settings in
+         game\\; install.bat again (a reinstall must not record the player's mod as ours). The kit's uninstall.bat
+         (another folder): only the save, the player's mod, the settings (in keep_settings\\) and the marker stay;
+         ROOT\\uninstall.bat is gone
 Prints the folder's contents after each uninstall."""
 import os, subprocess, sys, time
 H = os.path.expanduser("~")
@@ -59,10 +61,14 @@ def run(kit, old):
 
     check("other: install", install(kit)); starter_files()
     put(f"{R}/profiles/modded/data/Saves/slot1.json", "save"); put(f"{R}/mods/player-own/mod.json", '{"id":"player-own"}')
+    put(f"{R}/game/BepInEx/config/BepInEx.cfg", "cfg"); put(f"{R}/game/UserData/MelonPreferences.cfg", "cfg")
+    check("other: reinstall over it", install(kit))
     r = wine(["cmd.exe", "/c", w.winpath(f"{kit}/uninstall.bat")], timeout=300)
     t = tree(R); print("   other, after:", t)
-    check("other: the kit's uninstall.bat: only the save, the player's mod and the marker stay", r.returncode == 0 and
-          t == "dsmodded_install.txt, mods\\player-own\\mod.json, profiles\\modded\\data\\Saves\\slot1.json".replace("\\", os.sep), f"rc {r.returncode} " + r.stdout.decode("utf-8", "replace").strip()[-300:].replace("\r\n", " | "))
+    want = ("dsmodded_install.txt, keep_settings\\BepInEx\\config\\BepInEx.cfg, keep_settings\\UserData\\MelonPreferences.cfg, "
+            "mods\\player-own\\mod.json, profiles\\modded\\data\\Saves\\slot1.json").replace("\\", os.sep)
+    check("other: the kit's uninstall.bat: only the save, the player's mod, the kept settings and the marker stay",
+          r.returncode == 0 and t == want, f"rc {r.returncode} " + r.stdout.decode("utf-8", "replace").strip()[-300:].replace("\r\n", " | "))
     print(f"== {sum(res)}/{len(res)} passed", flush=True)
     return 0 if all(res) else 1
 

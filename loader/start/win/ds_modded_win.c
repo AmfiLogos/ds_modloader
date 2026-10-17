@@ -191,7 +191,9 @@ static void list_tree(const wchar_t *p) {
     } while (FindNextFileW(h, &fd));
     FindClose(h);
 }
-static int write_lists(void) {
+/* kit = the kit's mods folder: of ROOT\mods only the folders of the mods the kit brings are listed (a player's own mod
+   in mods\ is never recorded as ours, so no uninstall deletes it) */
+static int write_lists(const wchar_t *kit) {
     wchar_t fp[MAX_PATH], dp[MAX_PATH], prev[MAX_PATH], x[MAX_PATH];
     _snwprintf(fp, MAX_PATH, L"%ls\\install_files.log", root); _snwprintf(dp, MAX_PATH, L"%ls\\install_dirs.log", root);
     _snwprintf(prev, MAX_PATH, L"%ls\\install_files.prev.log", root);
@@ -199,7 +201,18 @@ static int write_lists(void) {
     lf_files = _wfopen(fp, L"wb"); lf_dirs = _wfopen(dp, L"wb");
     if (!lf_files || !lf_dirs) { if (lf_files) fclose(lf_files); if (lf_dirs) fclose(lf_dirs); return 1; }
     fwrite("\xFF\xFE", 1, 2, lf_files); fwrite("\xFF\xFE", 1, 2, lf_dirs);
-    list_tree(game); _snwprintf(x, MAX_PATH, L"%ls\\mods", root); list_tree(x);
+    list_tree(game);
+    if (kit) {
+        wchar_t pat[MAX_PATH]; _snwprintf(pat, MAX_PATH, L"%ls\\*", kit);
+        WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+                _snwprintf(x, MAX_PATH, L"%ls\\mods\\%ls", root, fd.cFileName); list_tree(x);
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+    }
     _snwprintf(x, MAX_PATH, L"%ls\\Dungeon Settlers Modded.exe", root); list_tree(x);
     _snwprintf(x, MAX_PATH, L"%ls\\RELEASE", root); list_tree(x);
     _snwprintf(x, MAX_PATH, L"%ls\\licenses", root); list_tree(x);
@@ -611,7 +624,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     GetModuleFileNameW(NULL, root, MAX_PATH);
     wchar_t *sl = wcsrchr(root, L'\\'); if (sl) *sl = 0;
     _snwprintf(game, MAX_PATH, L"%ls\\game", root);
-    for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--lists")) return write_lists();   /* install.bat: no game start */
+    for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--lists")) return write_lists(i + 1 < argc ? argv[i + 1] : NULL);   /* install.bat */
     for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--unlist")) return unlist();       /* uninstall.bat: no game start */
     for (int i = 1; i + 1 < argc; i++) if (!wcscmp(argv[i], L"--pathcheck")) return path_ok(argv[i + 1]) ? 0 : 3;
     for (int i = 1; i + 1 < argc; i++) {                         /* Setup.exe, install.bat, uninstall.bat: no game start */

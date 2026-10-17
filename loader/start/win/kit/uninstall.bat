@@ -26,7 +26,14 @@ if not exist "%ROOT%\install_files.log" (
   goto fail
 )
 rem the game copy (marker inside) and the auto-update folder are ours from top to bottom: every file in them goes
-if exist "%ROOT%\game\dsmodded_build.txt" del /s /f /q "%ROOT%\game\*" >nul 2>nul
+rem The player's BepInEx and MelonLoader settings in it go to keep_settings\ first (kept like the saves; install.bat puts
+rem them back into a new game copy)
+if not exist "%ROOT%\game\dsmodded_build.txt" goto gamegone
+set "KEEP=%ROOT%\keep_settings"
+if exist "%ROOT%\game\BepInEx\config\" xcopy "%ROOT%\game\BepInEx\config" "%KEEP%\BepInEx\config\" /E /I /H /Q /Y >nul || goto keepfail
+if exist "%ROOT%\game\UserData\" xcopy "%ROOT%\game\UserData" "%KEEP%\UserData\" /E /I /H /Q /Y >nul || goto keepfail
+del /s /f /q "%ROOT%\game\*" >nul 2>nul
+:gamegone
 if exist "%ROOT%\update\" (
   del /s /f /q "%ROOT%\update\*" >nul 2>nul
   if exist "%ROOT%\RELEASE" del /f /q "%ROOT%\RELEASE"
@@ -53,7 +60,7 @@ for %%r in (game mods update retired cache licenses) do if exist "%ROOT%\%%r\" (
 :unlisted
 for %%f in (install_files.log install_files.prev.log install_dirs.log) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"
 rem the marker stays while our leftovers (saves, player mods) stay: a reinstall into this folder is accepted
-if not exist "%ROOT%\profiles\" if not exist "%ROOT%\mods\" if exist "%ROOT%\dsmodded_install.txt" del /q "%ROOT%\dsmodded_install.txt"
+if not exist "%ROOT%\profiles\" if not exist "%ROOT%\mods\" if not exist "%ROOT%\keep_settings\" if exist "%ROOT%\dsmodded_install.txt" del /q "%ROOT%\dsmodded_install.txt"
 set "DESK="
 for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul') do set "DESK=%%b"
 if not defined DESK set "DESK=%USERPROFILE%\Desktop"
@@ -86,6 +93,8 @@ exit /b 0
 :selfdelete
 rem "cmd /c exit 0": the exit code is 0 ("(goto)" set 1)
 (goto) 2>nul & cd /d "%TEMP%" & del /f /q "%ROOT%\uninstall.bat" 2>nul & rd "%ROOT%" 2>nul & cmd /d /c exit 0
+:keepfail
+call :say U_LEFT
 :fail
 echo.
 if not defined DSMODDED_NOPAUSE pause
