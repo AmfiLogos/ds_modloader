@@ -704,7 +704,8 @@ static void world_frame(void) {
 
 /* ------------------------------------------------------------------ test only (DSL_SOFT_TEST=1, never in a player's start) */
 /* <log dir>/softrestart/reg_request.json: {"cmd":"k_ok"} = the "Load it with them?" box answered Load; {"cmd":"apply",
-   "ids":[..]} = Mods tab Apply; {"cmd":"mods"} = the title "Mods" click; {"cmd":"world_set","guid":..,"ids":[..]} */
+   "ids":[..]} = Mods tab Apply; {"cmd":"mods"} = the title "Mods" click; {"cmd":"world_set","guid":..,"ids":[..]};
+   {"cmd":"import","guid":..} = Import a save of that world */
 /* v13 checks: {"cmd":"title"} logs the title column; {"cmd":"hover","what":"title:<label>" | "row:<i>" | "win:<control>"}
    hovers that element (no mouse) and logs the hover card's rect and its panel's rect 20 frames later */
 DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap);
@@ -718,6 +719,8 @@ DSLObj dsl_rows_test_line(int i);
 __attribute__((weak)) void dsl_progress_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
 __attribute__((weak)) int dsl_pkg_refresh(char *fail, size_t fcap) { if (fail && fcap) fail[0] = 0; return -2; }
+/* weak default: builds without dsl_cloud.c (host tests) link */
+__attribute__((weak)) int dsl_cloud_import(const char *g, int replace, char *mwhen, size_t mcap) { (void)g; (void)replace; (void)mwhen; (void)mcap; return -1; }
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
 __attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
 static int hv_wait; static char hv_what[120];
@@ -774,6 +777,9 @@ static void test_frame(void) {
         char f[400] = ""; int k = dsl_pkg_refresh(f, sizeof f); char l[1200] = "";
         for (int i = 0; i < nmi; i++) { strlcat(l, i ? "," : "", sizeof l); strlcat(l, MI[i].id, sizeof l); strlcat(l, MI[i].enabled ? ":on" : ":off", sizeof l); }
         dsl_log("reg test: pkg_refresh %d new; fail '%s'; list %s", k, f, l);
+    }
+    else if (c && !strcmp(c, "import")) {                              /* the title's "Import a save" for one world, no box */
+        const char *g = json_str(j, "guid"); dsl_log("reg test: import %s: %d", g ? g : "?", g ? dsl_cloud_import(g, 0, NULL, 0) : -1);
     }
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
@@ -843,7 +849,11 @@ void dsl_frame_hook(void) {
     dsl_progress_frame();
 }
 
-static const char *data_dir_get(void) { return dsl_reg_data_dir(); }
+static const char *data_dir_get(void) {                 /* for modules: in the form their own fopen opens */
+    static char n[1100];
+    if (!n[0]) dsl_os_native_path(dsl_reg_data_dir(), n, sizeof n);
+    return n;
+}
 /* before dsl_plugin_init of the modules (they may add tabs / rows / buttons there) */
 void dsl_reg_host(DSLHost *h) {
     h->set_session_busy = session_busy_set; h->session_busy = session_busy_get;
