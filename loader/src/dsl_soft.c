@@ -657,7 +657,18 @@ static void test_requests(double t) {                                    /* test
     else { const char *e = json_str(j, "env"); int r = dsl_soft_apply(pr, e && *e ? e : NULL); dsl_log("soft test: apply %s -> %d", pr, r); }
     json_free(j);
 }
+/* measurement only (DSL_BOOTPROF=1, fastboot lane): A logs splash end, scene / bootReady / busy changes with frame count */
+static int prof_on;
+static void prof_tick(void) {
+    static int last = -99, sp = -1, ticks;
+    if (!ticks++) SLOG("prof: first tick (frame %d)", frame_count ? frame_count() : -1);
+    if (splash_done) { int d = splash_done(); if (d != sp) { SLOG("prof: splash finished %d (frame %d)", d, frame_count ? frame_count() : -1); sp = d; } }
+    if (!dsl_ready || !mf) return;
+    int k = scene() * 100 + boot_ready() * 10 + (busy() ? 1 : 0);
+    if (k != last) { SLOG("prof: scene %d bootReady %d busy %d (frame %d)", scene(), boot_ready(), busy(), frame_count ? frame_count() : -1); last = k; }
+}
 static void tick(void) {
+    if (prof_on && !role_b) prof_tick();
     if (stage_on) dsl_sos_stage_check();                                 /* test stage: a window off the stage is never seen */
     if (role_b) b_tick(); else a_tick();
     double t = since();
@@ -740,6 +751,9 @@ void dsl_soft_install(void) {
         }
         SLOG("B: boot speed-up: splash %s, frame cap %s", splash_done && splash_cancel ? "ok" : "MISSING", set_fps && set_vsync && get_fps && get_vsync ? "ok" : "MISSING");
     }
+    prof_on = getenv("DSL_BOOTPROF") && *getenv("DSL_BOOTPROF") == '1';
+    if (prof_on && !role_b && icall) { boot_log = 1; boot_log_install(kmf, icall);
+        splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); }
     if (role_b) { boot_log = getenv("DSL_SOFT_BOOTLOG") && *getenv("DSL_SOFT_BOOTLOG") == '1'; boot_log_install(kmf, icall); }   /* progress steps; the step log only with DSL_SOFT_BOOTLOG */
     { void *kf = klass("Refactor.UI", "ScreenFadeEffectView"), *kl = klass("Refactor", "LoadingUI");
       off_lui = kf ? foff(kf, "_loadingUI") : -1; off_ptext = kl ? foff(kl, "_progressText") : -1; tmp_get = meth("TMPro", "TMP_Text", "get_text", 0); }
