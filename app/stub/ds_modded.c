@@ -18,6 +18,7 @@
 #include <mach-o/dyld.h>
 #include <CoreFoundation/CoreFoundation.h>
 #define DSI_IMPLEMENTATION   /* before dsl_json.c (its dsl_internal.h includes ds_i18n.h): TR() tables of this stub */
+#include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 #include "../../loader/src/dsl_json.c"                 /* json_parse / json_get / json_str / json_free */
 #include <copyfile.h>
 #include <dirent.h>

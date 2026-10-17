@@ -83,7 +83,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
-    *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_getsize, *m_tmp_getauto, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv, *m_rt_rect,   /* text fit */
+    *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv,   /* text fit (+ m_tmp_getsize, m_tmp_getauto, m_rt_rect) */
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
     *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
     *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create,
@@ -1503,10 +1503,8 @@ void dsl_ui_install(void) {
     m_tmp_rich = MTH(K.TMP_Text, "set_richText", 1); m_tmp_shmat = OPT(K.TMP_Text, "set_fontSharedMaterial", 1);
     m_asset_mat = OPT(K.TMP_Asset, "get_material", 0);
     m_tmp_fsmin = OPT(K.TMP_Text, "set_fontSizeMin", 1); m_tmp_fsmax = OPT(K.TMP_Text, "set_fontSizeMax", 1);
-    m_tmp_getsize = OPT(K.TMP_Text, "get_fontSize", 0); m_tmp_getauto = OPT(K.TMP_Text, "get_enableAutoSizing", 0);
     m_tmp_pw = OPT(K.TMP_Text, "get_preferredWidth", 0); m_tmp_ph = OPT(K.TMP_Text, "get_preferredHeight", 0);
     m_tmp_prefv = OPTSIG(K.TMP_Text, "GetPreferredValues", 2, "System.Single,System.Single");
-    m_rt_rect = OPT(K.RectTransform, "get_rect", 0);
     if (!m_asset_mat) f_asset_mat = fld(K.TMP_Asset, "m_Material");
     m_in_text = MTH(K.TMP_Input, "get_text", 0); m_in_settext = MTH(K.TMP_Input, "SetTextWithoutNotify", 1);
     m_in_limit = OPT(K.TMP_Input, "set_characterLimit", 1); m_in_ctype = OPT(K.TMP_Input, "set_contentType", 1);

@@ -54,10 +54,14 @@ static struct {
 } S;
 static int auto_on = 1, enabled, thread_on;
 static char root[1024], udir[1100];
-static char line[400];                                     /* the corner's one short line */
+/* the corner's one short line, made into text in the current language every frame (a language change at the title
+   shows at once): LN_UPDATED_MODS "Updated: <names>", LN_UPDATED "Updated to <ver>" (arg), LN_NOTICE the starter's
+   line (written in the language of that start: shown as it is) */
+enum { LN_NONE, LN_UPDATED_MODS, LN_UPDATED, LN_NOTICE };
+static int line_kind; static char line_arg[400];
 static char confirm_label[200];                            /* DSML_UPDATE of this start (the starter installed it) */
 static int consent;                                        /* the player clicked "Update to" */
-static char ready_line[200];                               /* set by the download thread: "0.1.N installs ..." */
+static int ready_kind;                                     /* set by the download thread: 1 "0.1.N installs ...", 2 mods */
 
 /* ------------------------------------------------------------------ small helpers */
 static void upath(char *out, size_t n, const char *f) { snprintf(out, n, "%s/%s", udir, f); }
@@ -237,8 +241,7 @@ static void ready_write(void) {
     char p[1200]; upath(p, sizeof p, "ready.txt");
     if (write_file(p, b)) { dsl_log("update: cannot write %s", p); return; }
     pthread_mutex_lock(&mu);
-    if (S.kit_ver[0]) snprintf(ready_line, sizeof ready_line, TR("%s installs the next time you start the game."), S.kit_ver);
-    else snprintf(ready_line, sizeof ready_line, "%s", TR("Mod updates install the next time you start the game."));
+    ready_kind = S.kit_ver[0] ? 1 : 2;
     pthread_mutex_unlock(&mu);
     dsl_log("update: ready.txt written (%s%s): installed at the next start", S.kit_ver[0] ? S.kit_ver : "mods", c ? ", Update clicked" : "");
 }
@@ -292,8 +295,8 @@ static void title_results(void) {
         free(b);
         if (label[0] && !strcmp(label, confirm_label)) {
             moved_old("pending.txt", "ok");
-            if (!strncmp(label, "mods:", 5)) snprintf(line, sizeof line, TR("Updated: %s"), label + 5);
-            else snprintf(line, sizeof line, TR("Updated to %s"), label[0] == 'v' ? label + 1 : label);
+            if (!strncmp(label, "mods:", 5)) { line_kind = LN_UPDATED_MODS; snprintf(line_arg, sizeof line_arg, "%s", label + 5); }
+            else { line_kind = LN_UPDATED; snprintf(line_arg, sizeof line_arg, "%s", label[0] == 'v' ? label + 1 : label); }
             dsl_log("update: %s confirmed at the title", label);
         } else dsl_log("update: DSML_UPDATE=%s but pending.txt says \"%s\": nothing to confirm", confirm_label, label);
         confirm_label[0] = 0;
@@ -301,14 +304,14 @@ static void title_results(void) {
     upath(p, sizeof p, "notice.txt");
     if ((b = slurp_(p, 2000))) {                             /* the starter's one line (install failed, rollback) */
         b[strcspn(b, "\r\n")] = 0;
-        if (b[0]) { snprintf(line, sizeof line, "%s", b); dsl_log("update: starter notice shown: %s", b); }
+        if (b[0]) { line_kind = LN_NOTICE; snprintf(line_arg, sizeof line_arg, "%s", b); dsi_utf8_fix_end(line_arg); dsl_log("update: starter notice shown: %s", b); }
         free(b); moved_old("notice.txt", "shown");
     }
 }
 
 /* ------------------------------------------------------------------ title corner */
 static uintptr_t c_tog, c_txt, c_btn;                      /* DSLObj kept as plain pointers (re-made when gone) */
-static int c_btn_on; static char c_last_line[400], c_btn_label[64];
+static int c_btn_on; static char c_last_line[600], c_btn_label[160]; static unsigned c_gen;
 static void toggle_change(void *ud, DSLObj w) {
     (void)ud; const DSLUi *u = dsl_ui_kit(); if (!u) return;
     auto_on = u->toggle_get(w) != 0; settings_save();
@@ -328,8 +331,13 @@ static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
     int show = dsl_ui_title_shown() && dsl_reg_scene() == 1 && dsl_soft_title_idle();   /* the idle title only: never under a loading screen */
     DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn;
+    if (tog && c_gen != dsi_generation()) {                 /* a language change: made again (label, the new language's font) */
+        u->destroy(tog); if (txt) u->destroy(txt); if (btn) u->destroy(btn);
+        c_tog = c_txt = c_btn = 0; tog = txt = btn = NULL; c_btn_label[0] = 0;
+    }
     if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
     if (!tog) {
+        c_gen = dsi_generation();
         tog = u->toggle(NULL, 0, 0, 260, TR("Auto-update"), auto_on, toggle_change, NULL);
         txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 220, 40, TR("Update"), button_click, NULL);
@@ -341,18 +349,23 @@ static void corner_frame(void) {
     u->set_active(tog, 1);
     /* the button: Off, an update found, not clicked yet */
     pthread_mutex_lock(&mu);
-    int st = S.dl, avail = S.checked && any_update(), clicked = consent || S.dl_wanted; char kv[32], rl[200];
-    snprintf(kv, sizeof kv, "%s", S.kit_ver); snprintf(rl, sizeof rl, "%s", ready_line);
+    int st = S.dl, avail = S.checked && any_update(), clicked = consent || S.dl_wanted, rk = ready_kind; char kv[32];
+    snprintf(kv, sizeof kv, "%s", S.kit_ver);
     pthread_mutex_unlock(&mu);
-    int want_btn = !auto_on && avail && !clicked && st != 1 && !line[0];
-    char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, TR("Update to %s"), kv); else snprintf(bl, sizeof bl, "%s", TR("Update mods"));
+    int want_btn = !auto_on && avail && !clicked && st != 1 && line_kind == LN_NONE;
+    char bl[160]; if (kv[0]) snprintf(bl, sizeof bl, TR("Update to %s"), kv); else snprintf(bl, sizeof bl, "%s", TR("Update mods"));
+    dsi_utf8_fix_end(bl);
     if (want_btn && strcmp(bl, c_btn_label)) { snprintf(c_btn_label, sizeof c_btn_label, "%s", bl); u->set_text(btn, bl); }
     if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
-    char l[400] = "";
-    if (line[0]) snprintf(l, sizeof l, "%s", line);
+    char l[600] = "";
+    if (line_kind == LN_NOTICE) snprintf(l, sizeof l, "%s", line_arg);
+    else if (line_kind == LN_UPDATED) snprintf(l, sizeof l, TR("Updated to %s"), line_arg);
+    else if (line_kind == LN_UPDATED_MODS) snprintf(l, sizeof l, TR("Updated: %s"), line_arg);
     else if (st == 1 && clicked) { if (kv[0]) snprintf(l, sizeof l, TR("Downloading %s..."), kv); else snprintf(l, sizeof l, "%s", TR("Downloading mod updates...")); }
-    else if (st == 2 && (auto_on || clicked)) snprintf(l, sizeof l, "%s", rl);
+    else if (st == 2 && (auto_on || clicked) && rk == 1) snprintf(l, sizeof l, TR("%s installs the next time you start the game."), kv);
+    else if (st == 2 && (auto_on || clicked) && rk == 2) snprintf(l, sizeof l, "%s", TR("Mod updates install the next time you start the game."));
     else if (st == -1 && clicked) snprintf(l, sizeof l, "%s", TR("The download failed. The game tries again next time."));
+    dsi_utf8_fix_end(l);
     if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
     u->set_active(txt, l[0] != 0 && !want_btn);
 }

@@ -24,9 +24,9 @@
 #include "bie_win.h"
 #define DSI_IMPLEMENTATION   /* before dsl_internal.h (it includes ds_i18n.h): TR() tables of this exe */
 #include "dsl_internal.h"
+#include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 #include "dsl_u8_win.h"
 #include "dsl_update_os.h"
-#include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 
 #define APPID L"2798330"
 static wchar_t root[MAX_PATH], game[MAX_PATH], profile[MAX_PATH], data[MAX_PATH];
@@ -390,7 +390,8 @@ static DWORD WINAPI uw_main(LPVOID arg) {
 }
 static void uw_open(const char *title) {
     if (uw_thread) return;
-    if (!MultiByteToWideChar(CP_UTF8, 0, title, -1, uw_title, 300)) { if (!MultiByteToWideChar(CP_UTF8, 0, TR("Updating Dungeon Settlers Modded"), -1, uw_title, 300)) wcscpy(uw_title, L"Updating Dungeon Settlers Modded"); }
+    if (!MultiByteToWideChar(CP_UTF8, 0, title, -1, uw_title, 300) && !MultiByteToWideChar(CP_UTF8, 0, TR("Updating Dungeon Settlers Modded"), -1, uw_title, 300))
+        wcscpy(uw_title, L"Updating Dungeon Settlers Modded");
     uw_pct = 0; uw_ready = CreateEventW(NULL, TRUE, FALSE, NULL);
     uw_thread = CreateThread(NULL, 0, uw_main, NULL, 0, NULL);
     if (uw_thread && uw_ready) WaitForSingleObject(uw_ready, 5000);
@@ -417,9 +418,9 @@ static int update_step(int dry, int *code) {
     int other = starter_running(), running = other || game_runs(gexe);
     if (running) logf_("update: %s runs", other ? "another starter of this install" : "the game of this install");
     int kit = dsl_update_starter(r8, running, &upd_win, label, sizeof label);
-    if (!kit) { SetEnvironmentVariableA("DSML_UPDATE", label[0] ? label : NULL); return 0; }
+    if (!kit) { dsl_u8_setenv("DSML_UPDATE", label[0] ? label : NULL); return 0; }   /* UTF-8 (mod names in the player's language) */
     /* the new kit's starter goes on from here (pending.txt: its first start) */
-    SetEnvironmentVariableA("DSML_UPDATE", NULL);
+    dsl_u8_setenv("DSML_UPDATE", NULL);
     if (upd_mutex) { CloseHandle(upd_mutex); upd_mutex = NULL; }
     wchar_t nexe[MAX_PATH], *cl = _wcsdup(GetCommandLineW());
     _snwprintf(nexe, MAX_PATH, L"%ls\\Dungeon Settlers Modded.exe", root);
@@ -515,15 +516,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     mkdirs(data);
     { wchar_t lp[MAX_PATH]; _snwprintf(lp, MAX_PATH, L"%ls\\starter.log", profile); lg = _wfopen(lp, L"a"); }
     logf_("---- start pid %lu, root %ls", GetCurrentProcessId(), root);
-    setup_lang();                                                /* before the first dialog and the update step */
+    setup_lang();                                                /* before the first dialog */
     { int code = 0; if (update_step(dry, &code)) return code; }   /* before the game files are checked: it may put them back */
     if (!path_ok(root)) {                                  /* after the update: a newer kit may start from there */
-        char r8b[MAX_PATH * 4]; WideCharToMultiByte(CP_UTF8, 0, root, -1, r8b, sizeof r8b, NULL, NULL);
+        char r8[MAX_PATH * 3]; if (!WideCharToMultiByte(CP_UTF8, 0, root, -1, r8, sizeof r8, NULL, NULL)) r8[0] = 0;
         logf_("ERROR folder path has letters outside the ANSI code page %u: the game will not start", GetACP());
         if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0))
             msgbox("Dungeon Settlers Modded", TR("The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC "
                    "(for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, "
-                   "for example C:\\Games\\Dungeon Settlers Modded."), r8b);
+                   "for example C:\\Games\\Dungeon Settlers Modded."), r8);
         return 1;
     }
 
@@ -545,6 +546,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
 
     /* BepInEx plugins of the profile the game starts with (bie_win.c): Doorstop on only when one is enabled */
     char r8[MAX_PATH * 3], g8[MAX_PATH * 3], p8[MAX_PATH * 3], why[600];
+    /* paths for bie_win.c (UTF-8: its fopen goes through dsl_u8_names_win.h); dialog text goes through msgbox (CP_UTF8) */
     WideCharToMultiByte(CP_UTF8, 0, root, -1, r8, sizeof r8, NULL, NULL);
     WideCharToMultiByte(CP_UTF8, 0, game, -1, g8, sizeof g8, NULL, NULL);
     { wchar_t pw[MAX_PATH]; _snwprintf(pw, MAX_PATH, L"%ls\\Mods\\active.json", data); WideCharToMultiByte(CP_UTF8, 0, pw, -1, p8, sizeof p8, NULL, NULL); }

@@ -111,33 +111,33 @@ static int unpack(const char *file, const char *dst) {
 }
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     const char *app = getenv("DSML_APP"), *root = dsl_uos_root();
-    if (!app || !*app || !dsl_uos_exists(app)) { snprintf(why, wn, "the app's place is not known in this start"); return -1; }
-    if (strstr(app, "/AppTranslocation/")) { snprintf(why, wn, "the app runs from a temporary place: move it into Applications"); return -1; }
+    if (!app || !*app || !dsl_uos_exists(app)) { snprintf(why, wn, TR("the app's place is not known in this start")); return -1; }
+    if (strstr(app, "/AppTranslocation/")) { snprintf(why, wn, TR("the app runs from a temporary place: move it into Applications")); return -1; }
     char par[1100]; snprintf(par, sizeof par, "%s", app); char *s = strrchr(par, '/'); if (s) *s = 0;
-    if (access(par, W_OK)) { snprintf(why, wn, "no write access to the app's folder"); return -1; }
+    if (access(par, W_OK)) { snprintf(why, wn, TR("no write access to the app's folder")); return -1; }
     char u[1200]; snprintf(u, sizeof u, "%s.new", backup);
     prog(mv, 10);
-    if (unpack(file, u)) { snprintf(why, wn, "the download could not be unpacked"); return -1; }
+    if (unpack(file, u)) { snprintf(why, wn, TR("the download could not be unpacked")); return -1; }
     prog(mv, 40);
     char napp[1400] = ""; DIR *d = opendir(u); struct dirent *e;
     while (d && (e = readdir(d))) { size_t l = strlen(e->d_name); if (l > 4 && !strcmp(e->d_name + l - 4, ".app")) { snprintf(napp, sizeof napp, "%s/%s", u, e->d_name); break; } }
     if (d) closedir(d);
     char t[1600]; snprintf(t, sizeof t, "%s/Contents/Resources/dsml/dsload.dylib", napp);
-    if (!napp[0] || !dsl_uos_exists(t)) { snprintf(why, wn, "the download holds no Dungeon Settlers Modded app"); return -1; }
+    if (!napp[0] || !dsl_uos_exists(t)) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded app")); return -1; }
     char rel[64]; snprintf(t, sizeof t, "%s/Contents/Resources/dsml/RELEASE", napp); first_line(t, rel, sizeof rel);
     if (strcmp(rel, ver)) {
         dsl_log("update: the v%s download says RELEASE %s", ver, rel[0] ? rel : "(none)");
-        snprintf(why, wn, "the download's version number is wrong"); return -1;
+        snprintf(why, wn, TR("the download's version number is wrong")); return -1;
     }
     char *xa[] = { "/usr/bin/xattr", "-cr", napp, NULL }; run(xa);
     char *cs[] = { "/usr/bin/codesign", "-v", "--deep", "--strict", napp, NULL };
-    if (run(cs)) { snprintf(why, wn, "the new app's signature is broken"); return -1; }
+    if (run(cs)) { snprintf(why, wn, TR("the new app's signature is broken")); return -1; }
     prog(mv, 60);
     /* the new ROOT/loader: the app's dsml folder + the player's own mods of the old one */
     char nl[1300], ol[1200], src[1600]; snprintf(nl, sizeof nl, "%s/loader.update", u); snprintf(ol, sizeof ol, "%s/loader", root);
     snprintf(src, sizeof src, "%s/Contents/Resources/dsml", napp);
     char *cp[] = { "/usr/bin/ditto", src, nl, NULL };
-    if (run(cp)) { snprintf(why, wn, "the new mod loader could not be copied"); return -1; }
+    if (run(cp)) { snprintf(why, wn, TR("the new mod loader could not be copied")); return -1; }
     char om[1300]; snprintf(om, sizeof om, "%s/mods", ol); d = opendir(om);
     while (d && (e = readdir(d))) {
         if (e->d_name[0] == '.') continue;
@@ -151,26 +151,26 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     prog(mv, 80);
     char bk[1600], base[300]; snprintf(base, sizeof base, "%s", strrchr(app, '/') + 1);
     snprintf(bk, sizeof bk, "%s/app/%s", backup, base);
-    if (swap_in(napp, app, bk, mv)) { snprintf(why, wn, "the app could not be replaced"); return -1; }
+    if (swap_in(napp, app, bk, mv)) { snprintf(why, wn, TR("the app could not be replaced")); return -1; }
     snprintf(bk, sizeof bk, "%s/loader", backup);
-    if (swap_in(nl, ol, bk, mv)) { snprintf(why, wn, "the mod loader folder could not be replaced"); return -1; }
+    if (swap_in(nl, ol, bk, mv)) { snprintf(why, wn, TR("the mod loader folder could not be replaced")); return -1; }
     dsl_log("update: Mac kit installed: %s and %s (old ones in %s)", app, ol, backup);
     return 0;
 }
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     char u[1200]; snprintf(u, sizeof u, "%s.new", backup);
-    if (unpack(zip, u)) { snprintf(why, wn, "the %s download could not be unpacked", id); return -1; }
+    if (unpack(zip, u)) { snprintf(why, wn, TR("the %s download could not be unpacked"), id); return -1; }
     char nm[1400], t[1500]; snprintf(nm, sizeof nm, "%s/%s", u, id); snprintf(t, sizeof t, "%s/mod.json", nm);
     char *j = NULL; FILE *f = fopen(t, "rb");
     if (f) { j = calloc(1, 1 << 20); if (j) fread(j, 1, (1 << 20) - 1, f); fclose(f); }
     JNode *m = j ? json_parse(j) : NULL; free(j);
     const char *mid = json_str(m, "id"), *mv_ = json_str(m, "version");
     int ok = mid && !strcmp(mid, id), vok = mv_ && !strcmp(mv_, ver); json_free(m);
-    if (!ok) { snprintf(why, wn, "the %s download is not that mod", id); return -1; }
-    if (!vok) { snprintf(why, wn, "the %s download's version number is wrong", id); return -1; }
+    if (!ok) { snprintf(why, wn, TR("the %s download is not that mod"), id); return -1; }
+    if (!vok) { snprintf(why, wn, TR("the %s download's version number is wrong"), id); return -1; }
     char *xa[] = { "/usr/bin/xattr", "-cr", nm, NULL }; run(xa);
     char dst[1300], bk[1300]; snprintf(dst, sizeof dst, "%s/loader/mods/%s", dsl_uos_root(), id); snprintf(bk, sizeof bk, "%s/%s", backup, id);
-    if (swap_in(nm, dst, bk, mv)) { snprintf(why, wn, "the mod %s could not be replaced", id); return -1; }
+    if (swap_in(nm, dst, bk, mv)) { snprintf(why, wn, TR("the mod %s could not be replaced"), id); return -1; }
     dsl_log("update: mod %s installed into %s", id, dst);
     return 0;
 }

@@ -192,8 +192,8 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
     else if (bad && fail) {
         if (bad == 1) snprintf(fail, fcap, TR("%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed."), first_bad);
         else snprintf(fail, fcap, TRN("%d file is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.", "%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.", bad), bad);
-        dsi_utf8_fix_end(fail);
     }
+    if (fail && (stuck || staged || bad)) dsi_utf8_fix_end(fail);
     if (changed) dsl_mods_rescan();
     return changed;
 }
