@@ -127,7 +127,7 @@
  "Save these mods as a group": "Сохранить эти моды как группу",
  "Saved. %s loads with these mods.": "Сохранено. %s загружается с этими модами.",
  "Saved. This world loads with these mods.": "Сохранено. Этот мир загружается с этими модами.",
- "Saves made with %s may not work without the mod loader.": "Сохранения, сделанные с %s, могут не работать без загрузчика модов.",
+ "Saves made with %s may not work without the mod loader.": "Сохранения с модом «%s» могут не работать без загрузчика модов.",
  "Starting the game with the new mods": "Запуск игры с новыми модами",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "Не удалось запустить Steam. Установите Steam, запустите его и войдите в аккаунт, затем снова откройте Dungeon Settlers Modded.",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam не успел подготовиться. Запустите Steam и войдите в аккаунт, затем снова откройте Dungeon Settlers Modded.",
