@@ -22,18 +22,17 @@ if not exist "%ROOT%\install_files.log" (
   echo  Install this kit once over it, then uninstall again.
   goto fail
 )
-rem the game copy is ours from top to bottom (marker inside): what the game or its loader added there joins the lists
-if exist "%ROOT%\game\dsmodded_build.txt" (
-  dir /s /b /a-d "%ROOT%\game" >> "%ROOT%\install_files.log"
-  dir /s /b /ad "%ROOT%\game" >> "%ROOT%\install_dirs.log"
-)
-rem the auto-update folder (downloads, old versions, journal) is made only by our starter and loader
+rem the game copy (marker inside) and the auto-update folder are ours from top to bottom: every file in them goes
+if exist "%ROOT%\game\dsmodded_build.txt" del /s /f /q "%ROOT%\game\*" >nul 2>nul
 if exist "%ROOT%\update\" (
-  dir /s /b /a-d "%ROOT%\update" >> "%ROOT%\install_files.log"
-  dir /s /b /ad "%ROOT%\update" >> "%ROOT%\install_dirs.log"
-  >> "%ROOT%\install_dirs.log" echo %ROOT%\update
+  del /s /f /q "%ROOT%\update\*" >nul 2>nul
+  if exist "%ROOT%\RELEASE" del /f /q "%ROOT%\RELEASE"
 )
-for /f "usebackq delims=" %%f in ("%ROOT%\install_files.log") do if exist "%%f" del /f /q "%%f"
+rem the listed files: the lists are UTF-16 (any language); with code page 65001 "type" gives them to for /f as UTF-8
+for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
+chcp 65001 >nul
+for /f "usebackq delims=" %%f in (`type "%ROOT%\install_files.log"`) do if exist "%%f" del /f /q "%%f"
+if defined OLDCP chcp %OLDCP% >nul
 rem then the folders our install made, deepest first: rd without /s removes a folder only when it is empty (each pass
 rem removes one level), so a folder that still holds a file nobody of ours made stays; profiles\ is never touched
 for %%r in (game mods update retired cache) do if exist "%ROOT%\%%r\" (

@@ -136,12 +136,47 @@ static int read_mod_id(const wchar_t *dir, char *id, size_t n) {   /* 1 = dir\mo
 static void stamp(wchar_t *out, size_t n) { SYSTEMTIME t; GetLocalTime(&t); _snwprintf(out, n, L"%04d%02d%02d-%02d%02d%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond); }
 /* the install's file lists (install.bat writes them; the uninstaller deletes exactly the listed files, then the empty
    listed folders): every file and folder this starter makes under ROOT is added, so the uninstall removes it too */
+/* the lists are UTF-16LE with a BOM (any file name, any install path; --lists writes them); a list without the BOM is
+   an older install's OEM text and gets OEM lines */
 static void log_line(const wchar_t *list, const wchar_t *path) {
     wchar_t lp[MAX_PATH]; _snwprintf(lp, MAX_PATH, L"%ls\\%ls", root, list);
     if (!exists(lp)) return;                                  /* no lists: an install without them (older kit) */
-    FILE *f = _wfopen(lp, L"ab"); if (!f) return;
-    char a[MAX_PATH * 3]; WideCharToMultiByte(CP_OEMCP, 0, path, -1, a, sizeof a, NULL, NULL);   /* cmd's dir /b writes OEM */
-    fprintf(f, "%s\r\n", a); fclose(f);
+    FILE *f = _wfopen(lp, L"rb"); if (!f) return;
+    unsigned char bom[2] = { 0, 0 }; size_t nb = fread(bom, 1, 2, f); fclose(f);
+    int u16 = nb == 2 && bom[0] == 0xFF && bom[1] == 0xFE;
+    f = _wfopen(lp, L"ab"); if (!f) return;
+    if (u16) { fwrite(path, sizeof(wchar_t), wcslen(path), f); fwrite(L"\r\n", sizeof(wchar_t), 2, f); }
+    else { char a[MAX_PATH * 3]; WideCharToMultiByte(CP_OEMCP, 0, path, -1, a, sizeof a, NULL, NULL); fprintf(f, "%s\r\n", a); }
+    fclose(f);
+}
+/* --lists (install.bat, after the copy): install_files.log / install_dirs.log of what the install put there, fresh */
+static FILE *lf_files, *lf_dirs;
+static void wline(FILE *f, const wchar_t *p) { fwrite(p, sizeof(wchar_t), wcslen(p), f); fwrite(L"\r\n", sizeof(wchar_t), 2, f); }
+static void list_tree(const wchar_t *p) {
+    DWORD at = GetFileAttributesW(p); if (at == INVALID_FILE_ATTRIBUTES) return;
+    if (!(at & FILE_ATTRIBUTE_DIRECTORY)) { wline(lf_files, p); return; }
+    wline(lf_dirs, p);
+    wchar_t pat[MAX_PATH]; _snwprintf(pat, MAX_PATH, L"%ls\\*", p);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd); if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        wchar_t c[MAX_PATH]; _snwprintf(c, MAX_PATH, L"%ls\\%ls", p, fd.cFileName); list_tree(c);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+static int write_lists(void) {
+    wchar_t fp[MAX_PATH], dp[MAX_PATH], prev[MAX_PATH], x[MAX_PATH];
+    _snwprintf(fp, MAX_PATH, L"%ls\\install_files.log", root); _snwprintf(dp, MAX_PATH, L"%ls\\install_dirs.log", root);
+    _snwprintf(prev, MAX_PATH, L"%ls\\install_files.prev.log", root);
+    if (exists(fp)) CopyFileW(fp, prev, FALSE);
+    lf_files = _wfopen(fp, L"wb"); lf_dirs = _wfopen(dp, L"wb");
+    if (!lf_files || !lf_dirs) { if (lf_files) fclose(lf_files); if (lf_dirs) fclose(lf_dirs); return 1; }
+    fwrite("\xFF\xFE", 1, 2, lf_files); fwrite("\xFF\xFE", 1, 2, lf_dirs);
+    list_tree(game); _snwprintf(x, MAX_PATH, L"%ls\\mods", root); list_tree(x);
+    _snwprintf(x, MAX_PATH, L"%ls\\Dungeon Settlers Modded.exe", root); list_tree(x);
+    _snwprintf(x, MAX_PATH, L"%ls\\RELEASE", root); list_tree(x);
+    fclose(lf_files); fclose(lf_dirs);
+    return 0;
 }
 static void log_tree(const wchar_t *p) {
     DWORD at = GetFileAttributesW(p); if (at == INVALID_FILE_ATTRIBUTES) return;
@@ -420,6 +455,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     GetModuleFileNameW(NULL, root, MAX_PATH);
     wchar_t *sl = wcsrchr(root, L'\\'); if (sl) *sl = 0;
     _snwprintf(game, MAX_PATH, L"%ls\\game", root);
+    for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--lists")) return write_lists();   /* install.bat: no game start */
     _snwprintf(profile, MAX_PATH, L"%ls\\profiles\\modded", root);
     _snwprintf(data, MAX_PATH, L"%ls\\data", profile);
     mkdirs(data);

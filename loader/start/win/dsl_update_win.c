@@ -141,14 +141,25 @@ int dsl_uos_kit_asset(const char *n) { return !strcmp(n, "Dungeon-Settlers-Modde
    only the files in that list). No list = an install without one: nothing written. */
 static void log_installed(const char *path) {
     char lp[1200]; snprintf(lp, sizeof lp, "%s\\install_files.log", dsl_uos_root());
-    wchar_t w[1300]; wide(lp, w, 1300);
+    wchar_t w[1300], wp[1100]; wide(lp, w, 1300); wide(path, wp, 1100);
     FILE *f = _wfopen(w, L"rb"); if (!f) return;
-    char l[1500]; int have = 0;
-    while (!have && fgets(l, sizeof l, f)) { l[strcspn(l, "\r\n")] = 0; have = !_stricmp(l, path); }
-    fclose(f);
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    char *b = malloc((size_t)n + 4); size_t k = b ? fread(b, 1, (size_t)n, f) : 0; fclose(f);
+    if (!b) return;
+    int u16 = k >= 2 && (unsigned char)b[0] == 0xFF && (unsigned char)b[1] == 0xFE, have = 0;   /* new lists: UTF-16LE, BOM */
+    if (u16) {
+        b[k] = b[k + 1] = 0; wchar_t *t = (wchar_t *)(b + 2), *ctx = NULL;
+        for (wchar_t *l = wcstok(t, L"\r\n", &ctx); l && !have; l = wcstok(NULL, L"\r\n", &ctx)) have = !_wcsicmp(l, wp);
+    } else {
+        b[k] = 0; char *ctx = NULL;
+        for (char *l = strtok_s(b, "\r\n", &ctx); l && !have; l = strtok_s(NULL, "\r\n", &ctx)) have = !_stricmp(l, path);
+    }
+    free(b);
     if (have) return;
     f = _wfopen(w, L"ab"); if (!f) { dsl_log("update: cannot add %s to install_files.log", path); return; }
-    fprintf(f, "%s\r\n", path); fclose(f);
+    if (u16) { fwrite(wp, sizeof(wchar_t), wcslen(wp), f); fwrite(L"\r\n", sizeof(wchar_t), 2, f); }
+    else fprintf(f, "%s\r\n", path);
+    fclose(f);
 }
 /* recorded first (pending file), then the old file into the backup (when there is one), then the new one into place */
 static int swap_in(const char *newp, const char *path, const char *bk, DslMoves *mv) {

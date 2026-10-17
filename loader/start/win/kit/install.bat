@@ -121,14 +121,11 @@ copy /y "uninstall.bat" "%ROOT%\uninstall.bat" >nul
 if not exist "%ROOT%\mods" mkdir "%ROOT%\mods"
 xcopy "files\mods" "%ROOT%\mods\" /E /I /Q /Y >nul
 if errorlevel 2 goto copyfail
-rem what this install put there (the uninstall deletes exactly these files, then the empty folders in the list)
-if exist "%ROOT%\install_files.log" copy /y "%ROOT%\install_files.log" "%ROOT%\install_files.prev.log" >nul
-(
-  dir /s /b /a-d "%COPY%" "%ROOT%\mods"
-  echo %ROOT%\Dungeon Settlers Modded.exe
-  if exist "%ROOT%\RELEASE" echo %ROOT%\RELEASE
-) > "%ROOT%\install_files.log"
-dir /s /b /ad "%COPY%" "%ROOT%\mods" > "%ROOT%\install_dirs.log"
+rem what this install put there (the uninstall deletes exactly these files, then the empty folders): the starter writes
+rem the lists in UTF-16 (file names in any language; cmd's dir would write the OEM code page and lose them)
+if exist "%ROOT%\install_files.log" move /y "%ROOT%\install_files.log" "%ROOT%\install_files.prev.log" >nul
+start "" /wait "%ROOT%\Dungeon Settlers Modded.exe" --lists
+if not exist "%ROOT%\install_files.log" goto copyfail
 
 rem shortcuts "Dungeon Settlers Modded" on the desktop and in the Start menu
 set "LNKTARGET=%ROOT%\Dungeon Settlers Modded.exe"

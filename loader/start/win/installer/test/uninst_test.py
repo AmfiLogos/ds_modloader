@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """uninst_test.py <setup.exe> <kit dir>: the installer never mixes with other files and the uninstaller removes only what
 it installed (DSMP CrossOver bottle, silent runs, one wine copy: ~/ds_multiplayer/rig/wine_lease.py).
-  1 /D=C:\\USERDIR (holds other files)  -> installs into C:\\USERDIR\\Dungeon Settlers Modded, the other files stay
+  1 /D=C:\\USERDIR José 模组 (holds other files; letters outside the OEM code page) -> its own subfolder, the other files stay
   2 /D=<folder named like ours that holds other files, no marker> -> refused, nothing changed
   3 a second Setup without /D           -> the same folder as before (InstallDirRegKey)
   4 install.bat (zip kit) into a folder with other files -> refused
@@ -14,7 +14,7 @@ C, BOTTLE, DRIVE = w.C, "DSMP", w.DRIVE
 WL = f"{H}/ds_multiplayer/rig/wine_lease.py"
 NAME = "Dungeon Settlers Modded"
 setup, kit = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
-U, F, F2 = f"{DRIVE}/USERDIR", f"{DRIVE}/FULLDIR/{NAME}", f"{DRIVE}/FULLDIR2"
+U, F, F2 = f"{DRIVE}/USERDIR José 模组", f"{DRIVE}/FULLDIR/{NAME}", f"{DRIVE}/FULLDIR2"
 I = f"{U}/{NAME}"
 res = []
 def check(n, ok, info=""): res.append(ok); print(("PASS" if ok else "FAIL"), n, info, flush=True)
@@ -30,7 +30,7 @@ try:
     put(f"{U}/notes.txt"); put(f"{U}/photos/a.jpg", "jpg")
     put(f"{F}/budget.xlsx"); put(f"{F2}/thesis.docx")
     # 1
-    r = wine([w.winpath(setup), "/S", "/D=C:\\USERDIR"], timeout=900)
+    r = wine([w.winpath(setup), "/S", "/D=C:\\USERDIR José 模组"], timeout=900)
     check("1 install into a folder with other files: own subfolder", r.returncode == 0 and os.path.exists(f"{I}/game/DungeonSettlers.exe")
           and os.path.exists(f"{I}/dsmodded_install.txt") and os.path.exists(f"{I}/install_files.log"), f"rc {r.returncode}")
     check("1 the other files untouched", open(f"{U}/notes.txt").read() == "user file\n" and os.path.exists(f"{U}/photos/a.jpg"))
@@ -47,9 +47,14 @@ try:
     r = wine(["cmd", "/c", "set DSMODDED_NOPAUSE=1&& set DSMODDED_ROOT=C:\\FULLDIR2&& call " + w.winpath(f"{kit}/install.bat")], timeout=300)
     check("4 install.bat into a folder with other files: refused", r.returncode != 0 and os.listdir(F2) == ["thesis.docx"]
           and "already holds other files" in r.stdout, f"rc {r.returncode}")
-    # 5 (after one game start + quit, the way a player uses it; the gate does the same)
+    # 5 (after one game start + quit, the way a player uses it; the gate does the same). The install path has letters
+    # outside the OEM code page and a mod zip with such a name is dropped in: the starter installs it and lists it.
+    import zipfile
+    with zipfile.ZipFile(f"{I}/mods/模组 mod-1.0.0.zip", "w") as z:
+        z.writestr("uni-mod/mod.json", '{"id":"uni-mod","name":"Uni","version":"1.0.0","platforms":{}}')
+
     env = dict(os.environ, DSRIG_PORT=str(w.PORT), DSMP_GUARD_TAG="1", DSL_NO_ALERT="1", WINEDLLOVERRIDES="winhttp=n,b")
-    subprocess.run(["nice", "-n", "19", f"{C}/wine", "--bottle", BOTTLE, "--no-wait", f"C:\\USERDIR\\{NAME}\\{NAME}.exe", "-batchmode", "-nographics"],
+    subprocess.run(["nice", "-n", "19", f"{C}/wine", "--bottle", BOTTLE, "--no-wait", f"C:\\USERDIR José 模组\\{NAME}\\{NAME}.exe", "-batchmode", "-nographics"],
                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t0, title = time.time(), False
     while time.time() - t0 < 300 and not title:
@@ -57,6 +62,8 @@ try:
         try: title = w.cmd({"cmd": "status"}, timeout=5).get("boot_ready", False)
         except Exception: pass
     check("5 the installed game starts once (title)", title, f"{time.time() - t0:.0f} s")
+    inst = [x for x in os.listdir(f"{I}/mods/.installed")] if os.path.isdir(f"{I}/mods/.installed") else []
+    check("5 the starter installed the dropped zip (non-OEM names)", os.path.exists(f"{I}/mods/uni-mod/mod.json") and any("模组" in x for x in inst), str(inst))
     try: w.cmd({"cmd": "quit"}, timeout=5)
     except Exception: pass
     time.sleep(3)
@@ -66,7 +73,7 @@ try:
             except Exception: pass
     time.sleep(5)
     put(f"{I}/game/player_note.txt"); put(f"{I}/mods/my-own-mod/mod.json", "{}"); put(f"{I}/profiles/modded/data/Saves/w1.json", "{}")
-    r = wine([f"C:\\USERDIR\\{NAME}\\Uninstall.exe", "/S"], timeout=600); time.sleep(10)
+    r = wine([f"C:\\USERDIR José 模组\\{NAME}\\Uninstall.exe", "/S"], timeout=600); time.sleep(10)
     check("5 installed files removed", not os.path.exists(f"{I}/game/DungeonSettlers.exe") and not os.path.exists(f"{I}/{NAME}.exe")
           and not os.path.exists(f"{I}/mods/multiplayer") and not os.path.exists(f"{I}/Uninstall.exe"))
     check("5 the game copy is gone (ours top to bottom), a player mod, saves and the folder around stay", not os.path.exists(f"{I}/game") and os.path.exists(f"{I}/mods/my-own-mod/mod.json")
