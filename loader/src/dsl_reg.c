@@ -193,7 +193,7 @@ static void key_of(const char *const *ids, int n, char *out, size_t cap) {
     for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
     if (!k) snprintf(out, cap, "vanilla");
 }
-/* a stored key in today's form: sorted, without "multiplayer" (left out since l3-win 102e193; older worlds.json files
+/* a stored key in today's form: sorted, without "multiplayer" (left out since l3-win 3dd9646; older worlds.json files
    have it), "vanilla" when empty. Keeps worlds registered before that change working. */
 static void key_norm(const char *in, char *out, size_t cap) {
     char b[512]; snprintf(b, sizeof b, "%s", in ? in : ""); const char *v[MAXM]; int k = 0;

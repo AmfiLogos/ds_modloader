@@ -47,7 +47,7 @@ Asked them (2026-10-15 ~18:30) for env line `DSL_SOFT_LOAD=<save name>` = restar
 pending profile `<data>/Mods/pending.json`; B copies it over active.json once it runs (commit only on success).
 Fallback until it lands: write handoff.json {"load": save}, `open -n $DSML_APP`, quit.
 
-## Files (stub contract, app/BRIEF_stub.md, commit a3546ab)
+## Files (stub contract, app/BRIEF_stub.md, commit 9676e23)
 DSL_PROFILE = `<data>/Mods/active.json` ({"enabled","order"}, modmenu always enabled), groups.json, worlds.json,
 DSML_DATA, DSML_APP, DSL_MODS_DIR = ROOT/loader/mods. Ship modules: multiplayer (on by default), gcd-cdr, modmenu.
 
