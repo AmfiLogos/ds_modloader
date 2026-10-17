@@ -1,4 +1,0 @@
-{ "id": "floor-logger", "name": "Floor logger (example code mod)", "version": "1.0.0", "author": "AmfiLogos",
-  "type": "code", "api": 1, "game_build": "25846389",
-  "description": "Example code mod: writes a line to dsmods_loader.log when your units enter a dungeon floor. Changes nothing in the game.",
-  "conflicts": [], "requires": ["notch-fix"] }
