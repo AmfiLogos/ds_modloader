@@ -8,7 +8,7 @@
 // (RELEASE file) / the mod.json version, not rolled back before (ROOT/update/bad.txt).
 // Every download is checked against its sha256: the asset's GitHub "digest", else a "<asset>.sha256" asset; none = no
 // install. Network failure, rate limit, bad JSON: silent (log line), next start tries again.
-// Title corner (top right, only at the title while its menu shows): "Auto-update" switch (default on; ROOT/update/
+// Title corner (top right, only at the title while its menu shows): "Auto-update mod loader" switch (default on; ROOT/update/
 // settings.json, per machine) and one short line or an "Update to 0.1.N" button.
 //   On:  download while the game runs (sha256 checked), then ROOT/update/ready.txt; the next start installs it in the
 //        starter before the game opens (start/dsl_update_start.c: a small window with a progress bar, no prompt).
@@ -344,11 +344,11 @@ static void corner_frame(void) {
     if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
     if (!tog) {
         c_gen = dsi_generation();
-        tog = u->toggle(NULL, 0, 0, 260, TR("Auto-update"), auto_on, toggle_change, NULL);
+        tog = u->toggle(NULL, 0, 0, 340, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
         txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 220, 40, TR("Update"), button_click, NULL);
         if (!tog || !txt || !btn) return;
-        dsl_ui_place_tr(tog, 24, 56, 260, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
+        dsl_ui_place_tr(tog, 24, 56, 340, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
