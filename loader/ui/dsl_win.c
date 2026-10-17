@@ -346,6 +346,15 @@ static void refresh_click(void *ud, DSLObj w) {
     else refresh_note(n, fail);
     mods_sync();
 }
+/* byte index where the text passes `cols` columns (a CJK / Hangul / fullwidth character = 2, others 1); strlen if never */
+static int wide_at(const unsigned char *p) { return (p[0] >= 0xE3 && p[0] <= 0xED) || (p[0] == 0xEF && (p[1] == 0xBC || p[1] == 0xBD)); }
+static size_t cols_at(const char *s, int cols) {
+    const unsigned char *p = (const unsigned char *)s; int c = 0;
+    while (*p) { int n = *p < 0x80 ? 1 : *p >= 0xF0 ? 4 : *p >= 0xE0 ? 3 : *p >= 0xC0 ? 2 : 1, wd = wide_at(p) ? 2 : 1;
+                 if (c + wd > cols) break; c += wd; for (int k = 0; k < n && *p; k++) p++; }
+    return (size_t)((const char *)p - s);
+}
+static int has_wide(const char *s) { for (const unsigned char *p = (const unsigned char *)s; *p; p++) if (wide_at(p)) return 1; return 0; }
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
@@ -396,24 +405,34 @@ static void mods_open(DSLObj root, float w, float h) {
         char d[400];
         if (bad) snprintf(d, sizeof d, TR("Not running: %s"), TR(m->reason));   /* reason: an English key (or a starter's text) */
         else snprintf(d, sizeof d, "%s", m->description ? m->description : "");
-        if (strlen(d) > 150) { size_t c = 146; while (c > 100 && d[c] != ' ') c--;
-                               while (c > 0 && ((unsigned char)d[c] & 0xC0) == 0x80) c--;   /* never inside a UTF-8 character */
-                               snprintf(d + c, sizeof d - c, " ..."); }   /* two lines; all in the tooltip */
+        /* two lines; all in the tooltip. Counted in columns, not bytes (a Chinese / Japanese / Korean character is two
+           columns and three bytes, a Russian letter one column and two bytes): ru and CJK were cut at half the width */
+        int cut = 0;
+        if (cols_at(d, 150) < strlen(d)) { size_t hi = cols_at(d, 146), lo = cols_at(d, 100), c = hi;
+                                           while (c > lo && d[c] != ' ') c--;
+                                           if (c == lo && d[c] != ' ' && has_wide(d)) c = hi;   /* no space (CJK): at the column */
+                                           while (c > 0 && ((unsigned char)d[c] & 0xC0) == 0x80) c--;   /* never inside a UTF-8 character */
+                                           snprintf(d + c, sizeof d - c, " ..."); cut = 1; }
         /* owner: BepInEx plugins with a small mark; MelonLoader mods (kind "melon") the same way */
         const char *mk = !m->kind ? NULL : !strcmp(m->kind, "bepinex") ? "BepInEx" : !strcmp(m->kind, "melon") ? "MelonLoader" : NULL;
         float mw = mk && mk[0] == 'M' ? 100 : 64;
         if (mk) { snprintf(nm, sizeof nm, "mark:%s", m->id); named(U->text(list, 12, y + 38, mw, 18, mk, 13, DSL_TXT_LEFT, GOLD), 3, nm, NULL, NULL, mk); }
-        DSLObj t = U->text(list, mk ? 16 + mw : 12, y + 38, m_lw - (mk ? 60 + mw : 56), rh - 40, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
+        float dx = mk ? 16 + mw : 12, dw = m_lw - (mk ? 60 + mw : 56), dh = rh - 40;
+        DSLObj t = U->text(list, dx, y + 38, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
+        /* the game's way for long text: the box grows to the text (two CJK lines are taller than two Lora lines) */
+        { float ph = t && U->text_height ? U->text_height(t, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(t, dx, y + 38, dw, dh); rh = 40 + dh; } }
         snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
-        if (m->description && strlen(m->description) > 150) U->tooltip(mods[i].row, m->name, m->description);
+        if (cut && m->description) U->tooltip(mods[i].row, m->name, m->description);
         /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent"): one orange line under the
            description while it is switched on */
         int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
         char wr[300]; const char *one = m->id;
         if (dsl_save_warning(&one, 1, wr, sizeof wr)) {
-            mods[i].warn = U->text(list, 12, y + 74, m_lw - 56, 20, wr, 14, DSL_TXT_LEFT, WARN);
+            float wh = 20;                                            /* one line; wraps and grows when longer (de / fr / ru) */
+            mods[i].warn = U->text(list, 12, y + rh, m_lw - 56, wh, wr, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, WARN);
+            { float ph = mods[i].warn && U->text_height ? U->text_height(mods[i].warn, m_lw - 56) : 0; if (ph > wh + 2) { wh = ph; U->place(mods[i].warn, 12, y + rh, m_lw - 56, wh); } }
             snprintf(nm, sizeof nm, "savewarn:%s", m->id); named(mods[i].warn, 3, nm, NULL, NULL, wr);
-            rh = 96;
+            rh += wh + 2;
         }
     }
     if (!nmods) U->text(list, 12, 8, m_lw - 56, 40, TR("No mods are installed."), 16, DSL_TXT_LEFT, SUB);

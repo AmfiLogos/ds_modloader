@@ -204,6 +204,10 @@ static void build_rows(Obj slv) {
 void dsl_mod_short(const char *id, char *out, size_t cap);
 const char *dsl_mod_name(const char *id);
 int dsl_reg_scene(void);
+static int cols_of(const char *s) {                                  /* display columns (as dsl_mod_short: a 3-byte character = 2) */
+    int c = 0; for (const unsigned char *p = (const unsigned char *)s; *p; p++) if ((*p & 0xC0) != 0x80) c += *p >= 0xE0 ? 2 : 1;
+    return c;
+}
 static void world_texts(const char *guid, int maxc, char *line, size_t lcap, char *all, size_t acap) {
     int dsl_world_mods_all(const char *guid, const char **ids, int max);
     const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64);
@@ -216,8 +220,8 @@ static void world_texts(const char *guid, int maxc, char *line, size_t lcap, cha
         char one[300]; if (nm) snprintf(one, sizeof one, "%s", nm); else snprintf(one, sizeof one, TR("%s (not installed)"), ids[i]);
         if (i) strlcat(all, "\n", acap);
         strlcat(all, one, acap);
-        char sh[64]; dsl_mod_short(ids[i], sh, sizeof sh);
-        int len = (int)strlen(sh) + (k ? 3 : 0), plus = i + 1 < n ? 4 : 0;
+        char sh[128]; dsl_mod_short(ids[i], sh, sizeof sh);
+        int len = cols_of(sh) + (k ? 3 : 0), plus = i + 1 < n ? 4 : 0;   /* columns, not bytes (ru / CJK were counted double) */
         if (k && used + len + plus > maxc) continue;                      /* the first one always shows */
         if (k) strlcat(shown, " \xC2\xB7 ", sizeof shown);
         strlcat(shown, sh, sizeof shown); used += len; k++;

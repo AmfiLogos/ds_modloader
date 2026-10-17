@@ -108,6 +108,9 @@ typedef struct DSLUi {
     void (*clipboard_set)(const char *s);
     /* appended (check size): close the notice box this kit showed last, no callback (e.g. a "please wait" box) */
     void (*notice_close)(void);
+    /* appended (check size): preferred height of a text widget's text at width w (0 = its own width), at its design
+       size, so a caller can grow the box to its text (the game's way for long text; CJK lines are taller) */
+    float (*text_height)(DSLObj text, float w);
 } DSLUi;
 
 typedef struct DSLHost {

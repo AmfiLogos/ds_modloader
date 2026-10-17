@@ -83,6 +83,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
+    *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_getsize, *m_tmp_getauto, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv, *m_rt_rect,   /* text fit */
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
     *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
     *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create,
@@ -250,10 +251,12 @@ static void img_set(Obj im, Obj sprite, Col c, int sliced) {          /* sprite 
     gr_color(im, c); gr_raycast(im, 0);
 }
 static Obj tmp_get(Obj t) { if (!isa(t, K.TMP_Text)) return NULL; void *m = vmi(t, m_tmp_get); return CALL(m, Obj, Obj)(t, m); }
+static void fit_text(Obj t, const char *s);
 static void tmp_set(Obj t, const char *s) {
     if (!isa(t, K.TMP_Text)) return;
     if (f_das_usekey >= 0 && isa(t, K.DASText)) AT(t, f_das_usekey, bool) = false;   /* DASText: keep our raw text (no text key) */
     void *m = vmi(t, m_tmp_set); CALL(m, void, Obj, Obj)(t, str(s), m);
+    fit_text(t, s);
 }
 
 /* ------------------------------------------------------------------ stock look: sprites, fonts, templates */
@@ -338,6 +341,7 @@ static void txt_body(Obj t) {
     if (f) CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
     if (m && m_tmp_shmat) CALL(m_tmp_shmat, void, Obj, Obj)(t, m, m_tmp_shmat);
 }
+static void fit_style(Obj t, float size, int wrap);
 static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
     if (!isa(t, K.TMP_Text)) return;
     Obj f = cinzel ? title_font() : NULL;
@@ -349,6 +353,103 @@ static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
     CALL(m_tmp_overflow, void, Obj, int)(t, 0, m_tmp_overflow);
     CALL(m_tmp_rich, void, Obj, bool)(t, true, m_tmp_rich);
     gr_raycast(t, 0);
+    fit_style(t, size, wrap);                                         /* too long for its rect: auto size (text fit) */
+}
+
+/* ------------------------------------------------------------------ text fit (multiplayer ext/i18n/CJK_FIT.md)
+   How the game fits text: short labels and buttons in a fixed box use TMP auto size (min about 0.75 x max, small buttons
+   down to 8-18); long text keeps its size and its box grows (ContentSizeFitter, preferred height). It never changes the
+   size per language. Here: every text styled by txt_style keeps its design size. Once per frame, a text whose content or
+   rect changed is measured at that size (TMP preferredWidth / preferredHeight). It fits: as before, no auto size (English
+   that fits looks exactly as before). It does not fit: auto size from the design size down to fit_min(), and a one-line
+   label wraps when its rect holds two lines. Same code as multiplayer's mpmenu.c. */
+#define FIT_N 2048                                                   /* open addressing by object address */
+typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi, stock; } FitE;
+typedef struct { float x, y, w, h; } FRect;
+static FitE fit_tab[FIT_N];
+static int fit_count;
+static int fit_ok(void) { return m_tmp_fsmin && m_tmp_fsmax && m_tmp_pw && m_tmp_ph && m_rt_rect && m_tmp_getsize && m_tmp_getauto; }
+static float fit_min(float size) { float m = (float)(int)(size * 0.6f + 0.5f); return m < 8 ? (size < 8 ? size : 8) : m; }
+static FitE *fit_find(Obj t, int add) {
+    if (!t || !fit_ok()) return NULL;
+    size_t i = ((uintptr_t)t >> 4) * 2654435761u % FIT_N, tomb = (size_t)-1;
+    for (int n = 0; n < FIT_N; n++, i = (i + 1) % FIT_N) {
+        FitE *e = &fit_tab[i];
+        if (e->t == t) return e;
+        if (e->t == (Obj)1) { if (tomb == (size_t)-1) tomb = i; continue; }
+        if (!e->t) {
+            if (!add || fit_count >= FIT_N * 3 / 4) return NULL;    /* full: that text keeps the old way (no fit) */
+            if (tomb != (size_t)-1) e = &fit_tab[tomb];
+            memset(e, 0, sizeof *e); e->t = t; e->h = hnew(t); fit_count++;
+            return e;
+        }
+    }
+    return NULL;
+}
+static void fit_drop(FitE *e) { hfree(&e->h); memset(e, 0, sizeof *e); e->t = (Obj)1; fit_count--; }
+static uint32_t fit_hash(const char *s) { uint32_t h = 2166136261u; for (; s && *s; s++) h = (h ^ (uint8_t)*s) * 16777619u; return h; }
+static void fit_auto(Obj t, int on) { CALL(m_tmp_auto, void, Obj, bool)(t, on != 0, m_tmp_auto); }
+static void fit_style(Obj t, float size, int wrap) {
+    FitE *e = fit_find(t, 1); if (!e) return;
+    CALL(m_tmp_fsmax, void, Obj, float)(t, size, m_tmp_fsmax);       /* the design size */
+    CALL(m_tmp_fsmin, void, Obj, float)(t, fit_min(size), m_tmp_fsmin);
+    if (e->size == size && e->wrap == (wrap != 0) && e->on) {        /* styled again the same way: keep the fit (no flicker) */
+        fit_auto(t, 1); if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
+        return;
+    }
+    e->size = size; e->wrap = wrap != 0; e->on = 0; e->dirty = 1;
+}
+static void fit_text(Obj t, const char *s) {
+    FitE *e = fit_find(t, 0); if (!e) return;
+    uint32_t h = fit_hash(s); if (h != e->hash) { e->hash = h; e->dirty = 1; e->multi = s && strchr(s, '\n') != NULL; }
+}
+static void fit_one(FitE *e, Obj t, float w, float h) {
+    if (w < 4 || h < 4) return;                                       /* not placed yet */
+    if (e->on) { fit_auto(t, 0); CALL(m_tmp_size, void, Obj, float)(t, e->size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, e->wrap, m_tmp_wrap); }
+    void *pw = vmi(t, m_tmp_pw), *ph = vmi(t, m_tmp_ph);
+    int over = !e->wrap ? CALL(pw, float, Obj)(t, pw) > w + 1 : CALL(ph, float, Obj)(t, ph) > h * 1.1f + 2;
+    e->on = 0;
+    if (over) {
+        float mn = fit_min(e->size);
+        e->on = !e->wrap && !e->multi && h >= 2.7f * mn ? 2 : 1;      /* 2: a one-line label that may use two lines */
+        CALL(m_tmp_fsmin, void, Obj, float)(t, mn, m_tmp_fsmin);
+        CALL(m_tmp_fsmax, void, Obj, float)(t, e->size, m_tmp_fsmax);
+        if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
+        fit_auto(t, 1);
+    }
+}
+/* once per frame (after the modules' frame): changed texts now; every text's rect every 15 frames (a later layout) */
+static void fit_frame(void) {
+    if (!fit_count) return;
+    int all = frames % 15 == 0;
+    for (int i = 0; i < FIT_N; i++) {
+        FitE *e = &fit_tab[i];
+        if (!e->t || e->t == (Obj)1 || (!e->dirty && !all)) continue;
+        Obj t = hget(e->h);
+        if (!t) { fit_drop(e); continue; }
+        if (!on_tree(t)) {                                            /* measured once it shows */
+            if (e->stock) { if (e->on) { fit_auto(t, 0); CALL(m_tmp_size, void, Obj, float)(t, e->size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, e->wrap, m_tmp_wrap); }
+                            fit_drop(e); }                            /* a stock box closed: its own settings again */
+            continue;
+        }
+        Obj rt = tr_of(t); if (!isa(rt, K.RectTransform)) continue;
+        FRect r = CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect);
+        if (!e->dirty && !e->stock && r.w == e->w && r.h == e->h_) continue;   /* a stock text: the game may set it too */
+        int first = e->dirty; e->w = first ? -1 : r.w; e->h_ = r.h; e->dirty = 0;   /* -1: measured again at the next full pass */
+        fit_one(e, t, r.w, r.h);
+    }
+}
+/* the stock notice box text (CommonNoticeView Txt_Notice: Lora 16 in a fixed 520 x 109 rect; the game never sizes it):
+   while our text is up it auto-sizes when too long; when the box closes, its stock settings come back */
+static void fit_stock(Obj t) {
+    if (!isa(t, K.TMP_Text) || !fit_ok()) return;
+    FitE *e = fit_find(t, 0);
+    if (e) { e->dirty = 1; return; }
+    if (CALL(m_tmp_getauto, bool, Obj)(t, m_tmp_getauto)) return;         /* the game auto-sizes it already */
+    float fs = CALL(m_tmp_getsize, float, Obj)(t, m_tmp_getsize);
+    if (fs < 4) return;
+    fit_style(t, fs, 1);
+    e = fit_find(t, 0); if (e) e->stock = 1;
 }
 
 /* templates: kept under one inactive DontDestroyOnLoad holder, so the kit works in every scene once the title was seen.
@@ -540,7 +641,7 @@ static void w_sweep(void) {                                          /* destroye
 }
 
 /* tooltips: target -> title / body (any RectTransform, kit widget or not) */
-typedef struct { Obj target; uintptr_t h; char title[160], body[700]; } TipE;
+typedef struct { Obj target; uintptr_t h; char title[160], body[2048]; } TipE;
 #define TMAX 256
 static TipE tips[TMAX]; static int ntips;
 
@@ -919,6 +1020,7 @@ static void k_notice(const char *text, const char *ok_label, const char *cancel_
     else CALL(m_nv_confirm, void, Obj, Obj, Obj)(v, str(NB.text), a, m_nv_confirm);
     Obj nt = AT(v, f_nv_text, Obj);
     tmp_set(nt, NB.text);
+    fit_stock(nt);                                                   /* a long text auto-sizes in the stock box */
     if (isa(nt, K.TMP_Text)) CALL(m_tmp_align, void, Obj, int)(nt, 514, m_tmp_align);
     if (f_nv_tok >= 0) tmp_set(AT(v, f_nv_tok, Obj), ok_label ? ok_label : TR("OK"));
     if (cancel_label && f_nv_tcancel >= 0) tmp_set(AT(v, f_nv_tcancel, Obj), cancel_label);
@@ -954,6 +1056,17 @@ static void k_place(DSLObj o, float x, float y, float w_, float h) {
     if (w->kind == W_TOGGLE) toggle_layout(w);
     if (w->kind == W_VALUE) value_layout(w);
     if (w->kind == W_SCROLL) { V2 s = rt_size(hget(w->h_rt)); CALL(m_rt_size, void, Obj, V2)(hget(w->h_rt), (V2){ w_, s.y < h ? h : s.y }, m_rt_size); }
+}
+/* preferred height of a text widget's text at width w (0 = its own width), at its design size: a caller grows its box */
+typedef struct { float x, y; } FV2;
+static float k_text_height(DSLObj o, float w) {
+    W *wd = w_of(o); Obj t = wd ? hget(wd->h_label) : NULL;
+    if (!t && o) t = isa((Obj)o, K.TMP_Text) ? (Obj)o : comp_get((Obj)o, K.TMP_Text);
+    if (!t || !isa(t, K.TMP_Text)) return 0;
+    if (w <= 0 && m_rt_rect) { Obj rt = tr_of(t); if (isa(rt, K.RectTransform)) w = CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect).w; }
+    if (m_tmp_prefv && w > 0) return CALL(m_tmp_prefv, FV2, Obj, float, float)(t, w, 100000.f, m_tmp_prefv).y;
+    void *ph = m_tmp_ph ? vmi(t, m_tmp_ph) : NULL;
+    return ph ? CALL(ph, float, Obj)(t, ph) : 0;
 }
 static void k_set_active(DSLObj o, int on) { W *w = w_of(o); go_active(w ? w_root(w) : (Obj)o, on); }
 static void btn_enable(Obj b, int on) {
@@ -992,7 +1105,8 @@ static DSLUi KIT = {
     .toggle_get = k_toggle_get, .toggle_set = k_toggle_set, .value_row = k_value_row, .value_get = k_value_get, .value_set = k_value_set,
     .field = k_field, .field_get = k_field_get, .field_set = k_field_set, .scroll = k_scroll, .scroll_height = k_scroll_height,
     .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .notice_close = k_notice_close, .place = k_place, .set_active = k_set_active,
-    .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set
+    .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
+    .text_height = k_text_height
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -1158,6 +1272,7 @@ static void h_es_update(Obj self, const void *mi) {
     if (dsl_lang_poll()) { if (kit_ok) kit_lang_changed(); dsl_reg_lang_changed(); }
     if (kit_ok) tick();
     dsl_frame_hook();
+    if (kit_ok) fit_frame();                                        /* last: the modules' texts of this frame are set and placed */
     in_tick = 0;
 }
 
@@ -1278,6 +1393,11 @@ void dsl_ui_install(void) {
     m_tmp_wrap = MTH(K.TMP_Text, "set_textWrappingMode", 1); m_tmp_overflow = MTH(K.TMP_Text, "set_overflowMode", 1);
     m_tmp_rich = MTH(K.TMP_Text, "set_richText", 1); m_tmp_shmat = OPT(K.TMP_Text, "set_fontSharedMaterial", 1);
     m_asset_mat = OPT(K.TMP_Asset, "get_material", 0);
+    m_tmp_fsmin = OPT(K.TMP_Text, "set_fontSizeMin", 1); m_tmp_fsmax = OPT(K.TMP_Text, "set_fontSizeMax", 1);
+    m_tmp_getsize = OPT(K.TMP_Text, "get_fontSize", 0); m_tmp_getauto = OPT(K.TMP_Text, "get_enableAutoSizing", 0);
+    m_tmp_pw = OPT(K.TMP_Text, "get_preferredWidth", 0); m_tmp_ph = OPT(K.TMP_Text, "get_preferredHeight", 0);
+    m_tmp_prefv = OPTSIG(K.TMP_Text, "GetPreferredValues", 2, "System.Single,System.Single");
+    m_rt_rect = OPT(K.RectTransform, "get_rect", 0);
     if (!m_asset_mat) f_asset_mat = fld(K.TMP_Asset, "m_Material");
     m_in_text = MTH(K.TMP_Input, "get_text", 0); m_in_settext = MTH(K.TMP_Input, "SetTextWithoutNotify", 1);
     m_in_limit = OPT(K.TMP_Input, "set_characterLimit", 1); m_in_ctype = OPT(K.TMP_Input, "set_contentType", 1);

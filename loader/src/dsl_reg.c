@@ -92,7 +92,7 @@ static const char *env_text(const char *name) {
 /* ------------------------------------------------------------------ installed mods */
 #define MAXM 64
 static DSLModInfo MI[MAXM]; static int nmi;
-static char MI_short[MAXM][48];                         /* mod.json "short_name" (world rows), else "" */
+static char MI_short[MAXM][128];                         /* mod.json "short_name" (world rows), else "" */
 /* mod.json name / short_name / description per language: [0] the top-level (English) text, [l] the optional
    "i18n": {"<code>": {"name", "short_name", "description"}} (NULL = English). Not part of the mod-set hash (that hashes
    id, version and the listed files only), so a translation fix never splits players. */
@@ -939,8 +939,8 @@ void dsl_reg_after_init(void) {
       if (own && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
     if (dsl_soft_wanted()) {                                           /* the new game of a soft restart: its first progress step */
         extern void dsl_soft_progress(int pct, const char *key, const char *arg);
-        char t[300] = ""; int k = 0;
-        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[64]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
+        char t[512] = ""; int k = 0;
+        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[128]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
         dsi_utf8_fix_end(t);
         if (k) dsl_soft_progress(10, TR_NOOP("Loading %s"), t); else dsl_soft_progress(10, TR_NOOP("Loading the game"), NULL);
     }

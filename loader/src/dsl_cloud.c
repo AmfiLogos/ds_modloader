@@ -395,7 +395,7 @@ static void *cloud_thread(void *arg) {
 /* ------------------------------------------------------------------ import (Mods window tab "Saves") */
 typedef struct { char guid[40], clan[64], when[24]; int n; } World;
 static World W[64]; static int nW;
-static char import_msg[200];
+static char import_msg[512];
 static void header_str(const char *h, const char *key, char *out, size_t cap) {
     out[0] = 0; char k[64]; snprintf(k, sizeof k, "\"%s\"", key);
     const char *p = h ? strstr(h, k) : NULL; if (!p) return;
@@ -513,7 +513,7 @@ static void on_import(void *ud, DSLObj w) { (void)ud; (void)w; if (cur >= 0 && c
 static void on_next(void *ud, DSLObj w) { (void)ud; (void)w; if (++cur < nW) ask(); }
 static void ask(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || cur >= nW) return;
-    char t[700], st[300]; dsl_cloud_status(st, sizeof st);
+    char t[1024], st[300]; dsl_cloud_status(st, sizeof st);
     snprintf(t, sizeof t, TRN("Import %s from the game? (%d save, last saved %s)\n\nThis copies the world. The game's own save is not "
              "changed, and your modded saves never show up in the game's Load list.%s%s",
                               "Import %s from the game? (%d saves, last saved %s)\n\nThis copies the world. The game's own save is not "
