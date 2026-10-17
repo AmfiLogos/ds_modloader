@@ -464,3 +464,31 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   ~/ds_launcher/loader/test_env/l1_out/prog_strip/ and prog_ornament2/ (shot_*_low, shot_*_mid, shot_3_panel_world).
 - Trap: with DSL_SOFT_CAPTURE on, one run (prog1) had A's staged window moved on screen at the apply (guard kill in
   0.5 s). Not seen without the capture (prog2, prog3); the test takes its pictures with the "shot" request instead.
+
+## Game saves in the modded game (owner 2026-10-16 / 10-17; branch savesync, replaces "Import a save")
+- Owner: "make sure that the modlauncher connects to my regular saves ... so i can move forward on my saves in the
+  modloader"; the import button "doesn't fulfill the function I wanted". Now the Load list of the modded game shows the
+  game's own save folder (`DSML_GAME_SAVES`, set by both starters) next to the modded saves, and a game world is played
+  IN PLACE: loaded from and saved back to the game's folder. No copy. `src/dsl_saves.c`.
+- Hooks by name (Mac + Windows), all in `Refactor.SaveLoadHelper` (decompile 25846389: every reader, writer and delete
+  of `CampaignSaveLoader` and the header cache goes through them): `GetAllSavePaths` (modded files + game files),
+  `GetCampaignSavePath` (game folder for a game save), `SaveFile` (a new save name of a game world: game folder; the
+  world guid comes from the autosave name, the header, or the load seen by `dsl_world.c`), `TryQuarantineCorruptSaveFile`
+  (never moves a game file). Hooks: all or none.
+- Modded-only worlds (multiplayer, started in the modded game) stay in `<DSML_DATA>/Saves`: hidden from the normal game,
+  Steam Cloud backup by `dsl_cloud.c` as before. The starters no longer copy `Saves` at the first start (settings only).
+- Old first-start copies (a modded save with the name of a game save): moved to `<DSML_DATA>/Mods/save_copies/`
+  (never deleted); different bytes = one notice at the title with the folder. The game's save is the one listed.
+- Load list (`dsl_rows.c` groups_apply): two groups with a gold title-font header each, "Game saves: also in Dungeon
+  Settlers" first, then "Modded saves: only in Dungeon Settlers Modded" (rows moved with Transform.SetSiblingIndex in the
+  list's own layout). No game save listed = the list as before.
+- Warning: a game save loaded while a mod with mod.json `"save_dependent": true` runs (data check 2026-10-17: only
+  hell-difficulty, combat difficulty 5 + new table rows in the save; gcd-cdr, multiplayer, custom-modes write nothing the
+  stock game cannot read) asks first in the game's notice box: Load / Cancel. Hooked at `EventQueue.AddEvent
+  (LoadCampaignRequested)` (no loading screen yet); `dsl_world.c` holds loads that did not come that way. Asked once per
+  world and mod set: worlds.json `"save_warned": {guid: "a+b"}` (`dsl_reg.c`). A world registered with another set is
+  left to the world check (flow K) first.
+- Removed: the title button "Import a save", its code and texts (14 keys pruned from lang/). Kept: the cloud backup.
+- Packaging: `modules/scan_saves.py` fails a build when a save or player file is inside (folders Saves / profiles /
+  instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,
+  `start/win/build_win.sh` (kit), `start/win/installer/make_installer.sh`. The released packages checked: none has one.

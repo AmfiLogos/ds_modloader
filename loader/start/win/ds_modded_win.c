@@ -103,7 +103,7 @@ static int ensure_steam(void) {
     return 0;
 }
 
-/* ---- first start: copy the normal game's saves (never overwrite) */
+/* ---- first start: copy the normal game's settings and records (never overwrite) */
 static void copy_tree(const wchar_t *src, const wchar_t *dst) {
     DWORD a = GetFileAttributesW(src);
     if (a == INVALID_FILE_ATTRIBUTES) return;
@@ -127,14 +127,16 @@ static void copy_saves(void) {
     if (SHGetKnownFolderPath(&FOLDERID_LocalAppDataLow, 0, NULL, &low) != S_OK) { logf_("no LocalLow folder: saves not copied"); return; }
     _snwprintf(src, MAX_PATH, L"%ls\\CanOpener\\Dungeon Settlers", low);
     CoTaskMemFree(low);
-    const wchar_t *items[] = { L"Saves", L"OutGame.json", L"UserSetting.json", L"UserCampaignLog.json" };
-    for (int i = 0; i < 4; i++) {
+    /* not its Saves: the loader lists the game's own save folder and plays those worlds in place (DSML_GAME_SAVES,
+       loader/src/dsl_saves.c) */
+    const wchar_t *items[] = { L"OutGame.json", L"UserSetting.json", L"UserCampaignLog.json" };
+    for (int i = 0; i < 3; i++) {
         wchar_t s[MAX_PATH], d[MAX_PATH];
         _snwprintf(s, MAX_PATH, L"%ls\\%ls", src, items[i]); _snwprintf(d, MAX_PATH, L"%ls\\%ls", data, items[i]);
         copy_tree(s, d);
     }
     FILE *f = _wfopen(flag, L"w"); if (f) { SYSTEMTIME t; GetLocalTime(&t); fprintf(f, "%04d-%02d-%02d %02d:%02d\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute); fclose(f); }
-    logf_("first run: saves copied from %ls", src);
+    logf_("first run: settings copied from %ls", src);
 }
 
 /* ---- mod packages: a <id>-<version>.zip dropped into ROOT\mods is unpacked to ROOT\mods\<id> (one top folder <id>\
@@ -571,7 +573,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     env(L"DSML_BUILD", wbuild);
     env(L"DSML_APP", game);
     env(L"DSML_DATA", data);
-    { wchar_t *low = NULL;                                       /* the title's "Import a save" copies worlds from there */
+    { wchar_t *low = NULL;                                       /* the game's own saves: listed and played in place */
       if (SHGetKnownFolderPath(&FOLDERID_LocalAppDataLow, 0, NULL, &low) == S_OK) {
           _snwprintf(v, MAX_PATH * 2, L"%ls\\CanOpener\\Dungeon Settlers\\Saves", low); env(L"DSML_GAME_SAVES", v); CoTaskMemFree(low); } }
     env(L"DSL_STEAM", steam ? L"1" : L"0");

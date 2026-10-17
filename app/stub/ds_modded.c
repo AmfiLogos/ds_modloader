@@ -721,11 +721,12 @@ int main(int argc, char **argv) {
     char play[PATH_MAX], build[128];
     if (game_copy(app, root, profile, play, sizeof play, build, sizeof build)) return 1;
 
-    /* first run: COPY the normal game's saves (read only) */
+    /* first run: COPY the normal game's settings and records (read only). Not its Saves: the loader lists the game's own
+       save folder and plays those worlds in place (DSML_GAME_SAVES below, loader/src/dsl_saves.c) */
     char flag[PATH_MAX]; snprintf(flag, sizeof flag, "%s/.copied_from_normal_game", data);
     if (!exists(flag)) {
         char src[PATH_MAX]; snprintf(src, sizeof src, "%s/Library/Application Support/CanOpener/Dungeon Settlers", home);
-        const char *items[] = { "Saves", "OutGame.json", "UserSetting.json", "UserCampaignLog.json" };
+        const char *items[] = { "OutGame.json", "UserSetting.json", "UserCampaignLog.json" };
         for (size_t i = 0; i < sizeof items / sizeof items[0]; i++) {
             char s[PATH_MAX], d[PATH_MAX];
             snprintf(s, sizeof s, "%s/%s", src, items[i]); snprintf(d, sizeof d, "%s/%s", data, items[i]);
@@ -733,7 +734,7 @@ int main(int argc, char **argv) {
             if (copyfile(s, d, NULL, COPYFILE_ALL | COPYFILE_RECURSIVE) != 0) logf_("copy %s failed (%s)", s, strerror(errno));
         }
         FILE *f = fopen(flag, "w"); if (f) { time_t t = time(NULL); fputs(ctime(&t), f); fclose(f); }
-        logf_("first run: saves copied from %s", src);
+        logf_("first run: settings copied from %s", src);
     }
     mods_state(root, data);
 
@@ -763,7 +764,7 @@ int main(int argc, char **argv) {
     setenv("DSML_APP", app, 1);
     setenv("DSML_DATA", data, 1);
     snprintf(v, sizeof v, "%s/Library/Application Support/CanOpener/Dungeon Settlers/Saves", home);
-    setenv("DSML_GAME_SAVES", v, 1);                         /* the title's "Import a save" copies worlds from there */
+    setenv("DSML_GAME_SAVES", v, 1);                         /* the game's own saves: listed and played in place */
 
     char **av = calloc((size_t)argc + 4, sizeof *av); int k = 0;
     av[k++] = game; av[k++] = "-logFile"; av[k++] = plog;

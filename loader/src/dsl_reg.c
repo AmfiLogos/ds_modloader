@@ -107,6 +107,7 @@ static void mods_lang(void) {                           /* the current language'
     }
 }
 static int MI_savedep[MAXM];                            /* mod.json "save_dependent": saves need the loader (owner item 9) */
+static int cmpstr_ids(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
 static int mods_scanned;
 static void mods_scan(void) {
     if (mods_scanned) return; mods_scanned = 1;
@@ -224,6 +225,15 @@ int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap) {
     snprintf(out, cap, TR("Saves made with %s may not work without the mod loader."), list);
     dsi_utf8_fix_end(out);
     return k;
+}
+/* the running mods whose saves need the loader (mod.json "save_dependent"; the dsl_saves.c warning): ids sorted,
+   key = "a+b"; returns the count */
+int dsl_running_save_dependent(const char **ids, int max, char *key, size_t kcap) {
+    mods_scan(); int n = 0;
+    for (int i = 0; i < nmi && n < max; i++) if (MI[i].active == 1 && MI_savedep[i]) ids[n++] = MI[i].id;
+    qsort(ids, (size_t)n, sizeof *ids, cmpstr_ids);
+    if (key && kcap) { key[0] = 0; for (int i = 0; i < n; i++) { if (i) strlcat(key, "+", kcap); strlcat(key, ids[i], kcap); } }
+    return n;
 }
 const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
@@ -429,6 +439,37 @@ static void worlds_save(const char *add_guid, const char *add_key) {
     json_free(worlds_doc); worlds_doc = NULL;
 }
 
+/* a game save loaded with save_dependent mods (dsl_saves.c): the answer, per world, in worlds.json "save_warned":
+   {guid: "<sorted mod ids>"}; asked again only when a mod that is not in that list runs */
+const char *dsl_world_warned(const char *guid) {
+    worlds_load();
+    JNode *w = json_get(worlds_doc, "save_warned");
+    static char v[512];
+    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next)
+        if (c->key && guid && !strcasecmp(c->key, guid) && c->t == JN_STR) { snprintf(v, sizeof v, "%s", c->str); return v; }
+    return NULL;
+}
+/* 1 = the world is registered with another gameplay set than the running one: dsl_world.c refuses it (flow K) */
+int dsl_world_set_differs(const char *guid) {
+    const char *k = guid ? world_key(guid) : NULL; const char *mine = getenv("DSML_MODSET");
+    return k && !dsl_key_same(k, mine && *mine ? mine : run_key);
+}
+void dsl_world_set_warned(const char *guid, const char *key) {
+    worlds_load();
+    if (worlds_bad || !guid || !key) return;
+    if (!worlds_doc) { worlds_doc = calloc(1, sizeof *worlds_doc); worlds_doc->t = JN_OBJ; }
+    JNode *w = json_get(worlds_doc, "save_warned");
+    if (!w) {
+        w = calloc(1, sizeof *w); w->t = JN_OBJ; w->key = strdup("save_warned");
+        JNode **e = &worlds_doc->child; while (*e) e = &(*e)->next; *e = w;
+    }
+    JNode *c = w->child; while (c && !(c->key && !strcasecmp(c->key, guid))) c = c->next;
+    if (!c) { c = calloc(1, sizeof *c); c->key = strdup(guid); JNode **e = &w->child; while (*e) e = &(*e)->next; *e = c; }
+    if (c->t == JN_STR) free(c->str);
+    c->t = JN_STR; c->str = strdup(key);
+    worlds_save(NULL, NULL);
+    dsl_log("worlds: save warning answered for world %s (mods %s)", guid, key);
+}
 int dsl_world_label(const char *guid, char *out, size_t cap) {
     const char *k = guid ? world_key(guid) : NULL;
     char nm[400]; key_names(k ? k : run_key, nm, sizeof nm);
@@ -759,7 +800,7 @@ static void world_frame(void) {
 /* ------------------------------------------------------------------ test only (DSL_SOFT_TEST=1, never in a player's start) */
 /* <log dir>/softrestart/reg_request.json: {"cmd":"k_ok"} = the "Load it with them?" box answered Load; {"cmd":"apply",
    "ids":[..]} = Mods tab Apply; {"cmd":"mods"} = the title "Mods" click; {"cmd":"world_set","guid":..,"ids":[..]};
-   {"cmd":"import","guid":..} = Import a save of that world */
+   {"cmd":"warn_load"} / {"cmd":"warn_cancel"} = the game-save warning (dsl_saves.c) answered */
 /* v13 checks: {"cmd":"title"} logs the title column; {"cmd":"hover","what":"title:<label>" | "row:<i>" | "win:<control>"}
    hovers that element (no mouse) and logs the hover card's rect and its panel's rect 20 frames later */
 DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap);
@@ -773,8 +814,9 @@ DSLObj dsl_rows_test_line(int i);
 __attribute__((weak)) void dsl_progress_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
 __attribute__((weak)) int dsl_pkg_refresh(char *fail, size_t fcap) { if (fail && fcap) fail[0] = 0; return -2; }
-/* weak default: builds without dsl_cloud.c (host tests) link */
-__attribute__((weak)) int dsl_cloud_import(const char *g, int replace, char *mwhen, size_t mcap) { (void)g; (void)replace; (void)mwhen; (void)mcap; return -1; }
+/* weak defaults: builds without dsl_saves.c (host tests) link */
+__attribute__((weak)) void dsl_saves_test_answer(int load) { (void)load; }
+__attribute__((weak)) void dsl_saves_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
 __attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
 static int hv_wait; static char hv_what[120];
@@ -832,9 +874,8 @@ static void test_frame(void) {
         for (int i = 0; i < nmi; i++) { strlcat(l, i ? "," : "", sizeof l); strlcat(l, MI[i].id, sizeof l); strlcat(l, MI[i].enabled ? ":on" : ":off", sizeof l); }
         dsl_log("reg test: pkg_refresh %d new; fail '%s'; list %s", k, f, l);
     }
-    else if (c && !strcmp(c, "import")) {                              /* the title's "Import a save" for one world, no box */
-        const char *g = json_str(j, "guid"); dsl_log("reg test: import %s: %d", g ? g : "?", g ? dsl_cloud_import(g, 0, NULL, 0) : -1);
-    }
+    else if (c && !strcmp(c, "warn_load")) dsl_saves_test_answer(1);     /* the game-save warning answered Load */
+    else if (c && !strcmp(c, "warn_cancel")) dsl_saves_test_answer(0);   /* ... answered Cancel */
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
     json_free(j);
@@ -897,6 +938,7 @@ void dsl_frame_hook(void) {
     prewarm_frame();
     world_frame();
     k_frame();
+    dsl_saves_frame();
     test_frame();
     dsl_rows_frame();
     dsl_update_frame();
@@ -904,13 +946,11 @@ void dsl_frame_hook(void) {
     dsl_progress_frame();
 }
 
-/* the game's language changed (dsl_ui.c tick, after the kit renewed its fonts): mod texts, the title buttons of the
-   loader ("Mods", "Import a save"), an open Mods window built again */
-void dsl_cloud_lang_changed(void);
+/* the game's language changed (dsl_ui.c tick, after the kit renewed its fonts): mod texts, the loader's title button
+   ("Mods"), an open Mods window built again */
 void dsl_reg_lang_changed(void) {
     if (mods_scanned) mods_lang();
     if (dsl_ui_kit()) dsl_ui_title_add("loader", TR("Mods"), 100, NULL, on_title_mods, NULL);
-    dsl_cloud_lang_changed();
     if (dsl_win_relang) dsl_win_relang();
 }
 static const char *data_dir_get(void) {                 /* for modules: in the form their own fopen opens */

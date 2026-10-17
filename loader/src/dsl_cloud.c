@@ -1,6 +1,7 @@
-// Modded saves: Steam Cloud backup + import from the game (owner 2026-10-16, item 7 option d).
-// The modded saves stay in <DSML_DATA>/Saves (never the game's own folder, so the game started from Steam never lists
-// them). This file:
+// Modded saves: Steam Cloud backup (owner 2026-10-16, item 7 option d).
+// The modded-only saves stay in <DSML_DATA>/Saves (never the game's own folder, so the game started from Steam never lists
+// them). The player's game saves are played in place from the game's own folder (dsl_saves.c): they are the game's
+// Auto-Cloud files and this file never touches them. This file:
 //   cloud   a background thread copies them to the player's Steam Cloud through ISteamRemoteStorage (the game's own
 //           steam_api, same app id), remote names "dsmodded_<file>". The game's own Auto-Cloud files (Saves/*.json of
 //           its folder) are never read, written or deleted; neither is any remote name without our prefix.
@@ -10,9 +11,7 @@
 //           Space: an upload only when the cloud keeps max(1 GB, 20 x the game's own use) free after it and our files
 //           stay at most CLOUD_MAX_FILES (app quota 10 GB / 700 files, appinfo ufs); else no upload, one status line.
 //           State: <DSML_DATA>/Mods/cloud_state.tsv (name, local mtime, local size, remote time at the last sync).
-//   import  the title button "Import a save" offers the worlds of the game's own save folder (DSML_GAME_SAVES, set by the
-//           start part) and imports (copies) one world's saves into the modded saves. The game's file is only read.
-// Env: DSML_DATA (required), DSML_GAME_SAVES (import), DSL_CLOUD=0 (cloud off), DSL_CLOUD_API=<library> (tests: a fake
+// Env: DSML_DATA (required), DSL_CLOUD=0 (cloud off), DSL_CLOUD_API=<library> (tests: a fake
 // steam_api instead of the game's), DSL_CLOUD_EVERY=<seconds between passes, default 30>.
 #include "dsl_internal.h"
 #include "dsl_menu.h"
@@ -42,7 +41,7 @@
 #define MIN_FREE 1000000000ULL
 #define MAXF 512
 
-static char saves_d[1100], mods_d[1100], state_p[1200], backups_d[1200], game_saves[1100];
+static char saves_d[1100], mods_d[1100], state_p[1200], backups_d[1200];
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 /* the status is kept as a code + its numbers (set on the cloud thread) and made into text by whoever shows it (main
    thread, in the game's language; dsl_cloud_status). The log line stays English. */
@@ -393,165 +392,17 @@ static void *cloud_thread(void *arg) {
     return NULL;
 }
 
-/* ------------------------------------------------------------------ import (Mods window tab "Saves") */
-typedef struct { char guid[40], clan[64], when[24]; int n; } World;
-static World W[64]; static int nW;
-static char import_msg[512];
-static void header_str(const char *h, const char *key, char *out, size_t cap) {
-    out[0] = 0; char k[64]; snprintf(k, sizeof k, "\"%s\"", key);
-    const char *p = h ? strstr(h, k) : NULL; if (!p) return;
-    p = strchr(p + strlen(k), ':'); if (!p) return; p = strchr(p, '"'); if (!p) return; p++;
-    size_t i = 0; while (p[i] && p[i] != '"' && i + 1 < cap) { out[i] = p[i]; i++; } out[i] = 0;
-}
-/* the save's "CampaignSaveHeader" block: read in 256 KB steps, stopped once the block is in (not the whole file) */
-int dsl_cloud_header_bytes;                                              /* bytes read for headers (test) */
-static int file_header(const char *dir, const char *f, char *guid, char *clan, char *when) {
-    char p[1400]; snprintf(p, sizeof p, "%s/%s", dir, f);
-    guid[0] = clan[0] = when[0] = 0;
-    FILE *fp = fopen(p, "rb"); if (!fp) return 0;
-    enum { STEP = 256 << 10, KEEP = 4096 };
-    char *b = malloc(STEP + KEEP + 1); size_t have = 0; const char *h = NULL; int ok = 0;
-    while (b) {
-        size_t r = fread(b + have, 1, STEP, fp); dsl_cloud_header_bytes += (int)r; have += r; b[have] = 0;
-        if (!h && (h = strstr(b, "\"CampaignSaveHeader\""))) {              /* the block start; read on until its end is in */
-            size_t at = (size_t)(h - b); memmove(b, h, have - at); have -= at;
-            if (have > KEEP) have = KEEP;                                    /* the block is small: its first 4 KB */
-            b[have] = 0; h = b;
-        }
-        if (h && (strstr(h, "\"SaveTime\"") || !r)) {
-            header_str(h, "CampaignGuid", guid, 40); header_str(h, "ClanName", clan, 64); header_str(h, "SaveTime", when, 24);
-            ok = strlen(guid) == 36; break;
-        }
-        if (!r) break;
-        if (!h && have > KEEP) { memmove(b, b + have - KEEP, KEEP); have = KEEP; }   /* the key may span two reads */
-    }
-    free(b); fclose(fp); return ok;
-}
-/* "__AutoSave_<32 hex>_": the world's guid is in the name; 0 = no guid in the name (a manual save: read its header) */
-static int name_guid(const char *f, char *g) {
-    const char *a = strstr(f, "__AutoSave_"); if (!a) return 0;
-    const char *h = a + 11;
-    for (int i = 0; i < 32; i++) if (!h[i] || !strchr("0123456789abcdefABCDEF", h[i])) return 0;
-    snprintf(g, 40, "%.8s-%.4s-%.4s-%.4s-%.12s", h, h + 8, h + 12, h + 16, h + 20);
-    for (char *c = g; *c; c++) if (*c >= 'A' && *c <= 'F') *c += 32;
-    return 1;
-}
-static void scan_game(void) {
-    nW = 0; DIR *d = game_saves[0] ? opendir(game_saves) : NULL; struct dirent *de; if (!d) return;
-    while ((de = readdir(d))) {
-        if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
-        char g[40], c[64], w[24]; if (!file_header(game_saves, de->d_name, g, c, w)) continue;
-        int i = 0; while (i < nW && strcmp(W[i].guid, g)) i++;
-        if (i == nW) { if (nW == 64) continue; nW++; memset(&W[i], 0, sizeof W[i]); snprintf(W[i].guid, 40, "%s", g); snprintf(W[i].clan, 64, "%s", c); }
-        W[i].n++; if (strcmp(w, W[i].when) > 0) snprintf(W[i].when, 24, "%s", w);
-    }
-    closedir(d);
-}
-/* copy every save of world g from the game's folder into the modded saves. A modded save of the same name that
-   differs (the world played modded) is never overwritten unless replace = 1; then it is first kept in cloud_backups/
-   (a failed copy stops the import before any write). Returns files copied, -2 = the modded world differs (ask),
-   -1 = error. mwhen (optional) = the modded save's "SaveTime". */
-int dsl_cloud_import(const char *g, int replace, char *mwhen, size_t mcap) {
-    char names[64][256]; int nn = 0, differ = 0, n = 0, bad = 0;
-    DIR *d = game_saves[0] ? opendir(game_saves) : NULL; struct dirent *de; if (!d) return -1;
-    if (mwhen && mcap) mwhen[0] = 0;
-    while ((de = readdir(d)) && nn < 64) {
-        if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
-        char fg[40], c[64], w[24];
-        if (name_guid(de->d_name, fg) && strcasecmp(fg, g)) continue;         /* another world: not even opened */
-        if (!file_header(game_saves, de->d_name, fg, c, w) || strcasecmp(fg, g)) continue;
-        snprintf(names[nn++], 256, "%s", de->d_name);
-    }
-    closedir(d);
-    mkdir(saves_d, 0755);
-    for (int pass = 0; pass < 3; pass++) {                                   /* 0 compare, 1 keep copies, 2 write */
-      if (pass == 1 && differ && !replace) { dsl_log("cloud: import of world %s: %d modded save(s) differ: asking first, nothing written", g, differ); return -2; }
-      if (pass == 2 && bad) { dsl_log("cloud: import of world %s stopped: a copy of the modded save could not be kept, nothing replaced", g); return -1; }
-      for (int i = 0; i < nn; i++) {
-        char s[1400], t[1400]; snprintf(s, sizeof s, "%s/%s", game_saves, names[i]); snprintf(t, sizeof t, "%s/%s", saves_d, names[i]);
-        long a, b; char *x = read_all(s, &a), *y = read_all(t, &b);
-        int same = x && y && a == b && !memcmp(x, y, (size_t)a);
-        if (pass == 0 && y && !same) {
-            differ++;
-            if (mwhen && mcap && !mwhen[0]) { char fg[40], c[64]; file_header(saves_d, names[i], fg, c, mwhen); }
-        }
-        if (pass == 1 && y && !same && backup(names[i], "before-import", NULL, t, NULL, 0)) bad++;
-        if (pass == 2 && x && !same) { if (write_all(t, x, a, 0)) bad++; else n++; }
-        free(x); free(y);
-        if (!x && pass == 0) bad++;
-      }
-    }
-    dsl_log("cloud: import of world %s: %d save(s) copied, %d failed (the game's own files are unchanged)", g, n, bad);
-    return bad ? -1 : n;
-}
-
-/* title button "Import a save" -> the game's notice box, one world at a time: Import / Next (Close on the last) */
-static int cur;
-static void ask(void);
-static void on_replace(void *ud, DSLObj w);
-static void done_box(const char *msg) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(msg, TR("OK"), NULL, NULL, NULL, NULL); }
-static void import_now(int replace) {
-    char mw[24];
-    int n = dsl_cloud_import(W[cur].guid, replace, mw, sizeof mw);
-    if (n == -2) {
-        const DSLUi *u = dsl_ui_kit(); if (!u) return;
-        char t[900];
-        snprintf(t, sizeof t, TR("Your modded saves already have %s (last saved %s), with its own progress. Replace it with the "
-                 "game's %s (last saved %s)?\n\nYour modded %s is kept as a copy in:\n%s"),
-                 W[cur].clan, mw[0] ? mw : "?", W[cur].clan, W[cur].when, W[cur].clan, backups_d);
-        dsi_utf8_fix_end(t);
-        u->notice(t, TR("Replace"), TR("Keep mine"), on_replace, NULL, NULL);
-        return;
-    }
-    if (n < 0) snprintf(import_msg, sizeof import_msg, TR("Could not import %s. The details are in dsload.log."), W[cur].clan);
-    else if (n == 0) snprintf(import_msg, sizeof import_msg, TR("%s is already in your modded saves."), W[cur].clan);
-    else snprintf(import_msg, sizeof import_msg, TRN("%s imported (%d save). You can open it from Load Campaign.", "%s imported (%d saves). You can open it from Load Campaign.", n), W[cur].clan, n);
-    dsi_utf8_fix_end(import_msg);
-    done_box(import_msg);
-}
-static void on_replace(void *ud, DSLObj w) { (void)ud; (void)w; if (cur >= 0 && cur < nW) import_now(1); }
-static void on_import(void *ud, DSLObj w) { (void)ud; (void)w; if (cur >= 0 && cur < nW) import_now(0); }
-static void on_next(void *ud, DSLObj w) { (void)ud; (void)w; if (++cur < nW) ask(); }
-static void ask(void) {
-    const DSLUi *u = dsl_ui_kit(); if (!u || cur >= nW) return;
-    char t[1024], st[300]; dsl_cloud_status(st, sizeof st);
-    snprintf(t, sizeof t, TRN("Import %s from the game? (%d save, last saved %s)\n\nThis copies the world. The game's own save is not "
-             "changed, and your modded saves never show up in the game's Load list.%s%s",
-                              "Import %s from the game? (%d saves, last saved %s)\n\nThis copies the world. The game's own save is not "
-             "changed, and your modded saves never show up in the game's Load list.%s%s", W[cur].n),
-             W[cur].clan, W[cur].n, W[cur].when, cur == 0 ? "\n\n" : "", cur == 0 ? st : "");
-    dsi_utf8_fix_end(t);
-    u->notice(t, TR("Import"), cur + 1 < nW ? TR("Next world") : TR("Close"), on_import, on_next, NULL);
-}
-static void on_title(void *ud) {
-    (void)ud; scan_game(); cur = 0;
-    if (!nW) { char st[300], t[500]; dsl_cloud_status(st, sizeof st);
-               snprintf(t, sizeof t, "%s\n\n%s", game_saves[0] ? TR("No saves found in the game's own save folder.") : TR("The game's save folder is not known here."), st);
-               dsi_utf8_fix_end(t);
-               done_box(t); return; }
-    ask();
-}
-
-/* the title button "Import a save" (registered again after a language change: the kit relabels it) */
-static DSLHost *title_host;
-static void title_button(DSLHost *host) {
-    title_host = host;
-    host->title_add_button(NULL, TR("Import a save"), 110, TR("Copy a world from the game's own saves into your modded saves. The game's save is not changed."), on_title, NULL);
-}
-void dsl_cloud_lang_changed(void) { if (title_host && title_host->title_add_button) title_button(title_host); }
-/* after il2cpp_init (the title button) and before the game's Steam start (the thread waits for it) */
+/* after il2cpp_init and before the game's Steam start (the thread waits for it) */
 void dsl_cloud_install(DSLHost *host) {
+    (void)host;
     const char *d = getenv("DSML_DATA");
     if (!d || !*d) { dsl_log("cloud: off (no DSML_DATA)"); return; }
     snprintf(saves_d, sizeof saves_d, "%s/Saves", d); snprintf(mods_d, sizeof mods_d, "%s/Mods", d);
     snprintf(state_p, sizeof state_p, "%s/cloud_state.tsv", mods_d); snprintf(backups_d, sizeof backups_d, "%s/cloud_backups", mods_d);
-    const char *g = getenv("DSML_GAME_SAVES"); if (g && *g) snprintf(game_saves, sizeof game_saves, "%s", g);
     mkdir(mods_d, 0755);
-    if (host && host->title_add_button)                       /* the Mods window shows only mods (owner 2026-10-16 #14) */
-        title_button(host);
     const char *off = getenv("DSL_CLOUD");
     if (off && !strcmp(off, "0")) { set_status(CS_OFF_ENV, 0, NULL); return; }
     pthread_t th; if (pthread_create(&th, NULL, cloud_thread, NULL)) { dsl_log("cloud: thread failed"); return; }
     pthread_detach(th);
-    dsl_log("cloud: on (%s -> Steam Cloud " PFX "*, import from %s)", saves_d, game_saves[0] ? game_saves : "(none)");
+    dsl_log("cloud: on (%s -> Steam Cloud " PFX "*)", saves_d);
 }

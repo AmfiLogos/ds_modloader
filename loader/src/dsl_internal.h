@@ -83,6 +83,11 @@ void dsl_frame_hook(void);                               /* dsl_reg.c: every fra
 /* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
    row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
 struct DSLHost; void dsl_cloud_install(struct DSLHost *host);   /* dsl_cloud.c: after dsl_reg_ready */
+/* dsl_saves.c: the game's own save folder listed and played in place next to the modded saves */
+void dsl_saves_install(void);                            /* after il2cpp_init, before dsl_cloud_install */
+int dsl_saves_is_game(const char *save_name);            /* 1 = a save of the game's own folder */
+void dsl_saves_loading(const char *save_name, const char *guid);   /* dsl_world.c: a load with its world guid */
+int dsl_saves_load_gate(const char *save_name);          /* dsl_world.c: 1 = hold this load (save warning first) */
 void dsl_rows_install(void);                             /* after dsl_ui_install */
 void dsl_rows_frame(void);                               /* from dsl_frame_hook */
 int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
