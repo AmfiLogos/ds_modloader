@@ -8,6 +8,8 @@
 // of a file inside the game's own StreamingAssets with the same CRC, size and modification time passes CRC 0.
 // Any difference (another file, a mod's replaced bundle, a new game build) = the game's normal CRC check.
 // Off: DSL_FASTBOOT=0, an unknown game build, or other first bytes at the hooked method than this build's.
+// A mod that hooks the same method (Hell difficulty swaps the table bundle there) gets it: fast boot unhooks itself for the
+// rest of this process (dsl_fastboot_yield, called by the module hook calls of dsl_main.c) and every load is checked again.
 #include "dsl_internal.h"
 #include "dsl_os.h"
 #include <stdio.h>
@@ -30,7 +32,8 @@ static const struct { const char *build, *plat, *bytes; } SITE[] = {          /*
 typedef struct { char rel[160]; uint32_t crc; long long size, mtime; } Rec;
 static Rec *recs; static int nrec, caprec;
 static char tsv[1400], sa[1100]; static size_t sa_n;               /* record file; StreamingAssets prefix ('/' only) */
-static int on, skipped, checked;
+static int on, skipped, checked, yielded;
+static void *site;                                                    /* the hooked LoadFromFileAsync_Internal */
 static Obj (*o_load)(Obj, uint32_t, uint64_t, const void *);
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);   /* Unity 6: pointer-size handles */
 static _Bool (*is_done)(Obj, const void *); static Obj (*get_bundle)(Obj, const void *);
@@ -131,7 +134,15 @@ void dsl_fastboot_install(const char *logdir) {
     if (dsl_hook(DSL_OWNER_LOADER, a, (void *)my_load, (void **)&o_load, "loader fastboot AssetBundle.LoadFromFileAsync_Internal")) {
         dsl_log("fastboot: off (hook refused)"); return;
     }
-    on = 1;
+    on = 1; site = a;
     dsl_log("fastboot: bundle CRC skip on (%d bundle(s) checked before, %s)", nrec, tsv);
 }
-int dsl_fastboot_stats(int *n_skipped, int *n_checked) { if (n_skipped) *n_skipped = skipped; if (n_checked) *n_checked = checked; return on; }
+/* a module is about to hook <target>: when it is fast boot's method, fast boot unhooks so the module's hook is armed there
+   (the engines allow one hook per method). Loads already checked are still recorded by dsl_fastboot_tick. */
+void dsl_fastboot_yield(void *target, const char *who) {
+    if (!on || yielded || !target || target != site) return;
+    if (dsl_unhook(DSL_OWNER_LOADER, site, "loader fastboot AssetBundle.LoadFromFileAsync_Internal")) return;
+    yielded = 1;
+    dsl_log("fastboot: off for this start: %s hooks AssetBundle.LoadFromFileAsync_Internal too (every bundle gets the game's CRC check)", who);
+}
+int dsl_fastboot_stats(int *n_skipped, int *n_checked) { if (n_skipped) *n_skipped = skipped; if (n_checked) *n_checked = checked; return on && !yielded; }
