@@ -5,7 +5,7 @@
   zip       a mod zip with a non-ASCII name (gcd-cdr) dropped into <root>\\mods: the starter unpacks it
   start     starter, -batchmode: title, save folder = <root>\\profiles\\modded\\data
   soft      soft restart at the title (DSL_SOFT_TEST apply request) to a set with the new mod on: B shown, mod loaded in B
-  save      a fresh start imports one world (test request) and loads a world and saves it (save_file request): the file is under <root>\\profiles\\modded\\data\\Saves
+  save      a fresh start loads a world and saves it (save_file request): the file is under <root>\\profiles\\modded\\data\\Saves
 usage: nonascii_test.py <kit dir> <mod folder>   (kit of build_win.sh with MODS=<multiplayer module>; mod folder = a
 Windows build of gcd-cdr, e.g. build_mods.sh output win/gcd-cdr)"""
 import json, os, re, shutil, signal, socket, subprocess, sys, time, zipfile
@@ -107,19 +107,11 @@ def run(kit, mod):
     port = PORT
     saves = f"{P}/data/Saves"
     before = {f: os.path.getmtime(f"{saves}/{f}") for f in os.listdir(saves)} if os.path.isdir(saves) else {}
-    # import: one world's saves moved out of the modded saves, then imported back from the game's own folder at start
-    imp = sorted(f for f in os.listdir(saves) if f.startswith("MoonlightBrigade__AutoSave_"))
-    g = re.search(r"_([0-9a-f]{32})_", imp[0]).group(1) if imp else ""
-    guid = f"{g[:8]}-{g[8:12]}-{g[12:16]}-{g[16:20]}-{g[20:]}" if g else ""
-    os.makedirs(f"{P}/old_test", exist_ok=True)
-    for f in imp: os.replace(f"{saves}/{f}", f"{P}/old_test/{f}")
     t0 = time.time()
     subprocess.run(["nice", "-n", "19", f"{C}/wine", "--bottle", "DSMP", "--no-wait", WROOT + "\\Dungeon Settlers Modded.exe",
                     "-batchmode", "-nographics"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ok = wait(lambda: (lambda s: s if s.get("boot_ready") and s.get("scene") == 1 and not s.get("busy") else None)(status(port)), 150)
     if ok:
-        request({"cmd": "import", "guid": guid})                 # the title's "Import a save" (test request channel)
-        wait(lambda: "reg test: import" in read(f"{P}/dsload.log"), 30)
         log("load", cmd({"cmd": "load_save", "name": SAVE}, port))
         wait(lambda: (lambda s: s if s.get("scene") == 2 and not s.get("busy") else None)(status(port)), 150)
         time.sleep(5)
@@ -131,9 +123,6 @@ def run(kit, mod):
     new = wait(written, 90)
     check("save: a save file written under " + NAME, new, str(new))
     c_log = read(f"{P}/dsload.log")
-    m = re.search(r"reg test: import \S+: (-?\d+)", c_log)
-    check("import: the world's saves copied back under " + NAME, m and int(m.group(1)) >= 1 and all(os.path.isfile(f"{saves}/{f}") for f in imp),
-          m.group(0) if m else "no import line")
     wj = read(f"{P}/data/Mods/worlds.json")
     check("worlds.json: read at the load, written with the world", "could not be read" not in c_log and "not readable" not in c_log and re.search(r"world check: .*allowed", c_log)
           and "f816ebc6-195c-432c-9fff-754b75ee3738" in wj, (re.findall(r"world check: [^\n]*", c_log) or [""])[0][:120])

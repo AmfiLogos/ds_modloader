@@ -57,6 +57,7 @@ for m in ${=MODS}; do cp -R $m $K/files/mods/; done
 ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $K/files/baselib.dll "$K/files/Dungeon Settlers Modded.exe"   # no build paths
 for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt $K/files/RELEASE; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
 echo "kit $K: $(ls $K/files/mods | tr '\n' ' ')"
+python3 $L/modules/scan_saves.py $K || { echo "build_win: player data inside the kit (a save or a player file in MODS?)" >&2; exit 1; }   # owner 2026-10-16: no saves in what ships
 
 # the friend zip: one folder "Dungeon Settlers Modded" inside
 Z="$O/Dungeon Settlers Modded - Windows.zip"; [[ -f "$Z" ]] && mv "$Z" "$O/old/$(date +%Y%m%d-%H%M%S) ${Z:t}"

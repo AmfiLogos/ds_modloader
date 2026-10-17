@@ -10,6 +10,7 @@ for f in install.bat files/find_game.bat files/baselib.dll "files/Dungeon Settle
   [[ -f $KIT/$f ]] || { echo "kit $KIT: no $f (run build_win.sh first)" >&2; exit 1; }
 done
 [[ -n $(ls $KIT/files/mods 2>/dev/null) ]] || { echo "kit $KIT: no mods in files/mods (build_win.sh with MODS=...)" >&2; exit 1; }
+python3 $L/modules/scan_saves.py $KIT || { echo "kit $KIT: player data inside (owner 2026-10-16: no saves in what ships)" >&2; exit 1; }
 mkdir -p $O/old; [[ -f $OUT ]] && mv $OUT $O/old/$(date +%Y%m%d-%H%M%S)-${OUT:t}
 nice -n 19 $MK -V2 -DKIT=$KIT -DOUT=$OUT.tmp -DVER=$VER -DICON=${I:h}/icon/dsmodded.ico $I/dsmodded.nsi
 mv -f $OUT.tmp $OUT

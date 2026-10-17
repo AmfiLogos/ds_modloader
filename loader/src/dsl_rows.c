@@ -61,6 +61,9 @@ static void *(*obj_class)(Obj);
 static Obj t_slv, t_cs;
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
 static int32_t mf_handler = -1;
+static int32_t o_parent = -1;                            /* SaveLoadView._saveSlotParent (groups_apply) */
+static void (*set_sib)(Obj t, int i, const void *mi);
+static int (*get_sib)(Obj t, const void *mi);
 
 static void *cls(const char *ns, const char *n) { void *c = dsl_find_class(ns, n); if (!c) dsl_log("rows: class %s.%s missing", ns, n); return c; }
 static int32_t fo(void *k, const char *n) { int32_t o = k ? dsl_field_offset(k, n) : -1; if (o < 0) dsl_log("rows: field %s missing", n); return o; }
@@ -79,6 +82,9 @@ void dsl_rows_install(void) {
     comp_go = ma(kComp, "get_gameObject", 0); comp_tr = ma(kComp, "get_transform", 0);
     go_tree = ma(kGo, "get_activeInHierarchy", 0); go_self = ma(kGo, "get_activeSelf", 0); go_set = ma(kGo, "SetActive", 1);
     refresh_size = ma(k_slv, "RefreshPanelSize", 0);
+    o_parent = fo(k_slv, "_saveSlotParent");                               /* the list's rows (groups_apply) */
+    void *kTr = cls("UnityEngine", "Transform");
+    set_sib = ma(kTr, "SetSiblingIndex", 1); get_sib = ma(kTr, "GetSiblingIndex", 0);
     rt_rect = ma(cls("UnityEngine", "RectTransform"), "get_rect", 0);
     void *kh = cls("Refactor.Main.Event", "CampaignLoadingEventHandler"); try_header = ma(kh, "TryGetSaveHeader", 3);
     void *kmf = cls("Refactor.Main", "MainFlow"); mf_handler = fo(kmf, "_eventHandler");
@@ -127,7 +133,7 @@ static const char *guid_of_save(const char *name) {
 
 /* ------------------------------------------------------------------ the open list */
 #define MAXW 64
-typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid; } WRow;
+typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid, game; } WRow;
 static WRow W[MAXW]; static int nw;
 static uintptr_t h_slv; static uint32_t sig_last; static int list_open;
 static DSLObj band;                                     /* our toggles' strip */
@@ -194,6 +200,7 @@ static void build_rows(Obj slv) {
             const char *g = guid_of_save(w->save); if (g) snprintf(w->guid, sizeof w->guid, "%s", g);
         }
         if (!w->guid[0]) continue;                                         /* a world row with no save (new save slot only) */
+        w->game = dsl_saves_is_game(w->save);                              /* one of the player's game saves (dsl_saves.c) */
         world_name(cs, w->name, sizeof w->name);
         w->cs = gc_new(cs, 0); nw++;
     }
@@ -325,6 +332,43 @@ static void toggles_build(Obj slv) {
     }
 }
 
+/* two groups (owner 2026-10-17): the player's game saves (played in place, also in the normal game) first, then the
+   worlds only this game has (multiplayer, worlds started here). One header line above each group, in the look of the
+   multiplayer pages' section headers (title font 20, gold). The rows are only moved (Transform.SetSiblingIndex) inside
+   the list's own layout (SaveLoadView._saveSlotParent); no game save on the list = the list as before, no header. */
+static DSLObj hdr[2];
+int dsl_rows_groups[2];                                  /* test: rows shown per group at the last rebuild */
+static void groups_apply(Obj slv) {
+    const DSLUi *u = dsl_ui_kit();
+    int n[2] = { 0, 0 };
+    for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs) && !W[i].hid && shown(cs)) n[W[i].game ? 0 : 1]++; }
+    int any_game = 0; for (int i = 0; i < nw; i++) any_game |= W[i].game;
+    Obj content = o_parent >= 0 ? AT(slv, o_parent, Obj) : NULL;
+    static int said;
+    int ok = u && set_sib && get_sib && live(content);
+    if (!ok && !said++) dsl_log("rows: groups off (list layout not found)");
+    for (int k = 0; k < 2; k++) if (hdr[k] && !live((Obj)hdr[k])) hdr[k] = NULL;
+    if (!ok || !any_game) { for (int k = 0; k < 2; k++) if (hdr[k]) u->set_active(hdr[k], 0); dsl_rows_groups[0] = dsl_rows_groups[1] = 0; return; }
+    const char *lb[2] = { TR("Game saves: also in Dungeon Settlers"), TR("Modded saves: only in Dungeon Settlers Modded") };
+    float wd = rt_rect ? rt_rect(content, NULL).w : 600; if (wd < 100) wd = 600;
+    for (int k = 0; k < 2; k++) {
+        if (!hdr[k]) hdr[k] = u->text(content, 0, 0, wd - 24, 34, lb[k], 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF);
+        else u->set_text(hdr[k], lb[k]);
+        if (hdr[k]) u->set_active(hdr[k], n[k] > 0);
+    }
+    int base = 1 << 30;                                                     /* the first row's place in the list */
+    for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs)) { int s = get_sib(comp_tr(cs, NULL), NULL); if (s < base) base = s; } }
+    for (int k = 0; k < 2; k++) if (hdr[k]) { int s = get_sib((Obj)hdr[k], NULL); if (s < base) base = s; }
+    if (base == 1 << 30) return;
+    int at = base;
+    for (int k = 0; k < 2; k++) {
+        if (hdr[k]) set_sib((Obj)hdr[k], at++, NULL);
+        for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs) && W[i].game == !k) set_sib(comp_tr(cs, NULL), at++, NULL); }
+    }
+    refresh_size(slv, NULL);
+    dsl_rows_groups[0] = n[0]; dsl_rows_groups[1] = n[1];
+}
+
 /* the New Campaign line */
 static DSLObj nc_line, nc_btn; static uintptr_t h_cs;
 static void nc_click(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("rows: New Campaign [Change]"); dsl_newworld_change(); }
@@ -361,8 +405,10 @@ void dsl_rows_frame(void) {
         build_rows(slv);
         filters_apply(slv);
         decorate();
+        groups_apply(slv);
         sig_last = list_sig(slv);
         int hidden = 0; for (int i = 0; i < nw; i++) hidden += W[i].hid;
-        dsl_log("rows: Load list rebuilt: %d world row(s) (%d hidden by filters), %d text source(s), %d filter(s)", nw, hidden, nr, nf);
+        dsl_log("rows: Load list rebuilt: %d world row(s) (%d hidden by filters), %d text source(s), %d filter(s); groups: %d game, %d modded",
+                nw, hidden, nr, nf, dsl_rows_groups[0], dsl_rows_groups[1]);
     }
 }

@@ -116,3 +116,6 @@ echo "dsml VERSION $(cat "$APP/Contents/Resources/dsml/VERSION")"
 # gate G12: no user name anywhere in what ships (every file of the zip: bytes, UTF-8, UTF-16LE)
 python3 "$REPO/loader/modules/scan_names.py" "$USER" "$Z" > "$OUTDIR/name_scan.txt" || { cat "$OUTDIR/name_scan.txt"; die "the user name is inside $Z"; }
 echo "name scan: $(tail -1 "$OUTDIR/name_scan.txt")"
+# no save or player file in what ships (owner 2026-10-16)
+python3 "$REPO/loader/modules/scan_saves.py" "$Z" > "$OUTDIR/save_scan.txt" || { cat "$OUTDIR/save_scan.txt"; die "player data inside $Z"; }
+echo "save scan: $(tail -1 "$OUTDIR/save_scan.txt")"

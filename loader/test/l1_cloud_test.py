@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Modded saves backup + import in the real game (owner v13 item 7, option d), on test copy K (hidden, muted, staged;
+"""Modded saves backup in the real game (owner v13 item 7, option d), on test copy K (hidden, muted, staged;
 take a lease first: rig.py lease <lane> --pid). Uses this worktree's build/. The cloud is FAKE (test/cloud/fake_steam_api.c,
 a folder under <out>): the real Steam Cloud is never read or written. The owner's save folder: hash before/after.
  1. the loader's cloud thread uploads the copy's modded save as dsmodded_<name> (same bytes) while the game runs
  2. a file the "game" owns in the fake cloud (no prefix) stays as it is
- 3. the title has "Import a save" (the import itself: test/cloud/run.sh) - screenshot
 Output: <out>/ (logs, shots, summary.json)."""
 import json, os, sys, time, glob, shutil, signal, subprocess, threading, hashlib
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -45,7 +44,7 @@ def main():
     S = {'violations': T.violations, 'checks': T.checks}
     try:
         T.start_a(enabled=('gcd-cdr', 'multiplayer'), extra_env={'DSL_UI_TEST': V.UI, 'DSL_CLOUD_API': fake, 'FAKE_CLOUD_DIR': cloud,
-                                                                   'DSL_CLOUD_EVERY': '3', 'DSML_GAME_SAVES': gsaves})
+                                                                   'DSL_CLOUD_EVERY': '3'})
         T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'A title')
         local = os.path.join(T.I, 'data', 'Saves', T.SAVE + '.json'); remote = os.path.join(cloud, 'dsmodded_' + T.SAVE + '.json')
         t0 = time.time()
@@ -56,11 +55,6 @@ def main():
               os.path.exists(remote) and open(remote, 'rb').read() == open(local, 'rb').read(), S['cloud_files'])
         check("the game's own cloud file untouched", open(os.path.join(cloud, 'Game_own_file.json')).read() == 'the game auto-cloud file')
         check('status line logged', T.wait_log('cloud: Cloud backup: ', 20))
-        mark = len(T.dlog()); T.request({'cmd': 'title'})
-        m = V.wait_line(r'reg test: title (.*)', mark, 10)
-        S['title'] = m.group(1) if m else None
-        check('title column has "Import a save" under Mods', m is not None and 'Import a save' in m.group(1), S['title'])
-        T.shot('title')
     except Exception as e:
         check('run finished', False, repr(e))
     finally:

@@ -42,3 +42,5 @@ mkdir -p ${OUT:h}/old; mv $OUT/.stage ${OUT:h}/old/packages-stage-$(date +%Y%m%d
 # what ships: no user name, no build path (the same scan as the friend zips)
 python3 $PWD/scan_names.py "$USER" $OUT/*.zip > $OUT/name_scan.txt || { cat $OUT/name_scan.txt; echo "package_mods: the user name is inside a package" >&2; exit 1; }
 tail -1 $OUT/name_scan.txt; mkdir -p ${OUT:h}/old; mv $OUT/name_scan.txt ${OUT:h}/old/packages_name_scan.txt
+# and no save or player file (owner 2026-10-16)
+python3 $PWD/scan_saves.py $OUT/*.zip || { echo "package_mods: player data inside a package" >&2; exit 1; }

@@ -47,6 +47,15 @@ static void guid_text(const uint8_t *b, char *out) {
              *(const uint32_t*)b, *(const uint16_t*)(b + 4), *(const uint16_t*)(b + 6), b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
 }
 
+/* a game save with save_dependent mods that did not come through the load request (dsl_saves.c asks there first):
+   refused like a world of other mods; the question "Load / Cancel" follows over the stock box, Load loads it again */
+static void *gate(void *self, void *it, const char *nm) {
+    if (!dsl_saves_load_gate(nm)) return it;
+    dsl_log("world check: %s held: the save warning asks first", nm);
+    if (it) *(int32_t*)((char*)it + 0x10) = -2;
+    if (cancel_notice && str_new) cancel_notice(self, str_new(TR("This world is one of your game saves.")), str_new("dsload: save warning first"), NULL);
+    return it;
+}
 static void *my_load(void *self, void *name, const void *mi) {
     void *it = orig_load(self, name, mi);
     char nm[256]; str_ascii(name, nm, sizeof nm);
@@ -71,10 +80,11 @@ static void *my_load(void *self, void *name, const void *mi) {
     uint8_t hdr[0x100] = {0}; void *set = NULL;
     if (!try_header || !try_header(self, name, hdr, &set, NULL)) { dsl_log("world check: no header for %s: the game handles it", nm); json_free(s); return it; }
     char g[40]; guid_text(hdr, g);
+    dsl_saves_loading(nm, g);                                            /* a game world: its next saves go to the game's folder */
     JNode *worlds = json_get(s, "worlds"), *w = NULL;
     if (worlds && worlds->t == JN_OBJ) for (JNode *c = worlds->child; c; c = c->next) if (c->key && !strcasecmp(c->key, g)) w = c;
-    if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return it; }
-    if (mine && dsl_key_same(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return it; }
+    if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return gate(self, it, nm); }
+    if (mine && dsl_key_same(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, w->str, mine ? mine : "?");
     int in_world = dsl_reg_scene() == 2;
     if (!in_world) dsl_world_mismatch(nm, g, w->str);   /* asks "Load it with them?" (flow K, dsl_reg.c) */

@@ -666,7 +666,8 @@ static void on_il2cpp_ready(const char *via) {
     if (dsl_il2cpp_bind()) dsl_log("il2cpp exports missing: name lookups will fail");
     dsl_soft_install();
     dsl_reg_ready(&host);                                            /* kit, rows, title "Mods": before the modules' init */
-    dsl_cloud_install(&host);                                        /* modded saves: Steam Cloud backup, "Saves" tab */
+    dsl_saves_install();                                             /* the game's own saves in the Load list, played in place */
+    dsl_cloud_install(&host);                                        /* modded-only saves: Steam Cloud backup */
     run_init();
     dsl_reg_after_init();
     write_modset();

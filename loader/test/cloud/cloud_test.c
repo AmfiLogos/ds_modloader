@@ -19,7 +19,7 @@ const void *dsl_ui_kit(void) { return NULL; }
 void *dsl_os_dlopen(const char *p) { return dlopen(p, RTLD_NOW); }
 void *dsl_os_dlsym(void *h, const char *n) { return dlsym(h, n); }
 struct DSLHost; void dsl_cloud_install(struct DSLHost *h); int dsl_cloud_pass(void); int dsl_cloud_test_bind(void);
-void dsl_cloud_status(char *o, size_t n); int dsl_cloud_import(const char *g, int replace, char *mw, size_t mc);
+void dsl_cloud_status(char *o, size_t n);
 extern int dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
 static char T[600]; static int fails, oks;
 static void check(const char *what, int ok) { printf("%s %s\n", ok ? "ok  " : "FAIL", what); ok ? oks++ : fails++; }
@@ -81,25 +81,6 @@ int main(int argc, char **argv) {
     printf("    status: %s\n", s);
     unsetenv("FAKE_GAME_USE"); unsetenv("FAKE_QUOTA_TOTAL"); dsl_cloud_pass();
     check("A: uploaded once there is room", has(q));
-    puts("== 8 import a world from the game's folder: a copy, the original unchanged");
-    sprintf(p, "%s/gamesaves", T); mkdir(p, 0755); setenv("DSML_GAME_SAVES", p, 1);
-    sprintf(p, "%s/gamesaves/Elf__AutoSave_abc_0.json", T);
-    put(p, "{\"x\":1,\"CampaignSaveHeader\":{\"CampaignGuid\":\"f816ebc6-195c-432c-9fff-754b75ee3738\",\"ClanName\":\"Elven\",\"SaveTime\":\"2026-10-11\"}}", now - 1000);
-    struct stat s0; stat(p, &s0); char before[4096]; strcpy(before, get(p));
-    machine("A"); int n = dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738", 0, NULL, 0);
-    loc("A", "Elf__AutoSave_abc_0.json", q); struct stat s1; stat(p, &s1);
-    check("import copied 1 save", n == 1 && get(q) && !strcmp(get(q), before));
-    check("the game's own save unchanged (content + mtime)", !strcmp(get(p), before) && s0.st_mtime == s1.st_mtime);
-    check("import again: nothing to copy", dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738", 0, NULL, 0) == 0);
-    puts("== 9 audit #1: the world was played modded -> import never overwrites without asking; replace keeps a copy");
-    const char *G = "f816ebc6-195c-432c-9fff-754b75ee3738";
-    put(q, "{\"modded progress\":1,\"CampaignSaveHeader\":{\"CampaignGuid\":\"f816ebc6-195c-432c-9fff-754b75ee3738\",\"ClanName\":\"Elven\",\"SaveTime\":\"2026-10-16\"}}", now - 10);
-    char mw[24] = ""; int b0 = count_backups("A");
-    check("import: modded world differs -> -2 (ask), nothing written", dsl_cloud_import(G, 0, mw, sizeof mw) == -2 && strstr(get(q), "modded progress") && !strcmp(mw, "2026-10-16") && count_backups("A") == b0);
-    { char bd[900], c2[1000]; sprintf(bd, "%s/A/Mods/cloud_backups", T); sprintf(c2, "mkdir -p '%s' && mv '%s' '%s.moved' && touch '%s'", bd, bd, bd, bd); system(c2); }   /* the backup folder cannot be written */
-    check("replace with a failing backup -> -1, modded save unchanged", dsl_cloud_import(G, 1, NULL, 0) == -1 && strstr(get(q), "modded progress"));
-    { char bd[900], c2[2000]; sprintf(bd, "%s/A/Mods/cloud_backups", T); sprintf(c2, "mv '%s' '%s.file' && mv '%s.moved' '%s'", bd, bd, bd, bd); system(c2); }
-    check("replace -> copied, the modded one kept in cloud_backups", dsl_cloud_import(G, 1, NULL, 0) == 1 && !strcmp(get(q), before) && count_backups("A") == b0 + 1);
     puts("== 10 audit #4: a conflict that cannot finish keeps ONE copy, not one per pass");
     machine("B"); loc("B", "Moon.json", p); put(p, "moon B again", now - 60);  /* local change, newer */
     pc("dsmodded_Moon.json", q); put(q, "moon cloud again", now - 120);     /* cloud change, older */
@@ -132,18 +113,6 @@ int main(int argc, char **argv) {
     machine("F"); pc("dsmodded_Keep.json", q); unlink(q);                   /* gone from the cloud ... */
     loc("F", "Keep.json", p); put(p, "keep changed on F", now - 100);       /* ... but F changed it since the sync: upload */
     dsl_cloud_pass(); check("F: changed here since the sync -> uploaded, not moved aside", has(q) && !strcmp(get(q), "keep changed on F"));
-    puts("== 14 review: import reads only the header, and never opens another world's autosaves");
-    { char x[900]; sprintf(x, "%s/gamesaves/Big__AutoSave_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_0.json", T);
-      FILE *f = fopen(x, "w"); for (int i = 0; i < 40000; i++) fputs("{\"filler\":\"0123456789012345678901234567890123456789\"},", f);
-      fputs("\"CampaignSaveHeader\":{\"CampaignGuid\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"ClanName\":\"Big\",\"SaveTime\":\"2026-10-01\"}", f);
-      for (int i = 0; i < 40000; i++) fputs(",{\"after\":\"0123456789012345678901234567890123456789\"}", f);
-      fclose(f); struct stat bs; stat(x, &bs);
-      extern int dsl_cloud_header_bytes; machine("A"); dsl_cloud_header_bytes = 0;
-      dsl_cloud_import("f816ebc6-195c-432c-9fff-754b75ee3738", 0, NULL, 0);
-      check("import of another world: the big autosave is not opened", dsl_cloud_header_bytes < 4096);
-      dsl_cloud_header_bytes = 0; char mw[24]; int ni = dsl_cloud_import("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 0, mw, sizeof mw);
-      printf("    header bytes read %d of a %lld byte file (the copy itself reads it once)\n", dsl_cloud_header_bytes, (long long)bs.st_size);
-      check("its own import: header found without reading the whole file", ni == 1 && dsl_cloud_header_bytes < bs.st_size); }
     printf("== %d ok, %d failed\n", oks, fails);
     return fails != 0;
 }
