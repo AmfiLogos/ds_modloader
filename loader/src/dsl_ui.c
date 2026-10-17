@@ -93,6 +93,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_es_update, *m_tb_init, *m_tb_inter, *m_nv_select, *m_nv_confirm, *m_ui_prefab,
     *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks, *m_scr_w,
     *m_ls_font, *m_ls_mat;                                           /* LanguageSetting.GetFont / GetMaterial (the language's fonts) */
+static void *m_lr_force, *m_cur_perform;                             /* LayoutRebuilder.ForceRebuildLayoutImmediate, CanvasUpdateRegistry.PerformUpdate */
 
 static int32_t f_tb_label = -1, f_tv_btn[7], f_tv_credit = -1, f_nv_text = -1, f_nv_tok = -1, f_nv_tcancel = -1,
                f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1,
@@ -1298,11 +1299,17 @@ static DSLUi KIT = {
 #define TBMAX 16
 typedef struct { char owner[64], label[96], tip[600]; int order, seq; void (*click)(void *); void *ud; uintptr_t h_btn, h_view, h_act; } TBE;
 static TBE tbs[TBMAX]; static int ntbs, tb_seq;
-static uintptr_t h_tview; static int64_t tview_last = -1000;
+static uintptr_t h_tview, h_tview_off; static int64_t tview_last = -1000, tview_fast_until;
 static Obj title_view(void) {
     Obj v = hget(h_tview); if (v) return v;
-    if (frames - tview_last < 30 && tview_last >= 0) return NULL;
-    tview_last = frames; v = find_obj(K.TitleMenuView, 0); hset(&h_tview, v); return v;
+    Obj off = hget(h_tview_off);                                      /* seen while hidden: taken on the frame it shows */
+    if (off && on_tree(off)) { hset(&h_tview, off); hfree(&h_tview_off); return off; }
+    /* every frame before the first title and for a while after a scene change (a new EventSystem): the title found
+       on the frame it shows; else every 30 frames */
+    if (frames - tview_last < 30 && tview_last >= 0 && hget(h_tpl_btn) && frames > tview_fast_until) return NULL;
+    tview_last = frames; v = find_obj(K.TitleMenuView, 0); hset(&h_tview, v);
+    if (!v) hset(&h_tview_off, find_obj(K.TitleMenuView, 1));
+    return v;
 }
 __attribute__((visibility("default")))
 int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud) {
@@ -1420,8 +1427,12 @@ void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
       space above the logo = space below the last button. Too tall for the window: first the outer spaces shrink (to
       BR_MARGIN), then the gaps between the buttons (the column's spacing, 12 in the game, down to BR_SPMIN), then the
       whole menu scales down (logo and column together, never under 0.75). No button is hidden. Measured on the screen
-      every 10 frames (window size, buttons added or hidden), only while the stock title menu shows. A position the
-      game sets again is taken as its new base. */
+      only while the stock title menu shows: at once when the window size or the rows shown change (a sub-page's Back,
+      a module's button), else every 10 frames; the rows placed first (LayoutRebuilder), so the numbers are this
+      frame's. It runs right before the UI is drawn (CanvasUpdateRegistry.PerformUpdate, after every Update and the
+      modules' frame: Multiplayer's Back shows the stock buttons there), so the menu is drawn in its final place on
+      the first frame it shows (owner 2026-10-17: the buttons jumped on Back from Multiplayer). A position the game
+      sets again is taken as its new base. */
 #include "dsl_brand_word.h"
 #define BR_GAP 2.f                                                    /* units between the logo's rect and the word (no version line) */
 #define BR_MARGIN 16.f                                                /* smallest space above the logo / below the last button, units */
@@ -1430,6 +1441,7 @@ void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
 static uintptr_t h_br_view, h_br_logo, h_br_col, h_br_ver, h_br_img, h_br_spr, h_br_tex, h_br_lg;
 static V2 br_logo0, br_col0, br_ver0, br_logo_set, br_col_set, br_ver_set;
 static float br_drop, br_shift, br_sc = 1, br_sp0 = -1, br_sp = -1; static int br_tw, br_th, br_off; static int64_t br_last = -1000;
+static uint32_t br_sig;
 static V2 rt_pos(Obj o) { Obj rt = tr_of(o); return isa(rt, K.RectTransform) && m_rt_getpos ? CALL(m_rt_getpos, V2, Obj)(rt, m_rt_getpos) : (V2){ 0, 0 }; }
 static void rt_setpos(Obj o, V2 p) { Obj rt = tr_of(o); if (isa(rt, K.RectTransform)) CALL(m_rt_pos, void, Obj, V2)(rt, p, m_rt_pos); }
 static void tr_scale(Obj o, float s) { Obj t = tr_of(o); if (t && m_tr_setscale) CALL(m_tr_setscale, void, Obj, V3)(t, (V3){ s, s, 1 }, m_tr_setscale); }
@@ -1484,10 +1496,19 @@ static void brand_frame(void) {
     if (!v2_near(p = rt_pos(col), br_col_set)) { br_col0 = p; moved = 1; }
     if (ver && !v2_near(p = rt_pos(ver), br_ver_set)) { br_ver0 = p; moved = 1; }
     if (moved) { dsl_log("ui: title brand: the game moved the logo / column / version line: placed again"); br_apply(); }
-    if (frames - br_last < 10 || !dsl_ui_title_shown() || !m_scr_h) return;
-    br_last = frames;
+    if (!dsl_ui_title_shown() || !m_scr_h) return;
+    /* what the menu's height depends on: the window, the rows shown, their heights */
+    int n = child_count(col); uint32_t sig = 2166136261u;
+    float sw = screen_w(), shh = (float)CALL0(m_scr_h, int)(m_scr_h);
+    #define BR_MIX(x) do { uint32_t m_; float f_ = (x); memcpy(&m_, &f_, 4); sig = (sig ^ m_) * 16777619u; } while (0)
+    BR_MIX(sw); BR_MIX(shh); BR_MIX((float)n);
+    for (int i = 0; i < n; i++) { Obj c = child_at(col, i); int on = c && on_tree(c); BR_MIX(on ? rt_size(c).y : -1.f); }
+    #undef BR_MIX
+    if (sig == br_sig && frames - br_last < 10) return;
+    br_sig = sig; br_last = frames;
+    if (m_lr_force) CALL(m_lr_force, void, Obj)(tr_of(col), m_lr_force);   /* the rows' places in this frame, not the last one */
     /* measured: the menu's height now (screen pixels) = sc x (fixed part + gaps x spacing), in the parent's units */
-    float rl[4], r[4], bottom = 1e9f; int n = child_count(col), nact = 0;
+    float rl[4], r[4], bottom = 1e9f; int nact = 0;
     if (!rect_screen(logo, rl)) return;
     for (int i = 0; i < n; i++) { Obj c = child_at(col, i); if (c && on_tree(c) && rect_screen(c, r)) { nact++; if (r[1] < bottom) bottom = r[1]; } }
     float sh = (float)CALL0(m_scr_h, int)(m_scr_h), ppu = (rl[2] - rl[0]) / rt_size(logo).x;   /* pixels per unit at our scale */
@@ -1552,6 +1573,7 @@ static void kit_lang_changed(void) {
     dsl_log("ui: language %s: fonts and title buttons renewed", dsi_code());
 }
 static void (*o_es_update)(Obj, const void *);
+static void (*o_cur_perform)(Obj, const void *);
 static void tick(void) {
     frames++;
     if (frames % 60 == 0) w_sweep();
@@ -1561,17 +1583,31 @@ static void tick(void) {
        kit could not build widgets there before: Mods window and rows after flow K) */
     if (!hget(h_tpl_btn) && frames % 30 == 0) templates_ready();
     if (ntbs) title_frame();
-    brand_frame();
+    if (!o_cur_perform) brand_frame();                              /* else right before the UI is drawn (h_cur_perform) */
     run_queue();
     fields_frame();
     tips_frame();
     tip_place_frame();
+}
+/* right before the UI is laid out and drawn, after every Update and the modules' frame: the title menu as it will be
+   drawn (our buttons follow the stock ones a module showed or hid this frame; the menu placed for the rows shown) */
+static int in_late;
+static void h_cur_perform(Obj self, const void *mi) {
+    if (kit_ok && !in_late && !in_tick) {
+        in_late = 1;
+        if (!hget(h_tpl_btn)) templates_ready();                   /* the title's first frame: the word image needs them */
+        if (ntbs) title_frame();
+        brand_frame();
+        in_late = 0;
+    }
+    o_cur_perform(self, mi);
 }
 static void h_es_update(Obj self, const void *mi) {
     o_es_update(self, mi);
     int32_t fc = m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : last_frame + 1;
     if (fc == last_frame || in_tick) return;                        /* several EventSystems: once per frame */
     last_frame = fc; in_tick = 1;
+    static uintptr_t h_es; if (!hget(h_es)) { hset(&h_es, self); tview_fast_until = frames + 300; }   /* a new scene (the last EventSystem is gone) */
     if (dsl_lang_poll()) { if (kit_ok) kit_lang_changed(); dsl_reg_lang_changed(); }
     if (kit_ok) tick();
     dsl_frame_hook();
@@ -1760,6 +1796,14 @@ void dsl_ui_install(void) {
     if (dsl_hook(DSL_OWNER_LOADER, upd, (void *)h_es_update, (void **)&o_es_update, "loader ui EventSystem.Update")) {
         dsl_log("ui: EventSystem.Update hook refused: kit off (no frame tick)"); return;
     }
+    /* optional: the title menu placed right before the UI is drawn (else in the EventSystem tick, as before) */
+    { void *kLR = dsl_find_class(UI, "LayoutRebuilder"), *kCUR = dsl_find_class(UI, "CanvasUpdateRegistry");
+      m_lr_force = kLR ? mi_sig(kLR, "ForceRebuildLayoutImmediate", 1, NULL) : NULL; if (m_lr_force && !*(void **)m_lr_force) m_lr_force = NULL;
+      m_cur_perform = kCUR ? mi_sig(kCUR, "PerformUpdate", 0, NULL) : NULL;
+      if (m_cur_perform && *(void **)m_cur_perform
+          && dsl_hook(DSL_OWNER_LOADER, *(void **)m_cur_perform, (void *)h_cur_perform, (void **)&o_cur_perform, "loader ui CanvasUpdateRegistry.PerformUpdate"))
+          o_cur_perform = NULL;
+      dsl_log("ui: title menu placed %s, rows %s", o_cur_perform ? "before the UI is drawn" : "in the EventSystem tick", m_lr_force ? "rebuilt first" : "as last drawn"); }
     kit_ok = 1;
     dsl_log("ui: kit ready (DSLUi size %zu, tooltip %s, notice %s, fields %s, images %s)", sizeof(DSLUi), tip_ok() ? "on" : "OFF",
             m_nv_select && m_nv_confirm ? "on" : "OFF", m_in_focused ? "on" : "OFF", m_tex_load && m_spr_create ? "on" : "OFF");
