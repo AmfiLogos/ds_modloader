@@ -185,6 +185,10 @@ static void check_mods(void) {
                     if (!n || !url_ || nl < il + 6 || strncmp(n, u->id, il) || n[il] != '-' || strcmp(n + nl - 4, ".zip")) continue;
                     char v[32]; snprintf(v, sizeof v, "%.*s", (int)(nl - il - 5), n + il + 1);
                     if (v[0] < '0' || v[0] > '9' || vcmp(v, u->have) <= 0 || (best[0] && vcmp(v, best) <= 0)) continue;
+                    /* only the mod's own release "<id>-v<version>" counts: old bundle-v0.1.x releases hold mod zips of the
+                       old numbers (multiplayer-0.10.0.zip, custom-modes-0.11.0.zip ...) that would win as "newer" */
+                    char want_tag[160]; snprintf(want_tag, sizeof want_tag, "%s-v%s", u->id, v);
+                    const char *tag = json_str(r, "tag_name"); if (!tag || strcmp(tag, want_tag)) continue;
                     char key[128]; snprintf(key, sizeof key, "%s %s", u->id, v); if (is_bad(key)) continue;
                     char s[65]; if (asset_sha(r, a, s)) { dsl_log("update: %s: %s has no sha256, skipped", u->id, n); continue; }
                     snprintf(best, sizeof best, "%s", v); snprintf(url, sizeof url, "%s", url_); snprintf(sha, sizeof sha, "%s", s); snprintf(an, sizeof an, "%s", n);
