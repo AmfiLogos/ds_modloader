@@ -687,7 +687,10 @@ static int a_fast;
    scene back (MainFlow.Awake waits for it), so it is cancelled at the first tick and Unity's own splash is begun again as
    soon as the first scene runs (SplashScreen.Begin): Unity then draws it over the running boot by itself (no wait). At the title it ends with BeginSplashScreenFade (= SplashScreen.Stop(FadeOut)). Same logos, background,
    size, place and timing as the stock splash; it only ends early when the boot is done first. */
-static void (*sp_begin)(void), (*sp_fade)(void);
+/* owner 2026-10-17: both logos, sped up so that the whole stock splash (2 logos x 2 s + fades, 4.5 s measured) plays in
+   about 1.9 s, the time a fast boot has after the first scene starts; SplashScreen.SetTime moves the splash clock. */
+#define SPLASH_SPEED 2.4
+static void (*sp_begin)(void), (*sp_fade)(void), (*sp_settime)(float); static double sp_t0;
 static int sp_state, sp_on;                              /* 0 start, 1 cancelled, 2 drawing, 3 fading / over */
 static int splash_drawing(void) { return sp_on && splash_done && !splash_done(); }
 static void a_splash_tick(int title) {
@@ -698,7 +701,8 @@ static void a_splash_tick(int title) {
         SLOG("A: startup splash %s", !running ? "already over" : sp_state == 1 ? "cancelled: Unity draws it again over the boot from the first scene" : "cancelled (no splash: functions missing)");
         return;
     }
-    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; SLOG("A: splash begun in the first scene"); return; }
+    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; sp_t0 = since(); SLOG("A: splash begun in the first scene (%.1fx speed)", SPLASH_SPEED); return; }
+    if (sp_state == 2 && sp_settime && !title && splash_drawing()) sp_settime((float)((since() - sp_t0) * SPLASH_SPEED));
     if (sp_state == 2 && (title || !splash_drawing())) {
         int fin = !splash_drawing();
         if (!fin && sp_fade) sp_fade();
@@ -810,7 +814,7 @@ void dsl_soft_install(void) {
           set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
           set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
           set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
-          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
+          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_settime = icall("UnityEngine.Rendering.SplashScreen::SetTime"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
           splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
           if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
           else SLOG("A: boot speed-up off (game functions missing)");
