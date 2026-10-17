@@ -211,6 +211,13 @@ Section "Uninstall"
     nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /ad "$INSTDIR\game" >> "$INSTDIR\install_dirs.log"`
     Pop $0
   ${EndIf}
+  ; the auto-update folder (downloads, old versions, journal) is made only by our starter and loader
+  ${If} ${FileExists} "$INSTDIR\update\*.*"
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c (dir /s /b /a-d "$INSTDIR\update" & echo $INSTDIR\RELEASE) >> "$INSTDIR\install_files.log"`
+    Pop $0
+    nsExec::Exec `"$SYSDIR\cmd.exe" /c (dir /s /b /ad "$INSTDIR\update" & echo $INSTDIR\update) >> "$INSTDIR\install_dirs.log"`
+    Pop $0
+  ${EndIf}
   StrLen $5 "$INSTDIR\"
   ClearErrors
   FileOpen $6 "$INSTDIR\install_files.log" r

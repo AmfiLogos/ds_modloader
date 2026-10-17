@@ -116,6 +116,7 @@ copy /y "files\baselib.dll" "%COPY%\baselib.dll" >nul || goto copyfail
 > "%COPY%\steam_appid.txt" echo 2798330
 > "%COPY%\dsmodded_build.txt" echo %BUILD%
 copy /y "files\Dungeon Settlers Modded.exe" "%ROOT%\Dungeon Settlers Modded.exe" >nul || goto copyfail
+if exist "files\RELEASE" copy /y "files\RELEASE" "%ROOT%\RELEASE" >nul
 copy /y "uninstall.bat" "%ROOT%\uninstall.bat" >nul
 if not exist "%ROOT%\mods" mkdir "%ROOT%\mods"
 xcopy "files\mods" "%ROOT%\mods\" /E /I /Q /Y >nul
@@ -125,6 +126,7 @@ if exist "%ROOT%\install_files.log" copy /y "%ROOT%\install_files.log" "%ROOT%\i
 (
   dir /s /b /a-d "%COPY%" "%ROOT%\mods"
   echo %ROOT%\Dungeon Settlers Modded.exe
+  if exist "%ROOT%\RELEASE" echo %ROOT%\RELEASE
 ) > "%ROOT%\install_files.log"
 dir /s /b /ad "%COPY%" "%ROOT%\mods" > "%ROOT%\install_dirs.log"
 

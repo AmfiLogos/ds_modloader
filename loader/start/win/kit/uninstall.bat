@@ -27,6 +27,12 @@ if exist "%ROOT%\game\dsmodded_build.txt" (
   dir /s /b /a-d "%ROOT%\game" >> "%ROOT%\install_files.log"
   dir /s /b /ad "%ROOT%\game" >> "%ROOT%\install_dirs.log"
 )
+rem the auto-update folder (downloads, old versions, journal) is made only by our starter and loader
+if exist "%ROOT%\update\" (
+  dir /s /b /a-d "%ROOT%\update" >> "%ROOT%\install_files.log"
+  dir /s /b /ad "%ROOT%\update" >> "%ROOT%\install_dirs.log"
+  >> "%ROOT%\install_dirs.log" echo %ROOT%\update
+)
 for /f "usebackq delims=" %%f in ("%ROOT%\install_files.log") do if exist "%%f" del /f /q "%%f"
 rem then the folders our install made, deepest first: rd without /s removes a folder only when it is empty (each pass
 rem removes one level), so a folder that still holds a file nobody of ours made stays; profiles\ is never touched
