@@ -136,9 +136,35 @@ Function OwnFolder
   ${EndIf}
 FunctionEnd
 
+; PathOk: Push 1 when the game can start from $INSTDIR, else 0. Letters outside the PC's ANSI code page (Chinese,
+; Japanese ... on a Western PC) reach the game as "?": it does not start. A UTF-8 code page (65001) holds every letter.
+Function PathOk
+  System::Call 'kernel32::GetACP() i .r0'
+  ${If} $0 == 65001
+    Push 1
+    Return
+  ${EndIf}
+  ; WC_NO_BEST_FIT_CHARS (0x400): a letter without an exact ANSI form sets the "default char used" flag ($1)
+  System::Call 'kernel32::WideCharToMultiByte(i 0, i 0x400, w "$INSTDIR", i -1, m .r2, i ${NSIS_MAX_STRLEN}, p 0, *i 0 r1) i .r0'
+  ${If} $0 == 0
+  ${OrIf} $1 != 0
+    Push 0
+  ${Else}
+    Push 1
+  ${EndIf}
+FunctionEnd
+
+!define BADPATH_TEXT "The game will not start from this folder:$\r$\n$INSTDIR$\r$\n$\r$\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).$\r$\nChoose a folder with plain letters only, for example C:\Games\${NAME}."
+
 Function InstDirLeave
   Call OwnFolder
   Pop $0
+  Call PathOk
+  Pop $1
+  ${If} $1 == 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION "${BADPATH_TEXT}"
+    Abort
+  ${EndIf}
   ${If} $0 == 0
     MessageBox MB_OK|MB_ICONEXCLAMATION "$INSTDIR already holds other files.$\r$\nChoose another folder: ${NAME} needs a new or empty folder of its own."
     Abort
@@ -147,7 +173,15 @@ FunctionEnd
 
 Section "Install"
   Call OwnFolder                              ; also for /S /D=... (no pages in a silent install)
+  Call PathOk
+  Pop $1
   Pop $0
+  ${If} $1 == 0
+    DetailPrint "The game will not start from $INSTDIR (letters it cannot read). Nothing was changed."
+    MessageBox MB_OK|MB_ICONSTOP "${BADPATH_TEXT}" /SD IDOK
+    SetErrorLevel 4
+    Quit
+  ${EndIf}
   ${If} $0 == 0
     DetailPrint "$INSTDIR already holds other files. Nothing was changed."
     MessageBox MB_OK|MB_ICONSTOP "$INSTDIR already holds other files. Nothing was changed. Choose a new or empty folder." /SD IDOK

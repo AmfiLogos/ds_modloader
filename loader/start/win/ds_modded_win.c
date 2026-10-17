@@ -13,6 +13,7 @@
 // First start (no DATA\Mods\active.json yet): the default mod profile = every mod in ROOT\mods except those whose mod.json
 // says "default_on": false (Hell difficulty ships off by default, PLAN_V13 section 7). The Mods window owns the file after.
 // Log: PROFILE\starter.log. --dry: print the environment and the command line instead of starting the game.
+// --pathcheck <folder>: exit 3 when the game cannot start from that folder (path_ok), else 0; no window (install.bat).
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -40,6 +41,14 @@ static int fail(const wchar_t *msg) {
     logf_("ERROR %ls", msg);
     MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
     return 1;
+}
+/* the game does not start from a folder whose path has letters outside the ANSI code page (Wine, code page 1252:
+   Chinese, Japanese, Korean, Cyrillic; accented Latin works): the game gets "?" in place of them. A UTF-8 code page
+   holds every letter. */
+static int path_ok(const wchar_t *p) {
+    if (GetACP() == CP_UTF8) return 1;
+    char b[MAX_PATH * 4]; BOOL lossy = FALSE;
+    return WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, p, -1, b, sizeof b, NULL, &lossy) && !lossy;
 }
 static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
 static void mkdirs(const wchar_t *p) { SHCreateDirectoryExW(NULL, p, NULL); }
@@ -457,12 +466,22 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     wchar_t *sl = wcsrchr(root, L'\\'); if (sl) *sl = 0;
     _snwprintf(game, MAX_PATH, L"%ls\\game", root);
     for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--lists")) return write_lists();   /* install.bat: no game start */
+    for (int i = 1; i + 1 < argc; i++) if (!wcscmp(argv[i], L"--pathcheck")) return path_ok(argv[i + 1]) ? 0 : 3;
     _snwprintf(profile, MAX_PATH, L"%ls\\profiles\\modded", root);
     _snwprintf(data, MAX_PATH, L"%ls\\data", profile);
     mkdirs(data);
     { wchar_t lp[MAX_PATH]; _snwprintf(lp, MAX_PATH, L"%ls\\starter.log", profile); lg = _wfopen(lp, L"a"); }
     logf_("---- start pid %lu, root %ls", GetCurrentProcessId(), root);
     { int code = 0; if (update_step(dry, &code)) return code; }   /* before the game files are checked: it may put them back */
+    if (!path_ok(root)) {                                  /* after the update: a newer kit may start from there */
+        wchar_t msg[MAX_PATH + 400];
+        _snwprintf(msg, MAX_PATH + 400, L"The game will not start from this folder:\n%ls\n\nIts path has letters the game cannot read on this PC "
+                   L"(for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, "
+                   L"for example C:\\Games\\Dungeon Settlers Modded.", root);
+        logf_("ERROR folder path has letters outside the ANSI code page %u: the game will not start", GetACP());
+        if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0)) MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+        return 1;
+    }
 
     wchar_t exe[MAX_PATH], bl[MAX_PATH], blo[MAX_PATH], bfile[MAX_PATH];
     _snwprintf(exe, MAX_PATH, L"%ls\\DungeonSettlers.exe", game);

@@ -70,7 +70,12 @@ if %BLSIZE% GTR 1000000 (
 rem DSMODDED_ROOT (the installer's chosen folder) replaces the default folder
 set "ROOT=%LOCALAPPDATA%\Dungeon Settlers Modded"
 if defined DSMODDED_ROOT set "ROOT=%DSMODDED_ROOT%"
+:rootcheck
 set "COPY=%ROOT%\game"
+rem the game does not start from a path with letters outside the PC's ANSI code page (Chinese, Japanese ... on a
+rem Western PC): the starter checks it (exit 3)
+start "" /wait "files\Dungeon Settlers Modded.exe" --pathcheck "%ROOT%"
+if errorlevel 3 if not errorlevel 4 goto badpath
 rem only into a new folder, an empty one or our own (marker file, or the game copy of an older kit): never mixed with
 rem other files, so the uninstall can never touch anything it did not put there
 set "OURS="
@@ -166,6 +171,21 @@ echo.
 echo  The folder %ROOT% already holds other files.
 echo  Nothing was changed. Choose an empty folder, or a new one.
 goto fail
+
+:badpath
+echo.
+echo  The game will not start from this folder:
+echo  %ROOT%
+echo  Its path has letters the game cannot read on this PC (for example Chinese or Japanese letters).
+if defined DSMODDED_NOPAUSE goto fail
+echo  Type a folder with plain letters only, for example C:\Games\Dungeon Settlers Modded
+echo  and press Enter. Or press Enter alone to stop.
+echo.
+set "ASK="
+set /p "ASK=Install folder: "
+if not defined ASK goto fail
+set "ROOT=%ASK:"=%"
+goto rootcheck
 
 :copyfail
 echo.
