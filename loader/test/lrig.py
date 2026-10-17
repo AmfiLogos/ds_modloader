@@ -260,6 +260,7 @@ def start(x, window=False, fps=30, show=None):
            'TMPDIR': os.environ.get('TMPDIR', '/tmp'), 'DSRIG_DIR': idir(x), 'DSRIG_FPS': str(fps),
            'DYLD_INSERT_LIBRARIES': ':'.join([os.environ.get('LRIG_DYLIB') or os.path.join(idir(x), DYLIB_REL)] + ([os.environ['LRIG_EXTRA_INSERT']] if os.environ.get('LRIG_EXTRA_INSERT') else []))}
     env.update({k: v for k, v in os.environ.items() if (k.startswith('DSRIG_') or k.startswith('DSL_') or k.startswith('FOREIGN_') or k.startswith('DSML_')) and k not in env})   # DSRIG_DIAG, DSRIG_DETAIL_SYNC...
+    env.setdefault('DSL_SOFT_NOACTIVATE', '1')                 # a soft restart in a test copy never activates B (loader dsl_soft.c)
     env.setdefault('DSL_NOTCH', '0')                           # the notch fix covers the whole screen: off in tests (notch_test sets 1)
     require_windowed(x)
     args = [exe, '-logFile', os.path.join(idir(x), 'player.log'), '-screen-fullscreen', '0',

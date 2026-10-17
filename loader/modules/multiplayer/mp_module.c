@@ -98,7 +98,7 @@ DSL_EXPORT int dsl_module_load(const DSLHost *host, DSLPlugin *self) {
     rig_log("---- rig start pid %d as dsload module %s (batchmode arg: %s, hide windows: %s)", getpid(), host->plugin_id(self),
             getenv("DSRIG_BATCH") ? "yes" : "no", getenv("DSRIG_HIDEWIN") ? "yes" : "no");
     if (getenv("DSRIG_LIVE")) rig_log("DSRIG_LIVE: normal game (sound, frame rate, windows untouched)");
-    else if (getenv("DSRIG_HIDEWIN")) rig_win_install();
+    else if (getenv("DSRIG_HIDEWIN") || getenv("DSRIG_BATCH")) rig_win_install();   /* batchmode copies check in with AppKit too */
     else if (getenv("DSRIG_SPACE")) rig_win_space_install();
     host->log(self, "rig log %s", lp);
     return 0;
