@@ -24,7 +24,8 @@ title() { env DSL_UPDATE_WINDOW=hidden python3 $W/wloader.py start >/dev/null 2>
 waitlog() { for i in {1..40}; do grep -q -- "$1" "$P/dsload.log" 2>/dev/null && return 0; sleep 3; done; return 1 }
 
 [[ -d $R ]] && mv "$R" "$OLD/install-before"
-ST="$OLD/kit"; cp -R $KIT "$ST"; printf '%s\r\n' $OLDV > "$ST/files/RELEASE"
+# staged in a folder with no space: wine cmd /c cannot start install.bat from ".../Application Support/..."
+ST="$(mktemp -d)/kit"; cp -R $KIT "$ST"; printf '%s\r\n' $OLDV > "$ST/files/RELEASE"
 python3 $W/wloader.py install "$ST" | tail -1
 check "installed test copy is $OLDV" '[[ $(head -1 "$R/RELEASE" | tr -d "\r ") == $OLDV ]]'
 
