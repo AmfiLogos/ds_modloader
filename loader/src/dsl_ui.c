@@ -72,14 +72,14 @@ static struct {
     void *Object, *Component, *GameObject, *Transform, *RectTransform, *Graphic, *Image, *TMP_Text, *TMP_Input, *Selectable,
          *Sprite, *FontAsset, *Action, *Byte, *Vector3, *Canvas, *CanvasScaler, *GraphicRaycaster, *RectMask2D, *ScrollRect,
          *Texture2D, *TitleMenuView, *LangView, *GridLayout, *TitleButton, *Notice, *DASText, *TooltipUI, *TooltipETC, *TipCtx, *UIFactory,
-         *SaveLoadView, *CampaignSetting, *TMP_Asset, *CanvasGroup;
+         *SaveLoadView, *CampaignSetting, *TMP_Asset, *CanvasGroup, *HVLayout;
 } K;
 
 static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy, *m_obj_find, *m_obj_finds, *m_res_findall,
     *m_comp_go, *m_comp_tr, *m_comp_get, *m_comp_inparent,
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
     *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
-    *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_corners,
+    *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_getpos, *m_rt_corners, *m_tr_find, *m_spr_rect, *m_scr_h, *m_tr_setscale, *m_lg_setsp, *m_lg_getsp,
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
@@ -885,6 +885,23 @@ static DSLObj k_image_png(DSLObj parent, float x, float y, float w, float h, con
     dsl_log("ui: image %s %dx%d (%s)", png_path, tw, th, nearest ? "point filter" : "bilinear");
     return w_done(wd, tr_of(im), NULL);
 }
+/* PNG bytes in memory -> Sprite (bilinear, clamp), as k_image_png; its texture handle to *h_tex, size to *tw / *th */
+static Obj png_sprite(const unsigned char *data, size_t n, uintptr_t *h_tex, int *tw, int *th) {
+    if (!m_tex_ctor || !m_tex_load || !m_spr_create || !K.Byte || !data || !n) return NULL;
+    Obj bytes = I.array_new(K.Byte, n); if (!bytes) return NULL;
+    memcpy((char *)bytes + 0x20, data, n);
+    Obj tex = I.object_new(K.Texture2D); if (!tex) return NULL;
+    CALL(m_tex_ctor, void, Obj, int, int, int, bool)(tex, 2, 2, 4, false, m_tex_ctor);     /* RGBA32, no mips */
+    if (!CALL(m_tex_load, bool, Obj, Obj)(tex, bytes, m_tex_load)) return NULL;
+    if (m_tex_filter) CALL(m_tex_filter, void, Obj, int)(tex, 1, m_tex_filter);
+    if (m_tex_wrap) CALL(m_tex_wrap, void, Obj, int)(tex, 1, m_tex_wrap);
+    if (m_tex_apply) CALL(m_tex_apply, void, Obj)(tex, m_tex_apply);
+    *tw = m_tex_w ? CALL(m_tex_w, int, Obj)(tex, m_tex_w) : 0; *th = m_tex_h ? CALL(m_tex_h, int, Obj)(tex, m_tex_h) : 0;
+    Obj sp = *tw > 0 && *th > 0 ? CALL(m_spr_create, Obj, Obj, R4, V2, float)(tex, (R4){ 0, 0, (float)*tw, (float)*th }, (V2){ 0.5f, 0.5f }, 100.0f, m_spr_create) : NULL;
+    if (!alive(sp)) return NULL;
+    hset(h_tex, tex);
+    return sp;
+}
 
 /* ------------------------------------------------------------------ game tooltip (TooltipUI / Tooltip_ETC, no hook) */
 #define BASE_KEY "Shared_Gold"                                       /* any stock ETC key: every stock layout step runs */
@@ -1312,6 +1329,105 @@ void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
     if (w) rt_set((Obj)w, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ wd, h }, (V2){ -right, -top });
 }
 
+/* ------------------------------------------------------------------ title brand (owner 2026-10-17)
+   1. The word "ModLoader" under the game's title logo (TitleMenuUI/Img_BackGroundBox/Img_GameLogo), in the logo's
+      look (tools/brand_word.py; the game's logo itself is not changed or copied). Our own Image, a child of the logo,
+      drawn at the logo's texel scale (its rect / its sprite's size), centred right under the drawn letters, where the
+      version line was. The version line (the logo's child Txt_Version) and the button column move down by the word's
+      height, so their gaps stay the game's.
+   2. The title menu (logo + button column) always fits, Quit visible, whatever buttons the modules add, and is centred:
+      space above the logo = space below the last button. Too tall for the window: first the outer spaces shrink (to
+      BR_MARGIN), then the gaps between the buttons (the column's spacing, 12 in the game, down to BR_SPMIN), then the
+      whole menu scales down (logo and column together, never under 0.75). No button is hidden. Measured on the screen
+      every 10 frames (window size, buttons added or hidden), only while the stock title menu shows. A position the
+      game sets again is taken as its new base. */
+#include "dsl_brand_word.h"
+#define BR_GAP 2.f                                                    /* units between the logo's rect and the word (no version line) */
+#define BR_MARGIN 16.f                                                /* smallest space above the logo / below the last button, units */
+#define BR_SPMIN 4.f                                                  /* smallest gap between two buttons, units */
+#define BR_SCMIN 0.75f                                                /* smallest menu scale */
+static uintptr_t h_br_view, h_br_logo, h_br_col, h_br_ver, h_br_img, h_br_spr, h_br_tex, h_br_lg;
+static V2 br_logo0, br_col0, br_ver0, br_logo_set, br_col_set, br_ver_set;
+static float br_drop, br_shift, br_sc = 1, br_sp0 = -1, br_sp = -1; static int br_tw, br_th, br_off; static int64_t br_last = -1000;
+static V2 rt_pos(Obj o) { Obj rt = tr_of(o); return isa(rt, K.RectTransform) && m_rt_getpos ? CALL(m_rt_getpos, V2, Obj)(rt, m_rt_getpos) : (V2){ 0, 0 }; }
+static void rt_setpos(Obj o, V2 p) { Obj rt = tr_of(o); if (isa(rt, K.RectTransform)) CALL(m_rt_pos, void, Obj, V2)(rt, p, m_rt_pos); }
+static void tr_scale(Obj o, float s) { Obj t = tr_of(o); if (t && m_tr_setscale) CALL(m_tr_setscale, void, Obj, V3)(t, (V3){ s, s, 1 }, m_tr_setscale); }
+static Obj tr_find(Obj t, const char *path) { t = tr_of(t); return t && m_tr_find ? CALL(m_tr_find, Obj, Obj, Obj)(t, str(path), m_tr_find) : NULL; }
+static int v2_near(V2 a, V2 b) { float dx = a.x - b.x, dy = a.y - b.y; return dx > -0.01f && dx < 0.01f && dy > -0.01f && dy < 0.01f; }
+static float fabs_(float x) { return x < 0 ? -x : x; }
+static void br_apply(void) {
+    Obj logo = hget(h_br_logo), col = hget(h_br_col), ver = hget(h_br_ver), lg = hget(h_br_lg);
+    /* both scale about the logo's top (logo pivot = its top edge; the column keeps its offset from the logo x scale) */
+    br_logo_set = (V2){ br_logo0.x, br_logo0.y + br_shift };
+    br_col_set = (V2){ br_col0.x, br_logo_set.y + br_sc * (br_col0.y - br_drop - br_logo0.y) };
+    br_ver_set = (V2){ br_ver0.x, br_ver0.y - br_drop };
+    if (logo) { rt_setpos(logo, br_logo_set); tr_scale(logo, br_sc); }
+    if (col) { rt_setpos(col, br_col_set); tr_scale(col, br_sc); }
+    if (ver) rt_setpos(ver, br_ver_set);
+    if (lg && m_lg_setsp && br_sp >= 0) CALL(m_lg_setsp, void, Obj, float)(lg, br_sp, m_lg_setsp);
+}
+static void brand_frame(void) {
+    if (br_off || !m_rt_getpos || !m_tr_find || !m_spr_rect) return;
+    Obj v = title_view(); if (!v || !on_tree(v) || f_tv_credit < 0 || !hget(h_tpl_img)) return;
+    if (hget(h_br_view) != v) {                                       /* this title view's logo, column, version line; our word */
+        Obj credit = AT(v, f_tv_credit, Obj), col = isa(credit, K.TitleButton) ? tr_parent(credit) : NULL;
+        Obj logo = tr_find(v, "Img_BackGroundBox/Img_GameLogo"), lim = logo ? comp_get(logo, K.Image) : NULL, ls = img_sprite(lim);
+        if (!col || !lim || !alive(ls)) { br_off = 1; dsl_log("ui: title brand: the game's logo or button column not found: off"); return; }
+        Obj sp = hget(h_br_spr);
+        if (!sp) { sp = png_sprite(brand_word_png, sizeof brand_word_png, &h_br_tex, &br_tw, &br_th); hset(&h_br_spr, sp); }
+        if (!sp) { br_off = 1; dsl_log("ui: title brand: the word image could not be made: off"); return; }
+        R4 sr = CALL(m_spr_rect, R4, Obj)(ls, m_spr_rect); V2 lsz = rt_size(logo);
+        if (sr.w < 1 || sr.h < 1 || lsz.x < 1 || lsz.y < 1) { br_off = 1; dsl_log("ui: title brand: logo size %.0fx%.0f / sprite %.0fx%.0f: off", lsz.x, lsz.y, sr.w, sr.h); return; }
+        float ww = br_tw * lsz.x / sr.w, wh = br_th * lsz.y / sr.h;     /* the logo's texel scale */
+        Obj old = hget(h_br_img); if (old) destroy_obj(go_of(old));
+        Obj im = inst(hget(h_tpl_img), logo); if (!im) { br_off = 1; return; }
+        go_active(im, 1); gr_material(im, NULL); img_set(im, sp, C_WHITE, 0);
+        Obj ver = tr_find(logo, "Txt_Version"), lg = K.HVLayout ? comp_get(col, K.HVLayout) : NULL;
+        hset(&h_br_view, v); hset(&h_br_logo, logo); hset(&h_br_col, col); hset(&h_br_ver, ver); hset(&h_br_img, im); hset(&h_br_lg, lg);
+        br_logo0 = rt_pos(logo); br_col0 = rt_pos(col); br_ver0 = ver ? rt_pos(ver) : (V2){ 0, 0 };
+        br_sp0 = br_sp = lg && m_lg_getsp ? CALL(m_lg_getsp, float, Obj)(lg, m_lg_getsp) : -1;
+        /* the word takes the version line's place (the empty band at the bottom of the logo's texture, right under the
+           drawn letters); the version line goes below the word: anchored at the logo's bottom edge, pivot bottom */
+        float top = ver ? br_ver0.y + rt_size(ver).y : -BR_GAP;
+        rt_set(im, (V2){ 0.5f, 0 }, (V2){ 0.5f, 0 }, (V2){ 0.5f, 1 }, (V2){ ww, wh }, (V2){ 0, top });
+        br_drop = ver ? wh : wh + BR_GAP; br_shift = 0; br_sc = 1; br_last = -1000;
+        br_apply();
+        dsl_log("ui: title brand: \"ModLoader\" under the logo (%dx%d texels, %.1fx%.1f units, top %.1f; logo %.0fx%.0f units, sprite %.0fx%.0f), version line%s and column %.1f lower; button gap %.0f",
+                br_tw, br_th, ww, wh, top, lsz.x, lsz.y, sr.w, sr.h, ver ? "" : " (none)", br_drop, br_sp0);
+    }
+    Obj logo = hget(h_br_logo), col = hget(h_br_col), ver = hget(h_br_ver);
+    if (!logo || !col) { hfree(&h_br_view); return; }
+    /* the game set a position again (its own layout): that is the new base */
+    int moved = 0; V2 p;
+    if (!v2_near(p = rt_pos(logo), br_logo_set)) { br_logo0 = p; moved = 1; }
+    if (!v2_near(p = rt_pos(col), br_col_set)) { br_col0 = p; moved = 1; }
+    if (ver && !v2_near(p = rt_pos(ver), br_ver_set)) { br_ver0 = p; moved = 1; }
+    if (moved) { dsl_log("ui: title brand: the game moved the logo / column / version line: placed again"); br_apply(); }
+    if (frames - br_last < 10 || !dsl_ui_title_shown() || !m_scr_h) return;
+    br_last = frames;
+    /* measured: the menu's height now (screen pixels) = sc x (fixed part + gaps x spacing), in the parent's units */
+    float rl[4], r[4], bottom = 1e9f; int n = child_count(col), nact = 0;
+    if (!rect_screen(logo, rl)) return;
+    for (int i = 0; i < n; i++) { Obj c = child_at(col, i); if (c && on_tree(c) && rect_screen(c, r)) { nact++; if (r[1] < bottom) bottom = r[1]; } }
+    float sh = (float)CALL0(m_scr_h, int)(m_scr_h), ppu = (rl[2] - rl[0]) / rt_size(logo).x;   /* pixels per unit at our scale */
+    if (!nact || ppu <= 0 || sh <= 0) return;
+    float base = ppu / br_sc, hu = sh / base;                          /* pixels per parent unit, screen height in units */
+    int ngap = nact > 1 && br_sp >= 0 ? nact - 1 : 0;
+    float fixed = (rl[3] - bottom) / ppu - ngap * (br_sp >= 0 ? br_sp : 0), avail = hu - 2 * BR_MARGIN;
+    float sp = br_sp0, sc = 1;
+    if (ngap && fixed + ngap * sp > avail) {                           /* 1 outer spaces (to BR_MARGIN), 2 button gaps */
+        sp = (avail - fixed) / ngap; if (sp < BR_SPMIN) sp = BR_SPMIN; if (sp > br_sp0) sp = br_sp0;
+    }
+    float h1 = fixed + ngap * (ngap ? sp : 0);
+    if (h1 > avail) { sc = avail / h1; if (sc < BR_SCMIN) sc = BR_SCMIN; }   /* 3 the whole menu smaller */
+    float gap = (hu - sc * h1) / 2, cur = (sh - rl[3]) / base, d = cur - gap;
+    if (fabs_(d) < 0.5f && fabs_(sc - br_sc) < 0.002f && fabs_(sp - br_sp) < 0.05f) return;
+    br_shift += d; br_sc = sc; br_sp = ngap ? sp : br_sp;
+    br_apply();
+    dsl_log("ui: title brand: placed (screen %.0f px = %.0f units; menu %.0f units, %d rows): %.0f units above and below, button gap %.1f, scale %.3f, moved %+.1f",
+            sh, hu, sc * h1, nact, gap, br_sp, br_sc, d);
+}
+
 /* ------------------------------------------------------------------ frame tick */
 static void run_queue(void) {
     uint32_t q[QMAX]; int n = nq; memcpy(q, queue, (size_t)n * sizeof *q); nq = 0;
@@ -1364,6 +1480,7 @@ static void tick(void) {
        kit could not build widgets there before: Mods window and rows after flow K) */
     if (!hget(h_tpl_btn) && frames % 30 == 0) templates_ready();
     if (ntbs) title_frame();
+    brand_frame();
     run_queue();
     fields_frame();
     tips_frame();
@@ -1489,6 +1606,11 @@ void dsl_ui_install(void) {
     m_rt_pivot = MTH(K.RectTransform, "set_pivot", 1); m_rt_size = MTH(K.RectTransform, "set_sizeDelta", 1);
     m_rt_getsize = MTH(K.RectTransform, "get_sizeDelta", 0); m_rt_pos = MTH(K.RectTransform, "set_anchoredPosition", 1);
     m_rt_corners = MTH(K.RectTransform, "GetWorldCorners", 1);
+    m_rt_getpos = OPT(K.RectTransform, "get_anchoredPosition", 0); m_tr_find = OPTSIG(K.Transform, "Find", 1, "System.String");   /* title brand */
+    m_spr_rect = OPT(K.Sprite, "get_rect", 0); m_scr_h = OPT(klass(UE, "Screen"), "get_height", 0);
+    m_tr_setscale = OPT(K.Transform, "set_localScale", 1);
+    K.HVLayout = klass(UI, "HorizontalOrVerticalLayoutGroup");
+    if (K.HVLayout) { m_lg_setsp = OPT(K.HVLayout, "set_spacing", 1); m_lg_getsp = OPT(K.HVLayout, "get_spacing", 0); }
     m_gr_color = MTH(K.Graphic, "set_color", 1); m_gr_raycast = MTH(K.Graphic, "set_raycastTarget", 1); m_gr_material = OPT(K.Graphic, "set_material", 1);
     m_img_sprite = MTH(K.Image, "set_sprite", 1); m_img_getsprite = MTH(K.Image, "get_sprite", 0); m_img_type = OPT(K.Image, "set_type", 1);
     m_beh_enabled = OPT(kBeh, "set_enabled", 1);

@@ -31,7 +31,7 @@
  "%s, %s": "%s, %s",
  "Apply": "Aplicar",
  "Applying mods": "Aplicando mods",
- "Auto-update": "Atualização automática",
+ "Auto-update mod loader": "Autoatualizar o carregador de mods",
  "BepInEx could not be installed (%s). The game starts without the BepInEx mods.": "Não foi possível instalar o BepInEx (%s). O jogo inicia sem os mods do BepInEx.",
  "BepInEx did not start": "O BepInEx não iniciou",
  "BepInEx is not available in this start": "O BepInEx não está disponível nesta inicialização",

@@ -28,7 +28,7 @@
  "%s, %s": "%s、%s",
  "Apply": "套用",
  "Applying mods": "正在套用模組",
- "Auto-update": "自動更新",
+ "Auto-update mod loader": "自動更新模組載入器",
  "BepInEx could not be installed (%s). The game starts without the BepInEx mods.": "無法安裝 BepInEx（%s）。遊戲會在沒有 BepInEx 模組的情況下啟動。",
  "BepInEx did not start": "BepInEx 未啟動",
  "BepInEx is not available in this start": "本次啟動無法使用 BepInEx",

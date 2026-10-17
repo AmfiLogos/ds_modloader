@@ -22,7 +22,7 @@
  "%s, %s": "%s, %s",
  "Apply": "Apply",
  "Applying mods": "Applying mods",
- "Auto-update": "Auto-update",
+ "Auto-update mod loader": "Auto-update mod loader",
  "BepInEx could not be installed (%s). The game starts without the BepInEx mods.": "BepInEx could not be installed (%s). The game starts without the BepInEx mods.",
  "BepInEx did not start": "BepInEx did not start",
  "BepInEx is not available in this start": "BepInEx is not available in this start",

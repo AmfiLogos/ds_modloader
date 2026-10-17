@@ -28,7 +28,7 @@
  "%s, %s": "%s、%s",
  "Apply": "適用",
  "Applying mods": "MODを適用中",
- "Auto-update": "自動アップデート",
+ "Auto-update mod loader": "MODローダーの自動アップデート",
  "BepInEx could not be installed (%s). The game starts without the BepInEx mods.": "BepInExをインストールできませんでした（%s）。ゲームはBepInExのMODなしで起動します。",
  "BepInEx did not start": "BepInExが起動しませんでした",
  "BepInEx is not available in this start": "今回の起動ではBepInExは使えません",
