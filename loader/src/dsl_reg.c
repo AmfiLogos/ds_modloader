@@ -180,15 +180,28 @@ void dsl_mods_rescan(void) {
     mods_scan();
     dsl_log("reg: mods folder read again: %d installed mod(s)", nmi);
 }
-/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 characters */
+/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 columns.
+   Columns, not bytes: 1 per character, 2 for a 3- or 4-byte UTF-8 character (kana, CJK, Hangul are about twice as wide),
+   so a Russian or Japanese name is not cut at half the length of an English one. */
 void dsl_mod_short(const char *id, char *out, size_t cap) {
     mods_scan(); out[0] = 0;
     for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) {
         if (MI_short[i][0]) { snprintf(out, cap, "%s", MI_short[i]); return; }
         snprintf(out, cap, "%s", MI[i].name);
-        if (strlen(out) > 18) { size_t c = 16; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 16;
-                                while (c > 0 && ((unsigned char)out[c] & 0xC0) == 0x80) c--;   /* never inside a UTF-8 character */
-                                snprintf(out + c, cap - c, "..."); }
+        int cols = 0; for (const unsigned char *p = (const unsigned char *)out; *p; p++) if ((*p & 0xC0) != 0x80) cols += *p >= 0xE0 ? 2 : 1;
+        if (cols > 18) {
+            size_t b = 0, keep = 0, sp = 0; int col = 0;
+            while (out[b]) {                                              /* keep whole characters up to column 16 */
+                unsigned char u = (unsigned char)out[b]; int w = u >= 0xE0 ? 2 : 1;
+                if (col + w > 16) break;
+                if (u == ' ' && col >= 6) sp = b;                         /* the last word break after column 6 */
+                col += w; b++; while (out[b] && ((unsigned char)out[b] & 0xC0) == 0x80) b++;
+                keep = b;
+            }
+            if (out[keep] == ' ') sp = keep;
+            size_t c = sp ? sp : keep;
+            snprintf(out + c, cap - c, "...");
+        }
         return;
     }
     snprintf(out, cap, "%s", id);
