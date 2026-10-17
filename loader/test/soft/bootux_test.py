@@ -7,7 +7,7 @@ One boot with the default mods; the game's own frame every 0.25 s (DSL_FASTBOOT_
 1 s after the title. A real break caught: a stretch of more than 1 s where the screen does not change at all (no logo,
 no loading animation, no percent) before the title = the "looks bugged" screen the owner saw.
   1 the game's loading screen comes up in the first scene (log)
-  2 the first logo is drawn (a frame with the logo box at the stock place, 960x540: 383,233-577,308)
+  2 the first logo is drawn at the stock place and size (960x540: 383,233-577,308, 3 px)
   3 no frame-to-frame freeze longer than 1.2 s between the first frame and the title
 Lease: rig.py lease bootux --pid <this pid>."""
 import os, re, shutil, subprocess, sys, time, json
@@ -63,10 +63,11 @@ try:
     m = re.search(r'soft \+([\d.]+)s: A: boot screen: title ready', L)
     t_title = float(m.group(1)) if m else (shots[-1][0] if shots else 0)
     def load(f): return Image.open(os.path.join(SHOTS, f)).convert('RGB')
-    def box(f):
+    def box(f):                              # above the progress line
         im = Image.open(os.path.join(SHOTS, f)).convert('RGB'); bg = Image.new('RGB', im.size, im.getpixel((5, 5)))
-        return im.size, ImageChops.difference(im, bg).point(lambda v: 255 if v > 24 else 0).getbbox()
-    logo = [f for t, f in shots if box(f) == ((960, 540), (383, 233, 577, 308))]
+        return im.size, ImageChops.difference(im.crop((0, 0, 960, 460)), bg.crop((0, 0, 960, 460))).point(lambda v: 255 if v > 24 else 0).getbbox()
+    def stock(b): return b[0] == (960, 540) and b[1] and all(abs(x - y) <= 3 for x, y in zip(b[1], (383, 233, 577, 308)))
+    logo = [f for t, f in shots if stock(box(f))]
     check('2 the first logo is drawn', logo, f'{len(logo)} logo frames of {len(shots)}')
     worst, run0, prev = None, None, None
     for t, f in shots:

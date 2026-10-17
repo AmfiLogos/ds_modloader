@@ -131,29 +131,28 @@ static int hexeq(const unsigned char *a, const char *hex) {
 }
 
 /* Boot speed-up parts, each on or off by its own variable (a tester bisects without a rebuild): DSL_FB_CRC (this file's
-   bundle CRC skip), DSL_FB_SPLASH (splash cancel + SplashScreen.Begin / SetTime), DSL_FB_FPS (frames uncapped until the
-   title), DSL_FB_BLP (loading priority High until the title); dsl_soft.c reads the last three. "1" = on, "0" = off;
-   unset = DSL_FASTBOOT ("1" all on, "0" all off), unset too = DSL_FB_DEFAULT: the platform default (owner 2026-10-17: off on Windows until a real Windows PC is tested;
-   a tester's PC froze at start with a D3D11 present deadlock; Mac on). DSL_PREWARM (hidden prewarm B, dsl_reg.c) too. */
+   bundle CRC skip), DSL_FB_SPLASH (startup splash cancelled, its logos drawn over the boot), DSL_FB_FPS (frames uncapped
+   until the title), DSL_FB_BLP (loading priority High until the title); dsl_soft.c reads the last three. "1" = on,
+   "0" = off; unset = DSL_FASTBOOT ("1" all on, "0" all off), unset too = the platform default: on everywhere (owner
+   2026-10-17 evening: back on on Windows now that A's splash calls no SplashScreen.Begin / SetTime; a tester's PC had
+   frozen at start with a D3D11 present deadlock, v0.1.9-v0.1.11). DSL_PREWARM (hidden prewarm B, dsl_reg.c) keeps its
+   own default: off on Windows, on on the Mac. */
 #ifndef DSL_FB_DEFAULT
-#ifdef _WIN32
-#define DSL_FB_DEFAULT 0
-#else
 #define DSL_FB_DEFAULT 1
 #endif
+#ifndef DSL_PREWARM_DEFAULT
+#ifdef _WIN32
+#define DSL_PREWARM_DEFAULT 0
+#else
+#define DSL_PREWARM_DEFAULT 1
 #endif
-/* DSL_FB_SPLASH has its own default: on on Windows too (owner 2026-10-17 evening: the stock splash flashes by in 2-3 s on
-   Windows; A's splash plays the logos at the stock pace over the boot). Its Windows freeze fix stays: SplashScreen.Begin
-   only once the player loop runs, and no SplashScreen.SetTime at all (dsl_soft.c). */
-#ifndef DSL_FB_SPLASH_DEFAULT
-#define DSL_FB_SPLASH_DEFAULT 1
 #endif
 int dsl_fastboot_part(const char *env) {
     const char *v = getenv(env);
     if (v && (*v == '0' || *v == '1')) return *v == '1';
     v = getenv("DSL_FASTBOOT");
     if (v && (*v == '0' || *v == '1')) return *v == '1';
-    return strcmp(env, "DSL_FB_SPLASH") ? DSL_FB_DEFAULT : DSL_FB_SPLASH_DEFAULT;
+    return strcmp(env, "DSL_PREWARM") ? DSL_FB_DEFAULT : DSL_PREWARM_DEFAULT;
 }
 
 void dsl_fastboot_install(const char *logdir) {

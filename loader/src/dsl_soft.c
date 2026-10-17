@@ -685,53 +685,72 @@ static void prof_tick(void) {
 /* A (a normal start, owner go 2026-10-17): frames uncapped + loading priority High from the first tick until the
    title is ready, then the game's own values come back (fast_end). The Unity splash is NOT cancelled in A. */
 static int a_fast;
-/* A's splash (owner 2026-10-17: exactly the vanilla splash, and never a longer boot). The startup splash holds the first
-   scene back (MainFlow.Awake waits for it), so it is cancelled at the first tick and Unity's own splash is begun again as
-   soon as the first scene runs (SplashScreen.Begin): Unity then draws it over the running boot by itself (no wait). At the title it ends with BeginSplashScreenFade (= SplashScreen.Stop(FadeOut)). Same logos, background,
-   size, place and timing as the stock splash; it only ends early when the boot is done first. */
-/* owner 2026-10-17 (evening): the sped-up logos (2.4x, SplashScreen.SetTime every tick) flashed by much too fast: the
-   logos play at the stock pace (2 logos x 2 s + fades), over the running boot, and still end at the title. No SetTime:
-   UnityPlayer.dll's SplashScreen_CUSTOM_SetTime calls BeginSplashScreen(true), which deletes the current logo's
-   Texture2D and loads it again from globalgamemanagers.assets.resS (8 MB each) - every tick; on D3D11 only the grey
-   clear was ever seen (VM 2026-10-17: "splash begun ... frame 2", no logo), on Metal the logos still showed. */
+/* A's splash (owner 2026-10-17 evening: the logos must not flash by for a fixed 2-3 s; their time on screen follows the
+   real load, spread over it, and never makes the boot longer). The startup splash holds the first scene back
+   (MainFlow.Awake waits for it), so it is cancelled at the first tick; from the first scene on the same two logos
+   (Unity's own splash sprites, already loaded at the first tick) are drawn on our overlay canvas (dsl_ui_logos), with
+   the splash's background, place and size, each logo half of the expected load (the last start's time from the first
+   scene to bootReady on this computer, boot_time.txt in the log folder), 1.6-4 s each with 0.4 s fades. The second
+   logo stays up while the load runs on, and goes as soon as the game's UI is in (bootReady): under it the game's own
+   loading screen (its walking NOW LOADING animation, a tip) and the progress line. When the title fades in first, the
+   logos fade out with it. No SplashScreen.Begin / SetTime any more: UnityPlayer.dll's SetTime calls
+   BeginSplashScreen(true), which deletes the current logo's Texture2D and loads it again (8 MB); every tick it left only
+   the grey clear on D3D11 (VM 2026-10-17). Sprites not found (another build): the stock splash is left as it is. */
 /* Windows (player report 2026-10-17, real PC: freeze at start, ErrorLog "GfxDeviceD3D11Base::WaitForLastPresentationAndGetTimestamp()
    was called multiple times in a row without calling GfxDeviceD3D11Base::PresentFrame()"). UnityPlayer.dll 6000.0.58f2
    (public symbols): until the startup splash is over, the player runs its own startup loop (no player loop): each
    pass DrawSplashScreen(true) draws AND presents, then waits for the last presentation. SplashScreen.Begin and
-   SplashScreen.SetTime both call BeginSplashScreen(true) = "drawn by the player loop": DrawSplashScreen then draws
-   WITHOUT presenting, and the startup loop still waits -> two waits without a present -> that message, and D3D11's
-   wait (INFINITE) never returns. MainFlow.Awake runs inside that loop (first scene activation, then a 0.5 s fade), so
-   Begin from the next tick hit it every start (v0.1.9-v0.1.11). Our wine tests ran -batchmode -nographics (no splash,
-   no waits). On Windows: Begin / SetTime only once the player loop runs (Time.frameCount moved on by 2: the startup
-   loop never advances it); while the startup loop still fades the cancelled splash, CancelSplashScreen again
-   (it presents like the stock last pass, and ends that loop at once). The Mac keeps the order the owner checked. */
+   SplashScreen.SetTime both call BeginSplashScreen(true) = "drawn by the player loop" -> two waits without a present
+   and D3D11's wait never returns (v0.1.9-v0.1.11). Neither is called any more. CancelSplashScreen only sets the
+   splash state: at the first tick, and once more while the startup loop still fades the cancelled splash (that ends
+   the loop at once). Our canvases draw from the player loop: on Windows the logos start once Time.frameCount moved
+   on by 2 (the startup loop never advances it). */
 #ifdef _WIN32
 #define SPLASH_WAIT_LOOP 1
+#define BOOT_GUESS 10.0                                   /* first start on this computer: first scene -> bootReady, s */
 #else
 #define SPLASH_WAIT_LOOP 0
+#define BOOT_GUESS 3.0
 #endif
-static void (*sp_begin)(void), (*sp_fade)(void);
-static int sp_state, sp_on;                              /* 0 start, 1 cancelled, 2 drawing, 3 fading / over */
+int dsl_ui_logos_grab(void); void dsl_ui_logos(int idx, float alpha);   /* src/dsl_ui.c */
+static int sp_state;                                     /* 0 start, 1 cancelled, 2 logos drawn, 3 over */
 static int sp_f0, sp_recancel;                           /* Windows: Time.frameCount at the cancel; re-cancelled once */
-static int splash_drawing(void) { return sp_on && splash_done && !splash_done(); }
-static void a_splash_tick(int title) {
+static double lg_t0, lg_slot, lg_out = -1, lg_ready = -1;
+static int splash_drawing(void) { return sp_state == 2; }
+static char bt_path[1300];
+static void a_splash_tick(int lifted) {
     if (sp_state == 0) {
-        int running = splash_done && !splash_done(), can = sp_begin && (!SPLASH_WAIT_LOOP || frame_count);
-        if (running && can) { splash_cancel(); if (frame_count) sp_f0 = frame_count(); }
-        sp_state = running && can ? 1 : 3;
-        SLOG("A: startup splash %s", !running ? "already over" : sp_state == 1 ? "cancelled: Unity draws it again over the boot from the first scene" : "left as it is (functions missing)");
+        int running = splash_done && !splash_done(), can = !SPLASH_WAIT_LOOP || frame_count;
+        int got = running && can && !dsl_ui_logos_grab();
+        if (got) { splash_cancel(); if (frame_count) sp_f0 = frame_count(); }
+        sp_state = got ? 1 : 3;
+        SLOG("A: startup splash %s", !running ? "already over" : got ? "cancelled: its logos follow the load from the first scene" : "left as it is (logos or functions missing)");
         return;
     }
     if (sp_state == 1 && mf && SPLASH_WAIT_LOOP && frame_count() < sp_f0 + 2) {      /* Windows: Unity's startup loop still runs */
         if (!sp_recancel && splash_done && !splash_done()) { splash_cancel(); sp_recancel = 1; SLOG("A: first scene up, startup splash fade cancelled (frame %d)", frame_count()); }
         return;
     }
-    if (sp_state == 1 && mf) { sp_begin(); sp_on = 1; sp_state = 2; SLOG("A: splash begun in the first scene (stock pace, frame %d)", frame_count ? frame_count() : -1); return; }
-    if (sp_state == 2 && (title || !splash_drawing())) {
-        int fin = !splash_drawing();
-        if (!fin && sp_fade) sp_fade();
-        SLOG("A: %s", fin ? "splash over before the title" : "title shown: splash fades out (BeginSplashScreenFade)"); sp_state = 3;
+    double t = since();
+    if (sp_state == 1 && mf) {
+        double e = BOOT_GUESS; FILE *f = fopen(bt_path, "r");
+        if (f) { double v; if (fscanf(f, "%lf", &v) == 1 && v > 0.3 && v < 300) e = v; fclose(f); }
+        lg_slot = e / 2 < 1.6 ? 1.6 : e / 2 > 4 ? 4 : e / 2; lg_t0 = t; sp_state = 2;
+        SLOG("A: logos from the first scene: %.1f s each (expected load %.1f s%s, frame %d)", lg_slot, e, f ? "" : ", first start", frame_count ? frame_count() : -1);
     }
+    if (sp_state != 2) return;
+    double x = t - lg_t0;
+    if (lg_ready < 0 && mf && boot_ready()) {
+        lg_ready = x; FILE *f = fopen(bt_path, "w"); if (f) { fprintf(f, "%.2f\n", x); fclose(f); }
+        SLOG("A: the game's UI is in %.1f s after the first scene", x);
+    }
+    if (lg_out < 0 && (lifted || (x >= 2 * lg_slot && lg_ready >= 0))) { lg_out = x; SLOG("A: logos fade out (%s)", lifted ? "the title fades in" : "the load is done"); }
+    int idx = x < lg_slot ? 0 : 1; double a = 1;
+    double in = idx ? x - lg_slot : x; if (in < 0.4) a = in / 0.4;                  /* fade in */
+    if (!idx && lg_slot - x < 0.4) a = (lg_slot - x) / 0.4;                         /* first logo: fade out */
+    if (lg_out >= 0) { double o = 1 - (x - lg_out) / 0.4; if (o < a) a = o; }
+    if (lg_out >= 0 && x - lg_out >= 0.4) { dsl_ui_logos(-1, 0); sp_state = 3; SLOG("A: logos over (%.1f s after the first scene)", x); return; }
+    dsl_ui_logos(idx, (float)a);
 }
 /* test: DSL_FASTBOOT_SHOTS=<dir> + DSL_SHOT_EVERY=<s>: the game's frame every s seconds from the first tick until 1 s after
    the title (A, fast or not), to compare a fast boot's splash frames with a normal boot's */
@@ -841,6 +860,7 @@ void dsl_soft_snapshot(const char *logdir) {
     dsl_sos_snapshot();
     snprintf(sdir, sizeof sdir, "%s/softrestart", logdir); mkdir(sdir, 0755);
     snprintf(handoff_path, sizeof handoff_path, "%s/handoff.json", sdir);
+    snprintf(bt_path, sizeof bt_path, "%s/boot_time.txt", logdir);
     const char *h = getenv("DSL_SOFT_HANDOFF");
     test_mode = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1';
     no_activate = getenv("DSL_SOFT_NOACTIVATE") && *getenv("DSL_SOFT_NOACTIVATE") == '1';
@@ -902,12 +922,11 @@ void dsl_soft_install(void) {
           set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
           set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
           set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
-          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
           splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
           frame_count = icall("UnityEngine.Time::get_frameCount");
-          if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
+          if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel ? "ok" : "MISSING"); }
           else SLOG("A: boot speed-up off (game functions missing)");
-      } else if (!role_b) SLOG("A: boot speed-up off (DSL_FASTBOOT / DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP, or the platform default: Windows off)");
+      } else if (!role_b) SLOG("A: boot speed-up off (DSL_FASTBOOT / DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP = 0, or the safe_mode file)");
     }
     if (role_b && !getenv("DSL_SOFT_NOFAST")) {
         fast_on = 1;

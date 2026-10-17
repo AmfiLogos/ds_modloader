@@ -610,6 +610,49 @@ static Obj bb_quad(Obj parent, uint32_t rgba, V2 amin, V2 amax, V2 size, V2 pos)
     rt_set(im, amin, amax, (V2){ 0, 0 }, size, pos);
     return im;
 }
+/* the publisher logos of the game's own splash (Unity's splash sprites "CanOpeners", "WhisperGames", loaded with the
+   player settings before the first frame), drawn on our own overlay canvas so that their time on screen follows the
+   real load (dsl_soft.c, owner 2026-10-17 evening). Unity's splash then only needs CancelSplashScreen (no
+   SplashScreen.Begin / SetTime: on D3D11 SetTime left only the grey background). Same background colour, place and
+   size as the stock splash (960x540: first logo box 383,233-577,308). 0 = both sprites found. */
+#define LOGO_W 1204.f                                                   /* calibrated against the stock splash */
+static uintptr_t h_lg_spr[2], h_lg_root, h_lg_img; static int lg_cur = -1;
+int dsl_ui_logos_grab(void) {
+    static const char *const want[2] = { "CanOpeners", "WhisperGames" };
+    if (!kit_ok || !K.Sprite || !K.Image || !K.Canvas) return -1;
+    Obj a = find_all(K.Sprite); int n = arr_n(a), got = 0;
+    for (int i = 0; i < n; i++) {
+        Obj sp = arr_at(a, i); char nm[80]; obj_name(sp, nm, sizeof nm);
+        for (int k = 0; k < 2; k++) if (!h_lg_spr[k] && !strcmp(nm, want[k])) { h_lg_spr[k] = hnew(sp); got++; }
+    }
+    dsl_log("ui: splash logos: %d of 2 found (%d sprites loaded)", got, n);
+    return got == 2 ? 0 : -1;
+}
+void dsl_ui_logos(int idx, float alpha) {
+    Obj root = hget(h_lg_root);
+    if (idx < 0) { if (root) { destroy_obj(go_of(root)); dsl_log("ui: splash logos removed"); } hfree(&h_lg_root); hfree(&h_lg_img); lg_cur = -1; return; }
+    if (!root) {
+        if (!kit_ok || !m_cv_mode) return;
+        Obj g = new_go("dsl_boot_logos", NULL); Obj cv = g ? comp_add(g, K.Canvas) : NULL;
+        if (!cv) return;
+        if (m_obj_dontdestroy) CALL(m_obj_dontdestroy, void, Obj)(g, m_obj_dontdestroy);
+        CALL(m_cv_mode, void, Obj, int)(cv, 0, m_cv_mode);
+        if (m_cv_order) CALL(m_cv_order, void, Obj, int)(cv, 31990, m_cv_order);          /* under the progress line */
+        Obj cs = comp_add(g, K.CanvasScaler);
+        if (cs && m_cs_mode) { CALL(m_cs_mode, void, Obj, int)(cs, 1, m_cs_mode); CALL(m_cs_ref, void, Obj, V2)(cs, (V2){ 1920, 1080 }, m_cs_ref);
+                               CALL(m_cs_match, void, Obj, float)(cs, 1.0f, m_cs_match); }                /* by height, as the splash */
+        root = tr_of(g);
+        Obj bg = bb_quad(root, 0x1F1F20FFu, (V2){ 0, 0 }, (V2){ 1, 1 }, (V2){ 0, 0 }, (V2){ 0, 0 });
+        Obj lg = new_go("dsl_boot_logo", root); Obj im = lg ? comp_add(lg, K.Image) : NULL;
+        if (!bg || !im) { destroy_obj(g); return; }
+        rt_set(im, (V2){ 0.5f, 0.5f }, (V2){ 0.5f, 0.5f }, (V2){ 0.5f, 0.5f }, (V2){ LOGO_W, LOGO_W / 2 }, (V2){ 0, 0 });
+        hset(&h_lg_root, root); hset(&h_lg_img, im); lg_cur = -1;
+        dsl_log("ui: splash logos shown");
+    }
+    Obj im = hget(h_lg_img); if (!im) return;
+    if (idx != lg_cur) { Obj sp = idx < 2 ? hget(h_lg_spr[idx]) : NULL; img_set(im, sp, C_WHITE, 0); lg_cur = idx; }
+    gr_color(im, (Col){ 1, 1, 1, alpha < 0 ? 0 : alpha > 1 ? 1 : alpha });
+}
 void dsl_ui_boot_line(float frac) {
     Obj root = hget(h_bb);
     if (frac < 0) { if (root) { destroy_obj(go_of(root)); dsl_log("ui: boot progress line removed"); } hfree(&h_bb); hfree(&h_bbfill); return; }
