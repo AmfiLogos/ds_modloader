@@ -49,6 +49,20 @@ A release named `v0.1.N` is the installer release. Its number is the mod loader'
 The default mods are inside: Multiplayer, Custom Modes, Global cooldown, Hell difficulty (off until you turn it on).
 On the title screen, click Mods to turn mods on or off.
 
+## Auto-update
+
+At the title screen, the switch "Auto-update" is in the top-right corner. It is on by default.
+
+- On: while you play, the game downloads a new version and checks it. The next time you start the game, a small
+  window "Updating Dungeon Settlers Modded to 0.1.N" shows for a few seconds, then the game starts as usual. No
+  question, no restart.
+- Off: nothing is downloaded. A button "Update to 0.1.N" shows instead. Click it: the update installs the next time
+  you start the game.
+
+Nothing installs while the game runs. If the new version does not reach the title screen twice in a row, the old
+version comes back and that version is not offered again. Your saves are not changed. Without internet the game starts
+as usual and checks again next time.
+
 ## Add a mod
 
 Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-0.1.2.zip`). One file works on Mac and Windows.
@@ -106,6 +120,13 @@ Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.
 ## Build it yourself
 
 See [BUILDING.md](BUILDING.md). The license files that ship with each release are in [licenses/](licenses/).
+
+Releases for auto-update: tag `v0.1.N` in ds_modloader with the assets `Dungeon-Settlers-Modded-Mac.dmg` (or the
+`.zip`) and `Dungeon-Settlers-Modded-Windows.zip` (the kit zip; the Setup.exe alone is not enough), built with the same
+number in `RELEASE` (or `DSM_RELEASE`): a kit whose RELEASE is not the tag's number is refused. Mod zips
+`<id>-0.1.N.zip` (tag `<id>-v0.1.N`) in their own repos, the same number as their mod.json. GitHub's asset digest is
+the checksum (a `<asset>.sha256` file also works). Tests: `loader/test/update/` (Mac, local release server) and
+`loader/start/win/test/update_test.sh` (wine).
 
 ## Mod Launcher (step 1, Mac; older design notes)
 

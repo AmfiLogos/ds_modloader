@@ -202,20 +202,39 @@ Section "Uninstall"
     SetErrorLevel 1
     Abort
   ${EndIf}
-  ; the game copy is ours from top to bottom (install.bat made it, marker inside): whatever the game or its loader added
-  ; there later (BepInEx, MelonLoader, caches) joins the lists before they are read
+  ; the game copy is ours from top to bottom (install.bat made it, marker inside) and so is the auto-update folder: every
+  ; file in them goes, whatever the game, its loader or an update added later (Unicode-safe walk, no list needed)
   ${If} ${FileExists} "$INSTDIR\game\dsmodded_build.txt"
   ${OrIf} ${FileExists} "$INSTDIR\game\dsmodded_copy.txt"
-    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /a-d "$INSTDIR\game" >> "$INSTDIR\install_files.log"`
-    Pop $0
-    nsExec::Exec `"$SYSDIR\cmd.exe" /c dir /s /b /ad "$INSTDIR\game" >> "$INSTDIR\install_dirs.log"`
-    Pop $0
+    Push "$INSTDIR\game"
+    Call un.DeleteFilesUnder
   ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\update\*.*"
+    Push "$INSTDIR\update"
+    Call un.DeleteFilesUnder
+    Delete "$INSTDIR\RELEASE"
+  ${EndIf}
+  ; the files of install_files.log (inside this folder only): UTF-16LE with a BOM (written by the starter), or the OEM
+  ; text of an older install
   StrLen $5 "$INSTDIR\"
   ClearErrors
   FileOpen $6 "$INSTDIR\install_files.log" r
+  FileReadByte $6 $0
+  FileReadByte $6 $1
+  StrCpy $9 0
+  ${If} $0 == 255
+  ${AndIf} $1 == 254
+    StrCpy $9 1
+  ${Else}
+    FileSeek $6 0 SET
+  ${EndIf}
+  ClearErrors
   ${Do}
-    FileRead $6 $7
+    ${If} $9 == 1
+      FileReadUTF16LE $6 $7
+    ${Else}
+      FileRead $6 $7
+    ${EndIf}
     ${If} ${Errors}
       ${Break}
     ${EndIf}
@@ -256,6 +275,33 @@ Section "Uninstall"
     MessageBox MB_OK "${NAME} is removed. Steam's game was never changed.$\r$\nYour modded saves stay in $INSTDIR\profiles. You can delete that folder if you do not need them." /SD IDOK
   ${EndIf}
 SectionEnd
+
+; un.DeleteFilesUnder <folder>: every file below <folder> (folders stay for un.RemoveEmptyDirs). Only called for folders
+; that are ours from top to bottom (the marked game copy, the auto-update folder).
+Function un.DeleteFilesUnder
+  Exch $R0
+  Push $R1
+  Push $R2
+  ClearErrors
+  FindFirst $R1 $R2 "$R0\*.*"
+  ${DoUntil} ${Errors}
+    ${If} $R2 != "."
+    ${AndIf} $R2 != ".."
+      ${If} ${FileExists} "$R0\$R2\*.*"
+        Push "$R0\$R2"
+        Call un.DeleteFilesUnder
+      ${Else}
+        Delete "$R0\$R2"
+      ${EndIf}
+    ${EndIf}
+    ClearErrors
+    FindNext $R1 $R2
+  ${Loop}
+  FindClose $R1
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
 
 ; un.RemoveEmptyDirs <folder>: every empty folder below <folder>, children before parents, then <folder> itself when
 ; empty. Never deletes a file.
