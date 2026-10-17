@@ -22,6 +22,7 @@ static int onscreen(NSWindow *w) {
     if (a) CFRelease(a); return on;
 }
 int main(int argc, char **argv) { @autoreleasepool {
+    if (argc > 1 && !strcmp(argv[1], "cap")) return 0;          /* run.sh: the loader's copy cap let this copy start */
     int off = argc > 1 && !strcmp(argv[1], "off");
     [NSApplication sharedApplication]; [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
     void *fs = dlopen(argv[0] ? [[[NSString stringWithUTF8String:argv[0]].stringByDeletingLastPathComponent stringByAppendingPathComponent:@"fakesteam.dylib"] UTF8String] : "", RTLD_NOW);

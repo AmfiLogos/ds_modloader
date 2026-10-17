@@ -24,6 +24,8 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
+#include <libproc.h>
+#include <sys/sysctl.h>
 
 static const struct symtab_command *symtab;
 static uintptr_t linkedit_base;
@@ -226,6 +228,60 @@ static void test_copy_noactivate(void) {
     CFRunLoopAddTimer(CFRunLoopGetMain(), tm, kCFRunLoopCommonModes);
 }
 
+/* Test copy cap (2026-10-17 22:10: every app on the Mac froze at load ~230, swap filled the disk; the rigs check it too
+   before a start, test/lrig.py cap_wait): this copy goes on only while fewer than 6 OTHER test copies run, the 1-minute
+   load is at most 40 and swap use at most 20 GB; else it waits (10 min at most), then does not start. Test copy = a running
+   "Dungeon Settlers" whose app is background-only; the owner's own game never counts and never comes here.
+   Tests: DSRIG_CAP_FAKE_COUNT / _LOAD / _SWAP_GB, DSRIG_CAP_WAIT (s). */
+static int bg_app_at(const char *exe) {
+    const char *m = strstr(exe, "/Contents/MacOS/"); if (!m) return 0;
+    char pl[PROC_PIDPATHINFO_MAXSIZE + 32]; snprintf(pl, sizeof pl, "%.*s/Contents/Info.plist", (int)(m - exe), exe);
+    CFURLRef u = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)pl, (CFIndex)strlen(pl), false); if (!u) return 0;
+    CFReadStreamRef s = CFReadStreamCreateWithFile(NULL, u); CFRelease(u); if (!s) return 0;
+    int bg = 0;
+    if (CFReadStreamOpen(s)) {
+        CFPropertyListRef d = CFPropertyListCreateWithStream(NULL, s, 0, kCFPropertyListImmutable, NULL, NULL);
+        if (d && CFGetTypeID(d) == CFDictionaryGetTypeID()) {
+            CFTypeRef v = CFDictionaryGetValue(d, CFSTR("LSBackgroundOnly"));
+            bg = v && ((CFGetTypeID(v) == CFBooleanGetTypeID() && CFBooleanGetValue(v)) ||
+                       (CFGetTypeID(v) == CFStringGetTypeID() && CFStringCompare(v, CFSTR("1"), 0) == kCFCompareEqualTo));
+        }
+        if (d) CFRelease(d);
+        CFReadStreamClose(s);
+    }
+    CFRelease(s); return bg;
+}
+static int other_test_copies(void) {
+    const char *f = getenv("DSRIG_CAP_FAKE_COUNT"); if (f && *f) return atoi(f);
+    int n = proc_listallpids(NULL, 0); if (n <= 0) return 0;
+    pid_t *p = calloc((size_t)n + 64, sizeof *p); n = proc_listallpids(p, (int)(((size_t)n + 64) * sizeof *p));
+    int c = 0;
+    for (int i = 0; i < n; i++) {
+        char nm[64], path[PROC_PIDPATHINFO_MAXSIZE];
+        if (p[i] == getpid() || proc_name(p[i], nm, sizeof nm) <= 0 || strcmp(nm, "Dungeon Settlers")) continue;
+        if (proc_pidpath(p[i], path, sizeof path) > 0 && bg_app_at(path)) c++;
+    }
+    free(p); return c;
+}
+static double swap_gb(void) {
+    const char *f = getenv("DSRIG_CAP_FAKE_SWAP_GB"); if (f && *f) return atof(f);
+    struct xsw_usage x; size_t n = sizeof x;
+    return sysctlbyname("vm.swapusage", &x, &n, NULL, 0) ? 0 : x.xsu_used / 1073741824.0;
+}
+static void test_copy_cap(void) {
+    const char *w = getenv("DSRIG_CAP_WAIT"); double limit = w && *w ? atof(w) : 600, t0 = CFAbsoluteTimeGetCurrent(), said = -1e9;
+    for (;;) {
+        int n = other_test_copies(); double sw = swap_gb(), ld = 0;
+        const char *fl = getenv("DSRIG_CAP_FAKE_LOAD"); if (fl && *fl) ld = atof(fl); else getloadavg(&ld, 1);
+        if (n < 6 && ld <= 40 && sw <= 20) return;
+        char why[200]; snprintf(why, sizeof why, "%d other test copies run (cap 6), 1-minute load %.0f (cap 40), swap %.1f GB used (cap 20)", n, ld, sw);
+        double t = CFAbsoluteTimeGetCurrent() - t0;
+        if (t >= limit) { dsl_log("screen: refused: the Mac stayed at the test copy cap for %.0f s (%s): this copy does not start", limit, why); _exit(3); }
+        if (t - said >= 60) { dsl_log("screen: test copy waits (test copy cap): %s", why); said = t; }
+        double z = limit - t; usleep((useconds_t)((z < 15 ? (z < 0.5 ? 0.5 : z) : 15) * 1e6));
+    }
+}
+
 static void test_copy_window(void) {
     CFBundleRef mb = CFBundleGetMainBundle(); if (!mb) return;
     CFTypeRef bo = CFBundleGetValueForInfoDictionaryKey(mb, CFSTR("LSBackgroundOnly"));
@@ -238,6 +294,7 @@ static void test_copy_window(void) {
         _exit(3);
     }
     if (!bg) return;
+    if (!getenv("DSRIG_LIVE")) test_copy_cap();
     test_copy_noactivate();
     if (!getenv("DSRIG_LIVE")) { extern void dsl_quiet_install(void); dsl_quiet_install(); }   /* dsl_quiet_mac.c */
     CFStringRef dom = CFBundleGetIdentifier(mb); if (!dom) return;
