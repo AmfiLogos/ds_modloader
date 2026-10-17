@@ -17,6 +17,7 @@
 // --lang <folder>: exit code = the language (game LanguageType 0..9) for the install in <folder> (pick_lang); Setup.exe and
 //   its uninstaller. --conlang <folder>: the same for a console (install.bat, uninstall.bat): Chinese, Japanese and Korean
 //   only where the console can show their letters, else English (0).
+// --unlist: delete the files of ROOT\install_files.log (inside ROOT, not this exe); uninstall.bat.
 // --freshmods <kit mods folder>: every ROOT\mods\<id> the kit brings goes to ROOT\retired whole (install.bat, before it
 //   copies the kit's mods): no file of an older version stays. The player's other mods stay. Exit 1 = a folder in use.
 #include <windows.h>
@@ -205,6 +206,53 @@ static int write_lists(void) {
     _snwprintf(x, MAX_PATH, L"%ls\\retired", root); list_tree(x);    /* old mod folders (--freshmods, packages): ours */
     fclose(lf_files); fclose(lf_dirs);
     return 0;
+}
+/* --unlist (uninstall.bat): every file of install_files.log inside ROOT is deleted, except this exe (uninstall.bat
+   deletes it after this returns). The list is UTF-16LE with a BOM, or an older install's OEM text. 0 = all gone. */
+static void rm_empty(const wchar_t *d) {
+    wchar_t pat[MAX_PATH]; _snwprintf(pat, MAX_PATH, L"%ls\\*", d);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || !wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;   /* never follow a link out of ROOT */
+            wchar_t c[MAX_PATH]; _snwprintf(c, MAX_PATH, L"%ls\\%ls", d, fd.cFileName); rm_empty(c);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    RemoveDirectoryW(d);
+}
+static int unlist(void) {
+    wchar_t lp[MAX_PATH], self[MAX_PATH], pre[MAX_PATH]; int bad = 0;
+    _snwprintf(lp, MAX_PATH, L"%ls\\install_files.log", root); _snwprintf(pre, MAX_PATH, L"%ls\\", root);
+    GetModuleFileNameW(NULL, self, MAX_PATH);
+    FILE *f = _wfopen(lp, L"rb"); if (!f) return 1;
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    char *b = n > 0 ? malloc((size_t)n + 4) : NULL; size_t k = b ? fread(b, 1, (size_t)n, f) : 0; fclose(f);
+    if (!b) return 1;
+    b[k] = b[k + 1] = b[k + 2] = b[k + 3] = 0;
+    wchar_t *t;
+    if (k >= 2 && (unsigned char)b[0] == 0xFF && (unsigned char)b[1] == 0xFE) t = (wchar_t *)(b + 2);
+    else {
+        int m = MultiByteToWideChar(CP_OEMCP, 0, b, -1, NULL, 0); t = m > 0 ? malloc((size_t)m * sizeof(wchar_t)) : NULL;
+        if (!t) { free(b); return 1; }
+        MultiByteToWideChar(CP_OEMCP, 0, b, -1, t, m);
+    }
+    size_t pl = wcslen(pre); wchar_t *ctx = NULL;
+    for (wchar_t *l = wcstok(t, L"\r\n", &ctx); l; l = wcstok(NULL, L"\r\n", &ctx)) {
+        if (_wcsnicmp(l, pre, pl) || !_wcsicmp(l, self) || wcsstr(l, L"\\..\\")) continue;   /* inside ROOT only */
+        DWORD a = GetFileAttributesW(l);
+        if (a == INVALID_FILE_ATTRIBUTES || (a & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        if (a & FILE_ATTRIBUTE_READONLY) SetFileAttributesW(l, a & ~FILE_ATTRIBUTE_READONLY);
+        if (!DeleteFileW(l)) bad = 1;
+    }
+    if (t != (wchar_t *)(b + 2)) free(t);
+    free(b);
+    /* then the empty folders below our folders, deepest first, and those folders when empty (RemoveDirectory never
+       removes a folder that still holds a file); profiles\ is never touched */
+    static const wchar_t *const ours[] = { L"game", L"mods", L"update", L"retired", L"cache", L"licenses" };
+    for (size_t i = 0; i < sizeof ours / sizeof ours[0]; i++) { wchar_t d[MAX_PATH]; _snwprintf(d, MAX_PATH, L"%ls\\%ls", root, ours[i]); rm_empty(d); }
+    return bad;
 }
 static int read_mod_id(const wchar_t *dir, char *id, size_t n);
 static int fresh_mods(const wchar_t *kit) {
@@ -564,6 +612,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     wchar_t *sl = wcsrchr(root, L'\\'); if (sl) *sl = 0;
     _snwprintf(game, MAX_PATH, L"%ls\\game", root);
     for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--lists")) return write_lists();   /* install.bat: no game start */
+    for (int i = 1; i < argc; i++) if (!wcscmp(argv[i], L"--unlist")) return unlist();       /* uninstall.bat: no game start */
     for (int i = 1; i + 1 < argc; i++) if (!wcscmp(argv[i], L"--pathcheck")) return path_ok(argv[i + 1]) ? 0 : 3;
     for (int i = 1; i + 1 < argc; i++) {                         /* Setup.exe, install.bat, uninstall.bat: no game start */
         wchar_t from[MAX_PATH];

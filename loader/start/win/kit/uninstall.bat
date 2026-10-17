@@ -31,17 +31,26 @@ if exist "%ROOT%\update\" (
   del /s /f /q "%ROOT%\update\*" >nul 2>nul
   if exist "%ROOT%\RELEASE" del /f /q "%ROOT%\RELEASE"
 )
-rem the listed files: the lists are UTF-16 (any language); with code page 65001 "type" gives them to for /f as UTF-8
+rem so are the download cache (BepInEx / MelonLoader zips) and retired\ (old mod folders, rolled-back files)
+for %%r in (cache retired) do if exist "%ROOT%\%%r\" del /s /f /q "%ROOT%\%%r\*" >nul 2>nul
+rem the listed files: the lists are UTF-16 (any language), which for /f and type do not read reliably: the starter
+rem deletes them (--unlist, only inside ROOT), then the empty folders below game mods update retired cache licenses
+rem (a folder that still holds a file nobody of ours made stays; profiles\ is never touched); then its own exe goes.
+if not exist "%ROOT%\Dungeon Settlers Modded.exe" goto oldway
+start "" /wait "%ROOT%\Dungeon Settlers Modded.exe" --unlist
+del /f /q "%ROOT%\Dungeon Settlers Modded.exe" 2>nul
+goto unlisted
+:oldway
+rem without the starter: the old way (type, for /f; rd without /s removes a folder only when it is empty)
 for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
 chcp 65001 >nul
 for /f "usebackq delims=" %%f in (`type "%ROOT%\install_files.log"`) do if exist "%%f" del /f /q "%%f"
 if defined OLDCP chcp %OLDCP% >nul
-rem then the folders our install made, deepest first: rd without /s removes a folder only when it is empty (each pass
-rem removes one level), so a folder that still holds a file nobody of ours made stays; profiles\ is never touched
 for %%r in (game mods update retired cache licenses) do if exist "%ROOT%\%%r\" (
   for /l %%i in (1,1,12) do for /f "delims=" %%d in ('dir /s /b /ad "%ROOT%\%%r" 2^>nul') do rd "%%d" 2>nul
   rd "%ROOT%\%%r" 2>nul
 )
+:unlisted
 for %%f in (install_files.log install_files.prev.log install_dirs.log) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"
 rem the marker stays while our leftovers (saves, player mods) stay: a reinstall into this folder is accepted
 if not exist "%ROOT%\profiles\" if not exist "%ROOT%\mods\" if exist "%ROOT%\dsmodded_install.txt" del /q "%ROOT%\dsmodded_install.txt"
@@ -56,14 +65,27 @@ if exist "%ROOT%\game\GameAssembly.dll" (
   goto fail
 )
 call :say U_DONE
+set "UNDONE=1"
+if not exist "%ROOT%\profiles\" goto done
 call :say U_SAVES
 echo  %ROOT%\profiles
 call :say U_SAVES_2
 :done
 echo.
 if not defined DSMODDED_NOPAUSE pause
-if /i "%~dp0"=="%ROOT%\" (goto) 2>nul & del "%~f0"
+if not defined UNDONE exit /b 0
+rem the uninstall's own file goes too, from any start folder: ROOT\uninstall.bat (it may be this very file: "(goto)"
+rem ends the batch first, the rest of the line still runs), then ROOT itself when it is empty (saves in profiles\ or
+rem the player's own mods in mods\ keep it). Paths compared in their short form (one spelling for one file).
+for %%a in ("%ROOT%\uninstall.bat") do set "ROOTBAT=%%~sa"
+if /i "%~s0"=="%ROOTBAT%" goto selfdelete
+cd /d "%TEMP%"
+del /f /q "%ROOT%\uninstall.bat" 2>nul
+rd "%ROOT%" 2>nul
 exit /b 0
+:selfdelete
+rem "cmd /c exit 0": the exit code is 0 ("(goto)" set 1)
+(goto) 2>nul & cd /d "%TEMP%" & del /f /q "%ROOT%\uninstall.bat" 2>nul & rd "%ROOT%" 2>nul & cmd /d /c exit 0
 :fail
 echo.
 if not defined DSMODDED_NOPAUSE pause

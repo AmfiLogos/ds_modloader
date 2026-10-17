@@ -1,5 +1,8 @@
 @echo off
 setlocal EnableExtensions
+rem the one-line files (build, Steam app id, markers) are written by an ANSI cmd: Setup.exe runs this script under
+rem cmd /U (its lines reach Setup's list as UTF-16), and /U would write "echo > file" in UTF-16 too
+set "A=cmd /a /d /c"
 title Dungeon Settlers Modded - install
 cd /d "%~dp0"
 echo.
@@ -80,7 +83,7 @@ if not defined OURS if exist "%ROOT%\" for /f "delims=" %%e in ('dir /b /a "%ROO
 )
 if defined FOREIGN goto notours
 if not exist "%ROOT%" mkdir "%ROOT%"
-> "%ROOT%\dsmodded_install.txt" echo Dungeon Settlers Modded install folder. The uninstall removes only the files listed in install_files.log.
+> "%ROOT%\dsmodded_install.txt" %A% echo Dungeon Settlers Modded install folder. The uninstall removes only the files listed in install_files.log.
 
 rem one full copy of the game (about 700 MB). Not again when the copy is already this build.
 set "HAVE="
@@ -99,7 +102,7 @@ if exist "%COPY%\UserData" xcopy "%COPY%\UserData" "%KEEP%\UserData\" /E /I /H /
 if exist "%COPY%" rd /s /q "%COPY%"
 if exist "%COPY%" goto copyfail
 mkdir "%COPY%"
-> "%COPY%\dsmodded_copy.txt" echo Dungeon Settlers Modded game copy
+> "%COPY%\dsmodded_copy.txt" %A% echo Dungeon Settlers Modded game copy
 call :say B_COPYING
 rem xcopy (in every Windows): the files of an older multiplayer kit in Steam's folder are left out (files\copy_exclude.txt)
 xcopy "%GAME%" "%COPY%\" /E /I /H /Q /Y /EXCLUDE:files\copy_exclude.txt >nul
@@ -115,8 +118,8 @@ if exist "%KEEP%" rd /s /q "%KEEP%"
 copy /y "files\baselib.dll" "%COPY%\baselib.dll" >nul || goto copyfail
 rem the loader's texts (lang\<code>.json) next to it: ROOT\game\lang
 if exist "files\lang\" xcopy "files\lang" "%COPY%\lang\" /I /Q /Y >nul || goto copyfail
-> "%COPY%\steam_appid.txt" echo 2798330
-> "%COPY%\dsmodded_build.txt" echo %BUILD%
+> "%COPY%\steam_appid.txt" %A% echo 2798330
+> "%COPY%\dsmodded_build.txt" %A% echo %BUILD%
 copy /y "files\Dungeon Settlers Modded.exe" "%ROOT%\Dungeon Settlers Modded.exe" >nul || goto copyfail
 if exist "files\RELEASE" copy /y "files\RELEASE" "%ROOT%\RELEASE" >nul
 if exist "licenses" xcopy "licenses" "%ROOT%\licenses\" /E /I /Q /Y >nul
@@ -145,7 +148,7 @@ for %%D in ("%DESK%" "%STARTM%") do (
   powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:LNKDIR+'\Dungeon Settlers Modded.lnk'); $s.TargetPath=$env:LNKTARGET; $s.WorkingDirectory=$env:ROOT; $s.IconLocation=$env:LNKTARGET+',0'; $s.Save()" >nul 2>&1
 )
 if not exist "%DESK%\Dungeon Settlers Modded.lnk" (
-  > "%DESK%\Dungeon Settlers Modded.bat" echo @start "" "%LNKTARGET%"
+  > "%DESK%\Dungeon Settlers Modded.bat" %A% echo @start "" "%LNKTARGET%"
 )
 
 echo.

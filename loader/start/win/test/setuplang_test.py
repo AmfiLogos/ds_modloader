@@ -65,6 +65,10 @@ def run(setup, kit):
     r = wine([w.winpath(setup), "/S", f"/GAME={GAME}"], env=JA, timeout=900)
     check("setup: Japanese Setup /S installs", r.returncode == 0 and os.path.exists(f"{f}/game/DungeonSettlers.exe")
           and os.path.exists(f"{f}/Uninstall.exe") and os.path.exists(f"{f}/install_files.log"), f"rc {r.returncode}")
+    # install.bat runs under cmd /U there: the files the starter and Steam read must still be plain ASCII
+    b, a = open(f"{f}/game/dsmodded_build.txt", "rb").read(), open(f"{f}/game/steam_appid.txt", "rb").read()
+    check("setup: build and Steam app id files in ASCII", b.strip() == open(f"{kit}/files/BUILD.txt", "rb").read().strip() and a.strip() == b"2798330",
+          f"{b[:12]!r} {a[:12]!r}")
     wine([f"C:\\SETUPLANG_SETUP\\{NAME}\\Uninstall.exe", "/S"], env=JA, timeout=300)
     for i in range(60):                                                  # the uninstaller runs from a copy in %TEMP%
         if not os.path.exists(f"{f}/game/DungeonSettlers.exe"): break

@@ -310,6 +310,15 @@ Section "Uninstall"
     Call un.DeleteFilesUnder
     Delete "$INSTDIR\RELEASE"
   ${EndIf}
+  ; so are the download cache (BepInEx / MelonLoader zips) and retired\ (old mod folders, rolled-back files)
+  ${If} ${FileExists} "$INSTDIR\cache\*.*"
+    Push "$INSTDIR\cache"
+    Call un.DeleteFilesUnder
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\retired\*.*"
+    Push "$INSTDIR\retired"
+    Call un.DeleteFilesUnder
+  ${EndIf}
   ; the files of install_files.log (inside this folder only): UTF-16LE with a BOM (written by the starter), or the OEM
   ; text of an older install
   StrLen $5 "$INSTDIR\"
@@ -379,7 +388,7 @@ Section "Uninstall"
 SectionEnd
 
 ; un.DeleteFilesUnder <folder>: every file below <folder> (folders stay for un.RemoveEmptyDirs). Only called for folders
-; that are ours from top to bottom (the marked game copy, the auto-update folder).
+; that are ours from top to bottom (the marked game copy, the auto-update folder, the download cache, retired\).
 Function un.DeleteFilesUnder
   Exch $R0
   Push $R1

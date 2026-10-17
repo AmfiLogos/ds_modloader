@@ -36,7 +36,10 @@ try:
     check("1 licenses in the install folder", os.path.exists(f"{I}/licenses/LICENSE.txt") and os.path.exists(f"{I}/licenses/THIRD_PARTY_NOTICES.txt"))
     check("1 the other files untouched", open(f"{U}/notes.txt").read() == "user file\n" and os.path.exists(f"{U}/photos/a.jpg"))
     # 2
-    r = wine([w.winpath(setup), "/S", f"/D=C:\\FULLDIR\\{NAME}"], timeout=300)
+    # /D= with spaces: wine quotes an argument with spaces ("/D=..."), and NSIS then ignores it (Setup went to the
+    # default folder): a .bat passes the line as a player types it
+    open(f"{DRIVE}/FULLDIR/setup2.bat", "w", newline="\r\n").write(f'@"{w.winpath(setup)}" /S /D=C:\\FULLDIR\\{NAME}\n')
+    r = wine(["cmd.exe", "/c", "C:\\FULLDIR\\setup2.bat"], timeout=300)
     check("2 folder of ours by name but holding other files: refused", not os.path.exists(f"{F}/game")   # CrossOver's wine gives rc 0 for this GUI exe
           and os.listdir(F) == ["budget.xlsx"], f"rc {r.returncode}, {os.listdir(F)}")
     # 3
