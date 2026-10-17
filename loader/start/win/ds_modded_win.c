@@ -151,8 +151,31 @@ static void log_tree(const wchar_t *p) {
     } while (FindNextFileW(h, &fd));
     FindClose(h);
 }
+/* new versions the running game could not take (its DLL was loaded, loader/ui/dsl_pkg.c): mods\.pending\<id> -> mods\<id> */
+static void apply_pending(const wchar_t *md) {
+    wchar_t pd[MAX_PATH], pat[MAX_PATH]; _snwprintf(pd, MAX_PATH, L"%ls\\.pending", md); _snwprintf(pat, MAX_PATH, L"%ls\\*", pd);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+        wchar_t src[MAX_PATH], dst[MAX_PATH], ts[32]; char id[64];
+        _snwprintf(src, MAX_PATH, L"%ls\\%ls", pd, fd.cFileName); _snwprintf(dst, MAX_PATH, L"%ls\\%ls", md, fd.cFileName);
+        if (!read_mod_id(src, id, sizeof id)) continue;
+        stamp(ts, 32);
+        if (exists(dst)) {
+            wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
+            _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, fd.cFileName, ts);
+            if (!MoveFileW(dst, old)) { logf_("mods: %s still in use (%lu): the new version waits", id, GetLastError()); continue; }
+            log_line(L"install_dirs.log", rd); log_tree(old);          /* the uninstall removes the retired copy too */
+        }
+        if (MoveFileW(src, dst)) { log_tree(dst); logf_("mods: new version of %s installed (from .pending)", id); }
+        else logf_("mods: cannot move the new version of %s (%lu)", id, GetLastError());
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
 static void install_packages(void) {
     wchar_t md[MAX_PATH], pat[MAX_PATH]; _snwprintf(md, MAX_PATH, L"%ls\\mods", root); _snwprintf(pat, MAX_PATH, L"%ls\\*.zip", md);
+    apply_pending(md);
     WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
     if (h == INVALID_HANDLE_VALUE) return;
     do {
@@ -203,6 +226,11 @@ static void install_packages(void) {
             else { log_line(L"install_dirs.log", rd); log_tree(lo); }
         }
         if (ok) logf_("mods: %ls installed as mods\\%s (%d files)", fd.cFileName, id, k);
+        else if (src[0]) {                                 /* a mod, but its folder could not be put in place */
+            logf_("mods: %ls (%s) could not be put in place (%lu): moved to mods\\.failed", fd.cFileName, id, GetLastError());
+            wchar_t msg[600]; _snwprintf(msg, 600, L"%ls could not be installed (the mods folder could not be changed). It was moved to the mods\\.failed folder. The game starts without the new version.", fd.cFileName);
+            MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+        }
         else {
             logf_("mods: %ls is not a mod package (unzip %d, id '%s'): moved to mods\\.failed", fd.cFileName, k, id);
             wchar_t msg[600]; _snwprintf(msg, 600, L"%ls is not a mod for Dungeon Settlers Modded. It was moved to the mods\\.failed folder. The game starts without it.", fd.cFileName);
