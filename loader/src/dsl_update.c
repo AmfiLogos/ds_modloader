@@ -178,7 +178,9 @@ static void check_mods(void) {
         JNode *rs = releases(repo, tagf); if (!rs) continue;
         for (int m = 0; m < S.nmods; m++) {
             ModUp *u = &S.mods[m]; if (strcmp(u->repo, repo)) continue;
-            char best[32] = "", url[1024] = "", sha[65] = "", an[160] = "";
+            /* the newest valid release of the mod (tag "<id>-v<version>", asset "<id>-<version>.zip"; old bundle-v0.1.x
+               releases hold mod zips of the old numbers, multiplayer-0.10.0.zip ..., that must never count) */
+            char top[32] = "", url[1024] = "", sha[65] = "", an[160] = ""; int own = 0;
             size_t il = strlen(u->id);
             for (JNode *r = rs->child; r; r = r->next) {
                 if (!usable(r)) continue;
@@ -188,21 +190,25 @@ static void check_mods(void) {
                     size_t nl = n ? strlen(n) : 0;
                     if (!n || !url_ || nl < il + 6 || strncmp(n, u->id, il) || n[il] != '-' || strcmp(n + nl - 4, ".zip")) continue;
                     char v[32]; snprintf(v, sizeof v, "%.*s", (int)(nl - il - 5), n + il + 1);
-                    if (v[0] < '0' || v[0] > '9' || vcmp(v, u->have) <= 0 || (best[0] && vcmp(v, best) <= 0)) continue;
-                    /* only the mod's own release "<id>-v<version>" counts: old bundle-v0.1.x releases hold mod zips of the
-                       old numbers (multiplayer-0.10.0.zip, custom-modes-0.11.0.zip ...) that would win as "newer" */
                     char want_tag[160]; snprintf(want_tag, sizeof want_tag, "%s-v%s", u->id, v);
-                    const char *tag = json_str(r, "tag_name"); if (!tag || strcmp(tag, want_tag)) continue;
+                    const char *tag = json_str(r, "tag_name");
+                    if (v[0] < '0' || v[0] > '9' || !tag || strcmp(tag, want_tag)) continue;
+                    if (!vcmp(v, u->have)) own = 1;
+                    if (top[0] && vcmp(v, top) <= 0) continue;
                     char key[128]; snprintf(key, sizeof key, "%s %s", u->id, v); if (is_bad(key)) continue;
                     char s[65]; if (asset_sha(r, a, s)) { dsl_log("update: %s: %s has no sha256, skipped", u->id, n); continue; }
-                    snprintf(best, sizeof best, "%s", v); snprintf(url, sizeof url, "%s", url_); snprintf(sha, sizeof sha, "%s", s); snprintf(an, sizeof an, "%s", n);
+                    snprintf(top, sizeof top, "%s", v); snprintf(url, sizeof url, "%s", url_); snprintf(sha, sizeof sha, "%s", s); snprintf(an, sizeof an, "%s", n);
                 }
             }
+            /* newer: the normal update. Repair: the installed version has no release of its own and is above every valid
+               one (an old bundle-era build the updater of v0.1.7-v0.1.9 installed): back to the newest valid release */
+            int newer = top[0] && vcmp(top, u->have) > 0, repair = top[0] && !own && vcmp(u->have, top) > 0;
             pthread_mutex_lock(&mu);
-            if (best[0]) { snprintf(u->ver, sizeof u->ver, "%s", best); snprintf(u->url, sizeof u->url, "%s", url);
-                           snprintf(u->sha, sizeof u->sha, "%s", sha); snprintf(u->asset, sizeof u->asset, "%s", an); }
+            if (newer || repair) { snprintf(u->ver, sizeof u->ver, "%s", top); snprintf(u->url, sizeof u->url, "%s", url);
+                                   snprintf(u->sha, sizeof u->sha, "%s", sha); snprintf(u->asset, sizeof u->asset, "%s", an); }
             pthread_mutex_unlock(&mu);
-            if (best[0]) dsl_log("update: mod %s: installed %s, newer %s (%s)", u->id, u->have, best, repo);
+            if (newer) dsl_log("update: mod %s: installed %s, newer %s (%s)", u->id, u->have, top, repo);
+            if (repair) dsl_log("update: mod %s: installed %s has no release of its own: back to %s (%s)", u->id, u->have, top, repo);
         }
         json_free(rs);
     }

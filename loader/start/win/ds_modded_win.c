@@ -392,6 +392,7 @@ static void uw_open(const char *title) {
     if (uw_thread) return;
     if (!MultiByteToWideChar(CP_UTF8, 0, title, -1, uw_title, 300) && !MultiByteToWideChar(CP_UTF8, 0, TR("Updating Dungeon Settlers Modded"), -1, uw_title, 300))
         wcscpy(uw_title, L"Updating Dungeon Settlers Modded");
+    { char t8[900]; if (WideCharToMultiByte(CP_UTF8, 0, uw_title, -1, t8, sizeof t8, NULL, NULL)) logf_("update window title: %s", t8); }
     uw_pct = 0; uw_ready = CreateEventW(NULL, TRUE, FALSE, NULL);
     uw_thread = CreateThread(NULL, 0, uw_main, NULL, 0, NULL);
     if (uw_thread && uw_ready) WaitForSingleObject(uw_ready, 5000);
@@ -521,10 +522,11 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     if (!path_ok(root)) {                                  /* after the update: a newer kit may start from there */
         char r8[MAX_PATH * 3]; if (!WideCharToMultiByte(CP_UTF8, 0, root, -1, r8, sizeof r8, NULL, NULL)) r8[0] = 0;
         logf_("ERROR folder path has letters outside the ANSI code page %u: the game will not start", GetACP());
-        if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0))
-            msgbox("Dungeon Settlers Modded", TR("The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC "
+        const char *pw = TR("The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC "
                    "(for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, "
-                   "for example C:\\Games\\Dungeon Settlers Modded."), r8);
+                   "for example C:\\Games\\Dungeon Settlers Modded.");
+        if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0)) msgbox("Dungeon Settlers Modded", pw, r8);
+        else { char m[2048]; snprintf(m, sizeof m, pw, r8); dsi_utf8_fix_end(m); logf_("dialog (DSL_NO_ALERT, not shown): %s", m); }
         return 1;
     }
 
