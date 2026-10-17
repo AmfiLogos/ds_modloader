@@ -16,7 +16,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 mkdir -p "$OUTDIR"
 
 # 1. binaries
-clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation \
+clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation -I"$REPO/loader/src" \
   -o "$OUTDIR/ds_modded" "$HERE/stub/ds_modded.c"
 # no build-machine paths in the shipped binary (panic locations hold the cargo registry and source paths)
 (cd "$REPO" && RUSTFLAGS="--remap-path-prefix=$HOME=/src --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.cargo/registry/src=crates --remap-path-prefix=$HOME/.rustup=rustup --remap-path-prefix=$REPO=dsml" \
@@ -42,6 +42,8 @@ cp "$HERE/bepinex/install_bepinex.sh" "$C/Resources/dsml/install_bepinex.sh"    
 cp "$HERE/melon/install_melon.sh" "$C/Resources/dsml/install_melon.sh"            # MelonLoader at first use (kind "melon" mods)
 # the loader release (repo file RELEASE, 0.1.N): auto-update compares it with ds_modloader's v0.1.N releases (DSM_RELEASE overrides)
 print -r -- "${DSM_RELEASE:-$(head -1 "$REPO/RELEASE")}" > "$C/Resources/dsml/RELEASE"
+# the loader's texts (lang/<code>.json; the stub copies dsml/ to ROOT/loader/, so they end in ROOT/loader/lang/)
+LJ=("$REPO"/loader/lang/*.json(N)); if (( ${#LJ} )); then mkdir -p "$C/Resources/dsml/lang"; cp "${LJ[@]}" "$C/Resources/dsml/lang/"; fi
 for m in $MODS; do   # every shipped mod is required (one mod.json per module, mac-arm64 + win-x64 sha256s)
   [[ -d $REPO/loader/build/mods_all/mac/$m ]] || die "no loader/build/mods_all/mac/$m (run loader/modules/build_mods.sh)"
   cp -R "$REPO/loader/build/mods_all/mac/$m" "$C/Resources/dsml/mods/$m"

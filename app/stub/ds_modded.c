@@ -36,6 +36,8 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#define DSI_IMPLEMENTATION
+#include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 
 static char home[PATH_MAX], logpath[PATH_MAX], self_exe[PATH_MAX];
 extern char **environ;
@@ -72,11 +74,14 @@ static void dirname_n(char *p, int n) { while (n-- > 0) { char *s = strrchr(p, '
 
 static void notice(const char *msg) {
     if (getenv("DSMP_NO_DIALOG")) { logf_("notice (not shown): %s", msg); return; }
-    CFStringRef m = CFStringCreateWithCString(NULL, msg, kCFStringEncodingUTF8);
+    char t[2048]; snprintf(t, sizeof t, "%s", msg); dsi_utf8_fix_end(t);
+    CFStringRef m = CFStringCreateWithCString(NULL, t, kCFStringEncodingUTF8);
+    CFStringRef ok = CFStringCreateWithCString(NULL, TR("OK"), kCFStringEncodingUTF8);
     CFOptionFlags resp;
     CFUserNotificationDisplayAlert(0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL,
-                                   CFSTR("Dungeon Settlers Modded"), m, CFSTR("OK"), NULL, NULL, &resp);
+                                   CFSTR("Dungeon Settlers Modded"), m, ok ? ok : CFSTR("OK"), NULL, NULL, &resp);
     if (m) CFRelease(m);
+    if (ok) CFRelease(ok);
 }
 
 static int fail(const char *msg) { logf_("error: %s", msg); notice(msg); return 1; }
@@ -89,6 +94,23 @@ static char *slurp(const char *p) {
     char *b = malloc((size_t)n + 1); if (!b) { fclose(f); return NULL; }
     size_t r = fread(b, 1, (size_t)n, f); b[r] = 0; fclose(f);
     return b;
+}
+
+/* the game's language for our dialogs: LanguageType of DATA/UserSetting.json (before the first start: the normal game's
+   file, which that start copies in); no file = English. Texts: ROOT/loader/lang (the loader's copy), else the app's own
+   Resources/dsml/lang. A missing <code>.json = English. */
+static void setup_lang(const char *app, const char *root, const char *data) {
+    char d[PATH_MAX], us[PATH_MAX];
+    snprintf(d, sizeof d, "%s/loader/lang", root);
+    if (!exists(d)) snprintf(d, sizeof d, "%s/Contents/Resources/dsml/lang", app);
+    dsi_set_dir(d);
+    snprintf(us, sizeof us, "%s/UserSetting.json", data);
+    char *t = slurp(us);
+    if (!t) { snprintf(us, sizeof us, "%s/Library/Application Support/CanOpener/Dungeon Settlers/UserSetting.json", home); t = slurp(us); }
+    int lang = dsi_lang_from_usersetting(t);
+    free(t);
+    dsi_set_lang(lang);
+    logf_("language %d (%s) from %s, texts %s: %d loaded, %d dropped", lang, dsi_code(), exists(us) ? us : "no UserSetting.json", d, dsi_loaded(), dsi_dropped());
 }
 
 static int write_atomic(const char *p, const char *text) {
@@ -151,7 +173,7 @@ static int sync_loader(const char *app, const char *root) {
     if (!a) {
         free(b);
         if (exists(dst)) { logf_("app has no %s: keeping %s", sv, dst); return 0; }
-        return fail("This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.");
+        return fail(TR("This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again."));
     }
     trim(a); if (b) trim(b);
     int same = b && !strcmp(a, b) && exists(dst);
@@ -160,7 +182,7 @@ static int sync_loader(const char *app, const char *root) {
     if (copyfile(src, tmp, NULL, COPYFILE_ALL | COPYFILE_RECURSIVE) != 0) {
         logf_("copy %s -> %s failed (%s)", src, tmp, strerror(errno));
         free(a); free(b);
-        return fail("The mod loader could not be copied (disk full or no write access to Application Support).");
+        return fail(TR("The mod loader could not be copied (disk full or no write access to Application Support)."));
     }
     char *xav[] = { "/usr/bin/xattr", "-cr", tmp, NULL };   /* a downloaded app is quarantined: dyld would refuse */
     if (run_cmd(xav, NULL, 0) != 0) logf_("xattr -cr %s failed", tmp);
@@ -170,12 +192,12 @@ static int sync_loader(const char *app, const char *root) {
         snprintf(ret, sizeof ret, "%s/retired/loader-%s-%d", root, ts, getpid());
         if (rename(dst, ret) != 0) {
             logf_("move %s -> %s failed (%s)", dst, ret, strerror(errno)); free(a); free(b);
-            return fail("The mod loader could not be updated (its folder is in use). Quit the game and try again.");
+            return fail(TR("The mod loader could not be updated (its folder is in use). Quit the game and try again."));
         }
     }
     if (rename(tmp, dst) != 0) {
         logf_("move %s -> %s failed (%s)", tmp, dst, strerror(errno)); free(a); free(b);
-        return fail("The mod loader could not be installed. See ~/Library/Logs/DungeonSettlersModded.log.");
+        return fail(TR("The mod loader could not be installed. See ~/Library/Logs/DungeonSettlersModded.log."));
     }
     logf_("loader %s installed (was %s)", a, b ? b : "none");
     free(a); free(b);
@@ -362,8 +384,8 @@ static void user_mods(const char *app, const char *root) {
         else {
             logf_("mods: %s is not a mod package (no mod.json with a good id)", n);
             char msg[PATH_MAX + 128];
-            snprintf(msg, sizeof msg, "%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.", n);
-            notice(msg);
+            snprintf(msg, sizeof msg, TR("%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed."), n);
+            dsi_utf8_fix_end(msg); notice(msg);
         }
     }
     for (int i = 0; i < ne; i++) free(ents[i]);
@@ -436,7 +458,7 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
     }
     if (st != 0 || !build[0] || !play[0]) {
         logf_("dsml-helper exit %d", st);
-        return fail(err[0] ? err : "The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log.");
+        return fail(err[0] ? err : TR("The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log."));   /* err: dsml-helper's English */
     }
     logf_("game copy ready in %ld s: build %s, %s", (long)(time(NULL) - t0), build, play);
     char eb[256], ep[PATH_MAX * 2], txt[PATH_MAX * 3];
@@ -527,7 +549,7 @@ static int ensure_steam(const char *app) {
     if (posix_spawn(&op, oav[0], NULL, NULL, oav, environ) == 0) waitpid(op, &st, 0);
     if (!(WIFEXITED(st) && WEXITSTATUS(st) == 0)) {
         logf_("open -a %s failed (status %d)", sapp, st);
-        notice("Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.");
+        notice(TR("Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again."));
         return 1;
     }
     time_t t0 = time(NULL);
@@ -540,7 +562,7 @@ static int ensure_steam(const char *app) {
         }
     }
     logf_("Steam not ready after %d s", wait_s);
-    notice("Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.");
+    notice(TR("Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again."));
     return 1;
 }
 
@@ -550,7 +572,19 @@ static int ensure_steam(const char *app) {
 #define BIE_VER "0.1.0"
 static void bg_notification(const char *text) {             /* non-blocking banner; the game start goes on */
     if (getenv("DSMP_NO_DIALOG")) { logf_("notification (not shown): %s", text); return; }
-    char sc[600]; snprintf(sc, sizeof sc, "display notification \"%s\" with title \"Dungeon Settlers Modded\"", text);
+    /* the text goes inside an AppleScript string: \ and " escaped; cut at a whole character to fit the 600-byte script */
+    static const char head[] = "display notification \"", tail[] = "\" with title \"Dungeon Settlers Modded\"";
+    char sc[600], t[600], esc[1200];
+    size_t room = sizeof sc - (sizeof head - 1) - (sizeof tail - 1), cap = room;   /* bytes for the escaped text + NUL */
+    for (;;) {
+        snprintf(t, sizeof t, "%s", text); dsi_utf8_clip(t, cap < sizeof t ? cap : sizeof t);
+        size_t n = 0;
+        for (const char *c = t; *c && n + 2 < sizeof esc; c++) { if (*c == '"' || *c == '\\') esc[n++] = '\\'; esc[n++] = *c; }
+        esc[n] = 0;
+        if (n < room || cap <= 1) break;
+        cap -= n - room + 1;                                   /* escapes made it longer: cut the text more */
+    }
+    snprintf(sc, sizeof sc, "%s%s%s", head, esc, tail);
     char *av[] = { "/usr/bin/osascript", "-e", sc, NULL }; pid_t pid;
     if (posix_spawn(&pid, av[0], NULL, NULL, av, environ) == 0) logf_("notification: %s", text);
 }
@@ -586,19 +620,19 @@ static int melon_launch(const char *root, const char *data, char *dyld, size_t c
     if (!allowed) { logf_("melon: %d mod(s) off this start: BepInEx mods run (one .NET host per start)", n); return 0; }
     char probe[PATH_MAX]; snprintf(probe, sizeof probe, "%s/MelonLoader.Bootstrap.dylib", mdir);
     if (!exists(probe)) {
-        bg_notification("Preparing mods (first start): downloading MelonLoader (52 MB).");
+        bg_notification(TR("Preparing mods (first start): downloading MelonLoader (52 MB)."));
         char out[2048] = ""; char *av[] = { "/bin/zsh", script, mdir, NULL };
         int r = run_cmd(av, out, sizeof out);
         if (r != 0) {
             char *er = strstr(out, "ERROR "); char msg[900];
-            snprintf(msg, sizeof msg, "MelonLoader could not be installed (%s). The game starts without the MelonLoader mods.", er ? er + 6 : "unknown error");
+            snprintf(msg, sizeof msg, TR("MelonLoader could not be installed (%s). The game starts without the MelonLoader mods."), er ? er + 6 : TR("unknown error"));
             for (char *c = msg; *c; c++) if (*c == '\n') *c = ' ';
-            logf_("melon install failed: %s", out); notice(msg); return 0;
+            dsi_utf8_fix_end(msg); logf_("melon install failed: %s", out); notice(msg); return 0;
         }
         logf_("melon installed into %s", mdir);
     }
     char ready[PATH_MAX]; snprintf(ready, sizeof ready, "%s/ds_ready_%s", mdir, getenv("DSML_BUILD") ? getenv("DSML_BUILD") : "");
-    if (!exists(ready)) bg_notification("Preparing mods (first start): MelonLoader prepares its files for this game version. About 2 minutes, once.");
+    if (!exists(ready)) bg_notification(TR("Preparing mods (first start): MelonLoader prepares its files for this game version. About 2 minutes, once."));
     snprintf(dyld + strlen(dyld), cap - strlen(dyld), ":%s/MelonLoader.Bootstrap.dylib", mdir);
     setenv("MELONLOADER_BASEDIR", mdir, 1);
     setenv("MELONLOADER_MOD_DIRS", dirs, 1);
@@ -616,19 +650,19 @@ static int bepinex_launch(const char *root, const char *data, char *dyld, size_t
     if (!n) return 0;
     char probe[PATH_MAX]; snprintf(probe, sizeof probe, "%s/libdoorstop.dylib", bdir);
     if (!exists(probe)) {
-        bg_notification("Preparing mods (first start): downloading BepInEx (31 MB).");
+        bg_notification(TR("Preparing mods (first start): downloading BepInEx (31 MB)."));
         char out[2048] = ""; char *av[] = { "/bin/zsh", script, bdir, NULL };
         int r = run_cmd(av, out, sizeof out);
         if (r != 0) {
             char *er = strstr(out, "ERROR "); char msg[900];
-            snprintf(msg, sizeof msg, "BepInEx could not be installed (%s). The game starts without the BepInEx mods.", er ? er + 6 : "unknown error");
+            snprintf(msg, sizeof msg, TR("BepInEx could not be installed (%s). The game starts without the BepInEx mods."), er ? er + 6 : TR("unknown error"));
             for (char *c = msg; *c; c++) if (*c == '\n') *c = ' ';
-            logf_("bepinex install failed: %s", out); notice(msg); return 0;
+            dsi_utf8_fix_end(msg); logf_("bepinex install failed: %s", out); notice(msg); return 0;
         }
         logf_("bepinex installed into %s", bdir);
     }
     char ready[PATH_MAX]; snprintf(ready, sizeof ready, "%s/ds_ready_%s", bdir, getenv("DSML_BUILD") ? getenv("DSML_BUILD") : "");
-    if (!exists(ready)) bg_notification("Preparing mods (first start): BepInEx prepares its files for this game version. About 2 minutes, once.");
+    if (!exists(ready)) bg_notification(TR("Preparing mods (first start): BepInEx prepares its files for this game version. About 2 minutes, once."));
     char v[PATH_MAX];
     snprintf(dyld + strlen(dyld), cap - strlen(dyld), ":%s/libdoorstop.dylib", bdir);
     setenv("DOORSTOP_ENABLED", "1", 1); setenv("DOORSTOP_IGNORE_DISABLED_ENV", "0", 1);
@@ -662,8 +696,9 @@ int main(int argc, char **argv) {
     snprintf(data, sizeof data, "%s/data", profile);
     snprintf(uhome, sizeof uhome, "%s/home", profile);
     mkdirs(data); mkdirs(uhome);
+    setup_lang(app, root, data);                             /* before the first dialog */
     if (!exists(data)) { logf_("cannot create %s (%s)", data, strerror(errno));
-                         return fail("Dungeon Settlers Modded cannot create its folder in Application Support."); }
+                         return fail(TR("Dungeon Settlers Modded cannot create its folder in Application Support.")); }
 
     /* 1b. auto-update. ROOT/update/run.lock: the game of this install holds it (this fd stays open through execv) */
     setenv("DSML_ROOT", root, 1); setenv("DSML_APP", app, 1);
@@ -678,7 +713,7 @@ int main(int argc, char **argv) {
         if (lfd >= 0) close(lfd);                            /* the new stub takes the lock itself */
         execv(real, argv);
         logf_("exec %s failed (%s)", real, strerror(errno));
-        return fail("Dungeon Settlers Modded was updated but could not start. Open it again.");
+        return fail(TR("Dungeon Settlers Modded was updated but could not start. Open it again."));
     }
     if (ulabel[0]) setenv("DSML_UPDATE", ulabel, 1); else unsetenv("DSML_UPDATE");
     if (sync_loader(app, root)) return 1;
@@ -751,5 +786,5 @@ int main(int argc, char **argv) {
     logf_("start %s (app %s, build %s)", game, app, build);
     execv(game, av);
     logf_("exec %s failed (%s)", game, strerror(errno));
-    return fail("The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.");
+    return fail(TR("The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log."));
 }

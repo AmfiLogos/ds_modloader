@@ -15,9 +15,9 @@
 #include <strings.h>
 #include "dsl_os.h"
 
-#define REFUSE_TEXT "This world uses other mods."
+#define REFUSE_TEXT TR("This world uses other mods.")
 /* in a world (Esc menu Load): no restart there (owner 2026-10-16 #10), flow K only from the title */
-#define REFUSE_IN_WORLD "This world uses other mods. Go back to the title screen to load it."
+#define REFUSE_IN_WORLD TR("This world uses other mods. Go back to the title screen to load it.")
 int dsl_reg_scene(void);                             /* dsl_reg.c: MainFlow._currentScene, 1 title, 2 world */
 
 static void *(*orig_load)(void *self, void *name, const void *mi);
@@ -61,7 +61,7 @@ static void *my_load(void *self, void *name, const void *mi) {
         dsl_world_refusals++;
         if (it) *(int32_t*)((char*)it + 0x10) = -2;
         if (cancel_notice && str_new) {
-            char msg[1600]; snprintf(msg, sizeof msg, "The list of mods for each world could not be read, so no world is loaded now. The file is kept as %s. Restart the game, and if this message comes back, send that file with a bug report.", kept);
+            char msg[1600]; snprintf(msg, sizeof msg, TR("The list of mods for each world could not be read, so no world is loaded now. The file is kept as %s. Restart the game, and if this message comes back, send that file with a bug report."), kept); dsi_utf8_fix_end(msg);
             cancel_notice(self, str_new(msg), str_new("dsload: worlds.json unreadable"), NULL);
         }
         return it;

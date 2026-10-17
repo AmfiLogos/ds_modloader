@@ -1,4 +1,10 @@
-// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 3.
+// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 4.
+// API 4 = API 3, same DSLHost layout, plus one behaviour: title_add_button called again with the same self, click
+// and ud relabels that button (new label / tip) instead of adding a second one. A module that relabels after a
+// language change checks host->api_version >= 4 first (an API 3 loader would add a second button).
+// The loader loads every module whose dsl_plugin_api_version (and mod.json "api") is 1..DSL_API_VERSION, so API 1,
+// 2 and 3 modules load exactly as before. DSL_PLUGIN() still exports 3 (DSL_PLUGIN_API): API 4 adds no field, a module
+// checks host->api_version at run time, so a module built with this header also loads in an API 3 loader.
 // API 3 = API 2 + soft restart, session busy, Mods window tabs, title buttons, load-list rows / filter and the
 // dsl_ui widget kit (all appended to DSLHost; check host->size before use, or use the dsl_* wrappers below).
 // API 2 = API 1 (~/DungeonSettlersMods/loader/sdk/dsl_sdk.h) + fields appended to DSLHost + two optional
@@ -29,7 +35,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_API_VERSION 3
+#define DSL_API_VERSION 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,6 +108,9 @@ typedef struct DSLUi {
     void (*clipboard_set)(const char *s);
     /* appended (check size): close the notice box this kit showed last, no callback (e.g. a "please wait" box) */
     void (*notice_close)(void);
+    /* appended (check size): preferred height of a text widget's text at width w (0 = its own width), at its design
+       size, so a caller can grow the box to its text (the game's way for long text; CJK lines are taller) */
+    float (*text_height)(DSLObj text, float w);
 } DSLUi;
 
 typedef struct DSLHost {
@@ -165,7 +174,10 @@ typedef struct DSLHost {
     int (*menu_open)(const char *tab_id);     /* open the Mods window at that tab (NULL = Mods); 0 = ok */
 
     /* Title screen button in the stock column style (clone of SubUI_TitleMenuButton), below the stock column and the
-       multiplayer clones. order: lower = higher up (the loader's "Mods" = 100). tip = game tooltip body or NULL. */
+       multiplayer clones. order: lower = higher up (the loader's "Mods" = 100). tip = game tooltip body or NULL.
+       Calling it again with the same self, click and ud gives that button a new label / tip (e.g. after the game's
+       language changed) instead of adding a second button: API 4 (host->api_version >= 4); an API 3 loader adds
+       a second button, so do not call it again there. */
     int (*title_add_button)(DSLPlugin *self, const char *label, int order, const char *tip,
                             void (*click)(void *ud), void *ud);
 
@@ -184,7 +196,10 @@ typedef struct DSLHost {
     const char *(*data_dir)(void);            /* <game data>/Mods (profiles, groups.json, worlds.json, units/) */
 } DSLHost;
 
-#define DSL_PLUGIN() __attribute__((visibility("default"))) const uint32_t dsl_plugin_api_version = DSL_API_VERSION
+#ifndef DSL_PLUGIN_API
+#define DSL_PLUGIN_API 3                      /* the API a module needs from its loader (API 4 = runtime check only) */
+#endif
+#define DSL_PLUGIN() __attribute__((visibility("default"))) const uint32_t dsl_plugin_api_version = DSL_PLUGIN_API
 
 typedef int (*dsl_plugin_init_fn)(const DSLHost *host, DSLPlugin *self);
 typedef int (*dsl_module_load_fn)(const DSLHost *host, DSLPlugin *self);

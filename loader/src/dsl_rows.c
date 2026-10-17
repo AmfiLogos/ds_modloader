@@ -204,26 +204,30 @@ static void build_rows(Obj slv) {
 void dsl_mod_short(const char *id, char *out, size_t cap);
 const char *dsl_mod_name(const char *id);
 int dsl_reg_scene(void);
+static int cols_of(const char *s) {                                  /* display columns (as dsl_mod_short: a 3-byte character = 2) */
+    int c = 0; for (const unsigned char *p = (const unsigned char *)s; *p; p++) if ((*p & 0xC0) != 0x80) c += *p >= 0xE0 ? 2 : 1;
+    return c;
+}
 static void world_texts(const char *guid, int maxc, char *line, size_t lcap, char *all, size_t acap) {
     int dsl_world_mods_all(const char *guid, const char **ids, int max);
     const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64);
     all[0] = 0; line[0] = 0;
-    if (!n) { snprintf(line, lcap, "<color=#A69085>Mods:</color> none"); snprintf(all, acap, "No mods."); return; }
+    if (!n) { snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), TR("none")); snprintf(all, acap, "%s", TR("No mods.")); return; }
     int used = 6, k = 0;                                                  /* "Mods: " */
     char shown[600] = "";
     for (int i = 0; i < n; i++) {
         const char *nm = dsl_mod_name(ids[i]);
-        char one[300]; snprintf(one, sizeof one, "%s%s", nm ? nm : ids[i], nm ? "" : " (not installed)");
+        char one[300]; if (nm) snprintf(one, sizeof one, "%s", nm); else snprintf(one, sizeof one, TR("%s (not installed)"), ids[i]);
         if (i) strlcat(all, "\n", acap);
         strlcat(all, one, acap);
-        char sh[64]; dsl_mod_short(ids[i], sh, sizeof sh);
-        int len = (int)strlen(sh) + (k ? 3 : 0), plus = i + 1 < n ? 4 : 0;
+        char sh[128]; dsl_mod_short(ids[i], sh, sizeof sh);
+        int len = cols_of(sh) + (k ? 3 : 0), plus = i + 1 < n ? 4 : 0;   /* columns, not bytes (ru / CJK were counted double) */
         if (k && used + len + plus > maxc) continue;                      /* the first one always shows */
         if (k) strlcat(shown, " \xC2\xB7 ", sizeof shown);
         strlcat(shown, sh, sizeof shown); used += len; k++;
     }
     if (k < n) { char pl[16]; snprintf(pl, sizeof pl, "  +%d", n - k); strlcat(shown, pl, sizeof shown); }
-    snprintf(line, lcap, "<color=#A69085>Mods:</color> %s", shown);
+    snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), shown); dsi_utf8_fix_end(line);
 }
 /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent") gets one warning line at the card's end */
 static void world_warning(const char *guid, char *all, size_t acap) {
@@ -247,9 +251,9 @@ static void decorate(void) {
         Obj tr = comp_tr(cs, NULL);
         if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, txt, 14, DSL_TXT_RIGHT, 0xD9C7B0FF);
         else u->set_text(w->line, txt);
-        u->tooltip(w->line, "Mods of this world", all);
-        if (!w->chg) { w->chg = u->button(tr, 0, 0, 10, 10, "Change", change_click, (void *)(intptr_t)i);
-                       u->tooltip(w->chg, "Change", "Choose the mods this world loads with."); }
+        dsi_utf8_fix_end(all); u->tooltip(w->line, TR("Mods of this world"), all);
+        if (!w->chg) { w->chg = u->button(tr, 0, 0, 10, 10, TR("Change"), change_click, (void *)(intptr_t)i);
+                       u->tooltip(w->chg, TR("Change"), TR("Choose the mods this world loads with.")); }
         u->set_active(w->chg, at_title);
         dsl_rows_place(cs, w->line, at_title ? w->chg : NULL);
     }
@@ -331,7 +335,7 @@ static void new_campaign_frame(void) {
     if (!shown(cs)) return;
     char t[600]; dsl_newworld_label(t, sizeof t);
     Obj tr = comp_tr(cs, NULL);
-    if (!nc_line || !live((Obj)nc_line)) { nc_line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF); nc_btn = u->button(tr, 0, 0, 10, 10, "Change", nc_click, NULL); }
+    if (!nc_line || !live((Obj)nc_line)) { nc_line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF); nc_btn = u->button(tr, 0, 0, 10, 10, TR("Change"), nc_click, NULL); }
     else u->set_text(nc_line, t);
     dsl_rows_place_newcampaign(cs, nc_line, nc_btn);
 }

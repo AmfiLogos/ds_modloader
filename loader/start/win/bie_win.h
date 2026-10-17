@@ -12,3 +12,6 @@ int bie_install_now(const char *root, const char *game, char *why, size_t wn);  
 int bie_ml_installed(const char *game);
 int bie_ml_install_now(const char *root, const char *game, char *why, size_t wn);   /* MelonLoader 0.7.3 (once) */
 int bie_unzip_file(const char *zip, const char *dest);   /* a mod package zip -> dest; files written, or -1 */
+/* a reason text (UTF-8, maybe translated) for the loader in an environment variable: bytes >= 0x80 and '%' as %XX, so
+   the ANSI environment calls keep it whole on every code page (the loader decodes it: dsl_reg.c env_text). NULL/"" unsets */
+void bie_env_text(const char *name, const char *utf8);

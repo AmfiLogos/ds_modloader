@@ -11,7 +11,7 @@ CF=(-O2 -Wall -Wno-unused-function -mmacosx-version-min=12.0 -DDSL_RELEASE=\"$(h
 put() { codesign -f -s - "$1.tmp" 2>/dev/null; mv -f "$1.tmp" "$1"; }
 
 UISRC=(ui/*.c(N))                                   # Mods window (lane L2), when present
-WEAKU=(); for w in dsl_win_init dsl_win_open dsl_win_close dsl_win_is_open dsl_win_frame dsl_win_open_world; do WEAKU+=(-Wl,-U,_$w); done   # weak, defined by loader/ui
+WEAKU=(); for w in dsl_win_init dsl_win_open dsl_win_close dsl_win_is_open dsl_win_frame dsl_win_open_world dsl_win_relang; do WEAKU+=(-Wl,-U,_$w); done   # weak, defined by loader/ui
 nice -n 19 clang -arch arm64 -arch x86_64 $CF ${=EXTRA_CFLAGS} -Isrc -dynamiclib -fobjc-arc -framework AppKit -framework CoreFoundation -framework CoreGraphics -lobjc $WEAKU -install_name @rpath/dsload.dylib \
   -o build/dsload.dylib.tmp src/dsl_main.c src/dsl_engine.c src/dsl_il2cpp.c src/dsl_json.c src/dsl_world.c src/dsl_cloud.c src/dsl_soft.c src/dsl_ui.c src/dsl_reg.c src/dsl_rows.c src/dsl_update.c src/dsl_fastboot.c $UISRC start/mac/dsl_start_mac.c start/mac/dsl_update_mac.c start/mac/dsl_soft_mac.c start/mac/dsl_bie_mac.c start/mac/dsl_notch_mac.m
 put build/dsload.dylib; echo "built build/dsload.dylib"
@@ -51,6 +51,7 @@ DR=${MP_DET_RANGES:-$MP_REPO/build/det_ranges.tsv}
 cp $DR $M/det_ranges.tsv.tmp; mv -f $M/det_ranges.tsv.tmp $M/det_ranges.tsv
 cp modules/multiplayer/mod.json $M/mod.json
 print -r -- "$SHA" > $M/PINNED_COMMIT
+zsh modules/copy_lang.sh $MP_REPO $SHA $M                          # its translations (repo lang/*.json) when the pin has them
 echo "built $M from ds_multiplayer $SHA (${#mpsrc} files)"
 # custom-modes: its own repo (github.com/AmfiLogos/ds_custommodes), ONE pinned commit (cm_pin.txt, or CM_PIN=<commit/tag>),
 # exported read-only into build/cmpin/<sha>/; headers from the multiplayer pin above (MP_SRC). CM_REPO = a local clone.
@@ -59,6 +60,7 @@ CSHA=$(git -C $CM_REPO rev-parse --verify "$CM_PIN^{commit}") || { echo "cm pin 
 CV=build/cmpin/$CSHA
 if [[ ! -f $CV/build_module.sh ]]; then mkdir -p $CV.tmp; git -C $CM_REPO archive $CSHA | tar -x -C $CV.tmp; mv $CV.tmp $CV; fi
 OUT=$PWD/build/mods/custom-modes SDK=$PWD/sdk MP_SRC=$PWD/$V/src zsh $CV/build_module.sh
+zsh modules/copy_lang.sh $CV - build/mods/custom-modes              # its translations (repo lang/*.json) when the pin has them
 echo "built build/mods/custom-modes from ds_custommodes $CSHA"
 
 # gcd-cdr

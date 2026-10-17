@@ -101,25 +101,22 @@ static void us_bad_keys(const char *key) {
     char k[400]; snprintf(k, sizeof k, "%s", key);
     for (char *t = strtok(k, ","); t; t = strtok(NULL, ",")) if (!us_count("bad.txt", t)) us_append("bad.txt", t);
 }
-/* "v0.1.5" / "mods:Multiplayer 0.1.5" -> words for the player */
-static void us_what(const char *label, char *out, size_t n) {
-    if (!strncmp(label, "mods:", 5)) snprintf(out, n, "the mod update (%s)", label + 5);
-    else snprintf(out, n, "the update to %s", label[0] == 'v' ? label + 1 : label);
-}
 
 /* step 2; label set when this start runs the installed update */
 static void us_pending(const char *root, char *label, size_t ln) {
     UsPending pd; if (us_pending_read(&pd)) return;
-    char what[260], line[600]; us_what(pd.label, what, sizeof what);
+    char line[600];
     if (!pd.done || pd.started >= 2) {
         dsl_log("update: %s %s: rolling back", pd.label, !pd.done ? "was cut off while installing" : "was started twice and never reached the title");
         if (us_rollback(pd.mv, root)) dsl_log("update: rollback incomplete: pending.txt stays (the next start tries again)");
         else {
             if (pd.done) us_bad_keys(pd.key);
             us_old("pending.txt", pd.done ? "failed" : "cutoff");
-            if (!strncmp(pd.label, "mods:", 5)) snprintf(line, sizeof line, "%c%s did not start. The old mods are back.", what[0] - 32, what + 1);
-            else snprintf(line, sizeof line, "%c%s did not start. You have %s again.", what[0] - 32, what + 1, pd.from[0] ? pd.from : "the old version");
-            if (!pd.done) snprintf(line, sizeof line, "%c%s was cut off. Nothing changed.", what[0] - 32, what + 1);
+            int mods = !strncmp(pd.label, "mods:", 5); const char *ver = pd.label[0] == 'v' ? pd.label + 1 : pd.label;   /* whole sentences: TR() */
+            if (mods) snprintf(line, sizeof line, TR("The mod update (%s) did not start. The old mods are back."), pd.label + 5);
+            else snprintf(line, sizeof line, TR("The update to %s did not start. You have %s again."), ver, pd.from[0] ? pd.from : TR("the old version"));
+            if (!pd.done && mods) snprintf(line, sizeof line, TR("The mod update (%s) was cut off. Nothing changed."), pd.label + 5);
+            else if (!pd.done) snprintf(line, sizeof line, TR("The update to %s was cut off. Nothing changed."), ver);
             us_notice(line);
         }
     } else {
@@ -159,10 +156,9 @@ static int us_ready(const char *root, int auto_on, const DslUpdWin *w) {
             us_old("ready.txt", "badsha"); return 0;
         }
     }
-    char title[300], what[260], ts[32], bdir[1300], why[300] = "";
-    us_what(label, what, sizeof what);
-    if (kit) snprintf(title, sizeof title, "Updating Dungeon Settlers Modded to %s", it[0].ver);
-    else snprintf(title, sizeof title, "Updating mods: %s", !strncmp(label, "mods:", 5) ? label + 5 : label);
+    char title[300], ts[32], bdir[1300], why[300] = "";
+    if (kit) snprintf(title, sizeof title, TR("Updating Dungeon Settlers Modded to %s"), it[0].ver);
+    else snprintf(title, sizeof title, TR("Updating mods: %s"), !strncmp(label, "mods:", 5) ? label + 5 : label);
     us_stamp(ts, sizeof ts); snprintf(bdir, sizeof bdir, "%s/backup-%s-%s", us_dir, have[0] ? have : "old", ts);
     DslMoves *mv = calloc(1, sizeof *mv); if (!mv) return 0;
     us_path(p, sizeof p, "pending.txt");
@@ -193,8 +189,8 @@ static int us_ready(const char *root, int auto_on, const DslUpdWin *w) {
             if (us_count("fails.txt", key) >= 2) { us_bad_keys(key); dsl_log("update: %s failed twice: not offered again", key); }
         }
         us_old("ready.txt", "installfailed");
-        if (kit) snprintf(line, sizeof line, "%c%s could not be installed (%s). You still have %s.", what[0] - 32, what + 1, why, have[0] ? have : "the old version");
-        else snprintf(line, sizeof line, "%c%s could not be installed (%s). The old mods stay.", what[0] - 32, what + 1, why);
+        if (kit) snprintf(line, sizeof line, TR("The update to %s could not be installed (%s). You still have %s."), it[0].ver, why, have[0] ? have : TR("the old version"));
+        else snprintf(line, sizeof line, TR("The mod update (%s) could not be installed (%s). The old mods stay."), !strncmp(label, "mods:", 5) ? label + 5 : label, why);
         us_notice(line);
         free(mv); return 0;
     }

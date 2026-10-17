@@ -48,6 +48,8 @@ cp kit/install.bat kit/uninstall.bat kit/README.txt $K/
 cp kit/find_game.bat kit/copy_exclude.txt $K/files/
 mkdir -p $K/licenses; cp $L/../licenses/LICENSE.txt $L/../licenses/THIRD_PARTY_NOTICES.txt $K/licenses/   # kit\licenses (in the kit zip too), copied to the install folder
 cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
+# the loader's texts (lang/<code>.json): install.bat puts them next to the loader, ROOT\game\lang (the starter reads them too)
+LJ=($L/lang/*.json(N)); if (( ${#LJ} )); then mkdir -p $K/files/lang; cp $LJ $K/files/lang/; fi
 print 25846389 > $K/files/BUILD.txt
 print ${DSM_RELEASE:-$(head -1 $L/../RELEASE)} > $K/files/RELEASE     # the kit release (auto-update compares it)
 stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt

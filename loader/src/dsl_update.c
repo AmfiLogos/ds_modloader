@@ -233,8 +233,8 @@ static void ready_write(void) {
     char p[1200]; upath(p, sizeof p, "ready.txt");
     if (write_file(p, b)) { dsl_log("update: cannot write %s", p); return; }
     pthread_mutex_lock(&mu);
-    if (S.kit_ver[0]) snprintf(ready_line, sizeof ready_line, "%s installs the next time you start the game.", S.kit_ver);
-    else snprintf(ready_line, sizeof ready_line, "Mod updates install the next time you start the game.");
+    if (S.kit_ver[0]) snprintf(ready_line, sizeof ready_line, TR("%s installs the next time you start the game."), S.kit_ver);
+    else snprintf(ready_line, sizeof ready_line, "%s", TR("Mod updates install the next time you start the game."));
     pthread_mutex_unlock(&mu);
     dsl_log("update: ready.txt written (%s%s): installed at the next start", S.kit_ver[0] ? S.kit_ver : "mods", c ? ", Update clicked" : "");
 }
@@ -288,8 +288,8 @@ static void title_results(void) {
         free(b);
         if (label[0] && !strcmp(label, confirm_label)) {
             moved_old("pending.txt", "ok");
-            if (!strncmp(label, "mods:", 5)) snprintf(line, sizeof line, "Updated: %s", label + 5);
-            else snprintf(line, sizeof line, "Updated to %s", label[0] == 'v' ? label + 1 : label);
+            if (!strncmp(label, "mods:", 5)) snprintf(line, sizeof line, TR("Updated: %s"), label + 5);
+            else snprintf(line, sizeof line, TR("Updated to %s"), label[0] == 'v' ? label + 1 : label);
             dsl_log("update: %s confirmed at the title", label);
         } else dsl_log("update: DSML_UPDATE=%s but pending.txt says \"%s\": nothing to confirm", confirm_label, label);
         confirm_label[0] = 0;
@@ -326,9 +326,9 @@ static void corner_frame(void) {
     DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn;
     if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
     if (!tog) {
-        tog = u->toggle(NULL, 0, 0, 260, "Auto-update", auto_on, toggle_change, NULL);
+        tog = u->toggle(NULL, 0, 0, 260, TR("Auto-update"), auto_on, toggle_change, NULL);
         txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
-        btn = u->button(NULL, 0, 0, 220, 40, "Update", button_click, NULL);
+        btn = u->button(NULL, 0, 0, 220, 40, TR("Update"), button_click, NULL);
         if (!tog || !txt || !btn) return;
         dsl_ui_place_tr(tog, 24, 56, 260, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
         c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
@@ -341,14 +341,14 @@ static void corner_frame(void) {
     snprintf(kv, sizeof kv, "%s", S.kit_ver); snprintf(rl, sizeof rl, "%s", ready_line);
     pthread_mutex_unlock(&mu);
     int want_btn = !auto_on && avail && !clicked && st != 1 && !line[0];
-    char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, "Update to %s", kv); else snprintf(bl, sizeof bl, "Update mods");
+    char bl[64]; if (kv[0]) snprintf(bl, sizeof bl, TR("Update to %s"), kv); else snprintf(bl, sizeof bl, "%s", TR("Update mods"));
     if (want_btn && strcmp(bl, c_btn_label)) { snprintf(c_btn_label, sizeof c_btn_label, "%s", bl); u->set_text(btn, bl); }
     if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
     char l[400] = "";
     if (line[0]) snprintf(l, sizeof l, "%s", line);
-    else if (st == 1 && clicked) snprintf(l, sizeof l, kv[0] ? "Downloading %s..." : "Downloading mod updates...", kv);
+    else if (st == 1 && clicked) { if (kv[0]) snprintf(l, sizeof l, TR("Downloading %s..."), kv); else snprintf(l, sizeof l, "%s", TR("Downloading mod updates...")); };
     else if (st == 2 && (auto_on || clicked)) snprintf(l, sizeof l, "%s", rl);
-    else if (st == -1 && clicked) snprintf(l, sizeof l, "The download failed. The game tries again next time.");
+    else if (st == -1 && clicked) snprintf(l, sizeof l, "%s", TR("The download failed. The game tries again next time."));
     if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
     u->set_active(txt, l[0] != 0 && !want_btn);
 }

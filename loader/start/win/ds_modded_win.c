@@ -22,9 +22,11 @@
 #include <stdarg.h>
 #include <wchar.h>
 #include "bie_win.h"
+#define DSI_IMPLEMENTATION   /* before dsl_internal.h (it includes ds_i18n.h): TR() tables of this exe */
 #include "dsl_internal.h"
 #include "dsl_u8_win.h"
 #include "dsl_update_os.h"
+#include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 
 #define APPID L"2798330"
 static wchar_t root[MAX_PATH], game[MAX_PATH], profile[MAX_PATH], data[MAX_PATH];
@@ -37,9 +39,19 @@ static void logf_(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt); vfprintf(lg, fmt, ap); va_end(ap);
     fputc('\n', lg); fflush(lg);
 }
-static int fail(const wchar_t *msg) {
-    logf_("ERROR %ls", msg);
-    MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+/* a dialog from UTF-8 text (printf style; TR() formats): MultiByteToWideChar(CP_UTF8) + MessageBoxW */
+static void msgbox(const char *title, const char *fmt, ...) {
+    char m[2048]; va_list ap; va_start(ap, fmt); vsnprintf(m, sizeof m, fmt, ap); va_end(ap);
+    dsi_utf8_fix_end(m);
+    wchar_t wm[2048], wt[300];
+    if (!MultiByteToWideChar(CP_UTF8, 0, m, -1, wm, 2048)) wm[0] = 0;
+    if (!MultiByteToWideChar(CP_UTF8, 0, title, -1, wt, 300)) wcscpy(wt, L"Dungeon Settlers Modded");
+    logf_("dialog: %s", m);
+    MessageBoxW(NULL, wm, wt, MB_OK | MB_ICONWARNING);
+}
+static int fail(const char *msg) {
+    logf_("ERROR %s", msg);
+    msgbox("Dungeon Settlers Modded", "%s", msg);
     return 1;
 }
 /* the game does not start from a folder whose path has letters outside the ANSI code page (Wine, code page 1252:
@@ -277,13 +289,13 @@ static void install_packages(void) {
         if (ok) logf_("mods: %ls installed as mods\\%s (%d files)", fd.cFileName, id, k);
         else if (src[0]) {                                 /* a mod, but its folder could not be put in place */
             logf_("mods: %ls (%s) could not be put in place (%lu): moved to mods\\.failed", fd.cFileName, id, GetLastError());
-            wchar_t msg[600]; _snwprintf(msg, 600, L"%ls could not be installed (the mods folder could not be changed). It was moved to the mods\\.failed folder. The game starts without the new version.", fd.cFileName);
-            MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+            char zn[MAX_PATH * 3]; if (!WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, zn, sizeof zn, NULL, NULL)) zn[0] = 0;
+            msgbox("Dungeon Settlers Modded", TR("%s could not be installed (the mods folder could not be changed). It was moved to the mods\\.failed folder. The game starts without the new version."), zn);
         }
         else {
             logf_("mods: %ls is not a mod package (unzip %d, id '%s'): moved to mods\\.failed", fd.cFileName, k, id);
-            wchar_t msg[600]; _snwprintf(msg, 600, L"%ls is not a mod for Dungeon Settlers Modded. It was moved to the mods\\.failed folder. The game starts without it.", fd.cFileName);
-            MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+            char zn[MAX_PATH * 3]; if (!WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, zn, sizeof zn, NULL, NULL)) zn[0] = 0;
+            msgbox("Dungeon Settlers Modded", TR("%s is not a mod for Dungeon Settlers Modded. It was moved to the mods\\.failed folder. The game starts without it."), zn);
         }
     } while (FindNextFileW(h, &fd));
     FindClose(h);
@@ -378,7 +390,7 @@ static DWORD WINAPI uw_main(LPVOID arg) {
 }
 static void uw_open(const char *title) {
     if (uw_thread) return;
-    if (!MultiByteToWideChar(CP_UTF8, 0, title, -1, uw_title, 300)) wcscpy(uw_title, L"Updating Dungeon Settlers Modded");
+    if (!MultiByteToWideChar(CP_UTF8, 0, title, -1, uw_title, 300)) { if (!MultiByteToWideChar(CP_UTF8, 0, TR("Updating Dungeon Settlers Modded"), -1, uw_title, 300)) wcscpy(uw_title, L"Updating Dungeon Settlers Modded"); }
     uw_pct = 0; uw_ready = CreateEventW(NULL, TRUE, FALSE, NULL);
     uw_thread = CreateThread(NULL, 0, uw_main, NULL, 0, NULL);
     if (uw_thread && uw_ready) WaitForSingleObject(uw_ready, 5000);
@@ -414,7 +426,7 @@ static int update_step(int dry, int *code) {
     STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
     if (!cl || !CreateProcessW(nexe, cl, NULL, NULL, FALSE, 0, NULL, root, &si, &pi)) {
         logf_("update: CreateProcess %ls failed (%lu)", nexe, GetLastError()); free(cl);
-        *code = fail(L"Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut.");
+        *code = fail(TR("Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut."));
         return 1;
     }
     free(cl);
@@ -456,6 +468,37 @@ static void default_profile(void) {
 
 static void env(const wchar_t *k, const wchar_t *v) { SetEnvironmentVariableW(k, v); }
 
+/* the game's language for our dialogs: LanguageType of DATA\\UserSetting.json (the game's save folder of the modded copy;
+   before the first start: the normal game's LocalLow file, which copy_saves copies in); no file = English.
+   Texts: ROOT\\game\\lang (next to the loader, game\\baselib.dll; install.bat copies the kit's files\\lang there). */
+static char *slurp_w(const wchar_t *p) {
+    FILE *f = _wfopen(p, L"rb"); if (!f) return NULL;
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    if (n < 0 || n > (1 << 22)) { fclose(f); return NULL; }
+    char *b = malloc((size_t)n + 1); if (!b) { fclose(f); return NULL; }
+    size_t r = fread(b, 1, (size_t)n, f); b[r] = 0; fclose(f);
+    return b;
+}
+static void setup_lang(void) {
+    wchar_t ld[MAX_PATH], us[MAX_PATH]; char l8[MAX_PATH * 3];
+    _snwprintf(ld, MAX_PATH, L"%ls\\lang", game);
+    if (!WideCharToMultiByte(CP_UTF8, 0, ld, -1, l8, sizeof l8, NULL, NULL)) l8[0] = 0;   /* ds_i18n.h opens the folder as UTF-8 (_wfopen) */
+    dsi_set_dir(l8);
+    _snwprintf(us, MAX_PATH, L"%ls\\UserSetting.json", data);
+    char *t = slurp_w(us);
+    if (!t) {
+        wchar_t *low = NULL;
+        if (SHGetKnownFolderPath(&FOLDERID_LocalAppDataLow, 0, NULL, &low) == S_OK) {
+            _snwprintf(us, MAX_PATH, L"%ls\\CanOpener\\Dungeon Settlers\\UserSetting.json", low); CoTaskMemFree(low);
+            t = slurp_w(us);
+        }
+    }
+    int lang = dsi_lang_from_usersetting(t);
+    free(t);
+    dsi_set_lang(lang);
+    logf_("language %d (%s) from %ls, texts %s: %d loaded, %d dropped", lang, dsi_code(), exists(us) ? us : L"no UserSetting.json", l8, dsi_loaded(), dsi_dropped());
+}
+
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     (void)hi; (void)hp; (void)show;
     int argc = 0; wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -472,14 +515,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     mkdirs(data);
     { wchar_t lp[MAX_PATH]; _snwprintf(lp, MAX_PATH, L"%ls\\starter.log", profile); lg = _wfopen(lp, L"a"); }
     logf_("---- start pid %lu, root %ls", GetCurrentProcessId(), root);
+    setup_lang();                                                /* before the first dialog and the update step */
     { int code = 0; if (update_step(dry, &code)) return code; }   /* before the game files are checked: it may put them back */
     if (!path_ok(root)) {                                  /* after the update: a newer kit may start from there */
-        wchar_t msg[MAX_PATH + 400];
-        _snwprintf(msg, MAX_PATH + 400, L"The game will not start from this folder:\n%ls\n\nIts path has letters the game cannot read on this PC "
-                   L"(for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, "
-                   L"for example C:\\Games\\Dungeon Settlers Modded.", root);
+        char r8b[MAX_PATH * 4]; WideCharToMultiByte(CP_UTF8, 0, root, -1, r8b, sizeof r8b, NULL, NULL);
         logf_("ERROR folder path has letters outside the ANSI code page %u: the game will not start", GetACP());
-        if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0)) MessageBoxW(NULL, msg, L"Dungeon Settlers Modded", MB_OK | MB_ICONWARNING);
+        if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0))
+            msgbox("Dungeon Settlers Modded", TR("The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC "
+                   "(for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, "
+                   "for example C:\\Games\\Dungeon Settlers Modded."), r8b);
         return 1;
     }
 
@@ -489,7 +533,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     _snwprintf(blo, MAX_PATH, L"%ls\\baselib_orig.dll", game);
     _snwprintf(bfile, MAX_PATH, L"%ls\\dsmodded_build.txt", game);
     if (!exists(exe) || !exists(bl) || !exists(blo))
-        return fail(L"The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.");
+        return fail(TR("The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again."));
     char build[64] = "";
     { FILE *f = _wfopen(bfile, L"r"); if (f) { if (fgets(build, sizeof build, f)) build[strcspn(build, "\r\n ")] = 0; fclose(f); } }
     wchar_t wbuild[64]; MultiByteToWideChar(CP_UTF8, 0, build, -1, wbuild, 64);
@@ -507,9 +551,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     bie_set_log(logf_);
     int bie_any = 0; why[0] = 0;
     if (bie_prepare(r8, g8, p8, &bie_any, why, sizeof why))
-        MessageBoxA(NULL, why, "Dungeon Settlers Modded: BepInEx mods are off this time", MB_OK | MB_ICONWARNING);
+        msgbox(TR("Dungeon Settlers Modded: BepInEx mods are off this time"), "%s", why);   /* why: bie_win.c's text (TR) */
     SetEnvironmentVariableW(L"DOORSTOP_DISABLE", bie_any ? NULL : L"1");
-    dsl_u8_setenv("DSL_BIE_REASON", why[0] ? why : NULL);   /* the Mods window's "Not running: <reason>" */
+    bie_env_text("DSL_BIE_REASON", why);                         /* the Mods window's "Not running: <reason>" (%XX-encoded UTF-8) */
 
     wchar_t v[MAX_PATH * 2];
     env(L"SteamAppId", APPID); env(L"SteamGameId", APPID);
@@ -544,7 +588,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
     if (!CreateProcessW(exe, line, NULL, NULL, FALSE, 0, NULL, game, &si, &pi)) {
         logf_("CreateProcess %ls failed (%lu)", exe, GetLastError());
-        return fail(L"The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).");
+        return fail(TR("The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded)."));
     }
     logf_("started %ls (pid %lu, build %s, steam %d)", exe, pi.dwProcessId, build, steam);
     CloseHandle(pi.hThread); CloseHandle(pi.hProcess);

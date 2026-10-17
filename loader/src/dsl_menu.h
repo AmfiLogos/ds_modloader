@@ -51,3 +51,4 @@ void dsl_win_frame(void) __attribute__((weak));           /* every frame from L1
 /* Mods tab bound to one world (from its "Change"): switches show that world's set; the Apply button reads "Save for
    this world" and calls dsl_world_set_mods. Missing: L1 opens the normal Mods tab. */
 void dsl_win_open_world(const char *guid, const char *world_name) __attribute__((weak));
+void dsl_win_relang(void) __attribute__((weak));               /* the game's language changed: an open window is built again */

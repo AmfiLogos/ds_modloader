@@ -35,5 +35,52 @@
   "loader>=2.0.0"
  ],
  "conflicts": [],
- "description": "Adds Hell, a sixth difficulty above Devastation. On Hell, recruits arrive without their starting staff. Your game files are not changed."
+ "description": "Adds Hell, a sixth difficulty above Devastation. On Hell, recruits arrive without their starting staff. Your game files are not changed.",
+ "i18n": {
+  "ko": {
+   "name": "Hell 난이도",
+   "short_name": "Hell",
+   "description": "파멸보다 높은 여섯 번째 난이도 Hell을 추가합니다. Hell에서는 모집한 대원이 시작 스태프 없이 합류합니다. 게임 파일은 변경되지 않습니다."
+  },
+  "fr": {
+   "name": "Difficulté Hell",
+   "short_name": "Hell",
+   "description": "Ajoute Hell, une 6e difficulté après Dévastation. Sur Hell, les recrues arrivent sans leur bâton de départ. Vos fichiers de jeu restent intacts."
+  },
+  "de": {
+   "name": "Schwierigkeitsgrad Hell",
+   "short_name": "Hell",
+   "description": "Fügt Hell hinzu, einen sechsten Schwierigkeitsgrad über Zerstörung. In Hell kommen Rekruten ohne ihren Startstab an. Deine Spieldateien werden nicht verändert."
+  },
+  "ru": {
+   "name": "Сложность Hell",
+   "short_name": "Hell",
+   "description": "Добавляет Hell, шестую сложность выше «Опустошительной». На Hell новобранцы приходят без стартового посоха. Файлы игры не меняются."
+  },
+  "zh-Hans": {
+   "name": "Hell 难度",
+   "short_name": "Hell",
+   "description": "新增 Hell：高于毁灭的第六个难度。在 Hell 难度下，招募的成员到来时不带初始法杖。你的游戏文件不会被更改。"
+  },
+  "zh-Hant": {
+   "name": "Hell 難度",
+   "short_name": "Hell",
+   "description": "新增 Hell，這是高於毀滅的第六個難度。在 Hell 中，招募的新成員不會帶著初始法杖。你的遊戲檔案不會被更改。"
+  },
+  "ja": {
+   "name": "Hell難易度",
+   "short_name": "Hell",
+   "description": "壊滅より上の6番目の難易度Hellを追加します。Hellでは、募集したメンバーが初期装備の杖を持たずに加入します。ゲームファイルは変更されません。"
+  },
+  "es": {
+   "name": "Dificultad Hell",
+   "short_name": "Hell",
+   "description": "Añade Hell, una sexta dificultad por encima de Devastación. En Hell, los reclutas llegan sin su bastón inicial. Tus archivos del juego no se modifican."
+  },
+  "pt-BR": {
+   "name": "Dificuldade Hell",
+   "short_name": "Hell",
+   "description": "Adiciona Hell, uma sexta dificuldade acima de Devastação. Em Hell, os recrutas chegam sem o cajado inicial. Seus arquivos do jogo não são alterados."
+  }
+ }
 }

@@ -9,6 +9,13 @@
 #endif
 #define DSL_OWNER_LOADER (-1)
 
+/* player text in the game's language: TR("English"), TRN(one, other, n) (ds_i18n.h; its implementation is in
+   dsl_main.c). Files: <folder of the loader binary>/lang/<code>.json (Mac ROOT/loader/lang, Windows ROOT\game\lang). */
+#include "ds_i18n.h"
+void dsl_lang_early(void);               /* dsl_main.c: lang folder + UserSetting.json language, before il2cpp */
+int dsl_lang_poll(void);                 /* dsl_main.c, main thread once per frame: the game's live language; 1 = changed */
+void dsl_reg_lang_changed(void);         /* dsl_reg.c: after a change (the kit has dropped its fonts): relabel, rebuild */
+
 extern uintptr_t dsl_ga_base;            /* GameAssembly arm64 load address, 0 before it is mapped */
 extern uint64_t dsl_text_lo, dsl_text_hi;/* __TEXT code range (rva) */
 extern uint64_t dsl_image_end;           /* end of the last segment (rva) */

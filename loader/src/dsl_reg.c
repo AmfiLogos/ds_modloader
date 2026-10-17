@@ -74,10 +74,38 @@ static const char *worlds_path(void) {
     return p;
 }
 
+/* DSL_BIE_REASON / DSL_ML_REASON from the Windows starter: UTF-8 with bytes >= 0x80 and '%' as %XX (start/win/bie_win.c
+   bie_env_text: the ANSI environment keeps it whole on any code page). Plain text passes as it is. */
+static int hexv(char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; }
+static const char *env_text(const char *name) {
+    static char out[2][1200]; static int k;
+    const char *e = getenv(name); if (!e || !*e) return e;
+    char *o = out[k ^= 1]; size_t n = 0;
+    for (; *e && n + 1 < sizeof out[0]; e++) {
+        if (*e == '%' && hexv(e[1]) >= 0 && hexv(e[2]) >= 0) { o[n++] = (char)(hexv(e[1]) * 16 + hexv(e[2])); e += 2; }
+        else o[n++] = *e;
+    }
+    o[n] = 0; dsi_utf8_fix_end(o);
+    return o;
+}
+
 /* ------------------------------------------------------------------ installed mods */
 #define MAXM 64
 static DSLModInfo MI[MAXM]; static int nmi;
-static char MI_short[MAXM][48];                         /* mod.json "short_name" (world rows), else "" */
+static char MI_short[MAXM][128];                         /* mod.json "short_name" (world rows), else "" */
+/* mod.json name / short_name / description per language: [0] the top-level (English) text, [l] the optional
+   "i18n": {"<code>": {"name", "short_name", "description"}} (NULL = English). Not part of the mod-set hash (that hashes
+   id, version and the listed files only), so a translation fix never splits players. */
+static struct { char *name[DSI_LANGS], *shortn[DSI_LANGS], *desc[DSI_LANGS]; } MT[MAXM];
+static void mods_lang(void) {                           /* the current language's texts into MI[] (stable pointers) */
+    int L = dsi_lang();
+    for (int i = 0; i < nmi; i++) {
+        MI[i].name = MT[i].name[L] ? MT[i].name[L] : MT[i].name[0];
+        MI[i].description = MT[i].desc[L] ? MT[i].desc[L] : MT[i].desc[0];
+        snprintf(MI_short[i], sizeof MI_short[i], "%s", MT[i].shortn[L] ? MT[i].shortn[L] : MT[i].shortn[0]);
+        dsi_utf8_fix_end(MI_short[i]);
+    }
+}
 static int MI_savedep[MAXM];                            /* mod.json "save_dependent": saves need the loader (owner item 9) */
 static int mods_scanned;
 static void mods_scan(void) {
@@ -98,12 +126,19 @@ static void mods_scan(void) {
         if (!m || !id || strcmp(id, names[k])) { json_free(m); continue; }
         DSLModInfo *x = &MI[nmi++];
         x->id = xstrdup(id);
-        x->name = xstrdup(json_str(m, "name") ? json_str(m, "name") : id);
+        MT[nmi - 1].name[0] = xstrdup(json_str(m, "name") ? json_str(m, "name") : id);
+        MT[nmi - 1].desc[0] = xstrdup(json_str(m, "description"));
+        MT[nmi - 1].shortn[0] = xstrdup(json_str(m, "short_name"));
+        { JNode *tr = json_get(m, "i18n");
+          for (int l = 1; l < DSI_LANGS; l++) {
+              JNode *t = json_get(tr, dsi_code_of(l)); const char *v;
+              if ((v = json_str(t, "name")) && *v) MT[nmi - 1].name[l] = xstrdup(v);
+              if ((v = json_str(t, "short_name")) && *v) MT[nmi - 1].shortn[l] = xstrdup(v);
+              if ((v = json_str(t, "description")) && *v) MT[nmi - 1].desc[l] = xstrdup(v);
+          } }
         x->version = xstrdup(json_str(m, "version"));
-        x->description = xstrdup(json_str(m, "description"));
         const char *kd = json_str(m, "kind"); if (!kd) kd = json_str(m, "type");
         x->kind = xstrdup(kd ? kd : "code");
-        snprintf(MI_short[nmi - 1], sizeof MI_short[0], "%s", json_str(m, "short_name") ? json_str(m, "short_name") : "");
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
@@ -115,41 +150,58 @@ static void mods_scan(void) {
 #ifdef _WIN32
             const char *dd = getenv("DOORSTOP_DISABLE");                 /* start/win/bie_win.c (lane L3) */
             int runs = on && !(dd && *dd);
-            const char *br = getenv("DSL_BIE_REASON");
-            st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : "BepInEx did not start";
+            const char *br = env_text("DSL_BIE_REASON");
+            st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : TR_NOOP("BepInEx did not start");   /* reasons: English keys, the Mods window translates */
 #else
             char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);   /* Mac: start/mac/dsl_bie_mac.c, its folder in this start */
             st = dsl_bie_running_dir(pd) ? 1 : 0;
-            why = dsl_bie_state() < 0 ? "BepInEx is not available in this start" : "BepInEx plugin: not running in this start";
+            why = dsl_bie_state() < 0 ? TR_NOOP("BepInEx is not available in this start") : TR_NOOP("BepInEx plugin: not running in this start");
 #endif
         } else if (dsl_net_kind(x->kind) == DSL_NET_ML) {               /* MelonLoader mod (lane melon): run by the OS start part */
             char pd[1300]; snprintf(pd, sizeof pd, "%s/%s", md, id);
-            const char *mr = getenv("DSL_ML_REASON");
+            const char *mr = env_text("DSL_ML_REASON");
             st = dsl_ml_running_dir(pd) ? 1 : 0;
-            why = mr && *mr ? mr : dsl_ml_state() < 0 ? "MelonLoader is not available in this start" : "MelonLoader mod: not running in this start";
+            why = mr && *mr ? mr : dsl_ml_state() < 0 ? TR_NOOP("MelonLoader is not available in this start") : TR_NOOP("MelonLoader mod: not running in this start");
         }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
-        x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : "did not load"));
+        x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : TR_NOOP("did not load")));
         json_free(m);
     }
     json_free(prof);
+    mods_lang();
 }
 int dsl_mods_count(void) { mods_scan(); return nmi; }
 /* read the mods folder again (a mod package installed while the game runs, ui/dsl_pkg.c): the list for the Mods window.
    What runs does not change (the running key, loaded modules); old DSLModInfo pointers are invalid afterwards. */
 void dsl_mods_rescan(void) {
-    for (int i = 0; i < nmi; i++) { free((void *)MI[i].id); free((void *)MI[i].name); free((void *)MI[i].version); free((void *)MI[i].description); free((void *)MI[i].kind); free((void *)MI[i].scope); free((void *)MI[i].reason); }
-    memset(MI, 0, sizeof MI); memset(MI_short, 0, sizeof MI_short); nmi = 0; mods_scanned = 0;
+    for (int i = 0; i < nmi; i++) { free((void *)MI[i].id); free((void *)MI[i].version); free((void *)MI[i].kind); free((void *)MI[i].scope); free((void *)MI[i].reason);
+        for (int l = 0; l < DSI_LANGS; l++) { free(MT[i].name[l]); free(MT[i].shortn[l]); free(MT[i].desc[l]); } }
+    memset(MI, 0, sizeof MI); memset(MI_short, 0, sizeof MI_short); memset(MT, 0, sizeof MT); nmi = 0; mods_scanned = 0;
     mods_scan();
     dsl_log("reg: mods folder read again: %d installed mod(s)", nmi);
 }
-/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 characters */
+/* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 columns.
+   Columns, not bytes: 1 per character, 2 for a 3- or 4-byte UTF-8 character (kana, CJK, Hangul are about twice as wide),
+   so a Russian or Japanese name is not cut at half the length of an English one. */
 void dsl_mod_short(const char *id, char *out, size_t cap) {
     mods_scan(); out[0] = 0;
     for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) {
         if (MI_short[i][0]) { snprintf(out, cap, "%s", MI_short[i]); return; }
         snprintf(out, cap, "%s", MI[i].name);
-        if (strlen(out) > 18) { size_t c = 16; while (c > 6 && out[c] != ' ') c--; if (out[c] != ' ') c = 16; snprintf(out + c, cap - c, "..."); }
+        int cols = 0; for (const unsigned char *p = (const unsigned char *)out; *p; p++) if ((*p & 0xC0) != 0x80) cols += *p >= 0xE0 ? 2 : 1;
+        if (cols > 18) {
+            size_t b = 0, keep = 0, sp = 0; int col = 0;
+            while (out[b]) {                                              /* keep whole characters up to column 16 */
+                unsigned char u = (unsigned char)out[b]; int w = u >= 0xE0 ? 2 : 1;
+                if (col + w > 16) break;
+                if (u == ' ' && col >= 6) sp = b;                         /* the last word break after column 6 */
+                col += w; b++; while (out[b] && ((unsigned char)out[b] & 0xC0) == 0x80) b++;
+                keep = b;
+            }
+            if (out[keep] == ' ') sp = keep;
+            size_t c = sp ? sp : keep;
+            snprintf(out + c, cap - c, "...");
+        }
         return;
     }
     snprintf(out, cap, "%s", id);
@@ -163,13 +215,14 @@ int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap) {
     const char *v[MAXM]; int k = 0;
     for (int i = 0; i < n && k < MAXM; i++) if (dsl_mod_save_dependent(ids[i])) v[k++] = ids[i];
     out[0] = 0; if (!k) return 0;
-    strlcat(out, "Saves made with ", cap);
+    char list[600] = "", t[600];
     for (int i = 0; i < k; i++) {
-        const char *nm = dsl_mod_name(v[i]);
-        if (i) strlcat(out, i + 1 == k ? " and " : ", ", cap);
-        strlcat(out, nm ? nm : v[i], cap);
+        const char *nm = dsl_mod_name(v[i]); if (!nm) nm = v[i];
+        if (!i) { snprintf(list, sizeof list, "%s", nm); continue; }
+        snprintf(t, sizeof t, i + 1 == k ? TR("%s and %s") : TR("%s, %s"), list, nm); snprintf(list, sizeof list, "%s", t);
     }
-    strlcat(out, " may not work without the mod loader.", cap);
+    snprintf(out, cap, TR("Saves made with %s may not work without the mod loader."), list);
+    dsi_utf8_fix_end(out);
     return k;
 }
 const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
@@ -211,18 +264,20 @@ static void running_key(void) {
     for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay")) v[k++] = MI[i].id;
     key_of(v, k, run_key, sizeof run_key);
 }
-/* "Hell difficulty, Multiplayer" for a key */
-static void key_names(const char *key, char *out, size_t cap) {
+/* "Hell difficulty, Multiplayer" for a key; returns how many of its mods are not installed */
+static int key_names(const char *key, char *out, size_t cap) {
     out[0] = 0;
-    if (!strcmp(key, "vanilla")) { snprintf(out, cap, "none"); return; }
+    if (!strcmp(key, "vanilla")) { snprintf(out, cap, "%s", TR("none")); return 0; }
     char b[512]; snprintf(b, sizeof b, "%s", key);
-    int i = 0;
+    int i = 0, missing = 0; char one[300], t2[1200];
     for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t; t = strtok_r(NULL, "+", &sv), i++) {
         const DSLModInfo *m = mod_by_id(t);
-        if (i) strlcat(out, ", ", cap);
-        strlcat(out, m ? m->name : t, cap);
-        if (!m) strlcat(out, " (not installed)", cap);
+        if (m) snprintf(one, sizeof one, "%s", m->name); else { snprintf(one, sizeof one, TR("%s (not installed)"), t); missing++; }
+        if (!i) snprintf(t2, sizeof t2, "%s", one); else snprintf(t2, sizeof t2, TR("%s, %s"), out, one);
+        snprintf(out, cap, "%s", t2);
     }
+    dsi_utf8_fix_end(out);
+    return missing;
 }
 
 /* ------------------------------------------------------------------ JSON out (any node, for members we keep) */
@@ -377,7 +432,7 @@ static void worlds_save(const char *add_guid, const char *add_key) {
 int dsl_world_label(const char *guid, char *out, size_t cap) {
     const char *k = guid ? world_key(guid) : NULL;
     char nm[400]; key_names(k ? k : run_key, nm, sizeof nm);
-    snprintf(out, cap, "Mods: %s", nm);
+    snprintf(out, cap, TR("Mods: %s"), nm); dsi_utf8_fix_end(out);
     return k != NULL;
 }
 static char world_ids_buf[512];
@@ -411,7 +466,7 @@ void dsl_world_change(const char *guid, const char *save_name) {
     else if (dsl_win_open) dsl_win_open(NULL);
     else dsl_log("reg: world [Change]: no Mods window in this build");
 }
-void dsl_newworld_label(char *out, size_t cap) { char nm[400]; key_names(run_key, nm, sizeof nm); snprintf(out, cap, "Mods for this world: %s", nm); }
+void dsl_newworld_label(char *out, size_t cap) { char nm[400]; key_names(run_key, nm, sizeof nm); snprintf(out, cap, TR("Mods for this world: %s"), nm); dsi_utf8_fix_end(out); }
 void dsl_newworld_change(void) { if (dsl_win_open) dsl_win_open(NULL); else dsl_log("reg: New Campaign [Change]: no Mods window in this build"); }
 
 static Obj mainflow(void);
@@ -421,7 +476,7 @@ static int world_guid(char *out);
 static char session_why[MAXP_REG][200];
 const char *dsl_busy_reason(void) {
     for (int i = 0; i < MAXP_REG; i++) if (session_why[i][0]) return session_why[i];
-    if (dsl_soft_busy()) return "the game is restarting with new mods";      /* A during a restart, B until swap + fade in are done */
+    if (dsl_soft_busy()) return TR("the game is restarting with new mods");      /* A during a restart, B until swap + fade in are done */
     return NULL;
 }
 static void session_busy_set(DSLPlugin *self, const char *reason) {
@@ -454,7 +509,7 @@ extern int dsl_soft_prewarm(const char *profile, const char *env_lines);
 extern void dsl_soft_prewarm_stop(void);
 extern int dsl_soft_prewarm_state(void);
 int dsl_reg_scene(void) { Obj mf = mainflow(); return mf && off_scene >= 0 ? AT(mf, off_scene, int32_t) : -1; }
-#define TITLE_ONLY "Go back to the title screen to change mods."
+#define TITLE_ONLY TR("Go back to the title screen to change mods.")
 /* the set to start: pending.json + the env lines for the new process. 0 = ready, 1 = its .NET host (*kind_out: BepInEx or
    MelonLoader, src/dsl_ml.h) must be downloaded first,
    -1 = refused (why). Apply and prewarm build both the same way, so a prewarmed game matches the Apply. */
@@ -465,7 +520,7 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     for (int i = 0; i < n && k < MAXM; i++) all[k++] = ids[i];
     for (int i = 0; i < nmi && k < MAXM; i++) if (MI[i].hidden && MI[i].enabled) { int dup = 0; for (int j = 0; j < k; j++) dup |= !strcmp(all[j], MI[i].id); if (!dup) all[k++] = MI[i].id; }
     dpath(p, pcap, "pending.json");
-    if (write_profile(p, all, k)) { dsl_log("reg: cannot write %s", p); snprintf(why, cap, "the mod settings could not be saved"); return -1; }
+    if (write_profile(p, all, k)) { dsl_log("reg: cannot write %s", p); snprintf(why, cap, "%s", TR("the mod settings could not be saved")); return -1; }
     key_of(all, k, kk, kcap);
     /* BepInEx plugins or MelonLoader mods of the new set (profile order; one .NET host per set, src/dsl_ml.h): install at
        first use, the host's env for the new process */
@@ -477,7 +532,7 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     for (int i = 0; i < k; i++) if (nk && dsl_net_kind(kinds[i]) == nk) { snprintf(pdirs[nb], sizeof pdirs[nb], "%s/%s", dsl_mods_dir(), all[i]); pd[nb] = pdirs[nb]; nb++; }
     int bs = nk ? dsl_net_state(nk) : 2;
     const char *hn = dsl_net_name(nk);
-    if (nb && bs < 0) { dsl_log("reg: no %s folder in this start", hn); snprintf(why, cap, "%s mods need the Dungeon Settlers Modded app", hn); return -1; }
+    if (nb && bs < 0) { dsl_log("reg: no %s folder in this start", hn); snprintf(why, cap, TR("%s mods need the Dungeon Settlers Modded app"), hn); return -1; }
     if (nb && bs == 0) return 1;
     char bie[4096] = ""; if (dsl_net_env(nk, pd, nb, bie, sizeof bie)) bie[0] = 0;
     int first = nb && bs == 1;                                         /* interop generated in the new process: ~1.5 min */
@@ -488,22 +543,22 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
 static int apply_ids(const char *const *ids, int n, const char *env, char *why, size_t cap) {
     const char *busy = dsl_busy_reason();
     if (busy) { snprintf(why, cap, "%s", busy); dsl_log("reg: Apply refused: %s", busy); return -1; }
-    if (dsl_reg_scene() != 1) { snprintf(why, cap, TITLE_ONLY); dsl_log("reg: Apply refused: not at the title (scene %d)", dsl_reg_scene()); return -1; }
+    if (dsl_reg_scene() != 1) { snprintf(why, cap, "%s", TITLE_ONLY); dsl_log("reg: Apply refused: not at the title (scene %d)", dsl_reg_scene()); return -1; }
     char p[1200], envl[6000], kk[512]; int first = 0, nk = 0;
     int r = prepare(ids, n, env, p, sizeof p, envl, sizeof envl, kk, sizeof kk, &first, &nk, why, cap);
     if (r < 0) { dsl_log("reg: Apply refused: %s", why); return -1; }
     if (r == 1) {                                                      /* first use: download, then this Apply runs again */
         const char *hn = dsl_net_name(nk);
-        if (dsl_net_install_start(nk)) { snprintf(why, cap, "the %s download could not start", hn); return -1; }
+        if (dsl_net_install_start(nk)) { snprintf(why, cap, TR("the %s download could not start"), hn); return -1; }
         bie_pending_set(ids, n, env); bp_kind = nk;
         const DSLUi *u = dsl_ui_kit(); char t[300];
-        snprintf(t, sizeof t, "Preparing mods (first start)\nDownloading %s (%s). The game restarts with the new mods when it is ready.", hn, dsl_net_size(nk));
-        if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+        snprintf(t, sizeof t, TR("Preparing mods (first start)\nDownloading %s (%s). The game restarts with the new mods when it is ready."), hn, dsl_net_size(nk)); dsi_utf8_fix_end(t);
+        if (u) u->notice(t, TR("OK"), NULL, NULL, NULL, NULL);
         dsl_log("reg: Apply waits for the %s download", hn); return 0;
     }
     if (first) { setenv("DSL_SOFT_TIMEOUT", "300", 1); tip_first_run = nk; } else { unsetenv("DSL_SOFT_TIMEOUT"); tip_first_run = 0; }
     dsl_log("reg: Apply: %s -> soft restart%s", kk, dsl_soft_prewarm_state() ? " (a prewarmed game waits)" : "");
-    if (dsl_soft_apply(p, envl)) { snprintf(why, cap, "the game cannot restart right now (loading, or a restart already runs)"); return -1; }
+    if (dsl_soft_apply(p, envl)) { snprintf(why, cap, "%s", TR("the game cannot restart right now (loading, or a restart already runs)")); return -1; }
     return 0;
 }
 
@@ -672,8 +727,8 @@ static void k_ok(void *ud, DSLObj w) {
     char why[300] = "";
     dsl_log("reg: world %s: load it with its mods (%s)", k_guid, k_key);
     if (apply_ids(ids, n, env, why, sizeof why)) {
-        const DSLUi *u = dsl_ui_kit(); char t[500]; snprintf(t, sizeof t, "The world cannot be loaded now: %s", why);
-        if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+        const DSLUi *u = dsl_ui_kit(); char t[500]; snprintf(t, sizeof t, TR("The world cannot be loaded now: %s"), why); dsi_utf8_fix_end(t);
+        if (u) u->notice(t, TR("OK"), NULL, NULL, NULL, NULL);
     }
 }
 static void k_cancel(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("reg: world %s: load cancelled", k_guid); }
@@ -681,14 +736,13 @@ static void k_frame(void) {
     if (!k_pending || ++k_frames < 3) return;                           /* after the stock refusal notice is up */
     k_pending = 0;
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
-    char nm[400]; key_names(k_key, nm, sizeof nm);
-    int missing = strstr(nm, "(not installed)") != NULL;
+    char nm[400]; int missing = key_names(k_key, nm, sizeof nm) > 0;
     char t[700];
-    if (missing) { snprintf(t, sizeof t, "This world uses: %s.\nInstall the missing mods to load it.", nm); u->notice(t, "OK", NULL, NULL, NULL, NULL); return; }
+    if (missing) { snprintf(t, sizeof t, TR("This world uses: %s.\nInstall the missing mods to load it."), nm); dsi_utf8_fix_end(t); u->notice(t, TR("OK"), NULL, NULL, NULL, NULL); return; }
     const char *busy = dsl_busy_reason();
-    if (busy) { snprintf(t, sizeof t, "This world uses: %s.\nIt cannot be loaded now: %s", nm, busy); u->notice(t, "OK", NULL, NULL, NULL, NULL); return; }
-    snprintf(t, sizeof t, "This world uses: %s.\nLoad it with them?", nm);
-    u->notice(t, "Load", "Cancel", k_ok, k_cancel, NULL);
+    if (busy) { snprintf(t, sizeof t, TR("This world uses: %s.\nIt cannot be loaded now: %s"), nm, busy); dsi_utf8_fix_end(t); u->notice(t, TR("OK"), NULL, NULL, NULL, NULL); return; }
+    snprintf(t, sizeof t, TR("This world uses: %s.\nLoad it with them?"), nm); dsi_utf8_fix_end(t);
+    u->notice(t, TR("Load"), TR("Cancel"), k_ok, k_cancel, NULL);
 }
 
 static char seen_guid[40];
@@ -821,16 +875,16 @@ static void bie_frame(void) {
             dsl_log("reg: %s ready: the waiting Apply runs", dsl_net_name(bp_kind));
             { const DSLUi *u = dsl_ui_kit(); if (u && u->notice_close) u->notice_close(); }   /* the "Downloading" box */
             if (apply_ids(ids, n, bp_env[0] ? bp_env : NULL, w2, sizeof w2)) {
-                const DSLUi *u = dsl_ui_kit(); char t[500]; snprintf(t, sizeof t, "The mods could not be applied: %s", w2);
-                if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+                const DSLUi *u = dsl_ui_kit(); char t[500]; snprintf(t, sizeof t, TR("The mods could not be applied: %s"), w2); dsi_utf8_fix_end(t);
+                if (u) u->notice(t, TR("OK"), NULL, NULL, NULL, NULL);
             }
         } else if (r < 0) {
-            bp_n = -1; const DSLUi *u = dsl_ui_kit(); char t[500]; if (u && u->notice_close) u->notice_close(); snprintf(t, sizeof t, "%s could not be installed: %s\nThe mods stay as they were.", dsl_net_name(bp_kind), why);
-            if (u) u->notice(t, "OK", NULL, NULL, NULL, NULL);
+            bp_n = -1; const DSLUi *u = dsl_ui_kit(); char t[500]; if (u && u->notice_close) u->notice_close(); snprintf(t, sizeof t, TR("%s could not be installed: %s\nThe mods stay as they were."), dsl_net_name(bp_kind), why); dsi_utf8_fix_end(t);
+            if (u) u->notice(t, TR("OK"), NULL, NULL, NULL, NULL);
         }
     }
     if (tip_first_run && dsl_soft_busy() && f % 30 == 0) {
-        char t[300]; snprintf(t, sizeof t, "Preparing mods (first start): %s prepares its files for this game version. This takes about 2 minutes, once.", dsl_net_name(tip_first_run));
+        char t[300]; snprintf(t, sizeof t, TR("Preparing mods (first start): %s prepares its files for this game version. This takes about 2 minutes, once."), dsl_net_name(tip_first_run)); dsi_utf8_fix_end(t);
         loading_tip(t);
     }
     Obj mf = mainflow();
@@ -850,6 +904,15 @@ void dsl_frame_hook(void) {
     dsl_progress_frame();
 }
 
+/* the game's language changed (dsl_ui.c tick, after the kit renewed its fonts): mod texts, the title buttons of the
+   loader ("Mods", "Import a save"), an open Mods window built again */
+void dsl_cloud_lang_changed(void);
+void dsl_reg_lang_changed(void) {
+    if (mods_scanned) mods_lang();
+    if (dsl_ui_kit()) dsl_ui_title_add("loader", TR("Mods"), 100, NULL, on_title_mods, NULL);
+    dsl_cloud_lang_changed();
+    if (dsl_win_relang) dsl_win_relang();
+}
 static const char *data_dir_get(void) {                 /* for modules: in the form their own fopen opens */
     static char n[1100];
     if (!n[0]) dsl_os_native_path(dsl_reg_data_dir(), n, sizeof n);
@@ -869,7 +932,7 @@ void dsl_reg_ready(DSLHost *h) {
     void *kmf = dsl_find_class("Refactor.Main", "MainFlow");
     if (kmf) { off_scene = dsl_field_offset(kmf, "_currentScene"); off_cd = dsl_field_offset(kmf, "_campaignData"); }
     if (h->ui && dsl_win_init) dsl_win_init();
-    if (h->ui) dsl_ui_title_add("loader", "Mods", 100, NULL, on_title_mods, NULL);   /* no hover card (owner 2026-10-16 #1) */
+    if (h->ui) dsl_ui_title_add("loader", TR("Mods"), 100, NULL, on_title_mods, NULL);   /* no hover card (owner 2026-10-16 #1) */
     dsl_log("reg: ready (data %s, kit %s, Mods window %s)", dsl_reg_data_dir(), h->ui ? "on" : "OFF", dsl_win_open ? "on" : "not built");
 }
 /* after dsl_plugin_init of the modules: the running set is known */
@@ -886,10 +949,11 @@ void dsl_reg_after_init(void) {
       int own = !(given && *given) || (getenv("DSL_MODSET_OWN") && !strcmp(getenv("DSL_MODSET_OWN"), "1"));   /* B of our soft restart */
       if (own && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
     if (dsl_soft_wanted()) {                                           /* the new game of a soft restart: its first progress step */
-        extern void dsl_soft_progress(int pct, const char *text);
-        char t[300] = "Loading "; int k = 0;
-        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[64]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
-        dsl_soft_progress(10, k ? t : "Loading the game");
+        extern void dsl_soft_progress(int pct, const char *key, const char *arg);
+        char t[512] = ""; int k = 0;
+        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[128]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
+        dsi_utf8_fix_end(t);
+        if (k) dsl_soft_progress(10, TR_NOOP("Loading %s"), t); else dsl_soft_progress(10, TR_NOOP("Loading the game"), NULL);
     }
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",

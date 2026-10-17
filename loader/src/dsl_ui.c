@@ -83,6 +83,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
+    *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_getsize, *m_tmp_getauto, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv, *m_rt_rect,   /* text fit */
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
     *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
     *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create,
@@ -90,11 +91,13 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_cs_match, *m_cs_getmatch, *m_cs_smm, *m_cs_getsmm, *m_rtu_w2s,
     *m_sr_content, *m_sr_viewport, *m_sr_h, *m_sr_v, *m_sr_move, *m_sr_sens,
     *m_es_update, *m_tb_init, *m_tb_inter, *m_nv_select, *m_nv_confirm, *m_ui_prefab,
-    *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks, *m_scr_w;
+    *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks, *m_scr_w,
+    *m_ls_font, *m_ls_mat;                                           /* LanguageSetting.GetFont / GetMaterial (the language's fonts) */
 
 static int32_t f_tb_label = -1, f_tv_btn[7], f_tv_credit = -1, f_nv_text = -1, f_nv_tok = -1, f_nv_tcancel = -1,
                f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1,
-               f_ctx_hidehold = -1, f_uif_prefabs = -1, f_slv_field = -1, f_cs_field = -1, f_asset_mat = -1;
+               f_ctx_hidehold = -1, f_uif_prefabs = -1, f_slv_field = -1, f_cs_field = -1, f_asset_mat = -1,
+               f_das_style = -1, f_das_fmat = -1;
 static int32_t ctx_size;
 
 /* a method by name, argument count and (optional) parameter type names "A,B" (overloads), on klass or its parents */
@@ -143,7 +146,19 @@ static int32_t fld(void *k, const char *n) {
 }
 
 /* ------------------------------------------------------------------ small Unity helpers */
-static Obj str(const char *s) { return I.string_new(s ? s : ""); }
+/* UTF-8 -> il2cpp string. il2cpp_string_new returns "" for input that is not valid UTF-8, so a last character cut by a
+   byte cap (snprintf into a fixed buffer) would blank the whole label: that tail is dropped first (ds_i18n.h) */
+static Obj str(const char *s) {
+    if (!s) s = "";
+    size_t n = strlen(s);
+    if (!n || !((unsigned char)s[n - 1] & 0x80)) return I.string_new(s);   /* ends in ASCII: nothing to fix */
+    char sb[2048], *b = n < sizeof sb ? sb : malloc(n + 1);
+    if (!b) return I.string_new("");
+    memcpy(b, s, n + 1); dsi_utf8_fix_end(b);
+    Obj r = I.string_new(b);
+    if (b != sb) free(b);
+    return r;
+}
 static void utf8_of(Obj s, char *out, size_t cap) {                  /* il2cpp string (UTF-16) -> UTF-8 */
     size_t n = 0; if (!cap) return; out[0] = 0;
     if (!s) return;
@@ -236,10 +251,12 @@ static void img_set(Obj im, Obj sprite, Col c, int sliced) {          /* sprite 
     gr_color(im, c); gr_raycast(im, 0);
 }
 static Obj tmp_get(Obj t) { if (!isa(t, K.TMP_Text)) return NULL; void *m = vmi(t, m_tmp_get); return CALL(m, Obj, Obj)(t, m); }
+static void fit_text(Obj t, const char *s);
 static void tmp_set(Obj t, const char *s) {
     if (!isa(t, K.TMP_Text)) return;
     if (f_das_usekey >= 0 && isa(t, K.DASText)) AT(t, f_das_usekey, bool) = false;   /* DASText: keep our raw text (no text key) */
     void *m = vmi(t, m_tmp_set); CALL(m, void, Obj, Obj)(t, str(s), m);
+    fit_text(t, s);
 }
 
 /* ------------------------------------------------------------------ stock look: sprites, fonts, templates */
@@ -248,10 +265,24 @@ static const Col C_MAIN = { 0.8f, 0.745f, 0.722f, 1 }, C_SUB = { 0.651f, 0.565f,
                  C_GREY = { 0.45f, 0.42f, 0.45f, 1 }, C_FIELD = { 0.6f, 0.58f, 0.6f, 1 };
 enum { S_BOX, S_NBTN, S_CHECK, S_TEXTBOX, S_N };
 static const char *const spr_names[S_N] = { "Box", "Button_Normal", "CheckBox_Selected", "TextBox" };
-static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat;
+static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat;   /* title font, body font + its plain material (per language) */
 static int64_t frames, scan_last = -100000; static int scans, scan_done, kit_used;
 static Obj ui_prefab(int type);
 static void prefab_touch(int type) { (void)ui_prefab(type); }
+/* the game's font for a style in the current language: LanguageSetting.GetFont(FontStyleType) (EasyRead 0 = body,
+   VeryDecorative 2 = titles; zh-Hans, zh-Hant and ja have their own faces). NULL when the method is missing. */
+static int kit_ready_fonts;                                          /* templates seen: the game's font tables are up */
+static Obj lang_font(int style) {
+    if (!m_ls_font || !kit_ready_fonts) return NULL;
+    Obj f = CALL(m_ls_font, Obj, int32_t)(style, m_ls_font);
+    return alive(f) ? f : NULL;
+}
+static Obj title_font(void) {                                        /* h_cinzel: the language's title face */
+    Obj f = hget(h_cinzel); if (f) return f;
+    f = lang_font(2);
+    if (f) { hset(&h_cinzel, f); char nm[96]; obj_name(f, nm, sizeof nm); dsl_log("ui: title font \"%s\" (LanguageSetting.GetFont, %s)", nm, dsi_code()); }
+    return f;
+}
 static double clock_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
 static void assets_scan(int force) {
     /* at most once a second as well: a hidden soft-restart game runs uncapped (thousands of frames a second) and
@@ -265,7 +296,7 @@ static void assets_scan(int force) {
         Obj sp = arr_at(arr, i); char nm[64]; obj_name(sp, nm, sizeof nm);
         for (int k = 0; k < S_N; k++) if (!hget(h_spr[k]) && !strcmp(nm, spr_names[k])) { hset(&h_spr[k], sp); found++; }
     }
-    if (!hget(h_cinzel)) {
+    if (!title_font() && !m_ls_font) {                                 /* no LanguageSetting.GetFont: Cinzel by name, as before */
         Obj fa = find_all(K.FontAsset); int nf = arr_n(fa);
         for (int i = 0; i < nf; i++) { Obj f = arr_at(fa, i); char nm[64]; obj_name(f, nm, sizeof nm); if (!strcmp(nm, "Cinzel-Bold SDF")) { hset(&h_cinzel, f); break; } }
     }
@@ -278,15 +309,30 @@ static void assets_scan(int force) {
 static Obj spr(int k) { Obj s = hget(h_spr[k]); if (!s && h_spr[k]) { hfree(&h_spr[k]); scan_done = 0; } return s; }
 
 static Obj notice_view(void);
-/* body text: the stock window body font (CommonNoticeView Txt_Notice) with its font asset's own plain material
-   (no outline), as mpmenu's txt_body */
+static Obj asset_mat(Obj font) { return !alive(font) ? NULL : m_asset_mat ? CALL(m_asset_mat, Obj, Obj)(font, m_asset_mat) : f_asset_mat > 0 ? AT(font, f_asset_mat, Obj) : NULL; }
+/* body text: the language's body font (LanguageSetting.GetFont(EasyRead)), else the stock window body font
+   (CommonNoticeView Txt_Notice), with its font asset's own plain material (no outline), as mpmenu's txt_body */
+static int64_t body_last = -1000;
 static void body_font(void) {
     if (hget(h_body_mat)) return;
-    static int64_t last = -1000; if (frames - last < 120) return; last = frames;
-    Obj v = notice_view(); Obj nt = v && f_nv_text >= 0 ? AT(v, f_nv_text, Obj) : NULL;
-    Obj font = isa(nt, K.TMP_Text) ? CALL(m_tmp_getfont, Obj, Obj)(nt, m_tmp_getfont) : NULL;
-    Obj m = !alive(font) ? NULL : m_asset_mat ? CALL(m_asset_mat, Obj, Obj)(font, m_asset_mat) : f_asset_mat > 0 ? AT(font, f_asset_mat, Obj) : NULL;
-    if (alive(m)) { hset(&h_body_mat, m); hset(&h_body_font, font); char nm[96]; obj_name(m, nm, sizeof nm); dsl_log("ui: body text font found, material \"%s\"", nm); }
+    if (frames - body_last < 120) return; body_last = frames;
+    Obj font = lang_font(0); const char *from = "LanguageSetting.GetFont";
+    if (!font && !m_ls_font) {
+        Obj v = notice_view(); Obj nt = v && f_nv_text >= 0 ? AT(v, f_nv_text, Obj) : NULL;
+        font = isa(nt, K.TMP_Text) ? CALL(m_tmp_getfont, Obj, Obj)(nt, m_tmp_getfont) : NULL; from = "the notice box";
+    }
+    Obj m = asset_mat(font);
+    if (alive(m)) { hset(&h_body_mat, m); hset(&h_body_font, font); char nm[96]; obj_name(m, nm, sizeof nm); dsl_log("ui: body text font from %s (%s), material \"%s\"", from, dsi_code(), nm); }
+}
+/* a clone of a stock DASText (title buttons): the font + material its own style has in the current language, as the
+   game's DASText.RefreshOnRunTime sets them (without its text and wrap resets) */
+static void das_lang_font(Obj t) {
+    if (!isa(t, K.DASText) || f_das_style < 0 || !m_ls_font) return;
+    int32_t st = AT(t, f_das_style, int32_t), fm = f_das_fmat >= 0 ? AT(t, f_das_fmat, int32_t) : 0;
+    Obj f = lang_font(st); if (!f) return;
+    CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
+    Obj m = m_ls_mat ? CALL(m_ls_mat, Obj, int32_t, int32_t)(st, fm, m_ls_mat) : NULL;
+    if (alive(m) && m_tmp_shmat) CALL(m_tmp_shmat, void, Obj, Obj)(t, m, m_tmp_shmat);
 }
 static void txt_body(Obj t) {
     if (!isa(t, K.TMP_Text)) return;
@@ -295,9 +341,10 @@ static void txt_body(Obj t) {
     if (f) CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
     if (m && m_tmp_shmat) CALL(m_tmp_shmat, void, Obj, Obj)(t, m, m_tmp_shmat);
 }
+static void fit_style(Obj t, float size, int wrap);
 static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
     if (!isa(t, K.TMP_Text)) return;
-    Obj f = cinzel ? hget(h_cinzel) : NULL;
+    Obj f = cinzel ? title_font() : NULL;
     if (f) CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
     CALL(m_tmp_auto, void, Obj, bool)(t, false, m_tmp_auto);
     CALL(m_tmp_size, void, Obj, float)(t, size, m_tmp_size);
@@ -306,6 +353,127 @@ static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
     CALL(m_tmp_overflow, void, Obj, int)(t, 0, m_tmp_overflow);
     CALL(m_tmp_rich, void, Obj, bool)(t, true, m_tmp_rich);
     gr_raycast(t, 0);
+    fit_style(t, size, wrap);                                         /* too long for its rect: auto size (text fit) */
+}
+
+/* ------------------------------------------------------------------ text fit (multiplayer ext/i18n/CJK_FIT.md)
+   How the game fits text: short labels and buttons in a fixed box use TMP auto size (min about 0.75 x max, small buttons
+   down to 8-18); long text keeps its size and its box grows (ContentSizeFitter, preferred height). It never changes the
+   size per language. Here: every text styled by txt_style keeps its design size. Once per frame, a text whose content or
+   rect changed is measured at that size (TMP preferredWidth / preferredHeight). It fits: as before, no auto size (English
+   that fits looks exactly as before). It does not fit: auto size from the design size down to fit_min() (0.75 x, the
+   game's), and a one-line label wraps when its rect holds two lines. Still too long at 0.75: the game's way for long
+   text, the text keeps its design size and wraps to more lines (the line grows; it draws past its rect, centred); a box
+   we own grows to DSLUi.text_height. Same code as multiplayer's mpmenu.c. */
+#define FIT_N 2048                                                   /* open addressing by object address */
+typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi, stock; } FitE;
+typedef struct { float x, y, w, h; } FRect;
+static FitE fit_tab[FIT_N];
+static int fit_count;
+static int fit_ok(void) { return m_tmp_fsmin && m_tmp_fsmax && m_tmp_pw && m_tmp_ph && m_rt_rect && m_tmp_getsize && m_tmp_getauto; }
+static float fit_min(float size) { float m = (float)(int)(size * 0.75f + 0.5f); return m < 8 ? (size < 8 ? size : 8) : m; }   /* the game's 0.75 */
+static FitE *fit_find(Obj t, int add) {
+    if (!t || !fit_ok()) return NULL;
+    size_t i = ((uintptr_t)t >> 4) * 2654435761u % FIT_N, tomb = (size_t)-1;
+    for (int n = 0; n < FIT_N; n++, i = (i + 1) % FIT_N) {
+        FitE *e = &fit_tab[i];
+        if (e->t == t) return e;
+        if (e->t == (Obj)1) { if (tomb == (size_t)-1) tomb = i; continue; }
+        if (!e->t) {
+            if (!add || fit_count >= FIT_N * 3 / 4) return NULL;    /* full: that text keeps the old way (no fit) */
+            if (tomb != (size_t)-1) e = &fit_tab[tomb];
+            memset(e, 0, sizeof *e); e->t = t; e->h = hnew(t); fit_count++;
+            return e;
+        }
+    }
+    return NULL;
+}
+static void fit_drop(FitE *e) { hfree(&e->h); memset(e, 0, sizeof *e); e->t = (Obj)1; fit_count--; }
+static uint32_t fit_hash(const char *s) { uint32_t h = 2166136261u; for (; s && *s; s++) h = (h ^ (uint8_t)*s) * 16777619u; return h; }
+static void fit_auto(Obj t, int on) { CALL(m_tmp_auto, void, Obj, bool)(t, on != 0, m_tmp_auto); }
+static void fit_set(Obj t, int autosize, float size, int wrap) {    /* as styled at this size, wrap on / off */
+    fit_auto(t, autosize); CALL(m_tmp_size, void, Obj, float)(t, size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, wrap, m_tmp_wrap);
+}
+typedef struct { float x, y; } FV2;
+static FV2 fit_pref(Obj t, float w) {                                /* preferred width / height, wrapped at w (<= 0: its rect) */
+    if (w > 0 && m_tmp_prefv) return CALL(m_tmp_prefv, FV2, Obj, float, float)(t, w, 100000.f, m_tmp_prefv);
+    void *pw = vmi(t, m_tmp_pw), *ph = vmi(t, m_tmp_ph);
+    return (FV2){ CALL(pw, float, Obj)(t, pw), CALL(ph, float, Obj)(t, ph) };
+}
+static void fit_style(Obj t, float size, int wrap) {
+    FitE *e = fit_find(t, 1); if (!e) return;
+    CALL(m_tmp_fsmax, void, Obj, float)(t, size, m_tmp_fsmax);       /* the design size */
+    CALL(m_tmp_fsmin, void, Obj, float)(t, fit_min(size), m_tmp_fsmin);
+    if (e->size == size && e->wrap == (wrap != 0) && e->on) {        /* styled again the same way: keep the fit (no flicker) */
+        if (e->on == 4) { fit_set(t, 0, size, 1); return; }           /* grows: design size, more lines */
+        fit_auto(t, 1); if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
+        return;
+    }
+    e->size = size; e->wrap = wrap != 0; e->on = 0; e->dirty = 1;
+}
+static void fit_text(Obj t, const char *s) {
+    FitE *e = fit_find(t, 0); if (!e) return;
+    uint32_t h = fit_hash(s); if (h != e->hash) { e->hash = h; e->dirty = 1; e->multi = s && strchr(s, '\n') != NULL; }
+}
+static void fit_one(FitE *e, Obj t, float w, float h) {
+    if (w < 4 || h < 4) return;                                       /* not placed yet */
+    if (e->on) fit_set(t, 0, e->size, e->wrap);
+    void *pw = vmi(t, m_tmp_pw), *ph = vmi(t, m_tmp_ph);
+    int over = !e->wrap ? CALL(pw, float, Obj)(t, pw) > w + 1 : CALL(ph, float, Obj)(t, ph) > h * 1.1f + 2;
+    e->on = 0;
+    if (over) {
+        float mn = fit_min(e->size);
+        int two = !e->wrap && !e->multi && h >= 2.7f * mn;           /* a one-line label that may use two lines */
+        fit_set(t, 0, mn, e->wrap || two);                           /* does it fit at 0.75? */
+        int fits = e->wrap || two ? fit_pref(t, w).y <= h * 1.1f + 2 : fit_pref(t, 0).x <= w + 1;
+        fit_set(t, 0, e->size, e->wrap);
+        if (!fits) {                                                 /* the game's long text: design size, more lines */
+            e->on = 4; fit_set(t, 0, e->size, 1);
+            char tx[64] = ""; utf8_of(tmp_get(t), tx, sizeof tx);
+            dsl_log("ui: text fit: \"%s\" is too long for %.0fx%.0f even at %.0f: size %.0f, wraps (%.0f high)", tx, w, h, mn, e->size, fit_pref(t, w).y);
+            return;
+        }
+        e->on = two ? 2 : 1;                                         /* 2: a one-line label that may use two lines */
+        CALL(m_tmp_fsmin, void, Obj, float)(t, mn, m_tmp_fsmin);
+        CALL(m_tmp_fsmax, void, Obj, float)(t, e->size, m_tmp_fsmax);
+        if (e->on == 2) CALL(m_tmp_wrap, void, Obj, int)(t, 1, m_tmp_wrap);
+        fit_auto(t, 1);
+        char tx[64] = ""; utf8_of(tmp_get(t), tx, sizeof tx);
+        dsl_log("ui: text fit: \"%s\" is too long for %.0fx%.0f: auto size %.0f-%.0f%s", tx, w, h, mn, e->size, e->on == 2 ? ", two lines" : "");
+    }
+}
+/* once per frame (after the modules' frame): changed texts now; every text's rect every 15 frames (a later layout) */
+static void fit_frame(void) {
+    if (!fit_count) return;
+    int all = frames % 15 == 0;
+    for (int i = 0; i < FIT_N; i++) {
+        FitE *e = &fit_tab[i];
+        if (!e->t || e->t == (Obj)1 || (!e->dirty && !all)) continue;
+        Obj t = hget(e->h);
+        if (!t) { fit_drop(e); continue; }
+        if (!on_tree(t)) {                                            /* measured once it shows */
+            if (e->stock) { if (e->on) { fit_auto(t, 0); CALL(m_tmp_size, void, Obj, float)(t, e->size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, e->wrap, m_tmp_wrap); }
+                            fit_drop(e); }                            /* a stock box closed: its own settings again */
+            continue;
+        }
+        Obj rt = tr_of(t); if (!isa(rt, K.RectTransform)) continue;
+        FRect r = CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect);
+        if (!e->dirty && !e->stock && r.w == e->w && r.h == e->h_) continue;   /* a stock text: the game may set it too */
+        int first = e->dirty; e->w = first ? -1 : r.w; e->h_ = r.h; e->dirty = 0;   /* -1: measured again at the next full pass */
+        fit_one(e, t, r.w, r.h);
+    }
+}
+/* the stock notice box text (CommonNoticeView Txt_Notice: Lora 16 in a fixed 520 x 109 rect; the game never sizes it):
+   while our text is up it auto-sizes when too long; when the box closes, its stock settings come back */
+static void fit_stock(Obj t) {
+    if (!isa(t, K.TMP_Text) || !fit_ok()) return;
+    FitE *e = fit_find(t, 0);
+    if (e) { e->dirty = 1; return; }
+    if (CALL(m_tmp_getauto, bool, Obj)(t, m_tmp_getauto)) return;         /* the game auto-sizes it already */
+    float fs = CALL(m_tmp_getsize, float, Obj)(t, m_tmp_getsize);
+    if (fs < 4) return;
+    fit_style(t, fs, 1);
+    e = fit_find(t, 0); if (e) e->stock = 1;
 }
 
 /* templates: kept under one inactive DontDestroyOnLoad holder, so the kit works in every scene once the title was seen.
@@ -367,6 +535,7 @@ static int templates_ready(void) {
     Obj v = title_view(); if (!v || f_tv_credit < 0) return 0;
     Obj src = AT(v, f_tv_credit, Obj), hd = holder();
     if (!isa(src, K.TitleButton) || !hd) return 0;
+    kit_ready_fonts = 1;                                             /* the title is up: the game's font tables too */
     assets_scan(1);
     Obj b = inst(src, hd); if (!b) return 0;
     hset(&h_tpl_btn, b);
@@ -496,7 +665,7 @@ static void w_sweep(void) {                                          /* destroye
 }
 
 /* tooltips: target -> title / body (any RectTransform, kit widget or not) */
-typedef struct { Obj target; uintptr_t h; char title[160], body[700]; } TipE;
+typedef struct { Obj target; uintptr_t h; char title[160], body[2048]; } TipE;
 #define TMAX 256
 static TipE tips[TMAX]; static int ntips;
 
@@ -819,12 +988,14 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
     for (int i = 0; i < ntips; i++) if (tips[i].target == target) {
         if (!body) { if (hget(h_tip_shown_target) == target) tip_hide(); hfree(&tips[i].h); tips[i] = tips[--ntips]; return; }
         snprintf(tips[i].title, sizeof tips[i].title, "%s", title ? title : ""); snprintf(tips[i].body, sizeof tips[i].body, "%s", body);
+        dsi_utf8_fix_end(tips[i].title); dsi_utf8_fix_end(tips[i].body);
         return;
     }
     if (!body || ntips >= TMAX) return;
     TipE *e = &tips[ntips++]; memset(e, 0, sizeof *e);
     e->target = target; e->h = hnew(target);
     snprintf(e->title, sizeof e->title, "%s", title ? title : ""); snprintf(e->body, sizeof e->body, "%s", body);
+    dsi_utf8_fix_end(e->title); dsi_utf8_fix_end(e->body);
 }
 /* a kit panel as a flat colour (no frame sprite), no click target: bars, lines */
 void dsl_ui_flat(DSLObj o, uint32_t rgba) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj im = r ? comp_get(r, K.Image) : NULL; if (im) img_set(im, NULL, rgba_col(rgba, C_WHITE), 0); }
@@ -921,15 +1092,16 @@ static void k_notice(const char *text, const char *ok_label, const char *cancel_
     notice_unfit(); nview_last = -1000; Obj v = notice_view();
     if (!v || !m_nv_select || !m_nv_confirm || f_nv_text < 0) { dsl_log("ui: notice: no CommonNoticeView in this scene: \"%s\" not shown", text ? text : ""); return; }
     NB.serial = (NB.serial + 1) & 0x0FFFFFFF; NB.ok = ok; NB.cancel = cancel; NB.ud = ud;
-    snprintf(NB.text, sizeof NB.text, "%s", text ? text : "");
+    snprintf(NB.text, sizeof NB.text, "%s", text ? text : ""); dsi_utf8_fix_end(NB.text);   /* the box shows (and k_notice_close compares) this copy */
     Obj a = mk_action(TOKEN(NB.serial, P_OK)), c = cancel_label ? mk_action(TOKEN(NB.serial, P_CANCEL)) : NULL;
     hset(&NB.h_ok, a); hset(&NB.h_cancel, c);
-    if (cancel_label) CALL(m_nv_select, void, Obj, Obj, Obj, Obj, bool)(v, str(text), a, c, false, m_nv_select);
-    else CALL(m_nv_confirm, void, Obj, Obj, Obj)(v, str(text), a, m_nv_confirm);
+    if (cancel_label) CALL(m_nv_select, void, Obj, Obj, Obj, Obj, bool)(v, str(NB.text), a, c, false, m_nv_select);
+    else CALL(m_nv_confirm, void, Obj, Obj, Obj)(v, str(NB.text), a, m_nv_confirm);
     Obj nt = AT(v, f_nv_text, Obj);
-    tmp_set(nt, text);
+    tmp_set(nt, NB.text);
+    fit_stock(nt);                                                   /* a long text auto-sizes in the stock box */
     if (isa(nt, K.TMP_Text)) CALL(m_tmp_align, void, Obj, int)(nt, 514, m_tmp_align);
-    if (f_nv_tok >= 0) { tmp_set(AT(v, f_nv_tok, Obj), ok_label ? ok_label : "OK"); hset(&nfit_lab[0], AT(v, f_nv_tok, Obj)); }
+    if (f_nv_tok >= 0) { tmp_set(AT(v, f_nv_tok, Obj), ok_label ? ok_label : TR("OK")); hset(&nfit_lab[0], AT(v, f_nv_tok, Obj)); }
     if (cancel_label && f_nv_tcancel >= 0) { tmp_set(AT(v, f_nv_tcancel, Obj), cancel_label); hset(&nfit_lab[1], AT(v, f_nv_tcancel, Obj)); }
     nfit_tries = 60;
     go_active(v, 1);
@@ -965,6 +1137,23 @@ static void k_place(DSLObj o, float x, float y, float w_, float h) {
     if (w->kind == W_TOGGLE) toggle_layout(w);
     if (w->kind == W_VALUE) value_layout(w);
     if (w->kind == W_SCROLL) { V2 s = rt_size(hget(w->h_rt)); CALL(m_rt_size, void, Obj, V2)(hget(w->h_rt), (V2){ w_, s.y < h ? h : s.y }, m_rt_size); }
+}
+/* preferred height of a text widget's text at width w (0 = its own width), at its design size: a caller grows its box */
+static float k_text_height(DSLObj o, float w) {
+    W *wd = w_of(o); Obj t = wd ? hget(wd->h_label) : NULL;
+    if (!t && o) t = isa((Obj)o, K.TMP_Text) ? (Obj)o : comp_get((Obj)o, K.TMP_Text);
+    if (!t || !isa(t, K.TMP_Text)) return 0;
+    if (w <= 0 && m_rt_rect) { Obj rt = tr_of(t); if (isa(rt, K.RectTransform)) w = CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect).w; }
+    FitE *e = fit_find(t, 0);
+    if (e && e->size >= 1 && w > 0) {                                /* a fitted text: at its design size, wrapped at w, then its fit again */
+        fit_set(t, 0, e->size, 1); float ph = fit_pref(t, w).y;
+        if (!e->on || e->on == 4) fit_set(t, 0, e->size, e->on == 4 ? 1 : e->wrap);
+        else { CALL(m_tmp_wrap, void, Obj, int)(t, e->on == 2 ? 1 : e->wrap, m_tmp_wrap); fit_auto(t, 1); }
+        return ph;
+    }
+    if (m_tmp_prefv && w > 0) return CALL(m_tmp_prefv, FV2, Obj, float, float)(t, w, 100000.f, m_tmp_prefv).y;
+    void *ph = m_tmp_ph ? vmi(t, m_tmp_ph) : NULL;
+    return ph ? CALL(ph, float, Obj)(t, ph) : 0;
 }
 static void k_set_active(DSLObj o, int on) { W *w = w_of(o); go_active(w ? w_root(w) : (Obj)o, on); }
 static void btn_enable(Obj b, int on) {
@@ -1003,7 +1192,8 @@ static DSLUi KIT = {
     .toggle_get = k_toggle_get, .toggle_set = k_toggle_set, .value_row = k_value_row, .value_get = k_value_get, .value_set = k_value_set,
     .field = k_field, .field_get = k_field_get, .field_set = k_field_set, .scroll = k_scroll, .scroll_height = k_scroll_height,
     .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .notice_close = k_notice_close, .place = k_place, .set_active = k_set_active,
-    .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set
+    .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
+    .text_height = k_text_height
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -1018,11 +1208,25 @@ static Obj title_view(void) {
 }
 __attribute__((visibility("default")))
 int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud) {
-    if (!label || !click || ntbs >= TBMAX) return -1;
+    if (!label || !click) return -1;
+    /* the same owner, click and ud again = new text for that button (its owner after a language change): relabel */
+    for (int i = 0; i < ntbs; i++) {
+        TBE *e = &tbs[i];
+        if (e->click != click || e->ud != ud || strcmp(e->owner, owner_id ? owner_id : "?")) continue;
+        snprintf(e->label, sizeof e->label, "%s", label); dsi_utf8_fix_end(e->label);
+        snprintf(e->tip, sizeof e->tip, "%s", tip ? tip : ""); dsi_utf8_fix_end(e->tip);
+        e->order = order;
+        Obj b = hget(e->h_btn), l = b ? btn_label(b) : NULL;
+        if (l) tmp_set(l, e->label);
+        if (b) k_tooltip(tr_of(b), e->label, e->tip[0] ? e->tip : NULL);
+        dsl_log("ui: title button of %s relabelled \"%s\"", e->owner, label);
+        return 0;
+    }
+    if (ntbs >= TBMAX) return -1;
     kit_used = 1;
     TBE *e = &tbs[ntbs++]; memset(e, 0, sizeof *e);
     snprintf(e->owner, sizeof e->owner, "%s", owner_id ? owner_id : "?"); snprintf(e->label, sizeof e->label, "%s", label);
-    snprintf(e->tip, sizeof e->tip, "%s", tip ? tip : "");
+    snprintf(e->tip, sizeof e->tip, "%s", tip ? tip : ""); dsi_utf8_fix_end(e->label); dsi_utf8_fix_end(e->tip);
     e->order = order; e->seq = tb_seq++; e->click = click; e->ud = ud;
     dsl_log("ui: title button \"%s\" (%s, order %d) registered", label, e->owner, order);
     return 0;
@@ -1030,6 +1234,22 @@ int dsl_ui_title_add(const char *owner_id, const char *label, int order, const c
 static int tb_cmp(const void *a, const void *b) {
     const TBE *x = *(TBE *const *)a, *y = *(TBE *const *)b;
     return x->order != y->order ? (x->order < y->order ? -1 : 1) : x->seq - y->seq;
+}
+/* the multiplayer module's "Multiplayer" title button: the first title button after the stock Load button that is
+   neither a stock button nor ours (multiplayer inserts its clones at Load + 1, "Multiplayer" first: mpmenu.c
+   title_build), only while the module "multiplayer" runs. NULL = none. */
+static Obj mp_title_button(Obj v, Obj col) {
+    if (dsl_mod_state("multiplayer", NULL) != 1 || f_tv_btn[2] < 0) return NULL;
+    Obj load = AT(v, f_tv_btn[2], Obj); if (!isa(load, K.TitleButton)) return NULL;
+    int from = sibling(load);
+    for (int c = from + 1, nc = child_count(col); from >= 0 && c < nc; c++) {
+        Obj x = child_at(col, c), tb = comp_get(x, K.TitleButton); if (!tb) continue;
+        int other = 0;
+        for (int i = 0; i < ntbs; i++) other |= hget(tbs[i].h_btn) == tb;
+        for (int i = 0; i < 7; i++) if (f_tv_btn[i] >= 0) other |= AT(v, f_tv_btn[i], Obj) == tb;
+        if (!other) return x;
+    }
+    return NULL;
 }
 /* every frame on the title: our clones exist for this view, sit last in the column (below the stock buttons and the
    multiplayer clones, which are inserted after Load), in order, and show only while the stock buttons show (the
@@ -1054,7 +1274,7 @@ static void title_frame(void) {
             if (m_tb_init) CALL(m_tb_init, void, Obj, Obj)(b, a, m_tb_init);
             hset(&e->h_act, a);
             Obj l = btn_label(b);
-            if (l) { txt_style(l, 0, 22, 514, 1); tmp_set(l, e->label); }   /* the stock menu size (mpmenu title clones) */
+            if (l) { das_lang_font(l); txt_style(l, 0, 22, 514, 1); tmp_set(l, e->label); }   /* the stock menu size (mpmenu title clones) */
             hset(&e->h_btn, b); hset(&e->h_view, v); n = child_count(col);
             if (e->tip[0]) k_tooltip(tr_of(b), e->label, e->tip);
             dsl_log("ui: title button \"%s\" added to the title column (%d children)", e->label, n);
@@ -1062,15 +1282,9 @@ static void title_frame(void) {
         go_active(b, stock_on);
     }
     /* order (owner 2026-10-16 #2): right below the multiplayer module's "Multiplayer" button, then by order; without
-       it, last in the column as before */
-    Obj mp = NULL;
-    for (int c = 0, nc = child_count(col); c < nc && !mp; c++) {
-        Obj x = child_at(col, c), tb = comp_get(x, K.TitleButton); if (!tb) continue;
-        int ours = 0; for (int i = 0; i < ntbs; i++) ours |= hget(tbs[i].h_btn) == tb;
-        if (ours) continue;
-        char l[96]; utf8_of(tmp_get(btn_label(tb)), l, sizeof l);
-        if (!strcmp(l, "Multiplayer")) mp = x;
-    }
+       it, last in the column as before. That button is found by its owner, not by its label (the label is translated):
+       when the module "multiplayer" runs, its title clones sit right after the stock Load button, "Multiplayer" first */
+    Obj mp = mp_title_button(v, col);
     Obj prev = mp;
     for (int i = 0; i < ntbs; i++) {
         Obj b = hget(ord[i]->h_btn); if (!b) continue;
@@ -1133,6 +1347,13 @@ static void fields_frame(void) {
     for (int i = 0; i < ns; i++) { W *w = w_by_id(sub[i]); if (w && w->cb) w->cb(w->ud, w->rt); }
 }
 static int kit_ok, in_tick; static int32_t last_frame = -1;
+/* the game's language changed (the title's Options): fonts of the new language, title clones made again (their stock
+   font and material for that language), then the loader relabels its texts and rebuilds an open Mods window */
+static void kit_lang_changed(void) {
+    hfree(&h_cinzel); hfree(&h_body_font); hfree(&h_body_mat); body_last = -1000;
+    for (int i = 0; i < ntbs; i++) hfree(&tbs[i].h_view);            /* title_frame clones them again */
+    dsl_log("ui: language %s: fonts and title buttons renewed", dsi_code());
+}
 static void (*o_es_update)(Obj, const void *);
 static void tick(void) {
     frames++;
@@ -1153,8 +1374,10 @@ static void h_es_update(Obj self, const void *mi) {
     int32_t fc = m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : last_frame + 1;
     if (fc == last_frame || in_tick) return;                        /* several EventSystems: once per frame */
     last_frame = fc; in_tick = 1;
+    if (dsl_lang_poll()) { if (kit_ok) kit_lang_changed(); dsl_reg_lang_changed(); }
     if (kit_ok) tick();
     dsl_frame_hook();
+    if (kit_ok) fit_frame();                                        /* last: the modules' texts of this frame are set and placed */
     in_tick = 0;
 }
 
@@ -1279,6 +1502,11 @@ void dsl_ui_install(void) {
     m_tmp_wrap = MTH(K.TMP_Text, "set_textWrappingMode", 1); m_tmp_overflow = MTH(K.TMP_Text, "set_overflowMode", 1);
     m_tmp_rich = MTH(K.TMP_Text, "set_richText", 1); m_tmp_shmat = OPT(K.TMP_Text, "set_fontSharedMaterial", 1);
     m_asset_mat = OPT(K.TMP_Asset, "get_material", 0);
+    m_tmp_fsmin = OPT(K.TMP_Text, "set_fontSizeMin", 1); m_tmp_fsmax = OPT(K.TMP_Text, "set_fontSizeMax", 1);
+    m_tmp_getsize = OPT(K.TMP_Text, "get_fontSize", 0); m_tmp_getauto = OPT(K.TMP_Text, "get_enableAutoSizing", 0);
+    m_tmp_pw = OPT(K.TMP_Text, "get_preferredWidth", 0); m_tmp_ph = OPT(K.TMP_Text, "get_preferredHeight", 0);
+    m_tmp_prefv = OPTSIG(K.TMP_Text, "GetPreferredValues", 2, "System.Single,System.Single");
+    m_rt_rect = OPT(K.RectTransform, "get_rect", 0);
     if (!m_asset_mat) f_asset_mat = fld(K.TMP_Asset, "m_Material");
     m_in_text = MTH(K.TMP_Input, "get_text", 0); m_in_settext = MTH(K.TMP_Input, "SetTextWithoutNotify", 1);
     m_in_limit = OPT(K.TMP_Input, "set_characterLimit", 1); m_in_ctype = OPT(K.TMP_Input, "set_contentType", 1);
@@ -1312,11 +1540,13 @@ void dsl_ui_install(void) {
     m_tb_id = OPT(kTB, "get_TooltipID", 0); m_tb_hidediv = OPT(kTB, "HideLastDivider", 0); m_tb_disablehold = OPT(kTB, "DisableHoldLayout", 0);
     m_cg_blocks = OPT(K.CanvasGroup, "set_blocksRaycasts", 1);
     m_scr_w = OPT(klass(UE, "Screen"), "get_width", 0);
+    { void *kLS = dsl_find_class("Refactor.Setting", "LanguageSetting");  /* the language's fonts (optional: else as before) */
+      m_ls_font = OPT(kLS, "GetFont", 1); m_ls_mat = OPT(kLS, "GetMaterial", 2); }
     f_tb_label = fld(K.TitleButton, "_buttonName");
     { static const char *const nm[7] = { "_continueButton", "_newGameButton", "_loadCampaignButton", "_settingButton", "_creditButton", "_reportBugButton", "_quitButton" };
       for (int i = 0; i < 7; i++) f_tv_btn[i] = fld(K.TitleMenuView, nm[i]); f_tv_credit = f_tv_btn[4]; }
     f_nv_text = fld(K.Notice, "_noticeText"); f_nv_tok = fld(K.Notice, "_txtConfirm"); f_nv_tcancel = fld(K.Notice, "_txtCancle");
-    f_das_usekey = fld(K.DASText, "_useTextKey");
+    f_das_usekey = fld(K.DASText, "_useTextKey"); f_das_style = fld(K.DASText, "_fontStyle"); f_das_fmat = fld(K.DASText, "_fontMaterial");
     f_etc_title = fld(K.TooltipETC, "_titleText"); f_etc_sublayout = fld(K.TooltipETC, "_subtitleLayout");
     f_etc_desc = fld(K.TooltipETC, "_desText"); f_etc_flavor = fld(K.TooltipETC, "_flavorText"); f_tb_canhold = fld(kTB, "_canShowHoldLayout");
     { int32_t o = fld(K.TipCtx, "<HideHoldLayout>k__BackingField"); f_ctx_hidehold = o >= 0x10 ? o - 0x10 : -1;   /* value type: minus the object header */

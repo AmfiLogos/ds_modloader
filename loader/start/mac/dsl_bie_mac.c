@@ -79,7 +79,7 @@ int dsl_bie_install_poll(char *why, size_t cap) {
     while (f && fgets(line, sizeof line, f)) { line[strcspn(line, "\n")] = 0; if (*line) snprintf(last, sizeof last, "%s", line); }
     if (f) fclose(f);
     if (WIFEXITED(st) && WEXITSTATUS(st) == 0 && dsl_bie_state() >= 1) { dsl_log("bepinex: installed (%s)", last); return 0; }
-    snprintf(why, cap, "%s", !strncmp(last, "ERROR ", 6) ? last + 6 : "the BepInEx install failed");
+    snprintf(why, cap, "%s", !strncmp(last, "ERROR ", 6) ? last + 6 : TR("the BepInEx install failed"));
     dsl_log("bepinex: install FAILED: %s", why);
     return -1;
 }

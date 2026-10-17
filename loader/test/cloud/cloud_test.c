@@ -12,6 +12,8 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/wait.h>
+#define DSI_IMPLEMENTATION                   /* dsl_cloud.c's TR() (no language file here: English) */
+#include "ds_i18n.h"
 void dsl_log(const char *fmt, ...) { va_list ap; va_start(ap, fmt); printf("    log: "); vprintf(fmt, ap); va_end(ap); putchar('\n'); }
 const void *dsl_ui_kit(void) { return NULL; }
 void *dsl_os_dlopen(const char *p) { return dlopen(p, RTLD_NOW); }

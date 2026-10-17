@@ -186,12 +186,13 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
         if (d) closedir(d);
     }
 #endif
-    if (stuck && fail) snprintf(fail, fcap, "%s could not be installed (the mods folder could not be changed). It was moved to the folder mods/.failed.", first_stuck);
-    else if (staged == 1 && fail) snprintf(fail, fcap, "%s is ready. The new version installs the next time the game starts.", first_staged);
-    else if (staged > 1 && fail) snprintf(fail, fcap, "%d mods are ready. The new versions install the next time the game starts.", staged);
+    if (stuck && fail) snprintf(fail, fcap, TR("%s could not be installed (the mods folder could not be changed). It was moved to the folder mods/.failed."), first_stuck);
+    else if (staged == 1 && fail) snprintf(fail, fcap, TR("%s is ready. The new version installs the next time the game starts."), first_staged);
+    else if (staged > 1 && fail) snprintf(fail, fcap, TRN("%d mod is ready. The new version installs the next time the game starts.", "%d mods are ready. The new versions install the next time the game starts.", staged), staged);
     else if (bad && fail) {
-        if (bad == 1) snprintf(fail, fcap, "%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.", first_bad);
-        else snprintf(fail, fcap, "%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.", bad);
+        if (bad == 1) snprintf(fail, fcap, TR("%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed."), first_bad);
+        else snprintf(fail, fcap, TRN("%d file is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.", "%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.", bad), bad);
+        dsi_utf8_fix_end(fail);
     }
     if (changed) dsl_mods_rescan();
     return changed;
