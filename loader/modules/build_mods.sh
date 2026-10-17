@@ -110,6 +110,7 @@ fi
 DSMP_TARGET=module DSL_SDK=$L/sdk DSL_MODJSON=$MD/multiplayer/mod.json CM_MODJSON=${CM_MODJSON:-} nice -n 19 zsh $WT/win/build_win.sh | grep -v "^ABI \|^warning" | tail -6
 cp -R $WT/win/build/mods/multiplayer $OUT/win/
 [[ -d $WT/win/build/mods/custom-modes ]] && cp -R $WT/win/build/mods/custom-modes $OUT/win/
+[[ -d $OUT/mac/custom-modes/art ]] && cp -R $OUT/mac/custom-modes/art $OUT/win/custom-modes/   # card pictures (DPS check): same files on Windows
 # translations of the pinned trees (repo lang/*.json; a subfolder, so not in mod.json "files" nor the mod-set hash)
 for s in mac win; do
   if [[ -n $MP_WIN_TREE ]]; then zsh $MD/copy_lang.sh $WT - $OUT/$s/multiplayer; else zsh $MD/copy_lang.sh $MP_REPO $SHA $OUT/$s/multiplayer; fi
