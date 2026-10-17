@@ -17,6 +17,7 @@
 // update window is made but never visible. Log: ~/Library/Logs/DungeonSettlersModded.log
 #include <mach-o/dyld.h>
 #include <CoreFoundation/CoreFoundation.h>
+#define DSI_IMPLEMENTATION   /* before dsl_json.c (its dsl_internal.h includes ds_i18n.h): TR() tables of this stub */
 #include "../../loader/src/dsl_json.c"                 /* json_parse / json_get / json_str / json_free */
 #include <copyfile.h>
 #include <dirent.h>
@@ -36,8 +37,6 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-#define DSI_IMPLEMENTATION
-#include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 
 static char home[PATH_MAX], logpath[PATH_MAX], self_exe[PATH_MAX];
 extern char **environ;
