@@ -81,7 +81,13 @@ try:
           and os.path.exists(f"{I}/profiles/modded/data/Saves/w1.json") and os.path.exists(f"{U}/notes.txt") and os.path.exists(f"{U}/photos/a.jpg"))
     left = sorted(os.path.relpath(os.path.join(d, f), I) for d, _, fs in os.walk(I) for f in fs)
     left = [x for x in left if not x.startswith("profiles/")]
-    check("5 nothing else left (outside profiles)", left == ["mods/my-own-mod/mod.json"], str(left[:12]))
+    check("5 nothing else left (outside profiles)", left == ["dsmodded_install.txt", "mods/my-own-mod/mod.json"], str(left[:12]))
+    # 6 reinstall into the same folder after the uninstall (saves and a player mod left there; the marker removed the way
+    #   the v0.1.6 uninstaller did): accepted, the saves and the player mod are still there
+    if os.path.exists(f"{I}/dsmodded_install.txt"): os.replace(f"{I}/dsmodded_install.txt", f"{old}/dsmodded_install.txt.removed")
+    r = wine([w.winpath(setup), "/S", "/D=C:\\USERDIR_José"], timeout=900)
+    check("6 reinstall into the folder our uninstall left: accepted, saves + player mod kept", os.path.exists(f"{I}/game/DungeonSettlers.exe")
+          and os.path.exists(f"{I}/profiles/modded/data/Saves/w1.json") and os.path.exists(f"{I}/mods/my-own-mod/mod.json"), f"rc {r.returncode}")
 finally:
     for pid, c in w.dsmp_pids():
         if "USERDIR" in c or "FULLDIR" in c:

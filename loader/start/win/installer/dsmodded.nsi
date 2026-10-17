@@ -111,12 +111,16 @@ Function OwnFolder
   ${AndIf} ${FileExists} "$INSTDIR\${NAME}.exe"
     StrCpy $1 1                               ; an install of an older kit (no marker yet)
   ${EndIf}
-  StrCpy $2 0                                 ; 1 = holds anything
+  StrCpy $2 0                                 ; 1 = holds something that is not ours
   ${If} $1 == 0
+    ; what an uninstall of ours leaves (the saves in profiles\, the player's own mods in mods\) is not "other files":
+    ; a reinstall into the same folder must work (older uninstallers removed the marker)
     FindFirst $3 $4 "$INSTDIR\*.*"
     ${DoWhile} $4 != ""
       ${If} $4 != "."
       ${AndIf} $4 != ".."
+      ${AndIf} $4 != "profiles"
+      ${AndIf} $4 != "mods"
         StrCpy $2 1
         ${Break}
       ${EndIf}
@@ -262,7 +266,11 @@ Section "Uninstall"
   Delete "$INSTDIR\install_files.log"
   Delete "$INSTDIR\install_files.prev.log"
   Delete "$INSTDIR\install_dirs.log"
-  Delete "$INSTDIR\dsmodded_install.txt"
+  ; the marker stays while our leftovers (saves, player mods) stay: a reinstall into this folder is accepted
+  ${IfNot} ${FileExists} "$INSTDIR\profiles\*.*"
+  ${AndIfNot} ${FileExists} "$INSTDIR\mods\*.*"
+    Delete "$INSTDIR\dsmodded_install.txt"
+  ${EndIf}
   Delete "$INSTDIR\uninstall.bat"
   Delete "$DESKTOP\${NAME}.lnk"
   Delete "$DESKTOP\${NAME}.bat"

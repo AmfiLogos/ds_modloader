@@ -39,7 +39,9 @@ for %%r in (game mods update retired cache licenses) do if exist "%ROOT%\%%r\" (
   for /l %%i in (1,1,12) do for /f "delims=" %%d in ('dir /s /b /ad "%ROOT%\%%r" 2^>nul') do rd "%%d" 2>nul
   rd "%ROOT%\%%r" 2>nul
 )
-for %%f in (install_files.log install_files.prev.log install_dirs.log dsmodded_install.txt) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"
+for %%f in (install_files.log install_files.prev.log install_dirs.log) do if exist "%ROOT%\%%f" del /q "%ROOT%\%%f"
+rem the marker stays while our leftovers (saves, player mods) stay: a reinstall into this folder is accepted
+if not exist "%ROOT%\profiles\" if not exist "%ROOT%\mods\" if exist "%ROOT%\dsmodded_install.txt" del /q "%ROOT%\dsmodded_install.txt"
 set "DESK="
 for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul') do set "DESK=%%b"
 if not defined DESK set "DESK=%USERPROFILE%\Desktop"

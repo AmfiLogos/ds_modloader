@@ -76,8 +76,9 @@ rem other files, so the uninstall can never touch anything it did not put there
 set "OURS="
 if exist "%ROOT%\dsmodded_install.txt" set "OURS=1"
 if exist "%COPY%\dsmodded_build.txt" if exist "%ROOT%\Dungeon Settlers Modded.exe" set "OURS=1"
+rem what an uninstall of ours leaves (profiles\ = saves, mods\ = the player's own mods) is not "other files"
 if not defined OURS if exist "%ROOT%\" (
-  dir /b /a "%ROOT%" 2>nul | findstr "^" >nul && goto notours
+  dir /b /a "%ROOT%" 2>nul | findstr /v /i /x "profiles mods" >nul && goto notours
 )
 if not exist "%ROOT%" mkdir "%ROOT%"
 > "%ROOT%\dsmodded_install.txt" echo Dungeon Settlers Modded install folder. The uninstall removes only the files listed in install_files.log.
