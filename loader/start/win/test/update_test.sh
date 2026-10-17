@@ -10,6 +10,10 @@
 #   a  a good kit of a higher RELEASE: installed (RELEASE, baselib.dll + starter swapped, DONE), the new starter starts
 #      and appends STARTED, DSML_UPDATE passed
 #   e  one real start after a, to the title (control port boot_ready); the loader confirms there (pending.txt -> update\old)
+#   x  (with a) a file only the old version of a kit mod had (mods\multiplayer\old_extra.dll) is gone after the update
+#      (in the backup); the player's own mod (mods\player-own) stays
+#   f  install.bat over the install (Setup.exe runs it too): the old mods\multiplayer goes whole to retired\ (in the
+#      uninstall list), the player's own mod stays
 # Kits of another RELEASE = the same kit with files\RELEASE changed (all that DSM_RELEASE changes in build_win.sh).
 set -u; T="${0:A:h}"; L="${T:h:h:h}"; D=${DSMP_ROOT:-~/ds_multiplayer}; W=$D/win
 KIT=${KIT:-$L/build/win/kit}
@@ -89,11 +93,17 @@ dry
 check "d2: started twice: rolled back, KEY in bad.txt, no label" '[[ $(cat "$R/dtest.txt") == old ]] && [[ ! -e $U/pending.txt ]] && grep -qx "kit 0.1.99" "$U/bad.txt" && has "ENV DSML_UPDATE=$"'
 mv "$R/dtest.txt" "$OLD/dtest.txt"
 
+# x: a file only the old multiplayer had, and a player's own mod
+own() { mkdir -p "$R/mods/player-own"; print '{"id":"player-own","name":"Mine","version":"1.0.0"}' > "$R/mods/player-own/mod.json"; print mine > "$R/mods/player-own/data.txt" }
+own; print old > "$R/mods/multiplayer/old_extra.dll"
+
 # a: a good kit of a higher RELEASE
 ready 0.1.93; dry
 NP=$(print -r -- "$LOG" | sed -n 's/.*new kit installed: started its starter (pid \([0-9]*\)).*/\1/p')
 check "a: installed: RELEASE 0.1.93, baselib.dll + starter swapped, DONE" '[[ $(head -1 "$R/RELEASE" | tr -d "\r ") == 0.1.93 ]] && ls "$U"/backup-$BASE-*/game/baselib.dll "$U"/backup-$BASE-*/"Dungeon Settlers Modded.exe" >/dev/null 2>&1 && grep -q "MOVE.*game.baselib.dll" "$U/pending.txt" && grep -qx DONE "$U/pending.txt" && [[ ! -e $U/ready.txt ]]'
 check "a: the new starter ran: STARTED, DSML_UPDATE=v0.1.93" '[[ -n $NP ]] && has "---- start pid $NP," && [[ $(grep -c "^STARTED" "$U/pending.txt") == 1 ]] && has "ENV DSML_UPDATE=v0.1.93"'
+check "x: the old multiplayer file is gone (backup), the player's own mod stays" '[[ ! -e $R/mods/multiplayer/old_extra.dll ]] && ls "$U"/backup-$BASE-*/mods/multiplayer/old_extra.dll >/dev/null 2>&1 && [[ $(cat "$R/mods/player-own/data.txt") == mine ]] && [[ -f $R/mods/multiplayer/mod.json ]]'
+mv "$R/mods/player-own" "$OLD/player-own-a"   # not part of the real start below
 
 # e: a real start (no --dry) to the title with the swapped files
 env DSL_UPDATE_WINDOW=hidden python3 $W/wloader.py start >/dev/null 2>&1
@@ -104,4 +114,11 @@ done
 sleep 5; python3 $W/wloader.py stop >/dev/null 2>&1
 check "e: the updated install reaches the title" '[[ $r == True ]] && grep -q "v0.1.93 starts (start 2 of 2" "$P/starter.log"'
 check "e: confirmed at the title (pending.txt to update/old)" '[[ ! -e $U/pending.txt ]] && ls "$U/old" | grep -q "^ok-.*pending.txt" && grep -q "v0.1.93 confirmed at the title" "$P/dsload.log"'
+
+# f: install.bat over the install: each kit mod folder replaced whole
+own; print old > "$R/mods/multiplayer/old_extra2.dll"
+python3 $W/wloader.py install $KIT | tail -1
+check "f: install.bat: the old multiplayer folder whole in retired, no old file left, the player's own mod stays" '[[ ! -e $R/mods/multiplayer/old_extra2.dll ]] && ls "$R"/retired/mods-multiplayer-*/old_extra2.dll >/dev/null 2>&1 && [[ -f $R/mods/multiplayer/mod.json ]] && [[ $(cat "$R/mods/player-own/data.txt") == mine ]]'
+check "f: the retired folder is in the uninstall list" 'iconv -f UTF-16LE -t UTF-8 "$R/install_files.log" | grep -q "retired.mods-multiplayer-.*old_extra2.dll"'
+mv "$R/mods/player-own" "$OLD/player-own-f"
 print "== $fails failed"; exit $(( fails > 0 ))

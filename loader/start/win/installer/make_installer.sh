@@ -12,6 +12,7 @@ done
 [[ -n $(ls $KIT/files/mods 2>/dev/null) ]] || { echo "kit $KIT: no mods in files/mods (build_win.sh with MODS=...)" >&2; exit 1; }
 python3 $L/modules/scan_saves.py $KIT || { echo "kit $KIT: player data inside (owner 2026-10-16: no saves in what ships)" >&2; exit 1; }
 mkdir -p $O/old; [[ -f $OUT ]] && mv $OUT $O/old/$(date +%Y%m%d-%H%M%S)-${OUT:t}
-nice -n 19 $MK -V2 -DKIT=$KIT -DOUT=$OUT.tmp -DVER=$VER -DICON=${I:h}/icon/dsmodded.ico $I/dsmodded.nsi
+mkdir -p $O/obj; python3 ${I:h}/setup_lang/gen_setup_lang.py nsh $O/obj/setup_lang.nsh   # Setup's texts in the game's 10 languages
+nice -n 19 $MK -V2 -DKIT=$KIT -DOUT=$OUT.tmp -DVER=$VER -DICON=${I:h}/icon/dsmodded.ico -DLANGNSH=$O/obj/setup_lang.nsh $I/dsmodded.nsi
 mv -f $OUT.tmp $OUT
 echo "installer $OUT ($(du -h $OUT | cut -f1)), kit mods: $(ls $KIT/files/mods | tr '\n' ' ')"

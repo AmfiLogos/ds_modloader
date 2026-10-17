@@ -10,13 +10,15 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 ## Now
 
-- **Plainer text.** We are rewriting the Mods window help lines and the mod descriptions in plain words. Some of the current text reads like a programmer's notes. A first pass is in v0.1.6.
+- Nothing in progress right now.
 
 ## Next
 
-- Nothing else is planned for the loader yet. The Now list comes first.
+- Nothing is planned for the loader yet.
 
 ## Done
+
+- **Plainer text.** The Mods window help lines, the loader's messages and the mod descriptions are in plain words, without file names or programmer's notes. In v0.1.6.
 
 - **Mods are saved per world.** The mods you pick belong to the whole world, so every save and autosave of that world uses them. The Mods window shows the world's name, not the save file's long name. In v0.1.6.
 - **The hover card on a world lists all its mods.** One mod per line, Multiplayer and Custom Modes included. When the mods do not fit on the world's row, the row says how many are hidden, for example "Global cooldown +2". In v0.1.6.
