@@ -85,6 +85,7 @@ static void (*set_fps)(int); static int (*get_fps)(void);              /* icalls
 static void (*set_vsync)(int); static int (*get_vsync)(void);
 static void (*set_blp)(int); static int (*get_blp)(void);              /* Application.backgroundLoadingPriority */
 static int fast_on, fast_saved, saved_fps, saved_vsync, splash_seen, saved_blp = -1;
+static int a_part_splash = 1, a_part_fps = 1, a_part_blp = 1;          /* A: DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP (dsl_fastboot_part) */
 static int fps_mode;                                                    /* frame cap forced while hidden: 10000 boot, idle fps waiting */
 static void force_fps(int target) {
     if (!set_fps || !get_fps || !set_vsync || !get_vsync) return;
@@ -105,11 +106,11 @@ static void fast_tick(void) {
         if (!splash_seen++) SLOG("B: Unity splash screen running: cancelled");
         if (splash_cancel) splash_cancel();
     }
-    if (set_blp && get_blp && !getenv("DSL_SOFT_NOBLP")) {
+    if (set_blp && get_blp && !getenv("DSL_SOFT_NOBLP") && (role_b || a_part_blp)) {
         int b = get_blp();
         if (b != 4) { if (saved_blp < 0) SLOG("B: background loading priority %d -> High while hidden", b); saved_blp = b; set_blp(4); }
     }
-    force_fps(10000);
+    if (role_b || a_part_fps) force_fps(10000);
 }
 static void fast_end(void) {
     if (!fast_on) return;
@@ -743,7 +744,7 @@ static void shot_tick(int title) {
 static void a_fast_tick(void) {
     if (!a_fast || !fast_on || !dsl_ready) return;
     int title = mf && scene() == 1 && boot_ready() && !busy();
-    if (splash_cancel) a_splash_tick(title);
+    if (splash_cancel && a_part_splash) a_splash_tick(title);
     if (title) { fast_end(); a_fast = 0; SLOG("A: boot done (title ready): frame cap and loading priority restored"); return; }
     fast_tick();
 }
@@ -778,6 +779,7 @@ void dsl_soft_snapshot(const char *logdir) {
         char sm[1300]; snprintf(sm, sizeof sm, "%s/%s", logdir ? logdir : ".", i ? "safe_mode.txt" : "safe_mode");
         if (access(sm, 0)) continue;
         setenv("DSL_FASTBOOT", "0", 1); setenv("DSL_PREWARM", "0", 1); setenv("DSL_SOFT_NOFAST", "1", 1);
+        setenv("DSL_FB_CRC", "0", 1); setenv("DSL_FB_SPLASH", "0", 1); setenv("DSL_FB_FPS", "0", 1); setenv("DSL_FB_BLP", "0", 1);
         dsl_log("safe mode: %s found: fast boot, boot speed-up, splash handling and prewarm off", sm);
         break;
     }
@@ -839,9 +841,10 @@ void dsl_soft_install(void) {
         get_apause = icall("UnityEngine.AudioListener::get_pause"); set_apause = icall("UnityEngine.AudioListener::set_pause");
         SLOG("B: mute while hidden: volume %s, pause %s", get_vol && set_vol ? "ok" : "MISSING", get_apause && set_apause ? "ok" : "MISSING");
     }
-    { const char *fb = getenv("DSL_FASTBOOT");
-      dsl_fastboot_install(dsl_core_logdir());
-      if (!role_b && !(fb && *fb == '0') && icall && dsl_build_id) {
+    { dsl_fastboot_install(dsl_core_logdir());
+      a_part_splash = dsl_fastboot_part("DSL_FB_SPLASH"); a_part_fps = dsl_fastboot_part("DSL_FB_FPS"); a_part_blp = dsl_fastboot_part("DSL_FB_BLP");
+      if (!role_b) SLOG("A: boot speed-up parts: splash %d, frames uncapped %d, loading priority High %d (DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP)", a_part_splash, a_part_fps, a_part_blp);
+      if (!role_b && (a_part_splash || a_part_fps || a_part_blp) && icall && dsl_build_id) {
           set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
           set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
           set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");

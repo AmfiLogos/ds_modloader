@@ -130,9 +130,23 @@ static int hexeq(const unsigned char *a, const char *hex) {
     return 1;
 }
 
+/* Boot speed-up parts, each on or off by its own variable (a tester bisects without a rebuild): DSL_FB_CRC (this file's
+   bundle CRC skip), DSL_FB_SPLASH (splash cancel + SplashScreen.Begin / SetTime), DSL_FB_FPS (frames uncapped until the
+   title), DSL_FB_BLP (loading priority High until the title); dsl_soft.c reads the last three. "1" = on, "0" = off;
+   unset = DSL_FASTBOOT ("1" all on, "0" all off), unset too = DSL_FB_DEFAULT. */
+#ifndef DSL_FB_DEFAULT
+#define DSL_FB_DEFAULT 1
+#endif
+int dsl_fastboot_part(const char *env) {
+    const char *v = getenv(env);
+    if (v && (*v == '0' || *v == '1')) return *v == '1';
+    v = getenv("DSL_FASTBOOT");
+    if (v && (*v == '0' || *v == '1')) return *v == '1';
+    return DSL_FB_DEFAULT;
+}
+
 void dsl_fastboot_install(const char *logdir) {
-    const char *e = getenv("DSL_FASTBOOT");
-    if (e && *e == '0') { dsl_log("fastboot: off (DSL_FASTBOOT=0)"); return; }
+    if (!dsl_fastboot_part("DSL_FB_CRC")) { dsl_log("fastboot: off (DSL_FB_CRC / DSL_FASTBOOT)"); return; }
     const char *want2 = NULL;
     for (size_t i = 0; i < sizeof SITE / sizeof SITE[0]; i++)
         if (dsl_build_id && !strcmp(SITE[i].build, dsl_build_id) && !strcmp(SITE[i].plat, PLAT)) want2 = SITE[i].outer;
