@@ -3,8 +3,8 @@
 // and ud relabels that button (new label / tip) instead of adding a second one. A module that relabels after a
 // language change checks host->api_version >= 4 first (an API 3 loader would add a second button).
 // The loader loads every module whose dsl_plugin_api_version (and mod.json "api") is 1..DSL_API_VERSION, so API 1,
-// 2 and 3 modules load exactly as before. A module built with this header exports 4 and is refused by older loaders
-// (API 3); set mod.json "api" to the lowest API the module needs.
+// 2 and 3 modules load exactly as before. DSL_PLUGIN() still exports 3 (DSL_PLUGIN_API): API 4 adds no field, a module
+// checks host->api_version at run time, so a module built with this header also loads in an API 3 loader.
 // API 3 = API 2 + soft restart, session busy, Mods window tabs, title buttons, load-list rows / filter and the
 // dsl_ui widget kit (all appended to DSLHost; check host->size before use, or use the dsl_* wrappers below).
 // API 2 = API 1 (~/DungeonSettlersMods/loader/sdk/dsl_sdk.h) + fields appended to DSLHost + two optional
@@ -193,7 +193,10 @@ typedef struct DSLHost {
     const char *(*data_dir)(void);            /* <game data>/Mods (profiles, groups.json, worlds.json, units/) */
 } DSLHost;
 
-#define DSL_PLUGIN() __attribute__((visibility("default"))) const uint32_t dsl_plugin_api_version = DSL_API_VERSION
+#ifndef DSL_PLUGIN_API
+#define DSL_PLUGIN_API 3                      /* the API a module needs from its loader (API 4 = runtime check only) */
+#endif
+#define DSL_PLUGIN() __attribute__((visibility("default"))) const uint32_t dsl_plugin_api_version = DSL_PLUGIN_API
 
 typedef int (*dsl_plugin_init_fn)(const DSLHost *host, DSLPlugin *self);
 typedef int (*dsl_module_load_fn)(const DSLHost *host, DSLPlugin *self);
