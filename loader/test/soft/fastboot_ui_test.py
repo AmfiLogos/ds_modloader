@@ -77,6 +77,9 @@ try:
     hit = [f for f, b in boxes.items() if b == ((960, 540), (383, 233, 577, 308))]
     check('2 Unity splash drawn over the boot: the first logo at the stock place and size', hit,
           f'{len(shots)} frames, logo frames {hit[:3]}; {next((l[13:] for l in L.splitlines() if "A: splash begun" in l), "no splash line")}')
+    for _ in range(100):                     # the switch waits for the idle title (the splash fade-out ends ~3 s after boot done)
+        if 'update: title corner shown' in L: break
+        time.sleep(0.1); L = open(os.path.join(I, 'dsload.log'), errors='replace').read()
     lb = [l for l in L.splitlines() if 'A: boot done' in l]; lc = [l for l in L.splitlines() if 'update: title corner shown' in l]
     check('3 the Auto-update switch first shows after the boot is done', lb and lc and ts(lc[0]) >= ts(lb[0]), f'boot done {lb[0][:12] if lb else "-"}, corner {lc[0][:12] if lc else "never"}')
     D = Drv(DRV)
