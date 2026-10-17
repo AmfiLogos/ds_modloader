@@ -22,6 +22,9 @@
  "%s off": "%s オフ",
  "%s on": "%s オン",
  "%s, %s": "%s、%s",
+ "%s: the old modded copy is NEWER than your game save.": "%s：古いMOD版コピーのほうが通常のセーブより新しいです。",
+ "%s: your game save is newer than the old modded copy.": "%s：通常のセーブのほうが古いMOD版コピーより新しいです。",
+ "(and %d more)": "（ほか%d個）",
  "Apply": "適用",
  "Applying mods": "MODを適用中",
  "Auto-update mod loader": "MODローダーの自動アップデート",
@@ -141,13 +144,15 @@
  "The mod update (%s) did not start. The old mods are back.": "MODのアップデート（%s）を開始できませんでした。古いMODが元に戻りました。",
  "The mod update (%s) was cut off. Nothing changed.": "MODのアップデート（%s）が途中で中断されました。何も変更されていません。",
  "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again.": "MOD版のゲームコピーがないか、不完全です。\nDungeon Settlers Moddedのキットにある install.bat をもう一度実行してください。",
- "The modded game now plays your game saves directly. Your old modded copy of %s was different from your game save. It was set aside, not deleted:\n%s||The modded game now plays your game saves directly. Your old modded copies of %s were different from your game saves. They were set aside, not deleted:\n%s": [
-  "MOD版のゲームは通常のセーブを直接プレイするようになりました。%sの古いMOD版コピーは通常のセーブと内容が違っていたため、削除せずに別の場所に移しました：\n%s"
+ "The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted.": [
+  "MOD版のゲームは通常のセーブを直接プレイするようになりました。%d個のワールドの古いMOD版コピーが通常のセーブと違っていたため、削除せずに別の場所に移しました。"
  ],
  "The mods could not be applied: %s": "MODを適用できませんでした：%s",
  "The mods did not change: %s": "MODは変わりませんでした：%s",
  "The mods folder has no new mods.": "MODフォルダに新しいMODはありません。",
  "The mods for this world could not be saved.": "このワールドのMODを保存できませんでした。",
+ "The old modded copies are in this folder:\n%s": "古いMOD版コピーはこのフォルダーにあります：\n%s",
+ "The old modded copy is this file:\n%s": "古いMOD版コピーはこのファイルです：\n%s",
  "The update to %s could not be installed (%s). You still have %s.": "%sへのアップデートをインストールできませんでした（%s）。%sはそのまま残ります。",
  "The update to %s could not be installed (%s). You still have the old version.": "%sへのアップデートをインストールできませんでした（%s）。古いバージョンはそのまま残ります。",
  "The update to %s did not start. You have %s again.": "%sへのアップデートを開始できませんでした。%sに戻りました。",
@@ -156,6 +161,7 @@
  "The world cannot be loaded now: %s": "今はこのワールドを読み込めません：%s",
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "このDungeon Settlers Moddedは不完全です（MODローダーが入っていません）。もう一度ダウンロードしてください。",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "このゲームはビルド%sですが、ランチャーはビルド%s用としてこのワールドを起動しました。MODはオフのままです。ランチャーからもう一度このワールドを起動してください。",
+ "This save is also used by Dungeon Settlers without mods. Delete it there too?": "このセーブはMODなしのDungeon Settlersでも使われています。そちらからも削除しますか？",
  "This world is one of your game saves.": "このワールドは通常のセーブです。",
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "このワールドは通常のセーブです。次のMODはワールドに保存される内容を変えます：%s。\n\n今プレイすると、あとでMODローダーなしのゲームで読み込んだときにワールドが壊れる可能性があります。"
