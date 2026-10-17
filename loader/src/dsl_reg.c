@@ -583,7 +583,7 @@ static int draft_is_running(void) {
 static void prewarm_frame(void) {
     if (dr_n < 0 || dr_started || mono_s() - dr_t < 1.5) return;
     dr_started = 1;
-    const char *off = getenv("DSL_PREWARM"); if (off && !strcmp(off, "0")) return;
+    if (!dsl_fastboot_part("DSL_PREWARM")) return;                 /* "0" off; unset: Windows off, Mac on (dsl_fastboot.c) */
     if (draft_is_running()) { if (dsl_soft_prewarm_state()) { dsl_log("reg: prewarm: switches back to the running set: stopped"); dsl_soft_prewarm_stop(); } return; }
     if (dsl_busy_reason() || dsl_reg_scene() != 1) return;
     const char *ids[MAXM]; for (int i = 0; i < dr_n; i++) ids[i] = dr_ids[i];

@@ -103,9 +103,25 @@ static int hexeq(const unsigned char *a, const char *hex) {
     return 1;
 }
 
+/* Boot speed-up parts (owner 2026-10-17: off on Windows until a real Windows PC is tested; a tester's PC froze at start
+   with D3D11 "WaitForLastPresentationAndGetTimestamp ... without PresentFrame"). Each part: its own variable ("1" on,
+   "0" off), else DSL_FASTBOOT for all parts, else the platform default (Windows off, Mac on). Parts: DSL_FB_CRC (bundle
+   CRC skip, here), DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP (A's boot, dsl_soft.c), DSL_PREWARM (hidden prewarm B, dsl_reg.c) */
+#ifdef _WIN32
+#define DSL_FB_DEFAULT 0
+#else
+#define DSL_FB_DEFAULT 1
+#endif
+int dsl_fastboot_part(const char *env) {
+    const char *v = env ? getenv(env) : NULL;
+    if (v && *v) return *v != '0';
+    v = getenv("DSL_FASTBOOT");
+    if (v && *v) return *v != '0';
+    return DSL_FB_DEFAULT;
+}
+
 void dsl_fastboot_install(const char *logdir) {
-    const char *e = getenv("DSL_FASTBOOT");
-    if (e && *e == '0') { dsl_log("fastboot: off (DSL_FASTBOOT=0)"); return; }
+    if (!dsl_fastboot_part("DSL_FB_CRC")) { dsl_log("fastboot: off (bundle CRC skip: DSL_FB_CRC / DSL_FASTBOOT, or the default on %s)", PLAT); return; }
     const char *want = NULL;
     for (size_t i = 0; i < sizeof SITE / sizeof SITE[0]; i++)
         if (dsl_build_id && !strcmp(SITE[i].build, dsl_build_id) && !strcmp(SITE[i].plat, PLAT)) want = SITE[i].bytes;

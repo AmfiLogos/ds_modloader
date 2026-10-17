@@ -67,6 +67,7 @@ void dsl_soft_install(void);                 /* after il2cpp_init */
 /* fast boot (dsl_fastboot.c): bundle CRC skip for files that passed the game's check before */
 void dsl_fastboot_install(const char *logdir); /* after il2cpp_init (from dsl_soft_install) */
 void dsl_fastboot_tick(void);                /* main thread, every soft tick */
+int dsl_fastboot_part(const char *env);         /* a boot speed-up part on? env "1"/"0", else DSL_FASTBOOT, else Windows off / Mac on */
 void dsl_fastboot_yield(void *target, const char *who);   /* before a module hooks <target>: fast boot gives it up if it is its method */
 int dsl_soft_title_idle(void);               /* title on screen, boot done, nothing loading, no loading screen */
 int dsl_soft_busy(void);                     /* a restart runs (A) or is not finished (B) */

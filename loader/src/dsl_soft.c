@@ -804,17 +804,21 @@ void dsl_soft_install(void) {
         get_apause = icall("UnityEngine.AudioListener::get_pause"); set_apause = icall("UnityEngine.AudioListener::set_pause");
         SLOG("B: mute while hidden: volume %s, pause %s", get_vol && set_vol ? "ok" : "MISSING", get_apause && set_apause ? "ok" : "MISSING");
     }
-    { const char *fb = getenv("DSL_FASTBOOT");
-      dsl_fastboot_install(dsl_core_logdir());
-      if (!role_b && !(fb && *fb == '0') && icall && dsl_build_id) {
-          set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
-          set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount");
-          set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority");
-          sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
-          splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen");
-          if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
-          else SLOG("A: boot speed-up off (game functions missing)");
-      } }
+    { dsl_fastboot_install(dsl_core_logdir());
+      int fps = dsl_fastboot_part("DSL_FB_FPS"), blp = dsl_fastboot_part("DSL_FB_BLP"), spl = dsl_fastboot_part("DSL_FB_SPLASH");
+      if (!role_b && (fps || blp || spl) && icall && dsl_build_id) {
+          if (fps) { set_fps = icall("UnityEngine.Application::set_targetFrameRate"); get_fps = icall("UnityEngine.Application::get_targetFrameRate");
+                     set_vsync = icall("UnityEngine.QualitySettings::set_vSyncCount"); get_vsync = icall("UnityEngine.QualitySettings::get_vSyncCount"); }
+          if (blp) { set_blp = icall("UnityEngine.Application::set_backgroundLoadingPriority"); get_blp = icall("UnityEngine.Application::get_backgroundLoadingPriority"); }
+          if (spl) { sp_begin = icall("UnityEngine.Rendering.SplashScreen::Begin"); sp_fade = icall("UnityEngine.Rendering.SplashScreen::BeginSplashScreenFade");
+                     splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen"); }
+          if ((!fps || (set_fps && get_fps && set_vsync && get_vsync)) && (!blp || (set_blp && get_blp))) {
+              fast_on = 1; a_fast = 1;
+              SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped: %s, loading priority High until the title: %s)",
+                   !spl ? "off" : splash_done && splash_cancel ? "ok" : "MISSING", fps ? "on" : "off", blp ? "on" : "off");
+          } else SLOG("A: boot speed-up off (game functions missing)");
+      } else if (!role_b) SLOG("A: boot speed-up off (DSL_FASTBOOT / DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP, or the platform default: Windows off)");
+    }
     if (role_b && !getenv("DSL_SOFT_NOFAST")) {
         fast_on = 1;
         if (icall) { splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen"); }
