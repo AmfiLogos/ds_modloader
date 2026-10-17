@@ -20,7 +20,17 @@ for d in $SRC/mac/*(/); do
     if [[ -f $ST/$f ]] && ! cmp -s $ST/$f $SRC/win/$id/$f; then echo "package_mods: $id: $f differs between mac and win" >&2; exit 1; fi
     mkdir -p $ST/${f:h}; cp $SRC/win/$id/$f $ST/$f
   done
-  mkdir -p $ST/licenses; cp $L/../licenses/LICENSE.txt $L/../licenses/THIRD_PARTY_NOTICES.txt $ST/licenses/   # in every release file
+  # licenses/ in every release file: the mod's own repo license (multiplayer: ds_multiplayer, + the rwmt-Multiplayer
+  # license its net code comes from; custom-modes: ds_custommodes; the others: this repo) and the third-party notices.
+  # The repos' texts come from the pinned commits (mp_pin.txt / cm_pin.txt), the same trees the mods are built from.
+  mkdir -p $ST/licenses; cp $L/../licenses/THIRD_PARTY_NOTICES.txt $ST/licenses/
+  case $id in
+    multiplayer) git -C ${MP_REPO:-$HOME/ds_multiplayer} show "$(head -1 $L/mp_pin.txt):LICENSE" > $ST/licenses/LICENSE.txt
+                 git -C ${MP_REPO:-$HOME/ds_multiplayer} show "$(head -1 $L/mp_pin.txt):src/net/LICENSE.rwmt-Multiplayer.txt" > $ST/licenses/LICENSE.rwmt-Multiplayer.txt ;;
+    custom-modes) git -C ${CM_REPO:-$HOME/ds_custommodes} show "$(head -1 $L/cm_pin.txt):LICENSE" > $ST/licenses/LICENSE.txt ;;
+    *) cp $L/../licenses/LICENSE.txt $ST/licenses/ ;;
+  esac
+  [[ -s $ST/licenses/LICENSE.txt ]] || { echo "package_mods: $id: no license text" >&2; exit 1; }
   xattr -cr $ST
   # fixed order and dates: the same set gives the same zip bytes
   find $ST -exec touch -h -t 202601010000 {} +

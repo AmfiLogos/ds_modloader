@@ -117,7 +117,7 @@ copy /y "files\baselib.dll" "%COPY%\baselib.dll" >nul || goto copyfail
 > "%COPY%\dsmodded_build.txt" echo %BUILD%
 copy /y "files\Dungeon Settlers Modded.exe" "%ROOT%\Dungeon Settlers Modded.exe" >nul || goto copyfail
 if exist "files\RELEASE" copy /y "files\RELEASE" "%ROOT%\RELEASE" >nul
-if exist "files\licenses" xcopy "files\licenses" "%ROOT%\licenses\" /E /I /Q /Y >nul
+if exist "licenses" xcopy "licenses" "%ROOT%\licenses\" /E /I /Q /Y >nul
 copy /y "uninstall.bat" "%ROOT%\uninstall.bat" >nul
 if not exist "%ROOT%\mods" mkdir "%ROOT%\mods"
 xcopy "files\mods" "%ROOT%\mods\" /E /I /Q /Y >nul
