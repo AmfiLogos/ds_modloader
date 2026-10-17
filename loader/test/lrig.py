@@ -242,10 +242,71 @@ def prepare_data(x):
 
 
 # ------------------------------------------------------------------ start / stop
+# ---- cap on test copies (2026-10-17 22:10: every app on the Mac froze at load ~230, swap filled the disk). A new test
+# copy starts only while fewer than 6 test copies run (a 4-player game + 2), the 1-minute load is at most 40 and swap
+# use at most 20 GB; else it waits (10 min at most), then refuses. Test copy = a running "Dungeon Settlers" whose app is
+# background-only (LSBackgroundOnly, make_instance.sh): the owner's own game never counts and is never held. The
+# loader checks the same in the copy itself (dsl_start_mac.c). Tests: DSRIG_CAP_FAKE_COUNT / _LOAD / _SWAP_GB, DSRIG_CAP_WAIT (s).
+CAP_COPIES, CAP_LOAD, CAP_SWAP_GB = 6, 40.0, 20.0
+
+
+def _cap_env(k, f):
+    v = os.environ.get(k)
+    return f(v) if v else None
+
+
+def running_test_copies():
+    n = _cap_env('DSRIG_CAP_FAKE_COUNT', int)
+    if n is not None:
+        return n
+    import ctypes, plistlib
+    lp = ctypes.CDLL('/usr/lib/libproc.dylib'); buf = ctypes.create_string_buffer(4096); n = 0
+    for pid in subprocess.run(['pgrep', '-x', 'Dungeon Settlers'], capture_output=True, text=True).stdout.split():
+        if lp.proc_pidpath(int(pid), buf, 4096) <= 0:
+            continue
+        exe = buf.value.decode(errors='replace'); i = exe.find('/Contents/MacOS/')
+        try:
+            n += i > 0 and plistlib.load(open(exe[:i] + '/Contents/Info.plist', 'rb')).get('LSBackgroundOnly') in (True, 1, '1')
+        except Exception:
+            pass
+    return n
+
+
+def swap_gb():
+    v = _cap_env('DSRIG_CAP_FAKE_SWAP_GB', float)
+    if v is not None:
+        return v
+    t = subprocess.run(['sysctl', '-n', 'vm.swapusage'], capture_output=True, text=True).stdout   # "total = .. used = 2827.75M .."
+    u = t.split('used = ')[1].split()[0] if 'used = ' in t else '0M'
+    return float(u[:-1]) / (1 if u[-1] == 'G' else 1024)
+
+
+def cap_wait(what):
+    """before a new test copy starts: wait while the Mac is at the cap (10 min at most), then refuse (SystemExit)"""
+    limit = _cap_env('DSRIG_CAP_WAIT', float)
+    limit = 600.0 if limit is None else limit
+    t0 = time.time(); said = 0
+    while True:
+        n, sw = running_test_copies(), swap_gb()
+        ld = _cap_env('DSRIG_CAP_FAKE_LOAD', float)
+        ld = os.getloadavg()[0] if ld is None else ld
+        why = [s for s, bad in ((f'{n} test copies run (cap {CAP_COPIES})', n >= CAP_COPIES),
+                                (f'1-minute load {ld:.0f} (cap {CAP_LOAD:.0f})', ld > CAP_LOAD),
+                                (f'swap {sw:.1f} GB used (cap {CAP_SWAP_GB:.0f})', sw > CAP_SWAP_GB)) if bad]
+        if not why:
+            return
+        if time.time() - t0 >= limit:
+            raise SystemExit(f'{what}: refused, the Mac stayed at the test copy cap for ' + (f'{limit / 60:.0f} min' if limit >= 60 else f'{limit:.0f} s') + ': ' + '; '.join(why))
+        if time.time() - said >= 60:
+            print(f'{what}: waiting (test copy cap): ' + '; '.join(why), flush=True); said = time.time()
+        time.sleep(max(0.5, min(15, limit - (time.time() - t0))))
+
+
 def start(x, window=False, fps=30, show=None):
     """show='left'|'right': VISIBLE window on that half of the screen (owner demo only; tests never pass it)."""
     if alive(read_pid(x)):
         print(f'{x}: already running (pid {read_pid(x)})'); return read_pid(x)
+    cap_wait(f'{x}: start')
     exe = os.path.join(idir(x), EXE_REL)
     if not os.path.exists(exe):
         raise SystemExit(f'{x}: no copy; run test/make_instance.sh {x} + test/install_mods.sh first')
