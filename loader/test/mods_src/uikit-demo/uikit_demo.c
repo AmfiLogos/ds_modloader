@@ -156,6 +156,7 @@ static DSLObj target(const char *t) {
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
     if (!strncmp(t, "title:", 6)) return t_title(t + 6, NULL, 0);
+    if (!strcmp(t, "update")) { static DSLObj (*ut)(void); if (!ut) *(void **)&ut = dlsym(RTLD_DEFAULT, "dsl_update_test_toggle"); return ut ? ut() : NULL; }
     return NULL;
 }
 /* sub-parts of composite widgets: value row arrows / field are at fixed places inside the root rect */
@@ -183,7 +184,8 @@ static void state(char *out, size_t cap) {
         char fb[256] = "", fe[300]; U->field_get(fd, fb, sizeof fb); jesc(fe, sizeof fe, fb);
         o += (size_t)snprintf(out + o, cap - o, ",\"toggle\":%d,\"value\":%d,\"field\":\"%s\"", U->toggle_get(tg), U->value_get(vr), fe);
     }
-    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel" };
+    { DSLObj ut = target("update"); o += (size_t)snprintf(out + o, cap - o, ",\"update_on\":%d", ut ? U->toggle_get(ut) : -1); }
+    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update" };
     o += (size_t)snprintf(out + o, cap - o, ",\"w\":{");
     for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
         DSLObj w = target(names[i]); float r[4] = { 0 }; int on = w ? t_rect(w, r) : -1; char l[200] = "", le[260];
