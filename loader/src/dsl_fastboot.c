@@ -133,9 +133,14 @@ static int hexeq(const unsigned char *a, const char *hex) {
 /* Boot speed-up parts, each on or off by its own variable (a tester bisects without a rebuild): DSL_FB_CRC (this file's
    bundle CRC skip), DSL_FB_SPLASH (splash cancel + SplashScreen.Begin / SetTime), DSL_FB_FPS (frames uncapped until the
    title), DSL_FB_BLP (loading priority High until the title); dsl_soft.c reads the last three. "1" = on, "0" = off;
-   unset = DSL_FASTBOOT ("1" all on, "0" all off), unset too = DSL_FB_DEFAULT. */
+   unset = DSL_FASTBOOT ("1" all on, "0" all off), unset too = DSL_FB_DEFAULT: the platform default (owner 2026-10-17: off on Windows until a real Windows PC is tested;
+   a tester's PC froze at start with a D3D11 present deadlock; Mac on). DSL_PREWARM (hidden prewarm B, dsl_reg.c) too. */
 #ifndef DSL_FB_DEFAULT
+#ifdef _WIN32
+#define DSL_FB_DEFAULT 0
+#else
 #define DSL_FB_DEFAULT 1
+#endif
 #endif
 int dsl_fastboot_part(const char *env) {
     const char *v = getenv(env);
@@ -146,7 +151,7 @@ int dsl_fastboot_part(const char *env) {
 }
 
 void dsl_fastboot_install(const char *logdir) {
-    if (!dsl_fastboot_part("DSL_FB_CRC")) { dsl_log("fastboot: off (DSL_FB_CRC / DSL_FASTBOOT)"); return; }
+    if (!dsl_fastboot_part("DSL_FB_CRC")) { dsl_log("fastboot: off (bundle CRC skip: DSL_FB_CRC / DSL_FASTBOOT, or the default on %s)", PLAT); return; }
     const char *want2 = NULL;
     for (size_t i = 0; i < sizeof SITE / sizeof SITE[0]; i++)
         if (dsl_build_id && !strcmp(SITE[i].build, dsl_build_id) && !strcmp(SITE[i].plat, PLAT)) want2 = SITE[i].outer;

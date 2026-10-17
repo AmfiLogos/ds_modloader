@@ -853,7 +853,8 @@ void dsl_soft_install(void) {
           frame_count = icall("UnityEngine.Time::get_frameCount");
           if (set_fps && get_fps && set_vsync && get_vsync && set_blp && get_blp) { fast_on = 1; a_fast = 1; SLOG("A: boot speed-up on (Unity splash non-blocking: %s, frames uncapped, loading priority High until the title)", splash_done && splash_cancel && sp_begin ? "ok" : "MISSING"); }
           else SLOG("A: boot speed-up off (game functions missing)");
-      } }
+      } else if (!role_b) SLOG("A: boot speed-up off (DSL_FASTBOOT / DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP, or the platform default: Windows off)");
+    }
     if (role_b && !getenv("DSL_SOFT_NOFAST")) {
         fast_on = 1;
         if (icall) { splash_done = icall("UnityEngine.Rendering.SplashScreen::get_isFinished"); splash_cancel = icall("UnityEngine.Rendering.SplashScreen::CancelSplashScreen"); }
