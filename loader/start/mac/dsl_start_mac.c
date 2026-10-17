@@ -239,6 +239,7 @@ static void test_copy_window(void) {
     }
     if (!bg) return;
     test_copy_noactivate();
+    if (!getenv("DSRIG_LIVE")) { extern void dsl_quiet_install(void); dsl_quiet_install(); }   /* dsl_quiet_mac.c */
     CFStringRef dom = CFBundleGetIdentifier(mb); if (!dom) return;
     char db[200] = ""; CFStringGetCString(dom, db, sizeof db, kCFStringEncodingUTF8);
     if (!strcmp(db, "com.CanOpener.Dungeon-Settlers") || !strcmp(db, "com.CanOpener.Dungeon-Settlers.Modded")) { dsl_log("screen: test copy with the owner's bundle id %s: its settings are not touched", db); return; }
