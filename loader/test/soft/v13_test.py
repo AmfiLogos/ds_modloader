@@ -16,13 +16,13 @@ import json, os, shutil, signal, subprocess, sys, threading, time, glob
 sys.path.insert(0, os.path.expanduser('~/ds_launcher/loader/test'))
 import lrig as r
 
-X = 'V'; I = r.idir(X)
+X = os.environ.get('V13_COPY', 'V'); I = r.idir(X)
 SDIR = os.path.join(I, 'softrestart'); RIGB = os.path.join(I, 'rigB'); MODS = os.path.join(I, 'data', 'Mods')
 STAGE = '-20000,-20000'
 SAVE = 'ElvenExpedition__AutoSave_f816ebc6195c432c9fff754b75ee3738_0'
 GUID = 'f816ebc6-195c-432c-9fff-754b75ee3738'
 SAVE_SEED = os.path.join(r.SEED_DATA, 'Saves', SAVE + '.json')
-RIG = os.path.expanduser('~/ds_multiplayer/rig/rig.py'); LANE = 'loaderui'
+RIG = os.path.expanduser('~/ds_multiplayer/rig/rig.py'); LANE = os.environ.get('V13_LANE', 'loaderui')
 def rigdir(k):                                           # generation k of the chain: A = 0 (the copy), then rigB / rigC
     return I if k == 0 else os.path.join(I, 'rigB' if k % 2 else 'rigC')
 def sock(k): return os.path.join(rigdir(k), 'ctl.sock')

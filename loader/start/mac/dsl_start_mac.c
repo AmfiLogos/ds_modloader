@@ -16,6 +16,7 @@
 #include <libkern/OSByteOrder.h>
 #include <dlfcn.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -261,3 +262,11 @@ __attribute__((constructor)) static void dsl_init(void) {
     if (r) return;
     _dyld_register_func_for_add_image(on_image);
 }
+
+/* fast boot (dsl_fastboot.c): size + modification time (ns) of a file; rename over an existing file */
+int dsl_os_file_stamp(const char *utf8, long long *size, long long *mtime) {
+    struct stat st; if (stat(utf8, &st)) return -1;
+    *size = (long long)st.st_size; *mtime = (long long)st.st_mtimespec.tv_sec * 1000000000LL + st.st_mtimespec.tv_nsec;
+    return 0;
+}
+int dsl_os_replace(const char *from_utf8, const char *to_utf8) { return rename(from_utf8, to_utf8); }

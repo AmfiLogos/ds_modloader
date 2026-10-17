@@ -88,3 +88,13 @@ void *dsl_ga_sym(const char *name) {
     HMODULE ga = dsl_ga_base ? (HMODULE)dsl_ga_base : GetModuleHandleA("GameAssembly.dll");
     return ga && name ? (void *)GetProcAddress(ga, name) : NULL;
 }
+
+/* fast boot (dsl_fastboot.c): size + last write time (100 ns units) of a file; rename over an existing file */
+int dsl_os_file_stamp(const char *utf8, long long *size, long long *mtime) {
+    WIN32_FILE_ATTRIBUTE_DATA d; wchar_t w[1024];
+    if (dsl_u8_to_w(utf8, w, 1024) || !GetFileAttributesExW(w, GetFileExInfoStandard, &d)) return -1;
+    *size = (long long)(((unsigned long long)d.nFileSizeHigh << 32) | d.nFileSizeLow);
+    *mtime = (long long)(((unsigned long long)d.ftLastWriteTime.dwHighDateTime << 32) | d.ftLastWriteTime.dwLowDateTime);
+    return 0;
+}
+int dsl_os_replace(const char *from_utf8, const char *to_utf8) { return MoveFileExA(from_utf8, to_utf8, MOVEFILE_REPLACE_EXISTING) ? 0 : -1; }
