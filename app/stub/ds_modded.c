@@ -713,7 +713,7 @@ int main(int argc, char **argv) {
         if (lfd >= 0) close(lfd);                            /* the new stub takes the lock itself */
         execv(real, argv);
         logf_("exec %s failed (%s)", real, strerror(errno));
-        return fail("Dungeon Settlers Modded was updated but could not start. Open it again.");
+        return fail(TR("Dungeon Settlers Modded was updated but could not start. Open it again."));
     }
     if (ulabel[0]) setenv("DSML_UPDATE", ulabel, 1); else unsetenv("DSML_UPDATE");
     if (sync_loader(app, root)) return 1;

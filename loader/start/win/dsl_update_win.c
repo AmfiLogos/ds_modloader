@@ -229,7 +229,7 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     const char *root = dsl_uos_root();
     char u[1200]; snprintf(u, sizeof u, "%s.new", backup); bs(u);
     prog(mv, 10);
-    if (unpack(file, u)) { snprintf(why, wn, "the download could not be unpacked"); return -1; }
+    if (unpack(file, u)) { snprintf(why, wn, TR("the download could not be unpacked")); return -1; }
     prog(mv, 50);
     /* files\ : at the top or one folder down ("Dungeon Settlers Modded\files") */
     char fdir[1400] = "", t[1500];
@@ -249,19 +249,19 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
         }
     }
     char exe[1500]; snprintf(exe, sizeof exe, "%s\\Dungeon Settlers Modded.exe", fdir);
-    if (!fdir[0] || !dsl_uos_exists(exe)) { snprintf(why, wn, "the download holds no Dungeon Settlers Modded kit"); return -1; }
+    if (!fdir[0] || !dsl_uos_exists(exe)) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded kit")); return -1; }
     /* the kit is made for one game build; another build needs the full installer (a new game copy) */
     char nb[64], ob[64], p[1500];
     snprintf(p, sizeof p, "%s\\BUILD.txt", fdir); first_line(p, nb, sizeof nb);
     snprintf(p, sizeof p, "%s\\game\\dsmodded_build.txt", root); first_line(p, ob, sizeof ob);
     if (!nb[0] || strcmp(nb, ob)) {
         dsl_log("update: the kit is for game build %s, the game copy is build %s", nb[0] ? nb : "?", ob[0] ? ob : "?");
-        snprintf(why, wn, "this update needs the installer (new game version)"); return -1;
+        snprintf(why, wn, TR("this update needs the installer (new game version)")); return -1;
     }
     char rel[64]; snprintf(p, sizeof p, "%s\\RELEASE", fdir); first_line(p, rel, sizeof rel);
     if (strcmp(rel, ver)) {
         dsl_log("update: the v%s download says RELEASE %s", ver, rel[0] ? rel : "(none)");
-        snprintf(why, wn, "the download's version number is wrong"); return -1;
+        snprintf(why, wn, TR("the download's version number is wrong")); return -1;
     }
     prog(mv, 60);
     static const struct { const char *from, *to; } ONE[] = {
@@ -270,32 +270,32 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     for (size_t i = 0; i < sizeof ONE / sizeof ONE[0]; i++) {
         char s[1500], d[1300], b[1300];
         snprintf(s, sizeof s, "%s\\%s", fdir, ONE[i].from); snprintf(d, sizeof d, "%s\\%s", root, ONE[i].to); snprintf(b, sizeof b, "%s\\%s", backup, ONE[i].to);
-        if (!dsl_uos_exists(s)) { snprintf(why, wn, "the kit has no %s", ONE[i].from); return -1; }
-        if (swap_in(s, d, b, mv)) { snprintf(why, wn, "%s could not be replaced", ONE[i].to); return -1; }
+        if (!dsl_uos_exists(s)) { snprintf(why, wn, TR("the kit has no %s"), ONE[i].from); return -1; }
+        if (swap_in(s, d, b, mv)) { snprintf(why, wn, TR("%s could not be replaced"), ONE[i].to); return -1; }
     }
     /* the kit's mods, file by file; the player's other mods stay */
     char sm[1500], dm[1300], bm[1300]; int nf = 0;
     snprintf(sm, sizeof sm, "%s\\mods", fdir); snprintf(dm, sizeof dm, "%s\\mods", root); snprintf(bm, sizeof bm, "%s\\mods", backup);
     prog(mv, 75);
-    if (is_dir(sm) && swap_tree(sm, dm, bm, "", mv, &nf)) { snprintf(why, wn, "the mods could not be replaced"); return -1; }
+    if (is_dir(sm) && swap_tree(sm, dm, bm, "", mv, &nf)) { snprintf(why, wn, TR("the mods could not be replaced")); return -1; }
     dsl_log("update: Windows kit installed: baselib.dll, the starter, RELEASE and %d mod file(s) (old ones in %s)", nf, backup);
     return 0;
 }
 
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     char u[1200]; snprintf(u, sizeof u, "%s.new", backup); bs(u);
-    if (unpack(zip, u)) { snprintf(why, wn, "the %s download could not be unpacked", id); return -1; }
+    if (unpack(zip, u)) { snprintf(why, wn, TR("the %s download could not be unpacked"), id); return -1; }
     char nm[1400], t[1500]; snprintf(nm, sizeof nm, "%s\\%s", u, id); snprintf(t, sizeof t, "%s\\mod.json", nm);
     char *j = NULL; FILE *f = fopen(t, "rb");
     if (f) { j = calloc(1, 1 << 20); if (j && !fread(j, 1, (1 << 20) - 1, f)) j[0] = 0; fclose(f); }
     JNode *m = j ? json_parse(j) : NULL; free(j);
     const char *mid = json_str(m, "id"), *mv_ = json_str(m, "version");
     int ok = mid && !strcmp(mid, id), vok = mv_ && !strcmp(mv_, ver); json_free(m);
-    if (!ok) { snprintf(why, wn, "the %s download is not that mod", id); return -1; }
-    if (!vok) { snprintf(why, wn, "the %s download's version number is wrong", id); return -1; }
+    if (!ok) { snprintf(why, wn, TR("the %s download is not that mod"), id); return -1; }
+    if (!vok) { snprintf(why, wn, TR("the %s download's version number is wrong"), id); return -1; }
     char dst[1300], bk[1300]; snprintf(dst, sizeof dst, "%s\\mods\\%s", dsl_uos_root(), id); snprintf(bk, sizeof bk, "%s", backup); bs(bk);
     int nf = 0;
-    if (retire_extra(nm, dst, bk, "", mv) || swap_tree(nm, dst, bk, "", mv, &nf)) { snprintf(why, wn, "the mod %s could not be replaced", id); return -1; }
+    if (retire_extra(nm, dst, bk, "", mv) || swap_tree(nm, dst, bk, "", mv, &nf)) { snprintf(why, wn, TR("the mod %s could not be replaced"), id); return -1; }
     dsl_log("update: mod %s installed into %s (%d file(s))", id, dst, nf);
     return 0;
 }

@@ -143,13 +143,22 @@ BepInEx, MelonLoader (names: kept), Steam Cloud.
 - Installer (NSIS) and `kit/*.bat`: out of scope (they run before any game language exists).
 - Unused Tauri prototype (`src-tauri/`, `ui/`) and the MP snapshot: not ours.
 
-## Auto-update rework (branches autoupd / autoupd2, not on main): what it will need
-- Mac stub: `fail("Dungeon Settlers Modded was updated but could not start. Open it again.")` -> TR.
-- The update window title made in `loader/start/dsl_update_start.c` ("Updating Dungeon Settlers Modded to 0.1.N"):
-  TR where it is made (UTF-8 for nsstr / CP_UTF8 on Windows).
-- Windows: `fail(L"Dungeon Settlers Modded was updated, but the new version could not be started. ...")` -> the
-  UTF-8 `fail(TR(...))`; the fallback `L"Updating Dungeon Settlers Modded"` -> TR + CP_UTF8.
-- Both: `setup_lang()` must run before the update step.
+## Main v0.1.9 merged (2026-10-17): auto-update, fastboot, pathwarn, mod zip messages
+- Title corner (`src/dsl_update.c`): the line is a kind + arg (`line_kind`, `ready_kind`) made into text every frame,
+  so a language change shows at once; the switch, the text and the button are destroyed and made again when
+  `dsi_generation()` changes (label + the new language's font). The switch keeps no tooltip.
+- Starter (`start/dsl_update_start.c`): whole sentences per kind (kit / mods; with or without the old version), no
+  more "%c%s" capital trick; the install reasons in `dsl_update_mac.c` / `dsl_update_win.c` are TR fragments.
+  notice.txt holds the starter's line already translated (an older loader after a rollback shows it as it is).
+- Windows starter: update window title fallback, "was updated, but ..." fail, the folder-path warning (msgbox, UTF-8
+  root) and the "could not be installed (the mods folder ...)" box go through TR; `DSML_UPDATE` is set with
+  `dsl_u8_setenv` (the label holds mod names, maybe translated). `DSL_BIE_REASON` stays `bie_env_text` (%XX).
+- Mac stub: `DSI_IMPLEMENTATION` before the `dsl_json.c` include (it pulls ds_i18n.h in first).
+- `ui/dsl_pkg.c`: "is ready" / "are ready" (TRN) / "could not be installed" texts.
+- en.json 207 keys (49 new, none translated yet: `loader/test/i18n/run.sh` fails "fr/ja: all keys resolve" until the
+  translation pass).
+- `loader/ui/test/build_test.sh` (Windows part) and `loader/test/winbie/build.sh` do not build on main either (main's
+  UTF-8 compat headers are not on their include path): not changed here.
 
 ## Re-running on a newer main
 `python3 tools/i18n_wrap.py` applies the literal wraps (78 entries; `--check` reports only). The structural edits
