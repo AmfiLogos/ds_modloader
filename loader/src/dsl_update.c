@@ -346,7 +346,7 @@ static void corner_frame(void) {
     if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
     char l[400] = "";
     if (line[0]) snprintf(l, sizeof l, "%s", line);
-    else if (st == 1 && clicked) { if (kv[0]) snprintf(l, sizeof l, TR("Downloading %s..."), kv); else snprintf(l, sizeof l, "%s", TR("Downloading mod updates...")); };
+    else if (st == 1 && clicked) { if (kv[0]) snprintf(l, sizeof l, TR("Downloading %s..."), kv); else snprintf(l, sizeof l, "%s", TR("Downloading mod updates...")); }
     else if (st == 2 && (auto_on || clicked)) snprintf(l, sizeof l, "%s", rl);
     else if (st == -1 && clicked) snprintf(l, sizeof l, "%s", TR("The download failed. The game tries again next time."));
     if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
