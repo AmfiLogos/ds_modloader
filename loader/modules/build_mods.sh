@@ -7,6 +7,10 @@
 #   build_mods.sh                 build all (Mac part through ../build.sh; Windows with ~/tools/llvm-mingw)
 #   build_mods.sh --check [dir]   check a built set (default build/mods_all): every module lists mac-arm64 + win-x64,
 #                                 entry files exist, listed sha256s match, both copies have the same mod.json. Exit 1 = bad.
+#                                 A MAC_ONLY module: a Mac copy only, its mod.json lists mac-arm64 only.
+# MAC_ONLY (below): modules with no Windows build (v0.1.15: zetu-suite; on Windows it hung every save load). Not in
+# build/mods_all/win, so not in the Windows kit (MODS=build/mods_all/win/*) nor in its package zip; the loader's
+# MOD_REPOS (src/dsl_update.c) names the same platform so a Windows copy never downloads it.
 # Env: MP_PIN (default ../mp_pin.txt) = the ds_multiplayer commit for multiplayer (and the headers Custom Modes uses);
 #      CM_PIN (default ../cm_pin.txt) = the ds_custommodes commit for custom-modes on both platforms, CM_REPO its clone;
 #      MP_WIN_TREE = a ds_multiplayer checkout to build the Windows multiplayer from instead of the pin
@@ -14,24 +18,28 @@
 #      Game files for the Hell delta: HELL_STOCK_WIN / HELL_STOCK_MAC (stock table bundles; read only).
 set -e; cd "${0:A:h}"; MD=$PWD; L=${MD:h}
 OUT=$L/build/mods_all
+MAC_ONLY=(zetu-suite)
 
 check() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "${(j:,:)MAC_ONLY}" <<'PY'
 import hashlib, json, os, sys
-root = sys.argv[1]; bad = []
+root = sys.argv[1]; bad = []; mac_only = set(filter(None, sys.argv[2].split(",")))
 mac, win = os.path.join(root, "mac"), os.path.join(root, "win")
 ids = sorted(set(os.listdir(mac) if os.path.isdir(mac) else []) | set(os.listdir(win) if os.path.isdir(win) else []))
 if not ids: bad.append(f"no modules under {root}")
 for i in ids:
     mj = {}
+    if i in mac_only and os.path.exists(os.path.join(win, i)): bad.append(f"{i}: Mac only, but has a win copy")
     for side, d in (("mac", mac), ("win", win)):
         p = os.path.join(d, i, "mod.json")
+        if side == "win" and i in mac_only: continue
         if not os.path.exists(p): bad.append(f"{i}: no {side} copy"); continue
         mj[side] = open(p, "rb").read()
         m = json.loads(mj[side]); pl = m.get("platforms", {})
         key = "mac-arm64" if side == "mac" else "win-x64"
         for k in ("mac-arm64", "win-x64"):
-            if k not in pl: bad.append(f"{i}: mod.json lacks {k}")
+            if k not in pl and not (k == "win-x64" and i in mac_only): bad.append(f"{i}: mod.json lacks {k}")
+        if i in mac_only and "win-x64" in pl: bad.append(f"{i}: Mac only, but mod.json lists win-x64")
         e = pl.get(key, {})
         if not e.get("entry") or not os.path.exists(os.path.join(d, i, e["entry"])): bad.append(f"{i}: {side} entry {e.get('entry')} missing")
         files = e.get("files") or {}
@@ -66,15 +74,17 @@ for i in multiplayer custom-modes; do [[ -d $L/build/mods/$i ]] && cp -R $L/buil
 # ---- simple modules (one C file each, same source for both platforms)
 simple() {   # id src
   local id=$1 src=$2
-  mkdir -p $OUT/mac/$id $OUT/win/$id
+  mkdir -p $OUT/mac/$id
   nice -n 19 clang $CFM -dynamiclib -install_name @rpath/$id.dylib -o $OUT/mac/$id/$id.dylib.tmp $MD/$id/$src
   codesign -f -s - $OUT/mac/$id/$id.dylib.tmp 2>/dev/null; mv -f $OUT/mac/$id/$id.dylib.tmp $OUT/mac/$id/$id.dylib
+  if [[ -d $MD/$id/rva ]]; then mkdir -p $OUT/mac/$id/rva; cp $MD/$id/rva/*_mac*.tsv $OUT/mac/$id/rva/; fi   # none for an all-by-name module (zetu-suite)
+  cp $MD/$id/mod.json $OUT/mac/$id/
+  if (( ${MAC_ONLY[(Ie)$id]} )); then echo "built $id (mac-arm64 only)"; return; fi
+  mkdir -p $OUT/win/$id
   nice -n 19 $TC $CFW -shared -Wl,--no-insert-timestamp -o $OUT/win/$id/$id.dll.tmp $MD/$id/$src -Wl,--export-all-symbols -static -static-libgcc
   mv -f $OUT/win/$id/$id.dll.tmp $OUT/win/$id/$id.dll
-  if [[ -d $MD/$id/rva ]]; then                                  # none for an all-by-name module (zetu-suite)
-    mkdir -p $OUT/mac/$id/rva $OUT/win/$id/rva; cp $MD/$id/rva/*_mac*.tsv $OUT/mac/$id/rva/; cp $MD/$id/rva/*_win*.tsv $OUT/win/$id/rva/
-  fi
-  cp $MD/$id/mod.json $OUT/mac/$id/; cp $MD/$id/mod.json $OUT/win/$id/
+  if [[ -d $MD/$id/rva ]]; then mkdir -p $OUT/win/$id/rva; cp $MD/$id/rva/*_win*.tsv $OUT/win/$id/rva/; fi
+  cp $MD/$id/mod.json $OUT/win/$id/
   echo "built $id (mac-arm64 + win-x64)"
 }
 simple gcd-cdr gcd_cdr.c

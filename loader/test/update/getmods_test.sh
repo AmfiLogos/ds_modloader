@@ -2,7 +2,8 @@
 # "Get the host's mods" safety test (loader side, no game): the real dsl_hostmods.c + dsl_update.c + Mac install code
 # against a local release server (relserver.py). The breaks it catches: a mod that is not one of ours is downloaded; a
 # download with a wrong sha256 is installed; a failed fix (no release for the host's older version, Apply refused)
-# leaves the guest's mods changed; the plan names the wrong action for a missing / off / older / newer / extra mod.
+# leaves the guest's mods changed; the plan names the wrong action for a missing / off / older / newer / extra mod; a
+# Windows copy downloads a Mac-only mod (zetu-suite, v0.1.15) that has no build for it.
 # usage: test/update/getmods_test.sh   (output in a new temp folder)
 set -u; cd "${0:A:h}"; H="$PWD"; L="${H:h:h}"
 OUT=$(mktemp -d "${TMPDIR:-/tmp}/getmods_test.XXXXXX"); R=$OUT/root; REL=$OUT/rel; M=$R/loader/mods
@@ -11,6 +12,8 @@ fails=0; pass=0
 check() { if eval "$2"; then print "PASS $1"; pass=$((pass+1)); else print "FAIL $1"; fails=$((fails+1)); fi }
 nice -n 19 clang -arch arm64 -O1 -Wall -Wno-unused-function -I$L/src -o $OUT/t getmods_test.c $L/src/dsl_hostmods.c $L/src/dsl_update.c \
   $L/src/dsl_json.c $L/start/mac/dsl_update_mac.c || exit 1
+nice -n 19 clang -arch arm64 -O1 -Wall -Wno-unused-function -DDSL_TEST_PLATFORM='"win-x64"' -I$L/src -o $OUT/tw getmods_test.c $L/src/dsl_hostmods.c \
+  $L/src/dsl_update.c $L/src/dsl_json.c $L/start/mac/dsl_update_mac.c || exit 1    # tw: a Windows copy's platform view
 
 modjson() { print -r -- "{\"id\":\"$1\",\"name\":\"$1 name\",\"version\":\"$2\",\"scope\":\"${3:-gameplay}\"}"; }
 inst() { mkdir -p $M/$1; modjson $1 $2 ${3:-gameplay} > $M/$1/mod.json; }
@@ -26,6 +29,7 @@ print -r -- '{"id":"gcd-cdr","name":"Global cooldown fix","version":"0.1.4","sco
 release AmfiLogos/ds_modloader gcd-cdr 0.1.5 BAD_SHA
 release AmfiLogos/ds_modloader gcd-cdr 0.1.6
 release AmfiLogos/ds_custommodes custom-modes 0.2.0
+release AmfiLogos/ds_modloader zetu-suite 0.1.1
 mkdir -p $REL/evil/evil/evil-v1.0.0; print x > $REL/evil/evil/evil-v1.0.0/evil-1.0.0.zip
 
 PORT=$((20000 + RANDOM % 20000))
@@ -93,6 +97,17 @@ r=$(HM_MYSET='gcd-cdr/cdr@on' $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|
 check "settings: the host's lines taken, then Apply" '[[ "$r" == *"TAKE gcd-cdr@0.1.4|gcd-cdr/cdr@off|"*"APPLY gcd-cdr,"* && "$r" == *"STATE 3"* ]]'
 r=$(HM_MYSET='gcd-cdr/cdr@on' HM_APPLY_REFUSE=1 $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
 check "settings: Apply refused = the taken values dropped" '[[ "$r" == *"TAKE "*"UNDO "* && "$r" == *"STATE -1"* ]]'
+
+# 8 a Mac-only official mod (zetu-suite) on a Windows copy: no box (the multiplayer mod's own refusal names it), the get
+#   refused, nothing requested or installed; on the Mac the same host line is a normal download
+[[ -f $REL/requests.log ]] && mv $REL/requests.log $OUT/before8.log
+host $'zetu-suite@0.1.1\nhell-difficulty@0.1.4'
+p=$($OUT/tw plan $OUT/host.txt 0 wait 2>/dev/null)
+r=$($OUT/tw get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "Windows, Mac-only mod: plan 0 (no box), get refused, nothing requested or installed" \
+  '[[ "$p" == "RET 0"* && "$p" == *'"'"'"rows":[]'"'"'* && "$r" == "GET -1 "*"not available for download"* && -z "$(reqs)" && ! -e $M/zetu-suite ]]'
+p=$($OUT/t plan $OUT/host.txt 0 2>/dev/null)
+check "Mac, same host line: zetu-suite = download, button on" '[[ $(act zetu-suite) == "download 1" ]]'
 
 print "== $pass passed, $fails failed (output $OUT)"
 exit $fails

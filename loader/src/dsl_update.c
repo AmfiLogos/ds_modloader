@@ -39,10 +39,12 @@ int dsl_ui_title_shown(void);                              /* dsl_ui.c: title me
 void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h);
 
 #define KIT_REPO "AmfiLogos/ds_modloader"
-static const struct { const char *id, *repo; } MOD_REPOS[] = {
-    { "multiplayer", "AmfiLogos/ds_multiplayer" }, { "custom-modes", "AmfiLogos/ds_custommodes" },
-    { "gcd-cdr", "AmfiLogos/ds_modloader" }, { "hell-difficulty", "AmfiLogos/ds_modloader" },
-    { "zetu-suite", "AmfiLogos/ds_modloader" },
+/* plat: the one platform a mod is built for (NULL = mac-arm64 and win-x64; build_mods.sh MAC_ONLY): its release zip
+   has no file for the other one, so a copy there never downloads it (no update, no "Get the host's mods") */
+static const struct { const char *id, *repo, *plat; } MOD_REPOS[] = {
+    { "multiplayer", "AmfiLogos/ds_multiplayer", NULL }, { "custom-modes", "AmfiLogos/ds_custommodes", NULL },
+    { "gcd-cdr", "AmfiLogos/ds_modloader", NULL }, { "hell-difficulty", "AmfiLogos/ds_modloader", NULL },
+    { "zetu-suite", "AmfiLogos/ds_modloader", "mac-arm64" },    /* v0.1.15: Mac only (on Windows it hung every save load) */
 };
 
 typedef struct { char id[64], name[128], have[32], repo[128], ver[32], url[1024], sha[65], asset[160], file[1100]; } ModUp;
@@ -239,6 +241,17 @@ static int download(const char *url, const char *asset, const char *sha, char *o
 const char *dsl_update_mod_repo(const char *id) {
     for (size_t k = 0; id && k < sizeof MOD_REPOS / sizeof MOD_REPOS[0]; k++) if (!strcmp(MOD_REPOS[k].id, id)) return MOD_REPOS[k].repo;
     return NULL;
+}
+/* 1 = this platform has a build of the mod (an unknown id too: dsl_update_mod_repo says whether it is ours) */
+int dsl_update_mod_here(const char *id) {
+#ifdef DSL_TEST_PLATFORM
+    const char *me = DSL_TEST_PLATFORM;                   /* test/update/getmods_test.sh: a Windows copy's view, on the Mac */
+#else
+    const char *me = dsl_uos_platform();
+#endif
+    for (size_t k = 0; id && k < sizeof MOD_REPOS / sizeof MOD_REPOS[0]; k++)
+        if (!strcmp(MOD_REPOS[k].id, id)) return !MOD_REPOS[k].plat || !strcmp(MOD_REPOS[k].plat, me);
+    return 1;
 }
 int dsl_update_ready(void) { return udir[0] != 0; }
 /* the exact official release of a mod version: tag "<id>-v<ver>" with the asset "<id>-<ver>.zip" and its sha256 (GitHub
@@ -446,7 +459,7 @@ void dsl_update_start(void) {
         const DSLModInfo *m = dsl_mods_at(i); if (!m || !m->version) continue;
         const char *repo = NULL;
         for (size_t k = 0; k < sizeof MOD_REPOS / sizeof MOD_REPOS[0]; k++) if (!strcmp(MOD_REPOS[k].id, m->id)) repo = MOD_REPOS[k].repo;
-        if (!repo) continue;
+        if (!repo || !dsl_update_mod_here(m->id)) continue;
         ModUp *u = &S.mods[S.nmods++]; memset(u, 0, sizeof *u);
         snprintf(u->id, sizeof u->id, "%s", m->id); snprintf(u->name, sizeof u->name, "%s", m->name ? m->name : m->id);
         snprintf(u->have, sizeof u->have, "%s", m->version); snprintf(u->repo, sizeof u->repo, "%s", repo);

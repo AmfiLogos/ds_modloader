@@ -17,9 +17,6 @@
  "platforms": {
   "mac-arm64": {
    "entry": "zetu-suite.dylib"
-  },
-  "win-x64": {
-   "entry": "zetu-suite.dll"
   }
  },
  "requires": [

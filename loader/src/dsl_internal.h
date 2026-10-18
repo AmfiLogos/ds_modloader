@@ -70,6 +70,7 @@ void dsl_crash_start(void);                  /* after the modules' init: the qui
 void dsl_crash_frame(void);                  /* every frame (consent notice, desync / join scan, sending) */
 /* dsl_update.c helpers for "Get the host's mods" (any thread) */
 const char *dsl_update_mod_repo(const char *id);   /* the official repo of a mod id (MOD_REPOS); NULL = not an official mod */
+int dsl_update_mod_here(const char *id);           /* 1 = the mod has a build for this platform (0: a Mac-only mod on Windows) */
 int dsl_update_ready(void);                        /* 1 = ROOT/update known (downloads possible in this start) */
 const char *dsl_update_dir(void);                  /* ROOT/update ("" = unknown) */
 int dsl_update_vcmp(const char *a, const char *b); /* "0.1.10" > "0.1.9": -1 / 0 / 1 */

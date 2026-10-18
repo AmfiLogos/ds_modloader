@@ -2,7 +2,9 @@
 // for a plan (dsl_hostmods_plan: the host's gameplay mods next to the guest's installed ones), shows it, and on the
 // button calls dsl_hostmods_get. Then, on a thread: every missing / older / newer / other-files mod is downloaded ONLY
 // from our official releases (dsl_update.c: tag "<id>-v<ver>", asset "<id>-<ver>.zip", sha256 required; DSL_UPDATE_API
-// for tests), never from the host and never for an id that is not in MOD_REPOS; installed with dsl_uos_mod_install
+// for tests), never from the host, never for an id that is not in MOD_REPOS and never for one with no build for this
+// platform (MOD_REPOS plat, v0.1.15 zetu-suite Mac only: the plan answers 0 = no box, the multiplayer mod's own mod-set
+// refusal names it; dsl_hostmods_get refuses it); installed with dsl_uos_mod_install
 // (moves recorded, old folder into a backup). On the main thread (dsl_hostmods_frame): the mods folder read again, the
 // host's gameplay settings taken (one adapter, settings_*), and the normal Apply (pending.json + soft restart) with the
 // host's gameplay ids + the guest's own client mods and multiplayer, env_lines passed to the new process.
@@ -163,7 +165,7 @@ static void *name_thread(void *arg) {
 static int release_name(const char *id, const char *ver, char *out, size_t cap, int fetch) {
     char p[1300]; snprintf(out, cap, "%s", id);
     const char *ud = dsl_update_dir();
-    if (!ud || !*ud || !dsl_update_mod_repo(id)) return 0;
+    if (!ud || !*ud || !dsl_update_mod_repo(id) || !dsl_update_mod_here(id)) return 0;   /* no build here: no download for a name */
     name_file(p, sizeof p, id, ver);
     if (!name_from_modjson(p, id, ver, out, cap)) return 0;
     if (!fetch || !dsl_update_ready()) return 0;                    /* the button's own plan, or no downloads in this start */
@@ -209,6 +211,7 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
         }
         int needs_dl = !strcmp(r->action, "download") || !strcmp(r->action, "update") || !strcmp(r->action, "host_older") || !strcmp(r->action, "reinstall");
         if (needs_dl && !r->official) r->action = "not_official";
+        else if (needs_dl && !dsl_update_mod_here(h->id)) r->action = "not_here";   /* official, no build for this platform */
         diff += strcmp(r->action, "same") != 0;
     }
     for (int i = 0; i < dsl_mods_count() && nr < HM_MAX * 2; i++) {      /* my running gameplay mods the host does not use */
@@ -226,7 +229,7 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
 static int plan_can_fix(int diff) {
     if (diff <= 0) return 0;
     for (int i = 0; i < nr; i++) {
-        if (!strcmp(R[i].action, "not_official")) return 0;
+        if (!strcmp(R[i].action, "not_official") || !strcmp(R[i].action, "not_here")) return 0;
         if (strcmp(R[i].action, "settings")) continue;                 /* same version, other gameplay settings: */
         if (!settings_can_copy() || !R[i].host_set[0]) return 0;       /* nothing here can make them equal */
     }
@@ -250,6 +253,11 @@ HM_EXPORT int dsl_hostmods_plan(const char *host_lines, int vanilla, char *out, 
     out[0] = 0;
     int diff = make_plan(host_lines, vanilla, 1);
     if (diff < 0) { snprintf(out, cap, "{\"rows\":[],\"can_fix\":0,\"downloads\":0}"); dsl_log("hostmods: plan: bad host lines"); return -1; }
+    for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_here")) {   /* no box: the multiplayer mod's own refusal names the mod */
+        snprintf(out, cap, "{\"rows\":[],\"can_fix\":0,\"downloads\":0}");
+        dsl_log("hostmods: plan: the host uses %s %s, which has no %s build: the normal refusal, nothing downloaded", R[i].id, R[i].host_ver, dsl_uos_platform());
+        return 0;
+    }
     size_t k = 0; int dls = 0, over = 0;
 #define PUT(...) do { int w_ = snprintf(out + k, cap - k, __VA_ARGS__); if (w_ < 0 || (size_t)w_ >= cap - k) { over = 1; break; } k += (size_t)w_; } while (0)
     PUT("{\"rows\":[");
@@ -350,6 +358,10 @@ HM_EXPORT int dsl_hostmods_get(const char *host_lines, int vanilla, const char *
     for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_official")) {
         snprintf(why, cap, TR("%s cannot be downloaded here: it is not one of the mod loader's own mods."), R[i].name); dsi_utf8_fix_end(why);
         dsl_log("hostmods: refused: %s %s is not official", R[i].id, R[i].host_ver); return -1;
+    }
+    for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_here")) {
+        snprintf(why, cap, TR("%s %s is not available for download. Your mods stay as they were."), R[i].name, R[i].host_ver); dsi_utf8_fix_end(why);
+        dsl_log("hostmods: refused: %s %s has no %s build", R[i].id, R[i].host_ver, dsl_uos_platform()); return -1;
     }
     if (!plan_can_fix(diff)) { snprintf(why, cap, "%s", TR("The host's mod settings cannot be copied by this version of the mod loader.")); return -1; }
     nj = 0; nwant = 0; nsets = 0; sets_taken = 0; installed_ok = 0; err = E_NONE; pct = 0;

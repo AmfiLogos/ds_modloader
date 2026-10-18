@@ -14,9 +14,10 @@ mkdir -p $OUT
 for d in $SRC/mac/*(/); do
   id=${d:t}; ver=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' $d/mod.json)
   ST=$OUT/.stage/$id; mkdir -p $ST
-  # Mac copy first, then the Windows copy on top: a file in both must be the same bytes (mod.json is, checked above)
+  # Mac copy first, then the Windows copy on top: a file in both must be the same bytes (mod.json is, checked above).
+  # A Mac-only module (build_mods.sh MAC_ONLY) has no Windows copy: its zip holds the Mac files only.
   cp -R $d/ $ST/
-  ( cd $SRC/win/$id && find . -type f ) | while read -r f; do
+  [[ -d $SRC/win/$id ]] && ( cd $SRC/win/$id && find . -type f ) | while read -r f; do
     if [[ -f $ST/$f ]] && ! cmp -s $ST/$f $SRC/win/$id/$f; then echo "package_mods: $id: $f differs between mac and win" >&2; exit 1; fi
     mkdir -p $ST/${f:h}; cp $SRC/win/$id/$f $ST/$f
   done
