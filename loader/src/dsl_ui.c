@@ -72,7 +72,7 @@ static struct {
     void *Object, *Component, *GameObject, *Transform, *RectTransform, *Graphic, *Image, *TMP_Text, *TMP_Input, *Selectable,
          *Sprite, *FontAsset, *Action, *Byte, *Vector3, *Canvas, *CanvasScaler, *GraphicRaycaster, *RectMask2D, *ScrollRect,
          *Texture2D, *TitleMenuView, *LangView, *GridLayout, *TitleButton, *Notice, *DASText, *TooltipUI, *TooltipETC, *TipCtx, *UIFactory,
-         *SaveLoadView, *CampaignSetting, *TMP_Asset, *CanvasGroup, *HVLayout;
+         *SaveLoadView, *CampaignSetting, *TMP_Asset, *CanvasGroup, *HVLayout, *OptionView, *GeneralSetting, *SubSlider, *Slider;
 } K;
 
 static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy, *m_obj_find, *m_obj_finds, *m_res_findall,
@@ -93,7 +93,9 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_es_update, *m_tb_init, *m_tb_inter, *m_nv_select, *m_nv_confirm, *m_ui_prefab,
     *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks, *m_scr_w,
     *m_ls_font, *m_ls_mat;                                           /* LanguageSetting.GetFont / GetMaterial (the language's fonts) */
-static void *m_lr_force, *m_cur_perform;                             /* LayoutRebuilder.ForceRebuildLayoutImmediate, CanvasUpdateRegistry.PerformUpdate */
+static void *m_lr_force, *m_cur_perform;
+static void *m_sl_setmin, *m_sl_setmax, *m_sl_whole, *m_sl_get, *m_sl_set;           /* UnityEngine.UI.Slider (kit slider) */
+static int32_t f_gov_general = -1, f_gs_cam = -1, f_ss_slider = -1, f_ss_value = -1, f_ss_toggle = -1, f_ss_toggletext = -1;                             /* LayoutRebuilder.ForceRebuildLayoutImmediate, CanvasUpdateRegistry.PerformUpdate */
 
 static int32_t f_tb_label = -1, f_tv_btn[7], f_tv_credit = -1, f_nv_text = -1, f_nv_tok = -1, f_nv_tcancel = -1,
                f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1,
@@ -713,9 +715,10 @@ static Obj mk_action(uint32_t token) {
 #define TOKEN(id, part) ((uint32_t)(id) << 4 | (uint32_t)(part))
 
 /* ------------------------------------------------------------------ widget registry */
-enum { W_PANEL = 1, W_TEXT, W_BUTTON, W_TOGGLE, W_VALUE, W_FIELD, W_SCROLL, W_IMAGE };
+enum { W_PANEL = 1, W_TEXT, W_BUTTON, W_TOGGLE, W_VALUE, W_FIELD, W_SCROLL, W_IMAGE, W_SLIDER };
 typedef struct W {
     int id, kind, enabled, on, index, n, was_focused;
+    int vmin, vstep;                                                /* slider: value = vmin + index * vstep */
     Obj rt;                                                         /* the DSLObj handed out (held by h_rt) */
     uintptr_t h_rt, h_root, h_btn, h_label, h_a, h_b, h_c, h_act[3];
     char **values;
@@ -873,6 +876,81 @@ static DSLObj k_value_row(DSLObj parent, float x, float y, float w, const char *
     return w_done(wd, tr_of(row), NULL);
 }
 static int k_value_get(DSLObj v) { W *w = w_of(v); return w && w->kind == W_VALUE ? w->index : -1; }
+
+/* slider (mod settings): [label   ====o====  value]. The bar is a clone of the game's own SubUI_Slider of the Options
+   window (GameOptionView prefab, General: camera movement speed), so it looks and drags like the game's; its own
+   onValueChanged listeners are left as they are (none are added) and the value is polled every frame (sliders_frame).
+   The Slider counts steps 0..n (wholeNumbers); the value is vmin + index * vstep. NULL when the template is missing. */
+static uintptr_t h_tpl_slider;
+static Obj slider_tpl(void) {
+    Obj t = hget(h_tpl_slider); if (t) return t;
+    static int64_t last = -1000; if (frames - last < 60) return NULL; last = frames;
+    if (f_gov_general < 0 || f_gs_cam < 0 || f_ss_slider < 0 || !m_sl_get || !m_sl_set || !m_sl_setmin || !m_sl_setmax) return NULL;
+    Obj v = ui_prefab(6), gs = isa(v, K.OptionView) ? AT(v, f_gov_general, Obj) : NULL, ss = isa(gs, K.GeneralSetting) ? AT(gs, f_gs_cam, Obj) : NULL;
+    Obj hd = holder();
+    if (!isa(ss, K.SubSlider) || !hd) { dsl_log("ui: slider template: no Options window prefab slider (%p %p)", v, gs); return NULL; }
+    Obj c = inst(go_of(ss), hd); Obj cs = c ? comp_get(c, K.SubSlider) : NULL;
+    hset(&h_tpl_slider, cs);
+    dsl_log("ui: slider template from the Options window (camera movement speed): %s", cs ? "ok" : "FAILED");
+    return cs;
+}
+static void slider_text(W *w) {
+    Obj vt = hget(w->h_c); if (!vt) return;
+    char b[32]; snprintf(b, sizeof b, "%d", w->vmin + w->index * w->vstep); tmp_set(vt, b);
+}
+static void slider_layout(W *w) {
+    float lw = w->w * 0.36f;
+    place_tl(hget(w->h_label), 12, 0, lw - 16, VALUE_H);
+    place_tl(hget(w->h_b), lw, 0, w->w - lw - 12, VALUE_H);
+}
+static DSLObj k_slider(DSLObj parent, float x, float y, float w, const char *label, int min, int max, int step, int value,
+                       dsl_ui_cb change, void *ud) {
+    if (!ready_basic()) return NULL;
+    if (step < 1) step = 1;
+    if (max < min) max = min;
+    Obj tpl = slider_tpl(), p = parent_or_layer(parent); if (!tpl || !p) return NULL;
+    Obj row = inst(hget(h_tpl_img), p); if (!row) return NULL;
+    go_active(row, 1); img_set(row, NULL, C_ROW1, 0); gr_material(row, NULL);
+    place_tl(row, x, y, w, VALUE_H);
+    W *wd = w_new(W_SLIDER); if (!wd) { destroy_obj(go_of(row)); return NULL; }
+    Obj lb = mk_text(row, 0, 0, 10, 10, label, 15, DSL_TXT_LEFT, C_SUB);
+    Obj c = inst(go_of(tpl), row); go_active(c, 1);
+    Obj cs = c ? comp_get(c, K.SubSlider) : NULL, sl = cs ? AT(cs, f_ss_slider, Obj) : NULL, vt = cs && f_ss_value >= 0 ? AT(cs, f_ss_value, Obj) : NULL;
+    if (!isa(sl, K.Slider)) { w_free(nws - 1); destroy_obj(go_of(row)); dsl_log("ui: slider clone has no Slider"); return NULL; }
+    if (cs && f_ss_toggle >= 0) go_active(AT(cs, f_ss_toggle, Obj), 0);           /* the mute switch of the sound sliders */
+    if (cs && f_ss_toggletext >= 0) go_active(AT(cs, f_ss_toggletext, Obj), 0);
+    if (isa(vt, K.DASText) && f_das_usekey >= 0) AT(vt, f_das_usekey, bool) = false;
+    hset(&wd->h_label, lb); hset(&wd->h_a, sl); hset(&wd->h_b, tr_of(c)); hset(&wd->h_c, isa(vt, K.TMP_Text) ? vt : NULL);
+    int n = (max - min) / step;
+    wd->vmin = min; wd->vstep = step; wd->n = n; wd->cb = change; wd->ud = ud; wd->w = w; wd->h = VALUE_H;
+    if (m_sl_whole) CALL(m_sl_whole, void, Obj, bool)(sl, true, m_sl_whole);
+    CALL(m_sl_setmin, void, Obj, float)(sl, 0, m_sl_setmin);
+    CALL(m_sl_setmax, void, Obj, float)(sl, (float)(n > 0 ? n : 1), m_sl_setmax);
+    int idx = (value - min) / step; wd->index = idx < 0 ? 0 : idx > n ? n : idx;
+    { void *m = vmi(sl, m_sl_set); CALL(m, void, Obj, float)(sl, (float)wd->index, m); }
+    slider_layout(wd); slider_text(wd);
+    return w_done(wd, tr_of(row), NULL);
+}
+static int k_slider_get(DSLObj o) { W *w = w_of(o); return w && w->kind == W_SLIDER ? w->vmin + w->index * w->vstep : 0; }
+static void k_slider_set(DSLObj o, int value) {
+    W *w = w_of(o); if (!w || w->kind != W_SLIDER) return;
+    int idx = (value - w->vmin) / w->vstep; w->index = idx < 0 ? 0 : idx > w->n ? w->n : idx;
+    Obj sl = hget(w->h_a); if (sl) { void *m = vmi(sl, m_sl_set); CALL(m, void, Obj, float)(sl, (float)w->index, m); }
+    slider_text(w);
+}
+static void sliders_frame(void) {                                    /* the player dragged: new step -> text + callback */
+    int fire[32], nf = 0;
+    for (int i = 0; i < nws; i++) {
+        W *w = ws[i]; if (w->kind != W_SLIDER) continue;
+        Obj sl = hget(w->h_a); if (!sl) continue;
+        void *m = vmi(sl, m_sl_get); float v = CALL(m, float, Obj)(sl, m);
+        int idx = (int)(v + 0.5f); if (idx < 0) idx = 0; if (idx > w->n) idx = w->n;
+        if (idx == w->index) continue;
+        w->index = idx; slider_text(w);
+        if (w->enabled && w->cb && nf < 32) fire[nf++] = w->id;
+    }
+    for (int i = 0; i < nf; i++) { W *w = w_by_id(fire[i]); if (w && w->cb) w->cb(w->ud, w->rt); }
+}
 static void k_value_set(DSLObj v, int index) { W *w = w_of(v); if (w && w->kind == W_VALUE && index >= 0 && index < w->n) { w->index = index; value_text(w); } }
 
 /* text field: a clone of a stock TMP_InputField, framed like a menu button (no magnifier), as mpmenu field_make */
@@ -1229,12 +1307,13 @@ static void k_set_text(DSLObj o, const char *s) {
 static void k_place(DSLObj o, float x, float y, float w_, float h) {
     W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o;
     if (w && w->kind == W_TOGGLE) h = TOGGLE_H;
-    if (w && w->kind == W_VALUE) h = VALUE_H;
+    if (w && (w->kind == W_VALUE || w->kind == W_SLIDER)) h = VALUE_H;
     place_tl(r, x, y, w_, h);
     if (!w) return;
     w->w = w_; w->h = h;
     if (w->kind == W_TOGGLE) toggle_layout(w);
     if (w->kind == W_VALUE) value_layout(w);
+    if (w->kind == W_SLIDER) slider_layout(w);
     if (w->kind == W_SCROLL) { V2 s = rt_size(hget(w->h_rt)); CALL(m_rt_size, void, Obj, V2)(hget(w->h_rt), (V2){ w_, s.y < h ? h : s.y }, m_rt_size); }
 }
 /* preferred height of a text widget's text at width w (0 = its own width), at its design size: a caller grows its box */
@@ -1267,6 +1346,7 @@ static void k_set_enabled(DSLObj o, int on) {
     case W_BUTTON: case W_TOGGLE: btn_enable(hget(w->h_btn), on); if (w->kind == W_TOGGLE) { Obj ck = hget(w->h_b); if (ck) gr_color(ck, on ? (spr(S_CHECK) ? C_WHITE : C_ORANGE) : C_GREY); } break;
     case W_VALUE: btn_enable(hget(w->h_a), on); btn_enable(hget(w->h_b), on); gr_color(hget(w->h_c), on ? C_MAIN : C_GREY); break;
     case W_FIELD: { Obj f = hget(w->h_a); if (f && m_sel_inter) CALL(m_sel_inter, void, Obj, bool)(f, on != 0, m_sel_inter); } break;
+    case W_SLIDER: { Obj f = hget(w->h_a); if (f && m_sel_inter) CALL(m_sel_inter, void, Obj, bool)(f, on != 0, m_sel_inter); gr_color(hget(w->h_c), on ? C_MAIN : C_GREY); } break;
     default: break;
     }
 }
@@ -1292,7 +1372,7 @@ static DSLUi KIT = {
     .field = k_field, .field_get = k_field_get, .field_set = k_field_set, .scroll = k_scroll, .scroll_height = k_scroll_height,
     .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .notice_close = k_notice_close, .place = k_place, .set_active = k_set_active,
     .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
-    .text_height = k_text_height
+    .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -1634,6 +1714,7 @@ static void tick(void) {
     if (!o_cur_perform) brand_frame();                              /* else right before the UI is drawn (h_cur_perform) */
     run_queue();
     fields_frame();
+    sliders_frame();
     tips_frame();
     tip_place_frame();
 }
@@ -1746,6 +1827,8 @@ void dsl_ui_install(void) {
     K.Notice = klass(RU, "CommonNoticeView"); K.DASText = klass(RU, "DASText"); K.TooltipUI = klass(RU, "TooltipUI");
     K.TooltipETC = klass(RU, "Tooltip_ETC"); K.TipCtx = klass(RU, "TooltipContext"); K.UIFactory = klass("Refactor.Main.UI", "UIFactory");
     K.SaveLoadView = klass("Refactor", "SaveLoadView"); K.CanvasGroup = klass(UE, "CanvasGroup"); K.CampaignSetting = klass(RU, "SubUI_CampaignSetting");
+    K.OptionView = dsl_find_class(RU, "GameOptionView"); K.GeneralSetting = dsl_find_class(RU, "SubUI_GeneralSetting");   /* slider template (optional) */
+    K.SubSlider = dsl_find_class(RU, "SubUI_Slider"); K.Slider = dsl_find_class(UI, "Slider");
     void *kInput = klass(UE, "Input"), *kTime = klass(UE, "Time"), *kGUI = klass(UE, "GUIUtility"), *kRes = klass(UE, "Resources"),
          *kConv = klass(UE, "ImageConversion"), *kTex = klass(UE, "Texture"), *kRTU = klass(UE, "RectTransformUtility"),
          *kES = klass("UnityEngine.EventSystems", "EventSystem"), *kTB = klass(RU, "Tooltip_Base"), *kSO = klass("Refactor.Main.UI", "UIPrefabSO"),
@@ -1839,6 +1922,13 @@ void dsl_ui_install(void) {
     f_etc_desc = fld(K.TooltipETC, "_desText"); f_etc_flavor = fld(K.TooltipETC, "_flavorText"); f_tb_canhold = fld(kTB, "_canShowHoldLayout");
     { int32_t o = fld(K.TipCtx, "<HideHoldLayout>k__BackingField"); f_ctx_hidehold = o >= 0x10 ? o - 0x10 : -1;   /* value type: minus the object header */
       ctx_size = K.TipCtx && I.class_value_size ? I.class_value_size(K.TipCtx, NULL) : 0; }
+    if (K.OptionView && K.GeneralSetting && K.SubSlider && K.Slider) {
+        f_gov_general = dsl_field_offset(K.OptionView, "_generalSetting"); f_gs_cam = dsl_field_offset(K.GeneralSetting, "_cameraMovementSpeedSlider");
+        f_ss_slider = dsl_field_offset(K.SubSlider, "_slider"); f_ss_value = dsl_field_offset(K.SubSlider, "_valueText");
+        f_ss_toggle = dsl_field_offset(K.SubSlider, "_toggle"); f_ss_toggletext = dsl_field_offset(K.SubSlider, "_toggleText");
+        m_sl_setmin = OPT(K.Slider, "set_minValue", 1); m_sl_setmax = OPT(K.Slider, "set_maxValue", 1); m_sl_whole = OPT(K.Slider, "set_wholeNumbers", 1);
+        m_sl_get = OPT(K.Slider, "get_value", 0); m_sl_set = OPT(K.Slider, "set_value", 1);
+    }
     f_uif_prefabs = fld(K.UIFactory, "_prefabs"); f_slv_field = fld(K.SaveLoadView, "_saveNameInputField"); f_cs_field = fld(K.CampaignSetting, "_campaignNameInputField");
     if (miss_core) { dsl_log("ui: %d core game names missing (%s): kit off", miss_core, miss_list); return; }
     if (miss_opt) dsl_log("ui: %d optional names missing (%s): those parts are off", miss_opt, miss_list);

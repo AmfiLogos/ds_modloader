@@ -166,7 +166,11 @@ static void destroy_all(void);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
-static int changed(void) { for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1; return 0; }
+static char set_page[64];                                              /* the Settings page of this mod is open ("" = the list) */
+static int changed(void) {
+    for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1;
+    return !world_mode && dsl_settings_pending(NULL) > 0;              /* a gameplay setting waits for Apply */
+}
 static void draft(void) {                                              /* unapplied changes: the loader prewarms that set */
     if (world_mode || read_only || applying) return;
     if (!changed()) { dsl_mods_draft(NULL, -1); return; }
@@ -208,6 +212,11 @@ static void mods_sync(void) {
             if (k++) { snprintf(t, sizeof t, TR("%s, %s"), list, one); snprintf(list, sizeof list, "%s", t); }
             else snprintf(list, sizeof list, "%s", one);
         }
+        char sc[400];
+        if (!world_mode && dsl_settings_changes(sc, sizeof sc)) {
+            if (k++) { snprintf(t, sizeof t, TR("%s, %s"), list, sc); snprintf(list, sizeof list, "%s", t); }
+            else snprintf(list, sizeof list, "%s", sc);
+        }
         snprintf(s, sizeof s, world_mode ? TR("Changes: %s. Save for this world to keep them.") : TR("Changes: %s. Apply to use them."), list);
     }
     dsi_utf8_fix_end(s);
@@ -216,6 +225,7 @@ static void mods_sync(void) {
     U->set_enabled(m_undo, ch && !applying && !read_only);
     U->set_enabled(m_save, !applying && !read_only);
     for (int i = 0; i < nmods; i++) U->set_enabled(mods[i].row, !applying && !read_only);
+    void settings_sync(void); settings_sync();
     for (int g = 0; g < ng_rows; g++) { U->set_enabled(g_row[g], !read_only); U->set_enabled(g_del[g], !read_only); }
     int cur_g = -1;
     for (int g = 0; g < ng_rows; g++) if (group_is_current(g)) { cur_g = g; break; }
@@ -308,7 +318,13 @@ static void folder_click(void *ud, DSLObj w) {
     if (posix_spawn(&pid, av[0], NULL, NULL, av, environ) == 0) waitpid(pid, &st, 0);
 #endif
 }
-static void undo_click(void *ud, DSLObj w) { (void)ud; (void)w; for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base; m_note[0] = 0; mods_sync(); draft(); }
+static void settings_values(void);
+static void undo_click(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base;
+    dsl_settings_undo(); settings_values();
+    m_note[0] = 0; mods_sync(); draft();
+}
 static void apply_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
     if (!changed() || applying || read_only) return;
@@ -355,6 +371,9 @@ static size_t cols_at(const char *s, int cols) {
     return (size_t)((const char *)p - s);
 }
 static int has_wide(const char *s) { for (const unsigned char *p = (const unsigned char *)s; *p; p++) if (wide_at(p)) return 1; return 0; }
+static void settings_open(DSLObj root, float w, float h);
+static void bottom_bar(DSLObj root, float w, float h);
+static void settings_click(void *ud, DSLObj w);
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
@@ -378,6 +397,7 @@ static void mods_open(DSLObj root, float w, float h) {
         for (int i = 0; i < nmods; i++) for (int k = 0; k < nkeep; k++) if (!strcmp(keep_ids[k], mods[i].m->id)) mods[i].on = keep_on[k];
         nkeep = -1;
     }
+    if (set_page[0] && !world_mode) { settings_open(root, w, h); return; }
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
     float lh = h - 40 - 76;
     /* the world's name, cut to fit the heading box (620 wide, size 20: about 40 characters with "Mods for ") */
@@ -399,7 +419,13 @@ static void mods_open(DSLObj root, float w, float h) {
         const DSLModInfo *m = mods[i].m;
         char lb[160], nm[100];
         snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
-        mods[i].row = U->toggle(list, 0, y, m_lw - 32, lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+        int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
+        mods[i].row = U->toggle(list, 0, y, m_lw - 32 - (has_set ? 132 : 0), lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+        if (has_set) {
+            DSLObj sb = U->button(list, m_lw - 32 - 124, y, 124, 36, TR("Settings"), settings_click, (void *)(intptr_t)i);
+            snprintf(nm, sizeof nm, "settings:%s", m->id); named(sb, 0, nm, settings_click, (void *)(intptr_t)i, TR("Settings"));
+            U->tooltip(sb, m->name, TR("Change the settings of this mod."));
+        }
         snprintf(nm, sizeof nm, "mod:%s", m->id); named(mods[i].row, 1, nm, mod_change, (void *)(intptr_t)i, mods[i].on ? "on" : "off");
         int bad = m->enabled && m->active != 1 && m->reason && m->reason[0];
         char d[400];
@@ -447,7 +473,9 @@ static void mods_open(DSLObj root, float w, float h) {
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76);
     groups_build();
-    /* bottom */
+    bottom_bar(root, w, h);
+}
+static void bottom_bar(DSLObj root, float w, float h) {
     flat(U->panel(root, 0, h - 66, w, 1, 0), 0x633D33FF);
     m_status = named(U->text(root, 0, h - 58, m_lw, 58, "", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "status", NULL, NULL, "");
     m_undo = named(U->button(root, m_rx, h - 52, 134, 44, TR("Undo changes"), undo_click, NULL), 0, "undo", undo_click, NULL, TR("Undo changes"));
@@ -457,6 +485,121 @@ static void mods_open(DSLObj root, float w, float h) {
     else if (world_mode) U->tooltip(m_apply, al, TR("This world loads with these mods. The mods running now do not change."));
     else U->tooltip(m_apply, al, TR("Turns these mods on behind a loading screen and brings you back here."));
     mods_sync();
+}
+/* ---------------------------------------------------------------- the Settings page of one mod (mod.json "settings")
+   Opened by the mod's Settings button; it takes the place of the list in the Mods tab, with the same bottom bar (the
+   switches the player changed stay). Gameplay settings are drafts until Apply (and only at the title); local ones are
+   saved and used at once. Toggle = the kit's switch, number = the game's own slider (else < value >), choice = < value >. */
+#define NSET 64
+static struct { DSLObj w; int type; } st[NSET]; static int nst;
+static DSLObj st_note;
+static void keep_switches(void) { nkeep = 0; for (int i = 0; i < nmods && nkeep < NM; i++) { snprintf(keep_ids[nkeep], 64, "%s", mods[i].m->id); keep_on[nkeep++] = mods[i].on; } }
+static void settings_click(void *ud, DSLObj w) {
+    (void)w; int i = (int)(intptr_t)ud; if (i < 0 || i >= nmods) return;
+    keep_switches(); snprintf(set_page, sizeof set_page, "%s", mods[i].m->id); m_note[0] = 0;
+    dsl_log("win: Settings of %s", set_page);
+    mods_tab_reload();
+}
+static void back_click(void *ud, DSLObj w) { (void)ud; (void)w; keep_switches(); set_page[0] = 0; mods_tab_reload(); }
+static int st_enabled(int i) { const DSLSettingInfo *in = dsl_settings_at(set_page, i); return in && !applying && (!in->gameplay || !read_only); }
+/* the controls show the values (after Undo / Default values) */
+static void settings_values(void) {
+    if (!set_page[0]) return;
+    for (int i = 0; i < nst; i++) {
+        int v = dsl_settings_value(set_page, i);
+        if (!st[i].w) continue;
+        if (st[i].type == 1) U->toggle_set(st[i].w, v);
+        else if (st[i].type == 5) U->slider_set(st[i].w, v);
+        else { const DSLSettingInfo *in = dsl_settings_at(set_page, i); U->value_set(st[i].w, in && in->type == DSL_SET_INT ? (v - in->min) / in->step : v); }
+        char vt[200]; dsl_settings_value_label(set_page, i, v, vt, sizeof vt);
+        for (int k = 0; k < nreg; k++) if (reg[k].w == st[i].w) snprintf(reg[k].text, sizeof reg[k].text, "%s", vt);
+    }
+}
+void settings_sync(void) {
+    if (!set_page[0]) return;
+    for (int i = 0; i < nst; i++) if (st[i].w) U->set_enabled(st[i].w, st_enabled(i));
+}
+static void set_change(void *ud, DSLObj w) {
+    int i = (int)(intptr_t)ud; const DSLSettingInfo *in = dsl_settings_at(set_page, i); if (!in) return;
+    int v = st[i].type == 1 ? U->toggle_get(w) : st[i].type == 5 ? U->slider_get(w) : U->value_get(w);
+    if (st[i].type == 4 && in->type == DSL_SET_INT) v = in->min + v * in->step;
+    if (dsl_settings_set(set_page, i, v)) snprintf(m_note, sizeof m_note, "%s", TR("The setting could not be saved."));
+    else m_note[0] = 0;
+    char vt[200]; dsl_settings_value_label(set_page, i, dsl_settings_value(set_page, i), vt, sizeof vt);
+    for (int k = 0; k < nreg; k++) if (reg[k].w == w) snprintf(reg[k].text, sizeof reg[k].text, "%s", vt);
+    dsl_log("win: setting %s/%s -> %s (%s)", set_page, in->id, vt, in->gameplay ? "gameplay: waits for Apply" : "local: saved, live");
+    mods_sync(); draft();
+}
+static void defaults_click(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    for (int i = 0; i < nst; i++) { const DSLSettingInfo *in = dsl_settings_at(set_page, i); if (in && st_enabled(i)) dsl_settings_set(set_page, i, in->dflt); }
+    dsl_log("win: %s: default values", set_page);
+    settings_values(); m_note[0] = 0; mods_sync(); draft();
+}
+static void settings_open(DSLObj root, float w, float h) {
+    m_lw = 620; m_rx = 650; m_rw = w - m_rx;
+    m_save = m_field = m_fsave = m_fcancel = m_glist = m_gmark = m_gnone = NULL; ng_rows = 0; nst = 0;
+    const char *mname = set_page; for (int i = 0; i < nmods; i++) if (!strcmp(mods[i].m->id, set_page)) mname = mods[i].m->name;
+    int n = dsl_settings_count(set_page), ng = 0, nl = 0;
+    if (n > NSET) n = NSET;
+    for (int i = 0; i < n; i++) { if (dsl_settings_at(set_page, i)->gameplay) ng++; else nl++; }
+    char hd[200]; snprintf(hd, sizeof hd, TR("Settings: %s"), mname); dsi_utf8_fix_end(hd);
+    named(U->text(root, 0, 0, w - 420, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);
+    DSLObj df = named(U->button(root, w - 412, 0, 200, 34, TR("Default values"), defaults_click, NULL), 0, "set-defaults", defaults_click, NULL, TR("Default values"));
+    U->tooltip(df, TR("Default values"), TR("Puts every setting of this mod back to its default value."));
+    named(U->button(root, w - 200, 0, 200, 34, TR("Back"), back_click, NULL), 0, "set-back", back_click, NULL, TR("Back"));
+    /* what the two kinds mean (owner: no restart wording; Apply = the loading screen) */
+    char note[600] = "";
+    if (ng && read_only) snprintf(note, sizeof note, "%s", TR("Gameplay settings change only at the title screen."));
+    else if (ng) snprintf(note, sizeof note, "%s", TR("Gameplay settings change when you click Apply. In multiplayer, every player needs the same values."));
+    if (nl && note[0]) { char t[600]; snprintf(t, sizeof t, TR("%s %s"), note, TR("Display settings change at once.")); snprintf(note, sizeof note, "%s", t); }
+    else if (nl) snprintf(note, sizeof note, "%s", TR("Display settings change at once."));
+    dsi_utf8_fix_end(note);
+    st_note = named(U->text(root, 0, 38, w, 22, note, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "set-note", NULL, NULL, note);
+    float nh = 22; { float ph = st_note && U->text_height ? U->text_height(st_note, w) : 0; if (ph > nh + 2) { nh = ph; U->place(st_note, 0, 38, w, nh); } }
+    float ly = 38 + nh + 8, lh = h - 66 - 8 - ly;
+    U->panel(root, 0, ly, w, lh, 0);
+    DSLObj list = U->scroll(root, 8, ly + 8, w - 16, lh - 16);
+    float y = 0, rw = w - 48;
+    int has_slider = U->size >= offsetof(DSLUi, slider_set) + sizeof U->slider_set && U->slider;
+    for (int i = 0; i < n; i++) {
+        const DSLSettingInfo *in = dsl_settings_at(set_page, i);
+        int v = dsl_settings_value(set_page, i);
+        char nm[120], vt[200]; snprintf(nm, sizeof nm, "set:%s", in->id);
+        dsl_settings_value_label(set_page, i, v, vt, sizeof vt);
+        DSLObj c = NULL; int kind = 4;
+        if (in->type == DSL_SET_TOGGLE) { c = U->toggle(list, 0, y, rw, in->label, v, set_change, (void *)(intptr_t)i); kind = 1; }
+        else if (in->type == DSL_SET_INT && has_slider && (c = U->slider(list, 0, y, rw, in->label, in->min, in->max, in->step, v, set_change, (void *)(intptr_t)i))) kind = 5;
+        else {
+            int cnt = in->type == DSL_SET_INT ? (in->max - in->min) / in->step + 1 : in->nchoices;
+            if (cnt > 1000) cnt = 1000;                              /* < value > only: very long ranges are cut */
+            char **vals = calloc((size_t)cnt, sizeof *vals); char b[32];
+            for (int k = 0; k < cnt; k++) {
+                if (in->type == DSL_SET_INT) { snprintf(b, sizeof b, "%d", in->min + k * in->step); vals[k] = strdup(b); }
+                else vals[k] = strdup(dsl_settings_choice_label(set_page, i, k));
+            }
+            int idx = in->type == DSL_SET_INT ? (v - in->min) / in->step : v;
+            c = U->value_row(list, 0, y, rw, in->label, (const char *const *)vals, cnt, idx, set_change, (void *)(intptr_t)i);
+            for (int k = 0; k < cnt; k++) free(vals[k]);
+            free(vals);
+        }
+        st[nst].w = c; st[nst].type = kind; nst++;
+        named(c, kind, nm, set_change, (void *)(intptr_t)i, vt);
+        y += in->type == DSL_SET_TOGGLE ? 40 : 48;
+        /* help under the control, and which kind of setting it is (gold, right) */
+        const char *kd = in->gameplay ? TR("Gameplay") : TR("Display");
+        snprintf(nm, sizeof nm, "set-kind:%s", in->id);
+        named(U->text(list, rw - 140, y - 4, 140, 18, kd, 13, DSL_TXT_RIGHT, GOLD), 3, nm, NULL, NULL, kd);
+        if (in->help && in->help[0]) {
+            float hh = 20; DSLObj t = U->text(list, 12, y - 4, rw - 170, hh, in->help, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
+            { float ph = t && U->text_height ? U->text_height(t, rw - 170) : 0; if (ph > hh + 2) { hh = ph; U->place(t, 12, y - 4, rw - 170, hh); } }
+            snprintf(nm, sizeof nm, "set-help:%s", in->id); named(t, 3, nm, NULL, NULL, in->help);
+            y += hh + 10;
+        } else y += 18;
+    }
+    if (!n) U->text(list, 12, 8, rw, 40, TR("This mod has no settings."), 16, DSL_TXT_LEFT, SUB);
+    U->scroll_height(list, y);
+    bottom_bar(root, w, h);
 }
 static void mods_update(void) {
     static const char *busy_last = (const char *)1;
@@ -608,7 +751,7 @@ static void rebind(int wm) {                                          /* the Mod
     if (wm != world_mode && is_open && cur == 0) { world_mode = wm; tab_close(); return; }
     world_mode = wm;
 }
-void dsl_win_open(const char *tab_id) { rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
+void dsl_win_open(const char *tab_id) { if (!is_open) set_page[0] = 0; rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
 void dsl_win_open_world(const char *guid, const char *name) {
     if (!guid || !*guid) { dsl_win_open(NULL); return; }
     int same = world_mode && !strcmp(world_guid, guid);
@@ -631,7 +774,8 @@ void dsl_win_relang(void) {
 void dsl_win_close(void) {
     if (!is_open) return;
     if (!tab_can_close()) { dsl_log("win: the open tab does not close now"); return; }
-    if (!applying) dsl_mods_draft(NULL, -1);                           /* closed without Apply: the prewarmed game quits */
+    if (!applying) { dsl_mods_draft(NULL, -1); dsl_settings_undo(); }   /* closed without Apply: the prewarmed game quits, drafts go */
+    set_page[0] = 0;
     destroy_all();
     dsl_log("win: Mods window closed");
 }
@@ -694,6 +838,10 @@ static void test_frame(void) {
             if (r->kind == 1) U->toggle_set(r->w, !U->toggle_get(r->w));    /* the kit flips a toggle before its callback */
             if (r->cb) r->cb(r->ud, r->w);
         }
+    } else if (!strcmp(op, "value")) {                                 /* a value row's index / a slider's value, then its callback */
+        JNode *v = json_get(j, "value");
+        if (!r || !v || v->t != JN_NUM || (r->kind != 4 && r->kind != 5)) { ok = 0; snprintf(msg, sizeof msg, "no value control %s", target ? target : ""); }
+        else { if (r->kind == 5) U->slider_set(r->w, (int)v->num); else U->value_set(r->w, (int)v->num); if (r->cb) r->cb(r->ud, r->w); }
     } else if (!strcmp(op, "esc")) { if (is_open && !naming) dsl_win_close(); else if (naming) naming_show(0); }
     else { ok = 0; snprintf(msg, sizeof msg, "unknown op %s", op); }
     test_answer(seq, ok, msg, dump);

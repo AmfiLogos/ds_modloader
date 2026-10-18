@@ -113,6 +113,13 @@ typedef struct DSLUi {
     /* appended (check size): preferred height of a text widget's text at width w (0 = its own width), at its design
        size, so a caller can grow the box to its text (the game's way for long text; CJK lines are taller) */
     float (*text_height)(DSLObj text, float w);
+    /* appended (check size; API 5): the game's own slider (clone of the Options window's): label  ===o===  value.
+       Whole numbers min..max by step; change(ud, w) after the player moved it to another step (read slider_get).
+       NULL when the game's slider is not available (use value_row then). */
+    DSLObj (*slider)(DSLObj parent, float x, float y, float w, const char *label, int min, int max, int step, int value,
+                     dsl_ui_cb change, void *ud);
+    int (*slider_get)(DSLObj s);
+    void (*slider_set)(DSLObj s, int value);  /* no change callback */
 } DSLUi;
 
 typedef struct DSLHost {
