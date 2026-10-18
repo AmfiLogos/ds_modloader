@@ -80,6 +80,7 @@ struct DSLUi; struct DSLLoadRow; struct DSLLoadFilter;
 /* dsl_ui.c: widget kit + the frame tick (EventSystem.Update -> dsl_frame_hook) */
 void dsl_ui_install(void);
 int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud);
+int dsl_ui_title_icon(const char *owner_id, void (*click)(void *), void *ud, float size, void (*fill)(void *, void *, int));   /* fill(ud, box (DSLObj), fresh) */
 void dsl_frame_hook(void);                               /* dsl_reg.c: every frame, main thread */
 /* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
    row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */

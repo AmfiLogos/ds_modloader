@@ -732,6 +732,10 @@ static int title_add(DSLPlugin *self, const char *label, int order, const char *
     if (!label || !click) return -1;
     return dsl_ui_title_add(dsl_plugin_name(self), label, order, tip, click, ud);
 }
+static int title_icon(DSLPlugin *self, void (*click)(void *), void *ud, float size, void (*fill)(void *, DSLObj, int)) {
+    if (!click) return -1;
+    return dsl_ui_title_icon(dsl_plugin_name(self), click, ud, size, fill);
+}
 
 /* ------------------------------------------------------------------ load rows (dsl_rows.c) */
 static int row_add(DSLPlugin *self, const DSLLoadRow *r) { return dsl_rows_add(dsl_plugin_name(self), r); }
@@ -961,7 +965,7 @@ static const char *data_dir_get(void) {                 /* for modules: in the f
 /* before dsl_plugin_init of the modules (they may add tabs / rows / buttons there) */
 void dsl_reg_host(DSLHost *h) {
     h->set_session_busy = session_busy_set; h->session_busy = session_busy_get;
-    h->menu_add_tab = tab_add; h->menu_open = menu_open; h->title_add_button = title_add;
+    h->menu_add_tab = tab_add; h->menu_open = menu_open; h->title_add_button = title_add; h->title_button_icon = title_icon;
     h->loadrow_add = row_add; h->loadlist_filter = row_filter; h->loadlist_refresh = dsl_rows_refresh;
     h->data_dir = data_dir_get;
 }
