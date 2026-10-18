@@ -46,6 +46,26 @@ int dsl_world_set_mods(const char *guid, const char *const *ids, int n);
 int dsl_crash_consent(void);
 void dsl_crash_set_consent(int yes);
 const char *dsl_crash_privacy_url(void);
+/* mod settings (src/dsl_settings.c; mod.json "settings", SDK API 5). i = the setting's index in its mod's list. */
+enum { DSL_SET_TOGGLE = 0, DSL_SET_INT = 1, DSL_SET_CHOICE = 2 };
+typedef struct DSLSettingInfo {
+    const char *id, *label, *help;               /* texts in the current language (help "" = none) */
+    int type, gameplay;                          /* gameplay 1: changes apply with Apply; 0 (local): at once */
+    int min, max, step, nchoices, dflt;          /* toggle 0..1, choice 0..nchoices-1 (dflt = index) */
+} DSLSettingInfo;
+int dsl_settings_count(const char *mod);                         /* declared settings of that mod (0 = no Settings button) */
+const DSLSettingInfo *dsl_settings_at(const char *mod, int i);
+const char *dsl_settings_choice_label(const char *mod, int i, int c);
+void dsl_settings_value_label(const char *mod, int i, int v, char *out, size_t cap);   /* On / Off, the number, the choice */
+int dsl_settings_value(const char *mod, int i);                  /* what the page shows (a gameplay draft or the value) */
+int dsl_settings_running(const char *mod, int i);                /* the value this game runs with */
+int dsl_settings_set(const char *mod, int i, int v);             /* local: saved + live; gameplay: draft for Apply */
+int dsl_settings_pending(const char *mod);                       /* gameplay drafts not applied (mod NULL = all mods) */
+void dsl_settings_undo(void);                                    /* drop the gameplay drafts */
+int dsl_settings_changes(char *out, size_t cap);                 /* "Label: value, ..." of the drafts; returns how many */
+/* multiplayer "Get the host's mods": the host's "<mod>/<setting>@<value>" lines become the drafts (the next Apply
+   starts with them). Returns how many values were taken. */
+int dsl_settings_take_lines(const char *lines);
 
 /* ---- provided by L2 (loader/ui); weak in L1 */
 void dsl_win_init(void) __attribute__((weak));            /* after il2cpp_init, once */

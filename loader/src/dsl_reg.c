@@ -179,6 +179,7 @@ void dsl_mods_rescan(void) {
         for (int l = 0; l < DSI_LANGS; l++) { free(MT[i].name[l]); free(MT[i].shortn[l]); free(MT[i].desc[l]); } }
     memset(MI, 0, sizeof MI); memset(MI_short, 0, sizeof MI_short); memset(MT, 0, sizeof MT); nmi = 0; mods_scanned = 0;
     mods_scan();
+    dsl_settings_rescan();
     dsl_log("reg: mods folder read again: %d installed mod(s)", nmi);
 }
 /* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 columns.
@@ -393,14 +394,18 @@ static const char *world_key(const char *guid) {
 }
 /* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save */
 static void set_lines(char *out, size_t cap, char ms[65]) {
-    static char ln[MAXM][2048]; const char *lp[MAXM]; int nl = 0; char hs[1800], e1[2100];
-    for (int i = 0; i < nmi && nl < MAXM; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
+#define MAXL (MAXM * 4)
+    static char ln[MAXL][2048]; const char *lp[MAXL]; int nl = 0; char hs[1800], e1[2100];
+    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
         extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
         dsl_mod_hashes(MI[i].id, hs, sizeof hs);
         snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;
+        /* its gameplay settings, one line each ("<id>/<setting>@<value>"): another value = another set (mod settings) */
+        static char sl[8192]; dsl_settings_lines(MI[i].id, sl, sizeof sl);
+        for (char *sv = NULL, *t = strtok_r(sl, "\n", &sv); t && nl < MAXL; t = strtok_r(NULL, "\n", &sv)) { snprintf(ln[nl], sizeof ln[nl], "%s", t); lp[nl] = ln[nl]; nl++; }
     }
     qsort(lp, (size_t)nl, sizeof *lp, cmpstr);
-    static char joined[MAXM * 2048]; joined[0] = 0; out[0] = 0;
+    static char joined[MAXL * 2048]; joined[0] = 0; out[0] = 0;
     for (int i = 0; i < nl; i++) {
         jesc(e1, sizeof e1, lp[i]); size_t k = strlen(out); snprintf(out + k, cap - k, "%s\"%s\"", i ? "," : "", e1);
         if (i) strlcat(joined, "\n", sizeof joined); strlcat(joined, lp[i], sizeof joined);
@@ -535,7 +540,12 @@ static int write_profile(const char *path, const char *const *ids, int n) {
     for (int i = 0; i < n; i++) { jesc(e, sizeof e, ids[i]); k += (size_t)snprintf(b + k, cap - k, "%s\"%s\"", i ? "," : "", e); }
     k += (size_t)snprintf(b + k, cap - k, "],\"order\":[");
     for (int i = 0; i < n; i++) { jesc(e, sizeof e, ids[i]); k += (size_t)snprintf(b + k, cap - k, "%s\"%s\"", i ? "," : "", e); }
-    snprintf(b + k, cap - k, "]}\n");
+    k += (size_t)snprintf(b + k, cap - k, "]");
+    /* the gameplay values the new game starts with (mod settings: the Settings page's drafts, else the running ones) */
+    char *st = malloc(1 << 16);
+    if (st && dsl_settings_profile_member(st, 1 << 16) > 0) { size_t L = strlen(st); if (k + L + 8 > cap) { cap = k + L + 8; b = realloc(b, cap); } k += (size_t)snprintf(b + k, cap - k, ",%s", st); }
+    free(st);
+    snprintf(b + k, cap - k, "}\n");
     int r = put_file(path, b); free(b); return r;
 }
 static int tip_first_run;
@@ -614,6 +624,7 @@ void dsl_mods_draft(const char *const *ids, int n) {
     dr_t = mono_s(); dr_started = 0;
 }
 static int draft_is_running(void) {
+    if (dsl_settings_pending(NULL)) return 0;                         /* a gameplay setting changed: another set */
     for (int i = 0; i < nmi; i++) {
         if (MI[i].hidden) continue;
         int in = 0; for (int j = 0; j < dr_n; j++) in |= !strcmp(dr_ids[j], MI[i].id);
@@ -648,6 +659,7 @@ static void commit_pending(void) {
     if (put_file(act, t)) dsl_log("reg: cannot write %s", act);
     else dsl_log("reg: the new mods are on: pending.json -> active.json");
     free(t);
+    dsl_settings_commit();                                             /* the Apply's gameplay settings -> settings.json */
 }
 
 /* ------------------------------------------------------------------ groups */
