@@ -10,6 +10,8 @@
 //           Both changed: the newest wins, the other one is kept in <DSML_DATA>/Mods/cloud_backups/.
 //           Space: an upload only when the cloud keeps max(1 GB, 20 x the game's own use) free after it and our files
 //           stay at most CLOUD_MAX_FILES (app quota 10 GB / 700 files, appinfo ufs); else no upload, one status line.
+//           Multiplayer temporary saves (mp_*, dsl_save_is_mp_temp) are never uploaded or downloaded; remote
+//           "dsmodded_mp_*" files (uploaded by loaders before 0.1.15 on every multiplayer join) are deleted when seen.
 //           State: <DSML_DATA>/Mods/cloud_state.tsv (name, local mtime, local size, remote time at the last sync).
 // Env: DSML_DATA (required), DSL_CLOUD=0 (cloud off), DSL_CLOUD_API=<library> (tests: a fake
 // steam_api instead of the game's), DSL_CLOUD_EVERY=<seconds between passes, default 30>.
@@ -47,7 +49,7 @@ static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
    thread, in the game's language; dsl_cloud_status). The log line stays English. */
 enum { CS_STARTS, CS_WAIT_STEAM, CS_OFF_CLOUD, CS_WAIT_FOLDER, CS_PAUSED, CS_FAILED, CS_OK, CS_NO_STEAM, CS_OFF_ENV };
 static int st_code = CS_STARTS, st_n; static char st_tm[16];
-int dsl_cloud_rdel, dsl_cloud_passes, dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
+int dsl_cloud_mp_removed, dsl_cloud_rdel, dsl_cloud_passes, dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
 
 static struct {
     void *(*get)(void);
@@ -266,18 +268,25 @@ static int pass_locked(void) {
     state_load(); nE = 0;
     int ours_n = 0; uint64_t ours_bytes = 0;
     int32_t cnt = A.count(rs);
+    static char mpdel[64][256]; int nmp = 0;                              /* deleted after the listing (indexes move) */
     for (int i = 0; i < cnt; i++) {
         int32_t sz = 0; const char *rn = A.name(rs, i, &sz);
         if (!rn || strncmp(rn, PFX, strlen(PFX)) || !is_json(rn + strlen(PFX))) continue;
+        if (dsl_save_is_mp_temp(rn + strlen(PFX))) { if (nmp < 64) snprintf(mpdel[nmp++], 256, "%s", rn); continue; }
         Ent *e = ent(rn + strlen(PFX)); if (!e) break;
         e->there = 1; e->rsize = sz; e->rts = A.ts(rs, rn); ours_n++; ours_bytes += (uint64_t)sz;
+    }
+    /* a multiplayer temporary save an earlier loader uploaded: ours (prefix "dsmodded_mp_"), never a player's save */
+    for (int i = 0; i < nmp; i++) {
+        if (A.del(rs, mpdel[i])) { dsl_cloud_mp_removed++; dsl_log("cloud: removed %s from the cloud (a multiplayer temporary save an earlier loader version uploaded)", mpdel[i]); }
+        else dsl_log("cloud: removing %s from the cloud FAILED (next pass tries again)", mpdel[i]);
     }
     time_t now = time(NULL); int busy = 0;
     DIR *d = opendir(saves_d); struct dirent *de;
     if (!d) { set_status(CS_WAIT_FOLDER, 0, NULL); return 1; }
     {
         while ((de = readdir(d))) {
-            if (de->d_name[0] == '.' || !is_json(de->d_name)) continue;
+            if (de->d_name[0] == '.' || !is_json(de->d_name) || dsl_save_is_mp_temp(de->d_name)) continue;
             char p[1400]; struct stat s; snprintf(p, sizeof p, "%s/%s", saves_d, de->d_name);
             if (stat(p, &s) || !S_ISREG(s.st_mode)) continue;
             Ent *e = ent(de->d_name); if (!e) break;

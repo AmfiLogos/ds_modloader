@@ -518,6 +518,10 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   `SaveFile`, so never routed there. Before, a guest whose game save had the host world's guid wrote mp_fullcheck.json
   (4.4 MB) into the game's Saves folder (Steam Cloud synced); the mod read it from `<DSML_DATA>/Saves`, logged "save
   failed" and never deleted it.
+  The Steam Cloud backup (`dsl_cloud.c`) uses the same rule (`dsl_save_is_mp_temp`, dsl_internal.h): mp_* saves are
+  never uploaded or downloaded. Before 0.1.15 the backup uploaded them (Windows VM: dsmodded_mp_sync.json queued on a
+  join, plus a test world), so a pass now deletes any remote `dsmodded_mp_*` file it lists (FileDelete, only that
+  prefix; log line "cloud: removed dsmodded_mp_... from the cloud"). Host test: `loader/test/cloud/run.sh` section 14.
 - Packaging: `modules/scan_saves.py` fails a build when a save or player file is inside (folders Saves / profiles /
   instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,
   `start/win/build_win.sh` (kit), `start/win/installer/make_installer.sh`. The released packages checked: none has one.

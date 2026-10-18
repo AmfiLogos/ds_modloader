@@ -102,6 +102,10 @@ void dsl_frame_hook(void);                               /* dsl_reg.c: every fra
 /* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
    row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
 struct DSLHost; void dsl_cloud_install(struct DSLHost *host);   /* dsl_cloud.c: after dsl_reg_ready */
+/* "mp_*" = a multiplayer temporary save (mp_sync join point, mp_fullcheck full-state check, test saves): the mod writes
+   it through the game's Save and reads it back from <DSML_DATA>/Saves by path. Never a game save (dsl_saves.c), never
+   in the Steam Cloud backup (dsl_cloud.c). One rule for both. */
+static inline int dsl_save_is_mp_temp(const char *name) { return (name[0] | 32) == 'm' && (name[1] | 32) == 'p' && name[2] == '_'; }
 /* dsl_saves.c: the game's own save folder listed and played in place next to the modded saves */
 void dsl_saves_install(void);                            /* after il2cpp_init, before dsl_cloud_install */
 int dsl_saves_is_game(const char *save_name);            /* 1 = a save of the game's own folder */
