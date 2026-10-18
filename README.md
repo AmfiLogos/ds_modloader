@@ -77,6 +77,18 @@ Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-0.1.2
 
 A zip of a mod you already have replaces that mod. A file that is not a mod moves to the folder `.failed`.
 
+## Mod settings
+
+Some mods have settings. In the Mods window, click Settings next to the mod.
+
+- Gameplay settings change when you click Apply (at the title screen). In multiplayer, every player needs the same
+  values: a player with other values cannot join, and the message names the setting and both values.
+- Display settings change at once and are only for your screen.
+- Default values puts every setting of that mod back to its default. Undo changes drops what you did not apply.
+
+For mod makers: declare the settings in `mod.json` ("settings") and read them with `dsl_get_bool` / `dsl_get_int` /
+`dsl_get_choice` (`loader/sdk/dsl_sdk.h`, API 5; the format is described there, above `settings_get_bool`).
+
 ## Where your saves are
 
 The modded game plays on its own copy of your saves. On its first start it copies your normal saves once (it only
