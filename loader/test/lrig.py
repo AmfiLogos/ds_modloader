@@ -314,6 +314,20 @@ def cap_wait(what):
         time.sleep(max(0.5, min(15, limit - (time.time() - t0))))
 
 
+LANG_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'lang')
+def install_lang(x):
+    """The loader's texts next to the copy's dsload.dylib (Frameworks/lang/<code>.json; dsl_lang_early reads <folder of
+    the binary>/lang), from this tree's loader/lang, so test copies show the translated loader windows like a player's
+    install (until 2026-10-18 they had none: every loader text stayed English). DSL_TEST_NO_LANG=1 skips it. A later
+    codesign -f of the copy refuses loose files in Frameworks: move Frameworks/lang aside first (mixed_set does)."""
+    fw = os.path.join(idir(x), os.path.dirname(DYLIB_REL))
+    if os.environ.get('DSL_TEST_NO_LANG') == '1' or not os.path.exists(os.path.join(idir(x), DYLIB_REL)): return
+    src = sorted(glob.glob(os.path.join(LANG_SRC, '*.json')))
+    if not src: return
+    d = os.path.join(fw, 'lang'); os.makedirs(d, exist_ok=True)
+    for f in src: shutil.copy2(f, d)
+
+
 def start(x, window=False, fps=30, show=None):
     """show='left'|'right': VISIBLE window on that half of the screen (owner demo only; tests never pass it)."""
     if alive(read_pid(x)):
@@ -323,6 +337,7 @@ def start(x, window=False, fps=30, show=None):
     if not os.path.exists(exe):
         raise SystemExit(f'{x}: no copy; run test/make_instance.sh {x} + test/install_mods.sh first')
     require_background_only(x)
+    install_lang(x)
     prepare_data(x)
     fix_mp_port(x)
     for p in (sockpath(x),):
