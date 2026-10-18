@@ -185,6 +185,10 @@
  "This mod has no settings.": "Este mod não tem configurações.",
  "This save is also used by Dungeon Settlers without mods. Delete it there too?": "Este salvamento também é usado pelo Dungeon Settlers sem mods. Excluir lá também?",
  "This world is one of your game saves.": "Este mundo é um dos seus salvamentos do jogo.",
+ "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s": [
+  "Este mundo é um dos seus salvamentos do jogo. Este mod muda o que o mundo salva: %s. Ele pode quebrar depois no jogo sem o carregador de mods.\n\nAntes de carregar, uma cópia dos arquivos de salvamento dele é guardada em:\n%s",
+  "Este mundo é um dos seus salvamentos do jogo. Estes mods mudam o que o mundo salva: %s. Ele pode quebrar depois no jogo sem o carregador de mods.\n\nAntes de carregar, uma cópia dos arquivos de salvamento dele é guardada em:\n%s"
+ ],
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "Este mundo é um dos seus salvamentos do jogo. Este mod muda o que o mundo salva: %s.\n\nSe você jogar agora, o mundo pode quebrar quando você carregá-lo depois no jogo sem o carregador de mods.",
   "Este mundo é um dos seus salvamentos do jogo. Estes mods mudam o que o mundo salva: %s.\n\nSe você jogar agora, o mundo pode quebrar quando você carregá-lo depois no jogo sem o carregador de mods."
@@ -195,6 +199,7 @@
  "This world uses: %s.\nInstall the missing mods to load it.": "Este mundo usa: %s.\nInstale os mods que faltam para carregá-lo.",
  "This world uses: %s.\nIt cannot be loaded now: %s": "Este mundo usa: %s.\nNão pode ser carregado agora: %s",
  "This world uses: %s.\nLoad it with them?": "Este mundo usa: %s.\nCarregar com eles?",
+ "This world was not loaded: its save files could not be copied first.\n\n%s": "Este mundo não foi carregado: não foi possível copiar antes os arquivos de salvamento dele.\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "Ativa estes mods por trás de uma tela de carregamento e traz você de volta para cá.",
  "Undo changes": "Desfazer alterações",
  "Update": "Atualizar",

@@ -178,6 +178,9 @@
  "This mod has no settings.": "このMODには設定がありません。",
  "This save is also used by Dungeon Settlers without mods. Delete it there too?": "このセーブはMODなしのDungeon Settlersでも使われています。そちらからも削除しますか？",
  "This world is one of your game saves.": "このワールドは通常のセーブです。",
+ "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s": [
+  "このワールドは通常のセーブです。次のMODはワールドに保存される内容を変えます：%s。あとでMODローダーなしのゲームで壊れる可能性があります。\n\n読み込む前に、セーブファイルのコピーを次の場所に保存します：\n%s"
+ ],
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "このワールドは通常のセーブです。次のMODはワールドに保存される内容を変えます：%s。\n\n今プレイすると、あとでMODローダーなしのゲームで読み込んだときにワールドが壊れる可能性があります。"
  ],
@@ -187,6 +190,7 @@
  "This world uses: %s.\nInstall the missing mods to load it.": "このワールドは次のMODを使っています：%s。\n読み込むには、不足しているMODをインストールしてください。",
  "This world uses: %s.\nIt cannot be loaded now: %s": "このワールドは次のMODを使っています：%s。\n今は読み込めません：%s",
  "This world uses: %s.\nLoad it with them?": "このワールドは次のMODを使っています：%s。\nこのMODで読み込みますか？",
+ "This world was not loaded: its save files could not be copied first.\n\n%s": "このワールドは読み込まれませんでした：先にセーブファイルをコピーできませんでした。\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "ロード画面の裏でこれらのMODを有効にし、この画面に戻ります。",
  "Undo changes": "変更を元に戻す",
  "Update": "アップデート",

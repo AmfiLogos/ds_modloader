@@ -178,6 +178,9 @@
  "This mod has no settings.": "此模组没有设置。",
  "This save is also used by Dungeon Settlers without mods. Delete it there too?": "无模组的 Dungeon Settlers 也在使用此存档。也在那里删除吗？",
  "This world is one of your game saves.": "此世界是你的游戏存档之一。",
+ "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s": [
+  "此世界是你的游戏存档之一。以下模组会改变世界保存的内容：%s。之后在没有模组加载器的游戏中，世界可能会损坏。\n\n读取前会先把它的存档文件复制一份，保存在：\n%s"
+ ],
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "此世界是你的游戏存档之一。以下模组会改变世界保存的内容：%s。\n\n如果现在游玩，之后在没有模组加载器的游戏中载入时，世界可能会损坏。"
  ],
@@ -187,6 +190,7 @@
  "This world uses: %s.\nInstall the missing mods to load it.": "此世界使用了：%s。\n请安装缺少的模组后再加载。",
  "This world uses: %s.\nIt cannot be loaded now: %s": "此世界使用了：%s。\n现在无法加载：%s",
  "This world uses: %s.\nLoad it with them?": "此世界使用了：%s。\n要使用它们加载吗？",
+ "This world was not loaded: its save files could not be copied first.\n\n%s": "未读取此世界：无法先复制它的存档文件。\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "在加载画面后启用这些模组，然后回到这里。",
  "Undo changes": "撤销更改",
  "Update": "更新",

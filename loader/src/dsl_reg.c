@@ -107,6 +107,7 @@ static void mods_lang(void) {                           /* the current language'
     }
 }
 static int MI_savedep[MAXM];                            /* mod.json "save_dependent": saves need the loader (owner item 9) */
+static int MI_savebak[MAXM];                            /* mod.json "save_backup": copy a game save before it loads (ZET-U) */
 static int cmpstr_ids(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
 static int mods_scanned;
 static void mods_scan(void) {
@@ -143,6 +144,7 @@ static void mods_scan(void) {
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
+        JNode *sb = json_get(m, "save_backup"); MI_savebak[nmi - 1] = sb && sb->t == JN_BOOL && sb->b;
         int on = 1;
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
         x->enabled = on;
@@ -235,6 +237,13 @@ int dsl_running_save_dependent(const char **ids, int max, char *key, size_t kcap
     qsort(ids, (size_t)n, sizeof *ids, cmpstr_ids);
     if (key && kcap) { key[0] = 0; for (int i = 0; i < n; i++) { if (i) strlcat(key, "+", kcap); strlcat(key, ids[i], kcap); } }
     return n;
+}
+/* 1 = a running save_dependent mod also asks for mod.json "save_backup": true (dsl_saves.c: the warning's Load first
+   copies the world's game-save files to <DSML_DATA>/Mods/save_backups/). Opt-in per mod: Hell difficulty has no backup. */
+int dsl_running_save_backup(void) {
+    mods_scan();
+    for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && MI_savedep[i] && MI_savebak[i]) return 1;
+    return 0;
 }
 const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
