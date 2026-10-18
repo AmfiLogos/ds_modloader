@@ -373,7 +373,12 @@ static void z_corners(ZObj rt, ZV3 out[4]) {                   /* world corners 
 static void grow_window(int w, ZObj view) {
     zwin *z = &zw[w];
     uintptr_t (*hn)(ZObj, int) = H->il2cpp_fn("il2cpp_gchandle_new");
-    if (!z->h_view && hn) z->h_view = hn(view, 0);
+    ZObj (*hget)(uintptr_t) = H->il2cpp_fn("il2cpp_gchandle_get_target");
+    void (*hf)(uintptr_t) = H->il2cpp_fn("il2cpp_gchandle_free");
+    if (hn && hget && hf && (!z->h_view || hget(z->h_view) != view)) {   /* a new view (one per map load) */
+        if (z->h_view) hf(z->h_view);
+        z->h_view = hn(view, 0); z->have_tl = 0;
+    }
     ZObj arr = ZAT(view, z->f_panels, ZObj);
     int n = arr ? (int)ZAT(arr, 0x18, uintptr_t) : 0;
     if (n >= s_max_units) return;                               /* grown (InitUI runs more than once) */
