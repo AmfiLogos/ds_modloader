@@ -477,8 +477,10 @@ static void mods_open(DSLObj root, float w, float h) {
 }
 static void bottom_bar(DSLObj root, float w, float h) {
     flat(U->panel(root, 0, h - 66, w, 1, 0), 0x633D33FF);
-    m_status = named(U->text(root, 0, h - 58, m_lw, 58, "", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "status", NULL, NULL, "");
-    m_undo = named(U->button(root, m_rx, h - 52, 134, 44, TR("Undo changes"), undo_click, NULL), 0, "undo", undo_click, NULL, TR("Undo changes"));
+    /* Undo 250 wide: the long texts (fr, de) wrapped to two lines at 134 (zetu lane 2026-10-18); de now "Änderungen verwerfen" */
+    float ux = w - 200 - 10 - 250;
+    m_status = named(U->text(root, 0, h - 58, ux - 12, 58, "", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "status", NULL, NULL, "");
+    m_undo = named(U->button(root, ux, h - 52, 250, 44, TR("Undo changes"), undo_click, NULL), 0, "undo", undo_click, NULL, TR("Undo changes"));
     const char *al = world_mode ? TR("Save for this world") : TR("Apply");
     m_apply = named(U->button(root, w - 200, h - 52, 200, 44, al, apply_click, NULL), 0, "apply", apply_click, NULL, al);
     if (read_only) { U->set_active(m_apply, 0); U->set_active(m_undo, 0); U->set_active(m_save, 0); }
