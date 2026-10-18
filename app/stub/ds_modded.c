@@ -9,6 +9,7 @@
 //   2b. the player's mods: ROOT/mods/<id> (or a <id>-<version>.zip there, unpacked) -> ROOT/loader/mods/<id>.
 //   3. game copy: PROFILE/copy.json {"build","app"} when that copy exists (pinned), else
 //      Contents/MacOS/dsml-helper prepare --root ROOT (last lines "BUILD <id>", "PLAY <path>" or "ERROR <msg>").
+//      A pinned copy without "ident" COPY_IDENT gets its own Local Network identity: dsml-helper ident --app <copy>.
 //   4. first run: COPY the normal saves (read only); default DATA/Mods/active.json + worlds.json. The Mods window is
 //      part of the loader itself (not a module), so no entry of active.json can switch it off.
 //   5. Steam (start it in the background when closed), env, execv of the play copy's game binary, cwd = PROFILE.
@@ -427,6 +428,15 @@ static void user_mods(const char *app, const char *root) {
     free(ents);
 }
 
+/* copy.json; ident = the copy has dsml-helper's identity (copy_mac::COPY_IDENT) */
+#define COPY_IDENT "1"
+static void copy_json_write(const char *cj, const char *build, const char *play) {
+    char eb[256], ep[PATH_MAX * 2], txt[PATH_MAX * 3];
+    json_esc(build, eb, sizeof eb); json_esc(play, ep, sizeof ep);
+    snprintf(txt, sizeof txt, "{\"build\": \"%s\", \"app\": \"%s\", \"ident\": \"" COPY_IDENT "\"}\n", eb, ep);
+    if (write_atomic(cj, txt) != 0) logf_("cannot write %s (%s)", cj, strerror(errno));
+}
+
 /* 3. the play copy: the remembered one (pinned) or a new one made by dsml-helper */
 static int game_copy(const char *app, const char *root, const char *profile, char *play, size_t pcap,
                      char *build, size_t bcap) {
@@ -434,7 +444,19 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
     char *j = slurp(cj);
     if (j && jtop(j, "build", build, bcap) && jtop(j, "app", play, pcap)) {
         char exe[PATH_MAX]; snprintf(exe, sizeof exe, "%s/Contents/MacOS/Dungeon Settlers", play);
-        if (exists(exe)) { free(j); return 0; }
+        char id[16] = "";
+        if (exists(exe) && jtop(j, "ident", id, sizeof id) && !strcmp(id, COPY_IDENT)) { free(j); return 0; }
+        if (exists(exe)) {
+            /* copy made before the Local Network identity: macOS blocked it on the local network without asking */
+            free(j);
+            char helper[PATH_MAX], out[4096];
+            snprintf(helper, sizeof helper, "%s/Contents/MacOS/dsml-helper", app);
+            char *av[] = { helper, "ident", "--app", play, NULL };
+            int st = run_cmd(av, out, sizeof out);
+            if (st == 0 && strstr(out, "IDENT " COPY_IDENT)) { logf_("copy %s: own identity given", play); copy_json_write(cj, build, play); }
+            else logf_("copy %s: dsml-helper ident exit %d: %s", play, st, out);   /* the game still starts */
+            return 0;
+        }
         logf_("remembered copy %s is gone: making a new one", play);
     }
     free(j);
@@ -461,10 +483,7 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
         return fail(err[0] ? err : TR("The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log."));   /* err: dsml-helper's English */
     }
     logf_("game copy ready in %ld s: build %s, %s", (long)(time(NULL) - t0), build, play);
-    char eb[256], ep[PATH_MAX * 2], txt[PATH_MAX * 3];
-    json_esc(build, eb, sizeof eb); json_esc(play, ep, sizeof ep);
-    snprintf(txt, sizeof txt, "{\"build\": \"%s\", \"app\": \"%s\"}\n", eb, ep);
-    if (write_atomic(cj, txt) != 0) logf_("cannot write %s (%s)", cj, strerror(errno));
+    copy_json_write(cj, build, play);
     return 0;
 }
 

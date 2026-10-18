@@ -1,4 +1,4 @@
-//! Just enough Mach-O reading: is it Mach-O, where is the arm64 slice, what macOS does it need.
+//! Just enough Mach-O reading: is it Mach-O, where is the arm64 slice, what macOS does it need, where its UUIDs are.
 use anyhow::{bail, Result};
 
 const FAT_MAGIC: u32 = 0xCAFEBABE;
@@ -6,6 +6,7 @@ const MH_MAGIC_64: u32 = 0xFEEDFACF;
 const CPU_ARM64: i32 = 0x0100000C;
 const LC_BUILD_VERSION: u32 = 0x32;
 const LC_VERSION_MIN_MACOSX: u32 = 0x24;
+const LC_UUID: u32 = 0x1B;
 
 fn be32(b: &[u8], o: usize) -> u32 { u32::from_be_bytes(b[o..o + 4].try_into().unwrap()) }
 fn le32(b: &[u8], o: usize) -> u32 { u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) }
@@ -49,6 +50,28 @@ pub fn min_macos(b: &[u8]) -> Result<(u32, u32)> {
         o += sz;
     }
     bail!("no minimum macOS version in the file")
+}
+
+/// Offsets of the 16 LC_UUID bytes in every 64-bit slice (thin file = one slice).
+pub fn uuid_offsets(b: &[u8]) -> Result<Vec<usize>> {
+    let slices: Vec<usize> = if b.len() >= 8 && be32(b, 0) == FAT_MAGIC {
+        (0..be32(b, 4) as usize).map(|i| 8 + 20 * i).filter(|o| o + 20 <= b.len()).map(|o| be32(b, o + 8) as usize).collect()
+    } else { vec![0] };
+    let mut out = Vec::new();
+    for base in slices {
+        if base + 32 > b.len() || le32(b, base) != MH_MAGIC_64 { bail!("slice at {base} is not 64-bit Mach-O") }
+        let ncmds = le32(b, base + 16) as usize;
+        let mut o = base + 32;
+        for _ in 0..ncmds {
+            if o + 8 > b.len() { break; }
+            let (cmd, sz) = (le32(b, o), le32(b, o + 4) as usize);
+            if cmd == LC_UUID && sz >= 24 && o + 24 <= b.len() { out.push(o + 8); break; }
+            if sz == 0 { break; }
+            o += sz;
+        }
+    }
+    if out.is_empty() { bail!("no LC_UUID in the file") }
+    Ok(out)
 }
 
 /// The running macOS as (major, minor).

@@ -50,6 +50,9 @@ pub struct PlayMarker {
     pub mods: BTreeMap<String, BTreeMap<String, String>>,
     pub bundle_id: String,
     pub background_only: bool,
+    /// COPY_IDENT of the copy (0 = made before own_identity)
+    #[serde(default)]
+    pub ident: u32,
     pub created: u64,
 }
 
@@ -181,7 +184,7 @@ pub fn wanted_marker(build: &str, mods: &[(ModRelease, PathBuf)], opts: &CopyOpt
         }
         m.insert(r.key(), files);
     }
-    PlayMarker { build: build.into(), mods: m, bundle_id: opts.bundle_id.clone(), background_only: opts.background_only, created: 0 }
+    PlayMarker { build: build.into(), mods: m, bundle_id: opts.bundle_id.clone(), background_only: opts.background_only, ident: COPY_IDENT, created: 0 }
 }
 
 /// Short key of a mod set: one play copy per build and mod set (worlds with other mods get their own copy).
@@ -257,6 +260,66 @@ pub fn apply_patches(app: &Path, patches: &[(String, crate::model::BytePatch)]) 
         if macho::is_macho(&b) { out.push(f); }
     }
     Ok(out)
+}
+
+/// Version of `own_identity`; in the play markers so copies made before it are made again.
+pub const COPY_IDENT: u32 = 1;
+
+/// The text macOS shows in its Local Network alert, per InfoPlist.strings folder (the game's 10 languages).
+/// The text macOS shows in its Local Network alert: "<lproj>\t<text>" lines, the game's 10 languages, English first
+/// (also read by app/build_app.sh).
+const LAN_USAGE: &str = include_str!("lan_usage.tsv");
+fn lan_usage() -> impl Iterator<Item = (&'static str, &'static str)> { LAN_USAGE.lines().filter_map(|l| l.split_once('\t')) }
+
+/// The copy's own identity for macOS Local Network privacy (Apple TN3179): the main executable gets a UUID of its
+/// own (Steam's UUID makes macOS check the Steam game's answer and never ask, while it blocks the copy), the same
+/// for every rebuild of one bundle id so the player's answer is kept; plus the alert's text in 10 languages.
+/// Before the signatures (it changes the game binary). Returns true when something was changed.
+pub fn own_identity(app: &Path, bundle_id: &str) -> Result<bool> {
+    let c = app.join("Contents");
+    let exe = app.join(GAME_EXE);
+    let mut b = std::fs::read(&exe).with_context(|| format!("read {}", exe.display()))?;
+    let mut changed = false;
+    for (i, o) in macho::uuid_offsets(&b)?.into_iter().enumerate() {
+        let new = copy_uuid(bundle_id, i);
+        if b[o..o + 16] == new { continue }
+        b[o..o + 16].copy_from_slice(&new);
+        changed = true;
+    }
+    if changed {
+        let t = exe.with_extension("uuidtmp");
+        std::fs::write(&t, &b)?;
+        std::fs::set_permissions(&t, std::fs::metadata(&exe)?.permissions())?;
+        std::fs::rename(&t, &exe)?;
+    }
+    let pl = c.join("Info.plist");
+    let en = lan_usage().next().map(|x| x.1).unwrap_or_default();
+    let has = plist::Value::from_file(&pl).ok().and_then(|v| v.as_dictionary()
+        .and_then(|d| d.get("NSLocalNetworkUsageDescription")).and_then(|s| s.as_string()).map(|s| s == en)).unwrap_or(false);
+    if !has {
+        run(Command::new("/usr/bin/plutil").args(["-replace", "NSLocalNetworkUsageDescription", "-string", en]).arg(&pl))?;
+        changed = true;
+    }
+    for (lang, text) in lan_usage() {
+        let d = c.join(format!("Resources/{lang}.lproj"));
+        let want = format!("\"NSLocalNetworkUsageDescription\" = \"{text}\";\n");
+        if std::fs::read_to_string(d.join("InfoPlist.strings")).ok().as_deref() == Some(want.as_str()) { continue }
+        std::fs::create_dir_all(&d)?;
+        std::fs::write(d.join("InfoPlist.strings"), want)?;
+        changed = true;
+    }
+    Ok(changed)
+}
+
+/// UUID of slice `i` of a copy: from the bundle id only (no two bundle ids share one; game updates keep it).
+fn copy_uuid(bundle_id: &str, i: usize) -> [u8; 16] {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(format!("dsml copy uuid {i} {bundle_id}").as_bytes());
+    let mut u = [0u8; 16];
+    u.copy_from_slice(&h[..16]);
+    u[6] = (u[6] & 0x0f) | 0x50;   // name-based UUID (version 5 layout)
+    u[8] = (u[8] & 0x3f) | 0x80;
+    u
 }
 
 /// Publisher helper: the byte patches that turn `stock` into `modded` (same size). Runs closer than 16 bytes
@@ -362,6 +425,7 @@ pub fn build_play(paths: &Paths, build: &str, mods: &[(ModRelease, PathBuf)], op
             run(Command::new("/usr/bin/plutil").args(["-replace", k, "-bool", "YES"]).arg(&pl))?;
         }
     }
+    own_identity(&app, &opts.bundle_id)?;
     // downloaded files must not carry quarantine; then ad-hoc signatures inside-out (the game binary loses
     // Steam's hardened runtime so DYLD_INSERT_LIBRARIES can load the mods)
     run(Command::new("/usr/bin/xattr").arg("-cr").arg(&app))?;
@@ -396,6 +460,48 @@ mod tests {
 
     fn bp(file: &str, slice: &str, off: &str, expect: &str, new: &str) -> BytePatch {
         BytePatch { file: file.into(), slice: slice.into(), offset: off.into(), expect: expect.into(), new: new.into() }
+    }
+
+    /// Steam's UUID left in a copy = macOS blocks it on the local network and never asks (TN3179).
+    #[test]
+    fn own_identity_gives_each_bundle_id_its_own_stable_uuid() {
+        let fat = |u: [u8; 16]| {
+            let mut sl = vec![0u8; 32 + 24];
+            sl[0..4].copy_from_slice(&0xFEEDFACFu32.to_le_bytes());
+            sl[16..20].copy_from_slice(&1u32.to_le_bytes());
+            sl[32..36].copy_from_slice(&0x1Bu32.to_le_bytes());
+            sl[36..40].copy_from_slice(&24u32.to_le_bytes());
+            sl[40..56].copy_from_slice(&u);
+            let mut f = vec![0u8; 64];
+            f[0..4].copy_from_slice(&0xCAFEBABEu32.to_be_bytes());
+            f[4..8].copy_from_slice(&2u32.to_be_bytes());
+            for (i, off) in [64u32, 64 + sl.len() as u32].iter().enumerate() {
+                f[8 + 20 * i + 8..8 + 20 * i + 12].copy_from_slice(&off.to_be_bytes());
+                f[8 + 20 * i + 12..8 + 20 * i + 16].copy_from_slice(&(sl.len() as u32).to_be_bytes());
+            }
+            f.extend_from_slice(&sl);
+            f.extend_from_slice(&sl);
+            f
+        };
+        let steam = fat([7; 16]);
+        let mut uuids = Vec::new();
+        for id in ["com.CanOpener.Dungeon-Settlers.Modded", "com.CanOpener.Dungeon-Settlers.mpA"] {
+            let d = std::env::temp_dir().join(format!("dsml_ident_{}_{id}", std::process::id())).join("X.app");
+            std::fs::create_dir_all(d.join("Contents/MacOS")).unwrap();
+            std::fs::create_dir_all(d.join("Contents/Resources")).unwrap();
+            std::fs::write(d.join(GAME_EXE), &steam).unwrap();
+            plist::Value::Dictionary(plist::Dictionary::new()).to_file_xml(d.join("Contents/Info.plist")).unwrap();
+            assert!(own_identity(&d, id).unwrap());
+            let b = std::fs::read(d.join(GAME_EXE)).unwrap();
+            let u: Vec<Vec<u8>> = macho::uuid_offsets(&b).unwrap().iter().map(|&o| b[o..o + 16].to_vec()).collect();
+            assert_eq!(u.len(), 2);
+            assert!(u.iter().all(|x| x != &[7u8; 16]) && u[0] != u[1], "every slice gets a new UUID");
+            assert!(!own_identity(&d, id).unwrap(), "a second run (rebuild, pinned copy) keeps the same identity");
+            let fr = std::fs::read_to_string(d.join("Contents/Resources/fr.lproj/InfoPlist.strings")).unwrap();
+            assert!(fr.starts_with("\"NSLocalNetworkUsageDescription\" = \"Le multijoueur"));
+            uuids.push(u);
+        }
+        assert_ne!(uuids[0], uuids[1], "two copies never share a UUID");
     }
 
     #[test]

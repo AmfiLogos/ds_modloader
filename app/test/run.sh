@@ -61,7 +61,22 @@ check "steam_appid.txt" test "$(cat "$P/steam_appid.txt")" = 2798330
 # default = every shipped mod (name order) except "default_on": false (Hell), as the Windows starter writes it
 check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["custom-modes","gcd-cdr","multiplayer"],"order":["custom-modes","gcd-cdr","multiplayer"]}'
 check "worlds.json default" test "$(cat "$D/Mods/worlds.json")" = '{"worlds":{}}'
-check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY'''} else 1)"
+check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY''','ident':'1'} else 1)"
+# Local Network: the copy's own UUID (Steam's UUID = macOS blocks the copy and never asks); a copy pinned before
+# that (copy.json without ident) gets it in place on the next start
+uuids() { dwarfdump --uuid "$1/Contents/MacOS/Dungeon Settlers" | awk '{print $2}' | sort | tr '\n' ' '; }
+check "play copy has its own UUID" test "$(uuids "$PLAY")" != "$(uuids "$STEAM")"
+OLD="$T/oldcopy/DungeonSettlers.app"; mkdir -p "${OLD:h}"; cp -c -R "$ROOT/games/$BUILD/base/DungeonSettlers.app" "$OLD"   # as v0.1.12 made it
+plutil -replace CFBundleIdentifier -string com.CanOpener.Dungeon-Settlers.Modded "$OLD/Contents/Info.plist"
+codesign -f -s - "$OLD/Contents/MacOS/Dungeon Settlers" 2>/dev/null; codesign -f -s - "$OLD" 2>/dev/null
+cp "$P/copy.json" "$T/copy.json.keep"
+print -r -- "{\"build\": \"$BUILD\", \"app\": \"$OLD\"}" > "$P/copy.json"
+stub >/dev/null 2>&1
+check "old pinned copy: own UUID given" test "$(uuids "$OLD")" = "$(uuids "$PLAY")"
+check "old pinned copy: alert text" test -f "$OLD/Contents/Resources/de.lproj/InfoPlist.strings"
+check "old pinned copy: still signed" codesign -v "$OLD"
+check "old pinned copy: copy.json ident" grep -q '"ident": "1"' "$P/copy.json"
+mv "$T/copy.json.keep" "$P/copy.json"
 check "loader VERSION copied" cmp "$ROOT/loader/VERSION" "$APP/Contents/Resources/dsml/VERSION"
 check "loader dylib copied" cmp "$ROOT/loader/dsload.dylib" "$APP/Contents/Resources/dsml/dsload.dylib"
 check "no quarantine in ROOT/loader" sh -c "! xattr -lr '$ROOT/loader' | grep -q quarantine"
