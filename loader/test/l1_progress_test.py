@@ -70,7 +70,7 @@ def main():
         check('apply: design shown (' + DESIGN + ')', ('progress: bottom strip shown' if DESIGN == 'strip' else 'progress: ornament bar shown') in L1)
         check('apply: steps only go up, end at 100', st1 and all(st1[i][1] <= st1[i + 1][1] for i in range(len(st1) - 1)) and st1[-1][1] == 100, S['steps_apply'])
         names = {s for _, _, s in st1}
-        check('apply: real steps (start, mods, game data, fonts, done)', {'Starting the game with the new mods', 'Loading fonts', 'Done'} <= names and any(s.startswith('Loading Global cooldown') for s in names), sorted(names))
+        check('apply: real steps (start, mods, game data, fonts, done)', {'Preparing mods', 'Loading fonts', 'Done'} <= names and any(s.startswith('Loading Global cooldown') for s in names), sorted(names))
         # 2 flow K
         T.request({'cmd': 'world_set', 'guid': T.GUID, 'ids': []}); time.sleep(1)
         r.send(T.X, {'cmd': 'load_save', 'name': T.SAVE}, timeout=20, connect_wait=0); time.sleep(2)

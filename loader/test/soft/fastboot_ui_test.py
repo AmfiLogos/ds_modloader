@@ -3,7 +3,7 @@
   fastboot_ui_test.py <out>
 One fast boot with the default mods + the uikit-demo driver (real mouse events through the stock input path):
   1 boot time: process start -> title ready (scene 1, not busy) about 3 s
-  2 Unity's own splash is drawn over the boot: a frame (every 0.25 s, DSL_FASTBOOT_SHOTS) shows the first logo at exactly
+  2 the splash logos (the loader's overlay since v0.1.13) are drawn over the boot: a frame (every 0.25 s, DSL_FASTBOOT_SHOTS) shows the first logo at exactly
     the place and size of a stock boot's frame of this copy (960x540: logo box 383,233-577,308, measured 2026-10-17)
   3 the Auto-update switch first shows after the boot is done (never under the loading screen)
   4 hover over the switch: no tooltip; a real click flips it, a second click flips it back
@@ -71,12 +71,13 @@ try:
     shots = sorted(f for f in os.listdir(SHOTS) if f.endswith('.png'))
     from PIL import Image, ImageChops
     def box(p):
-        im = Image.open(p).convert('RGB'); bg = Image.new('RGB', im.size, im.getpixel((5, 5)))
-        return im.size, ImageChops.difference(im, bg).point(lambda v: 255 if v > 24 else 0).getbbox()
+        im = Image.open(p).convert('RGB'); sz = im.size; im = im.crop((0, 0, sz[0], 460))   # above the boot progress line (v0.1.13)
+        bg = Image.new('RGB', im.size, im.getpixel((5, 5)))
+        return sz, ImageChops.difference(im, bg).point(lambda v: 255 if v > 24 else 0).getbbox()
     boxes = {f: box(os.path.join(SHOTS, f)) for f in shots}
     hit = [f for f, b in boxes.items() if b == ((960, 540), (383, 233, 577, 308))]
-    check('2 Unity splash drawn over the boot: the first logo at the stock place and size', hit,
-          f'{len(shots)} frames, logo frames {hit[:3]}; {next((l[13:] for l in L.splitlines() if "A: splash begun" in l), "no splash line")}')
+    check('2 splash logos drawn over the boot: the first logo at the stock place and size', hit,
+          f'{len(shots)} frames, logo frames {hit[:3]}; {next((l[13:] for l in L.splitlines() if "ui: splash logos shown" in l), "no splash line")}')
     for _ in range(100):                     # the switch waits for the idle title (the splash fade-out ends ~3 s after boot done)
         if 'update: title corner shown' in L: break
         time.sleep(0.1); L = open(os.path.join(I, 'dsload.log'), errors='replace').read()
