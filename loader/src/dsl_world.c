@@ -21,7 +21,7 @@
 int dsl_reg_scene(void);                             /* dsl_reg.c: MainFlow._currentScene, 1 title, 2 world */
 
 static void *(*orig_load)(void *self, void *name, const void *mi);
-static int (*try_header)(void *self, void *name, void *hdr, void **set, const void *mi);
+static uint8_t (*try_header)(void *self, void *name, void *hdr, void **set, const void *mi);
 static void (*cancel_notice)(void *self, void *notice, void *log, const void *mi);
 static void *(*str_new)(const char *);
 static int (*skip_fns[32])(void);

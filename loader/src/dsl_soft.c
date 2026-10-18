@@ -70,9 +70,9 @@ static void (*eq_add)(Obj, Obj, const void *);
 static void *k_load, *k_setspeed, *k_chgspeed;
 static void (*ctor_load)(Obj, Obj, const void *);
 static void (*ctor_setspeed)(Obj, int, const void *), (*ctor_chgspeed)(Obj, int, int, const void *);
-static int (*lc_loading)(Obj, const void *);
+static uint8_t (*lc_loading)(Obj, const void *);
 static void (*fade_out)(Obj, Obj, int, const void *), (*fade_in)(Obj, const void *);
-static int (*fade_done)(Obj, const void *), (*fade_loading)(Obj, const void *);
+static uint8_t (*fade_done)(Obj, const void *), (*fade_loading)(Obj, const void *);
 static void (*app_quit)(const void *);
 static Obj (*cap_tex)(const void *); static Obj (*enc_png)(Obj, const void *); static void (*obj_destroy)(Obj, const void *);
 static int (*get_fsmode)(void); static void (*set_fsmode)(int);         /* Screen.fullScreenMode (icalls): B takes A's */
@@ -126,7 +126,7 @@ static void fast_end(void) {
 /* B mute while hidden: AudioListener.pause + volume 0 (icalls; the game's own volume / pause wanted values come back
    at the swap). The game fades AudioListener.volume itself (SoundManager.FadeIn/OutAudioListener): a non-zero value
    read here is the game's, kept for the swap. */
-static float (*get_vol)(void); static void (*set_vol)(float); static int (*get_apause)(void); static void (*set_apause)(int);
+static float (*get_vol)(void); static void (*set_vol)(float); static uint8_t (*get_apause)(void); static void (*set_apause)(int);
 static int mute_on, mute_saved_pause = -1; static float mute_saved_vol = -1;
 static void mute_tick(void) {
     if (!mute_on) return;
