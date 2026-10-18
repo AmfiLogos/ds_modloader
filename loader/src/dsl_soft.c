@@ -549,6 +549,7 @@ static void b_quit(const char *why) {
     SLOG("B: %s: B quits", why);
     b_state = B_DONE; if (app_quit && mf) app_quit(NULL); else exit(0);
 }
+int dsl_soft_b_live(void) { return role_b && b_state >= B_SHOWN; }   /* B is the game the player sees now (dsl_crash.c) */
 int dsl_soft_b_state_visible(double t) { return role_b ? b_state >= B_FADING : (b_state == B_DONE && t - b_tstate < 0.3); }
 /* flow K: the game's own loading percent (LoadingUI._progressText of the loading screen) while the world loads */
 static int32_t off_lui = -1, off_ptext = -1; static Obj (*tmp_get)(Obj, const void *);

@@ -317,3 +317,88 @@ int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const 
     dsl_log("update: mod %s installed into %s (%d file(s))", id, dst, nf);
     return 0;
 }
+
+/* ------------------------------------------------------------------ crash reports (src/dsl_crash.c); UTF-8 here */
+typedef HINTERNET (WINAPI *ConnW_t)(HINTERNET, LPCWSTR, INTERNET_PORT, LPCWSTR, LPCWSTR, DWORD, DWORD, DWORD_PTR);
+typedef HINTERNET (WINAPI *ReqW_t)(HINTERNET, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR *, DWORD, DWORD_PTR);
+typedef BOOL (WINAPI *SendW_t)(HINTERNET, LPCWSTR, DWORD, LPVOID, DWORD);
+static void u8w(const char *s, wchar_t *w, int n) { if (!MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n)) w[0] = 0; }
+static void wu8(const wchar_t *w, char *s, int n) { if (!WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL)) s[0] = 0; }
+int dsl_uos_post(const char *url, const char *file, const char *const *headers, int nh) {
+    if (net_load()) return -1;
+    HMODULE m = GetModuleHandleW(L"wininet.dll");
+    ConnW_t conn = m ? (ConnW_t)(void *)GetProcAddress(m, "InternetConnectW") : NULL;
+    ReqW_t req = m ? (ReqW_t)(void *)GetProcAddress(m, "HttpOpenRequestW") : NULL;
+    SendW_t snd = m ? (SendW_t)(void *)GetProcAddress(m, "HttpSendRequestW") : NULL;
+    if (!conn || !req || !snd) { dsl_log("crash: wininet.dll without the POST functions"); return -1; }
+    if (strncmp(url, "https://", 8)) return -1;
+    char host[256]; const char *path = strchr(url + 8, '/'); if (!path) path = "/";
+    snprintf(host, sizeof host, "%.*s", (int)(path - (url + 8)), url + 8);
+    wchar_t wf[1100]; u8w(file, wf, 1100);
+    FILE *f = _wfopen(wf, L"rb"); if (!f) return -1;
+    fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
+    char *body = len > 0 && len < (8L << 20) ? malloc((size_t)len) : NULL;
+    size_t got = body ? fread(body, 1, (size_t)len, f) : 0; fclose(f);
+    if (!body || got != (size_t)len) { free(body); return -1; }
+    wchar_t hdr[4096]; size_t ho = 0; hdr[0] = 0;
+    for (int i = 0; i < nh; i++) { wchar_t one[1024]; u8w(headers[i], one, 1024); ho += (size_t)_snwprintf(hdr + ho, 4096 - ho, L"%ls\r\n", one); if (ho >= 4000) break; }
+    wchar_t wh[256], wp[1100]; u8w(host, wh, 256); u8w(path, wp, 1100);
+    int ok = -1;
+    HINTERNET in = i_open(L"DungeonSettlersModded", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (in) {
+        DWORD to = 15000; i_opt(in, INTERNET_OPTION_CONNECT_TIMEOUT, &to, sizeof to);
+        to = 90000; i_opt(in, INTERNET_OPTION_SEND_TIMEOUT, &to, sizeof to); i_opt(in, INTERNET_OPTION_RECEIVE_TIMEOUT, &to, sizeof to);
+        HINTERNET c = conn(in, wh, INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+        HINTERNET r = c ? req(c, L"POST", wp, NULL, NULL, NULL, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
+                                INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI, 0) : NULL;
+        if (r && snd(r, hdr, (DWORD)-1L, body, (DWORD)len)) {
+            DWORD code = 0, cl = sizeof code;
+            if (i_query(r, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &cl, NULL) && code >= 200 && code < 300) ok = 0;
+            else dsl_log("crash: upload answered HTTP %lu", code);
+        } else dsl_log("crash: upload: no connection (error %lu)", GetLastError());
+        if (r) i_close(r);
+        if (c) i_close(c);
+        i_close(in);
+    }
+    free(body);
+    return ok;
+}
+void dsl_uos_sysinfo(char *os, size_t on, char *cpu, size_t cn, char *plat, size_t pn) {
+    HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+    typedef LONG (WINAPI *RtlVer_t)(OSVERSIONINFOW *); RtlVer_t rv = nt ? (RtlVer_t)(void *)GetProcAddress(nt, "RtlGetVersion") : NULL;
+    typedef const char *(*WineVer_t)(void); WineVer_t wv = nt ? (WineVer_t)(void *)GetProcAddress(nt, "wine_get_version") : NULL;
+    OSVERSIONINFOW vi = { sizeof vi }; if (!rv || rv(&vi)) vi.dwMajorVersion = vi.dwMinorVersion = vi.dwBuildNumber = 0;
+    snprintf(os, on, "Windows %lu.%lu.%lu%s%s", vi.dwMajorVersion, vi.dwMinorVersion, vi.dwBuildNumber, wv ? " (Wine " : "", wv ? wv() : "");
+    if (wv) { size_t l = strlen(os); if (l + 1 < on) { os[l] = ')'; os[l + 1] = 0; } }
+    wchar_t w[256]; DWORD n = sizeof w; cpu[0] = 0;
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", L"ProcessorNameString", RRF_RT_REG_SZ, NULL, w, &n) == ERROR_SUCCESS)
+        wu8(w, cpu, (int)cn);
+    typedef BOOL (WINAPI *Wow2_t)(HANDLE, USHORT *, USHORT *);
+    Wow2_t w2 = (Wow2_t)(void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "IsWow64Process2");
+    USHORT pm = 0, nm = 0;
+    if (w2 && w2(GetCurrentProcess(), &pm, &nm) && nm == 0xAA64) snprintf(plat, pn, "win-arm64 (x64 game in emulation)");
+    else snprintf(plat, pn, "win-x64");
+}
+int dsl_uos_pid_alive(long pid) {
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid); if (!h) return GetLastError() == ERROR_ACCESS_DENIED;
+    DWORD code = 0; int alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE; CloseHandle(h);
+    return alive;
+}
+void dsl_uos_random(unsigned char *buf, size_t n) {
+    if (BCryptGenRandom(NULL, buf, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) for (size_t i = 0; i < n; i++) buf[i] = (unsigned char)(rand() ^ (GetTickCount() >> (i % 8)));
+}
+void dsl_uos_identity(void (*add)(void *ud, const char *s), void *ud) {
+    const wchar_t *e[] = { L"USERNAME", L"USERPROFILE", L"COMPUTERNAME", L"USERDOMAIN", L"HOMEPATH" };
+    for (int i = 0; i < 5; i++) {
+        wchar_t w[1100]; char u[1100];
+        if (!GetEnvironmentVariableW(e[i], w, 1100)) continue;
+        wu8(w, u, sizeof u); add(ud, u);
+        for (char *c = u; *c; c++) if (*c == '\\') *c = '/';
+        add(ud, u);                                                 /* the same path with forward slashes (Unity logs) */
+    }
+}
+int dsl_uos_steam_dir(char *out, size_t n) {
+    wchar_t w[1100]; DWORD sz = sizeof w;
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath", RRF_RT_REG_SZ, NULL, w, &sz) != ERROR_SUCCESS) return -1;
+    wu8(w, out, (int)n); return out[0] ? 0 : -1;
+}

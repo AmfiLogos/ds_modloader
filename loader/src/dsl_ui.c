@@ -1218,6 +1218,9 @@ static void k_notice_close(void) {
     dsl_log("ui: notice closed by its owner");
 }
 
+/* the game's notice box is on screen (any owner): dsl_crash.c asks only when it is free */
+int dsl_ui_notice_shown(void) { Obj v = notice_view(); return v && on_tree(v); }
+
 /* ------------------------------------------------------------------ place / active / enabled / destroy / clipboard */
 static void k_set_text(DSLObj o, const char *s) {
     W *w = w_of(o);

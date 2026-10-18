@@ -11,11 +11,14 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pwd.h>
+#include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -173,4 +176,52 @@ int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const 
     if (swap_in(nm, dst, bk, mv)) { snprintf(why, wn, TR("the mod %s could not be replaced"), id); return -1; }
     dsl_log("update: mod %s installed into %s", id, dst);
     return 0;
+}
+
+/* ------------------------------------------------------------------ crash reports (src/dsl_crash.c) */
+int dsl_uos_post(const char *url, const char *file, const char *const *headers, int nh) {
+    char at[1200]; snprintf(at, sizeof at, "@%s", file);
+    char *av[48]; int k = 0;
+    const char *fixed[] = { "/usr/bin/curl", "-fsS", "--max-time", "90", "--connect-timeout", "15", "-A", "DungeonSettlersModded", "-X", "POST" };
+    for (size_t i = 0; i < sizeof fixed / sizeof fixed[0]; i++) av[k++] = (char *)fixed[i];
+    for (int i = 0; i < nh && k < 40; i++) { av[k++] = "-H"; av[k++] = (char *)headers[i]; }
+    av[k++] = "--data-binary"; av[k++] = at; av[k++] = (char *)url; av[k] = NULL;
+    return run(av);                                       /* curl -f: exit 22 on HTTP >= 400 */
+}
+static void sc_str(const char *name, char *out, size_t n) { size_t l = n; out[0] = 0; if (sysctlbyname(name, out, &l, NULL, 0)) out[0] = 0; else out[n - 1] = 0; }
+void dsl_uos_sysinfo(char *os, size_t on, char *cpu, size_t cn, char *plat, size_t pn) {
+    char v[64], b[64]; sc_str("kern.osproductversion", v, sizeof v); sc_str("kern.osversion", b, sizeof b);
+    snprintf(os, on, "macOS %s (%s)", v[0] ? v : "?", b[0] ? b : "?");
+    sc_str("machdep.cpu.brand_string", cpu, cn);
+    int tr = 0; size_t tl = sizeof tr; if (sysctlbyname("sysctl.proc_translated", &tr, &tl, NULL, 0)) tr = 0;
+#ifdef __x86_64__
+    snprintf(plat, pn, "%s", tr ? "mac-x64 (Rosetta on an Apple chip)" : "mac-x64");
+#else
+    snprintf(plat, pn, "mac-arm64");
+#endif
+}
+int dsl_uos_pid_alive(long pid) {                         /* a zombie (exited, not reaped yet) is not alive */
+    if (pid <= 0 || (kill((pid_t)pid, 0) && errno != EPERM)) return 0;
+    struct kinfo_proc kp; size_t l = sizeof kp; int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)pid };
+    if (sysctl(mib, 4, &kp, &l, NULL, 0) || !l) return 1;
+    return kp.kp_proc.p_stat != SZOMB;
+}
+void dsl_uos_random(unsigned char *buf, size_t n) { arc4random_buf(buf, n); }
+void dsl_uos_identity(void (*add)(void *ud, const char *s), void *ud) {
+    struct passwd *pw = getpwuid(getuid());
+    if (pw) {
+        add(ud, pw->pw_name); add(ud, pw->pw_dir);
+        if (pw->pw_gecos && pw->pw_gecos[0]) {                    /* the full name, and each word of it */
+            char g[256]; snprintf(g, sizeof g, "%s", pw->pw_gecos); g[strcspn(g, ",")] = 0; add(ud, g);
+            for (char *w = g, *sp; *w; w = sp + 1) { sp = strchr(w, ' '); if (sp) *sp = 0; add(ud, w); if (!sp) break; }
+        }
+    }
+    const char *e[] = { "USER", "LOGNAME", "HOME" };
+    for (int i = 0; i < 3; i++) { const char *v = getenv(e[i]); if (v && *v) add(ud, v); }
+    char h[256]; if (!gethostname(h, sizeof h)) { h[sizeof h - 1] = 0; add(ud, h); h[strcspn(h, ".")] = 0; add(ud, h); }
+}
+int dsl_uos_steam_dir(char *out, size_t n) {
+    struct passwd *pw = getpwuid(getuid()); if (!pw || !pw->pw_dir) return -1;
+    snprintf(out, n, "%s/Library/Application Support/Steam", pw->pw_dir);
+    return dsl_uos_exists(out) ? 0 : -1;
 }
