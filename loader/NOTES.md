@@ -521,3 +521,25 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
 - Packaging: `modules/scan_saves.py` fails a build when a save or player file is inside (folders Saves / profiles /
   instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,
   `start/win/build_win.sh` (kit), `start/win/installer/make_installer.sh`. The released packages checked: none has one.
+
+## Mod settings (v0.1.14, lane modsettings, 2026-10-18)
+Owner: "add a way to adjust mod settings in the modloader". First user: ZET-U Mod Suite.
+- mod.json `"settings"`: list of {id, type toggle | int (min, max, step) | choice (choices [{id, label, i18n}]), default,
+  scope gameplay (default) | local, label, help, i18n {code: {label, help}}}. Label / help may also be {"en": .., "ja": ..}.
+  Ids a-z 0-9 _ . - (bad entries are skipped with a log line). Schema comment: `sdk/dsl_sdk.h` above `settings_get_bool`.
+- `src/dsl_settings.c` (pure C, host test `test/settings/run.sh`): values in `<data>/Mods/settings.json`
+  {mod: {id: value}} (only values the player set; members of mods not installed now are kept).
+  Gameplay values are frozen per process: the profile's `"settings"` member (written by Apply into pending.json, so a
+  prewarm with other values is another set), else settings.json, else the default. B commits them to settings.json
+  with pending.json -> active.json (`commit_pending`). Local values: settings.json, changed live, `settings_on_change`
+  callbacks run on the main thread.
+- SDK API 5 (DSLHost appended): settings_get_bool / _int / _choice (with a default for an older loader or an undeclared
+  id), settings_on_change; wrappers dsl_get_bool / dsl_get_int / dsl_get_choice / dsl_on_setting_change. Kit: DSLUi.slider
+  (clone of the Options window's SubUI_Slider, polled; NULL = use value_row). DSL_LOADER_VERSION 3.1.0.
+- Multiplayer: `set_lines` adds "<mod>/<setting>@<value>" (on/off, number, choice id) for each gameplay setting of each
+  running gameplay mod to modset_lines, so the HELLO hash differs when a value differs. ds_modcheck.h names the setting
+  (label + values through the loader's exported `dsl_setting_text`). "Get the host's mods": `dsl_settings_take_lines`
+  (src/dsl_menu.h) turns the host's lines into the drafts of the next Apply.
+- Mods window: a Settings button on rows of mods with settings (not in the world-bound mode); the Settings page shares
+  the bottom bar (status lists the gameplay drafts, Undo changes drops them, Apply applies switches + settings).
+  Rig proof: `test/settings/ui_settings_test.py <out>` (copy T, lease, cap, hidden).

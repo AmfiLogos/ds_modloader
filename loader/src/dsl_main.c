@@ -834,6 +834,7 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
         .hook_rva = h_hook_rva, .table = h_table, .module_dir = h_module_dir, .ga_path = h_ga_path, .module_loaded = h_module_loaded,
         .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods, .soft_restart = dsl_soft_apply };
     dsl_reg_host(&host);
+    dsl_settings_host(&host); dsl_settings_init();                    /* mod settings: readable from dsl_module_load on */
     scan_mods(dsl_build_id);
     if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();

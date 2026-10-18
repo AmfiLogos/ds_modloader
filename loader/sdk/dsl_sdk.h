@@ -1,4 +1,6 @@
-// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 4.
+// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 5.
+// API 5 = API 4 + mod settings (appended to DSLHost): a module declares its settings in mod.json "settings" and reads
+// them with dsl_get_bool / dsl_get_int / dsl_get_choice (wrappers below: an older loader gives the default back).
 // API 4 = API 3, same DSLHost layout, plus one behaviour: title_add_button called again with the same self, click
 // and ud relabels that button (new label / tip) instead of adding a second one. A module that relabels after a
 // language change checks host->api_version >= 4 first (an API 3 loader would add a second button).
@@ -35,7 +37,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_API_VERSION 4
+#define DSL_API_VERSION 5
 
 #ifdef __cplusplus
 extern "C" {
@@ -111,6 +113,13 @@ typedef struct DSLUi {
     /* appended (check size): preferred height of a text widget's text at width w (0 = its own width), at its design
        size, so a caller can grow the box to its text (the game's way for long text; CJK lines are taller) */
     float (*text_height)(DSLObj text, float w);
+    /* appended (check size; API 5): the game's own slider (clone of the Options window's): label  ===o===  value.
+       Whole numbers min..max by step; change(ud, w) after the player moved it to another step (read slider_get).
+       NULL when the game's slider is not available (use value_row then). */
+    DSLObj (*slider)(DSLObj parent, float x, float y, float w, const char *label, int min, int max, int step, int value,
+                     dsl_ui_cb change, void *ud);
+    int (*slider_get)(DSLObj s);
+    void (*slider_set)(DSLObj s, int value);  /* no change callback */
 } DSLUi;
 
 typedef struct DSLHost {
@@ -205,6 +214,21 @@ typedef struct DSLHost {
        after title_add_button. 0 = ok, -1 = no such button. */
     int (*title_button_icon)(DSLPlugin *self, void (*click)(void *ud), void *ud, float size,
                              void (*fill)(void *ud, DSLObj box, int fresh));
+
+    /* ---- API 5 (appended): mod settings. mod.json "settings": [{"id", "type": "toggle" | "int" | "choice", "default",
+       "min" / "max" / "step" (int), "choices": [{"id", "label", "i18n": {"<code>": "..."}}] (choice), "scope":
+       "gameplay" (default: the simulation uses it; every multiplayer player needs the same value, part of the mod-set
+       check) | "local" (display only), "label", "help", "i18n": {"<code>": {"label", "help"}}}]. Ids: a-z 0-9 _ . -
+       The player changes them in the Mods window (Settings of that mod). Values come from files: these work in every
+       phase, dsl_module_load included. A gameplay value never changes in a running process (a change applies with the
+       next Apply, a soft restart); a local value changes live. `dflt` is returned for an id mod.json does not declare
+       (or a value of the wrong type). get_choice returns the choice id (valid until the next change of that setting). */
+    int (*settings_get_bool)(DSLPlugin *self, const char *id, int dflt);
+    int (*settings_get_int)(DSLPlugin *self, const char *id, int dflt);
+    const char *(*settings_get_choice)(DSLPlugin *self, const char *id, const char *dflt);
+    /* changed(ud, id) on the game's main thread after a local setting of this module changed (Settings page). Several
+       calls add several callbacks. 0 = ok. */
+    int (*settings_on_change)(DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud);
 } DSLHost;
 #define DSL_HAS_TITLE_BUTTON_ICON 1               /* this header has title_button_icon (older copies of it do not) */
 
@@ -238,6 +262,15 @@ static inline const DSLUi *dsl_ui(const DSLHost *h) { return DSL_HAS(h, ui) ? h-
 static inline int dsl_title_button_icon(const DSLHost *h, DSLPlugin *self, void (*click)(void *), void *ud, float size,
                                         void (*fill)(void *ud, DSLObj box, int fresh)) {
     return DSL_HAS(h, title_button_icon) ? h->title_button_icon(self, click, ud, size, fill) : -1; }
+/* API 5 wrappers (mod settings): dflt when the loader is older than API 5 or the id is not in mod.json */
+static inline int dsl_get_bool(const DSLHost *h, DSLPlugin *self, const char *id, int dflt) {
+    return DSL_HAS(h, settings_get_bool) ? h->settings_get_bool(self, id, dflt) : dflt; }
+static inline int dsl_get_int(const DSLHost *h, DSLPlugin *self, const char *id, int dflt) {
+    return DSL_HAS(h, settings_get_int) ? h->settings_get_int(self, id, dflt) : dflt; }
+static inline const char *dsl_get_choice(const DSLHost *h, DSLPlugin *self, const char *id, const char *dflt) {
+    return DSL_HAS(h, settings_get_choice) ? h->settings_get_choice(self, id, dflt) : dflt; }
+static inline int dsl_on_setting_change(const DSLHost *h, DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud) {
+    return DSL_HAS(h, settings_on_change) ? h->settings_on_change(self, changed, ud) : -1; }
 
 #ifdef __cplusplus
 }
