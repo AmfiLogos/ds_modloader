@@ -9,11 +9,12 @@
 //   configure (environment from the starter, or defaults from the copy's own folder) -> build of the mapped
 //   GameAssembly (PE TimeDateStamp + SizeOfImage) -> dsl_core_start: modules opened, dsl_module_load
 //   -> dsl_core_ga_mapped: engine, dsl_core_prereq = the save folder below (failed = every module off, before any
-//   module hook), il2cpp_init hook, dsl_module_early (RVA hooks) -> the Steam check below.
+//   module hook), il2cpp_init hook, dsl_module_early (RVA hooks).
 //   il2cpp_init returned (the core's hook): dsl_plugin_init.
 // Own hooks (the start part's jobs, not the mods'): the save folder (Application.persistentDataPath -> <DSRIG_DIR>/data,
-// the same folder the Mac copy uses; never the game's own save folder) and, when the
-// starter found no signed-in Steam (DSL_STEAM=0), the game's Steam check off (StoreRuntimeHandler.Start -> Disabled).
+// the same folder the Mac copy uses; never the game's own save folder). The game's own Steam check always runs (owner
+// 2026-10-18: "require Steam, like Mac"): only a test build (build_win.sh DSL_TEST_NOSTEAM=1, never shipped; the release
+// build's steam_gate.py refuses it) turns it off when DSL_STEAM is not 1 (StoreRuntimeHandler.Start -> Disabled).
 // Not our copy (no DSL_MODS_DIR and no dsmodded_build.txt next to the exe): does nothing, the game runs stock.
 #include "dsl_internal.h"
 #include "dsl_os.h"
@@ -31,7 +32,7 @@ static const struct { uint32_t ts, size; const char *build; } WIN_BUILDS[] = {
 /* Windows RVAs of build 25846389 (win/win_map.tsv in ds_multiplayer) */
 #define W_PERSISTENT_PATH 0x38E9DD0       /* UnityEngine.Application$$get_persistentDataPath */
 #define W_STRING_NEW      0x49E320        /* il2cpp_string_new (export) */
-#define W_STORE_START     0xA3F240        /* Refactor.Main.StoreRuntimeHandler$$Start (Steam gate) */
+#define W_STORE_START     0xA3F240        /* Refactor.Main.StoreRuntimeHandler$$Start (Steam gate; test builds only) */
 
 static char data_dir[3300];                 /* UTF-8 */
 static HMODULE self_mod;
@@ -87,12 +88,6 @@ static Obj my_pdp(void *mi) {
     (void)mi; (void)o_pdp;
     return ((Obj (*)(const char *))(dsl_ga_base + W_STRING_NEW))(data_dir);
 }
-static int (*o_store_start)(Obj, Obj, void *);
-static int my_store_start(Obj self, Obj on_signal, void *mi) {
-    (void)self; (void)on_signal; (void)mi; (void)o_store_start;
-    dsl_log("StoreRuntimeHandler.Start -> Disabled (no signed-in Steam at start)");
-    return 0;
-}
 
 /* dsl_core_prereq: the save folder, before any module hook. <DSRIG_DIR>/data is always a folder of its own (owner
    2026-10-16: modded saves never live in the game's LocalLow folder), so not redirected = modded play would write the
@@ -120,11 +115,22 @@ static int save_folder(char *why, size_t n) {
     return -1;
 }
 
+#ifdef DSL_TEST_NOSTEAM
+/* test build only (Wine, the VM's no-Steam runs): DSL_STEAM not "1" = the game's Steam check off (as before 0.1.16) */
+static int (*o_store_start)(Obj, Obj, void *);
+static int my_store_start(Obj self, Obj on_signal, void *mi) {
+    (void)self; (void)on_signal; (void)mi; (void)o_store_start;
+    dsl_log("DSL_TEST_NOSTEAM build: StoreRuntimeHandler.Start -> Disabled");
+    return 0;
+}
 static void steam_check(void) {
     const char *st = getenv("DSL_STEAM");
     if (!st || *st != '1')
-        dsl_hook(DSL_OWNER_LOADER, (void *)(dsl_ga_base + W_STORE_START), (void *)my_store_start, (void **)&o_store_start, "StoreRuntimeHandler.Start (Steam check off)");
+        dsl_hook(DSL_OWNER_LOADER, (void *)(dsl_ga_base + W_STORE_START), (void *)my_store_start, (void **)&o_store_start, "StoreRuntimeHandler.Start (Steam check off, DSL_TEST_NOSTEAM)");
 }
+#else
+static void steam_check(void) {}                    /* release: the game's own Steam check, never changed */
+#endif
 
 /* ---- the start's timing, written to dsload.log once it is open (proof of the order) */
 static LARGE_INTEGER qpf, t_main, t_arm, t_start;
@@ -169,7 +175,7 @@ static void start(HMODULE ga) {
     dsl_text_lo = lo; dsl_text_hi = hi; dsl_image_end = end;
     dsl_core_prereq = save_folder;                                              /* before any module hook */
     int r = dsl_core_ga_mapped((uintptr_t)ga, path);                            /* engine, prereq, il2cpp_init hook, early */
-    steam_check();                                                              /* with mods off too: the game must start */
+    steam_check();                                                              /* test builds only (DSL_TEST_NOSTEAM) */
     LARGE_INTEGER t; QueryPerformanceCounter(&t);
     dsl_log("start order: start done at %.1f ms (%s); il2cpp_init runs next", ms(t), r ? "modules not started" : "modules started");
 }
