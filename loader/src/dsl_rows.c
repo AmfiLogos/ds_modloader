@@ -337,10 +337,14 @@ static void toggles_build(Obj slv) {
    worlds only this game has (multiplayer, worlds started here). One header line above each group, in the look of the
    multiplayer pages' section headers (title font 20, gold). The rows are only moved (Transform.SetSiblingIndex) inside
    the list's own layout (SaveLoadView._saveSlotParent); no game save on the list = the list as before, no header. */
-static DSLObj hdr[2];
+static uintptr_t hdr_h[2];                               /* GC handles (a raw pointer outlived the line: SIGBUS, v0.1.15 rc) */
+/* a line we made, through its GC handle: NULL once Unity destroyed it (scene change), the handle freed then */
+static DSLObj held(uintptr_t *h) { Obj o = *h ? gc_get(*h) : NULL; if (!live(o)) { if (*h) gc_free(*h); *h = 0; return NULL; } return (DSLObj)o; }
+static void hold(uintptr_t *h, DSLObj o) { if (*h) gc_free(*h); *h = o ? gc_new((Obj)o, 0) : 0; }
 int dsl_rows_groups[2];                                  /* test: rows shown per group at the last rebuild */
 static void groups_apply(Obj slv) {
     const DSLUi *u = dsl_ui_kit();
+    DSLObj hdr[2] = { held(&hdr_h[0]), held(&hdr_h[1]) };
     int n[2] = { 0, 0 };
     for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs) && !W[i].hid && shown(cs)) n[W[i].game ? 0 : 1]++; }
     int any_game = 0; for (int i = 0; i < nw; i++) any_game |= W[i].game;
@@ -348,12 +352,11 @@ static void groups_apply(Obj slv) {
     static int said;
     int ok = u && set_sib && get_sib && live(content);
     if (!ok && !said++) dsl_log("rows: groups off (list layout not found)");
-    for (int k = 0; k < 2; k++) if (hdr[k] && !live((Obj)hdr[k])) hdr[k] = NULL;
     if (!ok || !any_game) { for (int k = 0; k < 2; k++) if (hdr[k]) u->set_active(hdr[k], 0); dsl_rows_groups[0] = dsl_rows_groups[1] = 0; return; }
     const char *lb[2] = { TR("Game saves: also in Dungeon Settlers"), TR("Modded saves: only in Dungeon Settlers Modded") };
     float wd = rt_rect ? rt_rect(content, NULL).w : 600; if (wd < 100) wd = 600;
     for (int k = 0; k < 2; k++) {
-        if (!hdr[k]) hdr[k] = u->text(content, 0, 0, wd - 24, 34, lb[k], 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF);
+        if (!hdr[k]) hold(&hdr_h[k], hdr[k] = u->text(content, 0, 0, wd - 24, 34, lb[k], 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF));
         else u->set_text(hdr[k], lb[k]);
         if (hdr[k]) u->set_active(hdr[k], n[k] > 0);
     }
@@ -375,18 +378,18 @@ static void groups_apply(Obj slv) {
    (dsl_saves.c: its hooks off this session, or a save the game could not read). Bottom: world rows a filter hides, the
    kind from the module that hides them (dsl_sdk.h dsl_loadlist_hidden: the multiplayer list filter), else the loader's
    own filter toggles; with no such export the line says "a filter". */
-static DSLObj hid[2];                                    /* 0 top, 1 bottom */
+static uintptr_t hid_h[2];                               /* 0 top, 1 bottom (GC handles, see held()) */
 int dsl_rows_hidden[2];                                  /* test: worlds named by the top / bottom line at the last rebuild */
 static void hid_show(int k, Obj content, float wd, const char *txt) {
     const DSLUi *u = dsl_ui_kit();
-    if (hid[k] && !live((Obj)hid[k])) hid[k] = NULL;
-    if (!txt[0]) { if (hid[k]) u->set_active(hid[k], 0); return; }
-    if (!hid[k]) hid[k] = u->text(content, 0, 0, wd - 24, 30, txt, 16, DSL_TXT_LEFT | DSL_TXT_WRAP, 0xC9B79CFF);
-    else u->set_text(hid[k], txt);
-    if (!hid[k]) return;
-    float h = u->size >= offsetof(DSLUi, text_height) + sizeof u->text_height && u->text_height ? u->text_height(hid[k], wd - 24) : 0;
-    u->place(hid[k], 0, 0, wd - 24, (h > 22 ? h : 22) + 12);
-    u->set_active(hid[k], 1);
+    DSLObj l = held(&hid_h[k]);
+    if (!txt[0]) { if (l) u->set_active(l, 0); return; }
+    if (!l) hold(&hid_h[k], l = u->text(content, 0, 0, wd - 24, 30, txt, 16, DSL_TXT_LEFT | DSL_TXT_WRAP, 0xC9B79CFF));
+    else u->set_text(l, txt);
+    if (!l) return;
+    float h = u->size >= offsetof(DSLUi, text_height) + sizeof u->text_height && u->text_height ? u->text_height(l, wd - 24) : 0;
+    u->place(l, 0, 0, wd - 24, (h > 22 ? h : 22) + 12);
+    u->set_active(l, 1);
 }
 static void hidden_apply(Obj slv) {
     const DSLUi *u = dsl_ui_kit();
@@ -428,10 +431,11 @@ static void hidden_apply(Obj slv) {
     }
     dsi_utf8_fix_end(top); dsi_utf8_fix_end(end);
     hid_show(0, content, wd, top); hid_show(1, content, wd, end);
+    DSLObj hid[2] = { held(&hid_h[0]), held(&hid_h[1]) }, hdr[2] = { held(&hdr_h[0]), held(&hdr_h[1]) };
     if (top[0] && hid[0]) {                                                 /* before the first row / group header */
         int base = get_sib((Obj)hid[0], NULL);                             /* its own place too: moving down shifts the rest up */
         for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs)) { int s = get_sib(comp_tr(cs, NULL), NULL); if (s < base) base = s; } }
-        for (int k = 0; k < 2; k++) if (hdr[k] && live((Obj)hdr[k])) { int s = get_sib((Obj)hdr[k], NULL); if (s < base) base = s; }
+        for (int k = 0; k < 2; k++) if (hdr[k]) { int s = get_sib((Obj)hdr[k], NULL); if (s < base) base = s; }
         set_sib((Obj)hid[0], base == 1 << 30 ? 0 : base, NULL);
     }
     if (end[0] && hid[1]) set_last((Obj)hid[1], NULL);
@@ -444,7 +448,7 @@ static void hidden_apply(Obj slv) {
 }
 static void hidden_off(void) {
     const DSLUi *u = dsl_ui_kit();
-    for (int k = 0; k < 2; k++) if (u && hid[k] && live((Obj)hid[k])) u->set_active(hid[k], 0);
+    for (int k = 0; k < 2; k++) { DSLObj l = u ? held(&hid_h[k]) : NULL; if (l) u->set_active(l, 0); }
 }
 
 /* the New Campaign line */
