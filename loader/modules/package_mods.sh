@@ -5,7 +5,8 @@
 # A player puts the zip (or the unzipped <id> folder) into the mods folder; the starter unpacks it on the next start.
 #
 #   package_mods.sh [mods_all dir] [out dir]
-# Release assets: multiplayer -> ds_multiplayer, custom-modes -> ds_custommodes, gcd-cdr + hell-difficulty -> ds_modloader.
+# Release assets: multiplayer -> ds_multiplayer, custom-modes -> ds_custommodes, gcd-cdr + hell-difficulty -> ds_modloader,
+# and hooks.json + hooks.tsv (the hook list, docs/) -> ds_modloader.
 set -e; cd "${0:A:h}"; L=${PWD:h}
 SRC=${1:-$L/build/mods_all}; OUT=${2:-$L/build/packages}
 zsh ./build_mods.sh --check $SRC >/dev/null || { zsh ./build_mods.sh --check $SRC; echo "package_mods: $SRC is not a good built set" >&2; exit 1; }
@@ -39,6 +40,9 @@ for d in $SRC/mac/*(/); do
   echo "$Z ($(du -h $Z | cut -f1), $(zipinfo -1 $Z | wc -l | tr -d ' ') files)"
 done
 mkdir -p ${OUT:h}/old; mv $OUT/.stage ${OUT:h}/old/packages-stage-$(date +%Y%m%d-%H%M%S)
+# the hook list (docs/hooks.json + hooks.tsv): ds_modloader release assets, checked against the pinned sources first
+python3 $L/../tools/hooks/hooklist.py check >/dev/null || { python3 $L/../tools/hooks/hooklist.py check; echo "package_mods: docs/hooks.json lacks a hook: run tools/hooks/hooklist.py gen" >&2; exit 1; }
+cp $L/../docs/hooks.json $L/../docs/hooks.tsv $OUT/ && echo "$OUT/hooks.json, hooks.tsv (hook list)"
 # what ships: no user name, no build path (the same scan as the friend zips)
 python3 $PWD/scan_names.py "$USER" $OUT/*.zip > $OUT/name_scan.txt || { cat $OUT/name_scan.txt; echo "package_mods: the user name is inside a package" >&2; exit 1; }
 tail -1 $OUT/name_scan.txt; mkdir -p ${OUT:h}/old; mv $OUT/name_scan.txt ${OUT:h}/old/packages_name_scan.txt

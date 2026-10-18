@@ -62,6 +62,8 @@ CV=build/cmpin/$CSHA
 if [[ ! -f $CV/build_module.sh ]]; then mkdir -p $CV.tmp; git -C $CM_REPO archive $CSHA | tar -x -C $CV.tmp; mv $CV.tmp $CV; fi
 # every game address of multiplayer + Custom Modes' mp part through rv() (the pin's tools/rv_gate.py, when it has one)
 if [[ -f $V/tools/rv_gate.py ]]; then python3 $V/tools/rv_gate.py --cm $CV modules/multiplayer/mp_module.c > /dev/null || { python3 $V/tools/rv_gate.py --cm $CV modules/multiplayer/mp_module.c >&2; exit 1; }; fi
+# every hook of the loader + official mods is in docs/hooks.json (the list for other mod makers, attached to each release)
+python3 ../tools/hooks/hooklist.py check --mp $V --cm $CV || { echo "hook list gate: run python3 tools/hooks/hooklist.py gen and commit docs/hooks.json + docs/hooks.tsv" >&2; exit 1; }
 OUT=$PWD/build/mods/custom-modes SDK=$PWD/sdk MP_SRC=$PWD/$V/src zsh $CV/build_module.sh
 zsh modules/copy_lang.sh $CV - build/mods/custom-modes              # its translations (repo lang/*.json) when the pin has them
 echo "built build/mods/custom-modes from ds_custommodes $CSHA"
