@@ -70,7 +70,11 @@ static void texts(const JNode *s, const char *key, char *out[DSI_LANGS]) {
     if (v && v->t == JN_STR) out[0] = dup_s(v->str);
     else if (v && v->t == JN_OBJ) for (int l = 0; l < DSI_LANGS; l++) { const char *t = json_str(v, dsi_code_of(l)); if (t) out[l] = dup_s(t); }
     JNode *tr = json_get(s, "i18n");
-    for (int l = 1; l < DSI_LANGS; l++) { const char *t = json_str(json_get(tr, dsi_code_of(l)), key); if (t && *t) { free(out[l]); out[l] = dup_s(t); } }
+    for (int l = 1; l < DSI_LANGS; l++) {                          /* {"<code>": {"label": ..}}, or "<code>": ".." (a choice) */
+        JNode *e = json_get(tr, dsi_code_of(l));
+        const char *t = e && e->t == JN_STR ? e->str : json_str(e, key);
+        if (t && *t) { free(out[l]); out[l] = dup_s(t); }
+    }
 }
 static int num(const JNode *o, const char *k, int d) { JNode *v = json_get(o, k); return v && v->t == JN_NUM ? (int)v->num : d; }
 static int fit_int(const Set *s, int v) {                      /* in range and on a step */

@@ -899,9 +899,12 @@ static void slider_text(W *w) {
     char b[32]; snprintf(b, sizeof b, "%d", w->vmin + w->index * w->vstep); tmp_set(vt, b);
 }
 static void slider_layout(W *w) {
-    float lw = w->w * 0.36f;
+    float lw = w->w * 0.36f, cw = w->w - lw - 12;
     place_tl(hget(w->h_label), 12, 0, lw - 16, VALUE_H);
-    place_tl(hget(w->h_b), lw, 0, w->w - lw - 12, VALUE_H);
+    place_tl(hget(w->h_b), lw, 0, cw, VALUE_H);
+    Obj sl = hget(w->h_a), vt = hget(w->h_c);
+    if (sl && m_tr_setparent) place_tl(tr_of(sl), 0, (VALUE_H - 20) / 2.f, cw - 72, 20);
+    if (vt && m_tr_setparent) place_tl(tr_of(vt), cw - 64, 0, 64, VALUE_H);
 }
 static DSLObj k_slider(DSLObj parent, float x, float y, float w, const char *label, int min, int max, int step, int value,
                        dsl_ui_cb change, void *ud) {
@@ -920,6 +923,16 @@ static DSLObj k_slider(DSLObj parent, float x, float y, float w, const char *lab
     if (cs && f_ss_toggle >= 0) go_active(AT(cs, f_ss_toggle, Obj), 0);           /* the mute switch of the sound sliders */
     if (cs && f_ss_toggletext >= 0) go_active(AT(cs, f_ss_toggletext, Obj), 0);
     if (isa(vt, K.DASText) && f_das_usekey >= 0) AT(vt, f_das_usekey, bool) = false;
+    /* the prefab is a block (its own title "Camera Movement Speed Scale" above the bar, value at the top right): the bar
+       and the value move straight under the clone's root, everything else of it is hidden; slider_layout places them */
+    Obj root = tr_of(c), srt = tr_of(sl), vrt = isa(vt, K.TMP_Text) ? tr_of(vt) : NULL;
+    if (m_tr_setparent) {
+        CALL(m_tr_setparent, void, Obj, Obj, bool)(srt, root, false, m_tr_setparent);
+        if (vrt) CALL(m_tr_setparent, void, Obj, Obj, bool)(vrt, root, false, m_tr_setparent);
+        for (int i = child_count(root) - 1; i >= 0; i--) { Obj ch = child_at(root, i); if (ch != srt && ch != vrt) go_active(ch, 0); }
+        Obj bg = comp_get(root, K.Image); if (bg) gr_color(bg, (Col){ 0, 0, 0, 0 });   /* a frame of the block, if any */
+    }
+    if (vrt) txt_style(vt, 0, 16, 516, 0);                              /* right, middle; body font */
     hset(&wd->h_label, lb); hset(&wd->h_a, sl); hset(&wd->h_b, tr_of(c)); hset(&wd->h_c, isa(vt, K.TMP_Text) ? vt : NULL);
     int n = (max - min) / step;
     wd->vmin = min; wd->vstep = step; wd->n = n; wd->cb = change; wd->ud = ud; wd->w = w; wd->h = VALUE_H;

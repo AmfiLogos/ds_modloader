@@ -1,0 +1,21 @@
+{
+ "id": "settings-demo", "name": "Settings demo", "version": "1.0.0", "kind": "code", "api": 3, "game_builds": ["25846389"],
+ "scope": "gameplay",
+ "description": "Test mod: shows the Settings page (a number, two switches and a choice).",
+ "i18n": {"ja": {"name": "設定デモ", "description": "テスト用MOD：設定ページを表示します（数値、スイッチ2つ、選択肢）。"}},
+ "settings": [
+  {"id": "gold_mult", "type": "int", "min": 1, "max": 10, "step": 1, "default": 1, "scope": "gameplay",
+   "label": "Gold multiplier", "help": "Gold from every sale is multiplied by this number.",
+   "i18n": {"ja": {"label": "ゴールド倍率", "help": "売却で得るゴールドにこの数を掛けます。"}}},
+  {"id": "hard_rule", "type": "toggle", "default": false, "scope": "gameplay",
+   "label": "Enemies heal between rooms", "help": "Every enemy group gets its health back when you leave a room.",
+   "i18n": {"ja": {"label": "部屋の間で敵が回復", "help": "部屋を出ると、すべての敵グループの体力が戻ります。"}}},
+  {"id": "difficulty", "type": "choice", "default": "normal", "scope": "gameplay", "label": "Mod difficulty",
+   "choices": [{"id": "easy", "label": "Easy", "i18n": {"ja": "やさしい"}}, {"id": "normal", "label": "Normal", "i18n": {"ja": "ふつう"}},
+               {"id": "hard", "label": "Hard", "i18n": {"ja": "むずかしい"}}],
+   "i18n": {"ja": {"label": "MODの難易度"}}},
+  {"id": "show_bars", "type": "toggle", "default": true, "scope": "local",
+   "label": "Show health bars", "help": "Only on your screen. Other players do not need the same value.",
+   "i18n": {"ja": {"label": "体力バーを表示", "help": "自分の画面だけに影響します。他のプレイヤーと同じ値である必要はありません。"}}}
+ ]
+}
