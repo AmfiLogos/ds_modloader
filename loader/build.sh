@@ -25,7 +25,7 @@ MP_REPO=${MP_REPO:-$HOME/ds_multiplayer}; MP_PIN=${MP_PIN:-$(head -1 mp_pin.txt)
 SHA=$(git -C $MP_REPO rev-parse --verify "$MP_PIN^{commit}") || { echo "mp pin $MP_PIN not found in $MP_REPO" >&2; exit 1; }
 V=build/pin/$SHA; M=build/mods/multiplayer; mkdir -p $M build/pin
 if [[ ! -f $V/src/build.sh ]]; then
-  ex=(src win/math); for d in custom sdk; do git -C $MP_REPO cat-file -e $SHA:$d 2>/dev/null && ex+=($d); done   # Custom Modes (M4 split) when the tree has it
+  ex=(src win/math); for d in custom sdk rva tools/rv_gate.py win/port; do git -C $MP_REPO cat-file -e $SHA:$d 2>/dev/null && ex+=($d); done   # Custom Modes (M4 split), address tables + their gate when the tree has them
   mkdir -p $V.tmp; git -C $MP_REPO archive $SHA $ex | tar -x -C $V.tmp; mv $V.tmp $V
 fi
 if [[ ! -f $V/win/math/build/libdsmath_arm64.a ]]; then        # arm64 part of win/math/build_math.sh
@@ -50,6 +50,7 @@ put $M/multiplayer.dylib
 DR=${MP_DET_RANGES:-$MP_REPO/build/det_ranges.tsv}
 cp $DR $M/det_ranges.tsv.tmp; mv -f $M/det_ranges.tsv.tmp $M/det_ranges.tsv
 cp modules/multiplayer/mod.json $M/mod.json
+if [[ -d $V/rva ]]; then mkdir -p $M/rva; cp $V/rva/*.tsv $M/rva/; fi       # address tables of other game versions (src/rig_rv.c)
 print -r -- "$SHA" > $M/PINNED_COMMIT
 zsh modules/copy_lang.sh $MP_REPO $SHA $M                          # its translations (repo lang/*.json) when the pin has them
 echo "built $M from ds_multiplayer $SHA (${#mpsrc} files)"
@@ -59,6 +60,8 @@ CM_REPO=${CM_REPO:-$HOME/ds_custommodes}; CM_PIN=${CM_PIN:-$(head -1 cm_pin.txt)
 CSHA=$(git -C $CM_REPO rev-parse --verify "$CM_PIN^{commit}") || { echo "cm pin $CM_PIN not found in $CM_REPO" >&2; exit 1; }
 CV=build/cmpin/$CSHA
 if [[ ! -f $CV/build_module.sh ]]; then mkdir -p $CV.tmp; git -C $CM_REPO archive $CSHA | tar -x -C $CV.tmp; mv $CV.tmp $CV; fi
+# every game address of multiplayer + Custom Modes' mp part through rv() (the pin's tools/rv_gate.py, when it has one)
+if [[ -f $V/tools/rv_gate.py ]]; then python3 $V/tools/rv_gate.py --cm $CV modules/multiplayer/mp_module.c > /dev/null || { python3 $V/tools/rv_gate.py --cm $CV modules/multiplayer/mp_module.c >&2; exit 1; }; fi
 OUT=$PWD/build/mods/custom-modes SDK=$PWD/sdk MP_SRC=$PWD/$V/src zsh $CV/build_module.sh
 zsh modules/copy_lang.sh $CV - build/mods/custom-modes              # its translations (repo lang/*.json) when the pin has them
 echo "built build/mods/custom-modes from ds_custommodes $CSHA"

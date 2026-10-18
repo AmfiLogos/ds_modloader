@@ -46,7 +46,7 @@ void rig_log(const char *fmt, ...) {
 }
 
 int rig_hook(uintptr_t rva, void *repl, void **orig, const char *who) {
-    int r = H->hook_rva(ME, rva, repl, orig, who);
+    int r = H->hook_rva(ME, rv(rva), repl, orig, who);
     if (r) rig_log("%s: hook %#lx refused by the loader engine (see dsload.log)", who, (unsigned long)rva);
     else rig_log("%s: hooked %#lx", who, (unsigned long)rva);
     return r;
@@ -82,14 +82,13 @@ static Obj my_pdp(void *mi) {
     (void)mi; (void)o_pdp;
     static char p[1100];
     if (!p[0]) snprintf(p, sizeof p, "%s/data", rig_dir);
-    return ((Obj (*)(const char *))(ds_base + 0x6F9738))(p);     /* il2cpp_string_new */
+    return F(0x6F9738, Obj (*)(const char *))(p);     /* il2cpp_string_new */
 }
 
 DSL_EXPORT int dsl_module_load(const DSLHost *host, DSLPlugin *self) {
     H = host; ME = self;
     const char *d = getenv("DSRIG_DIR");
     if (!d || !*d) { host->log(self, "DSRIG_DIR not set: multiplayer inactive"); return 1; }
-    if (!host->game_build || strcmp(host->game_build, RIG_BUILD)) { host->log(self, "game build %s is not %s", host->game_build ? host->game_build : "?", RIG_BUILD); return 2; }
     snprintf(rig_dir, sizeof rig_dir, "%s", d);
     char lp[1100]; snprintf(lp, sizeof lp, "%s/rig.log", rig_dir);
     struct stat lst;                            /* appended across starts: past 32 MB the old one becomes rig.log.1 */
@@ -97,6 +96,11 @@ DSL_EXPORT int dsl_module_load(const DSLHost *host, DSLPlugin *self) {
     lf = fopen(lp, "a");
     rig_log("---- rig start pid %d as dsload module %s (batchmode arg: %s, hide windows: %s)", getpid(), host->plugin_id(self),
             getenv("DSRIG_BATCH") ? "yes" : "no", getenv("DSRIG_HIDEWIN") ? "yes" : "no");
+    /* game addresses: the reference version RIG_BUILD as written, another version through its address table (rig_rv.c) */
+    if (!host->game_build || rig_rv_load(host->game_build, host->module_dir(self))) {
+        host->log(self, "game build %s: no address table (reference build %s): multiplayer off", host->game_build ? host->game_build : "?", RIG_BUILD);
+        return 2;
+    }
     if (getenv("DSRIG_LIVE")) rig_log("DSRIG_LIVE: normal game (sound, frame rate, windows untouched)");
     else if (getenv("DSRIG_HIDEWIN") || getenv("DSRIG_BATCH")) rig_win_install();   /* batchmode copies check in with AppKit too */
     else if (getenv("DSRIG_SPACE")) rig_win_space_install();
