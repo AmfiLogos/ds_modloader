@@ -488,6 +488,16 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   (LoadCampaignRequested)` (no loading screen yet); `dsl_world.c` holds loads that did not come that way. Asked once per
   world and mod set: worlds.json `"save_warned": {guid: "a+b"}` (`dsl_reg.c`). A world registered with another set is
   left to the world check (flow K) first.
+- Backup (owner 2026-10-18, ZET-U; branch zetu-saves): opt-in per mod, mod.json `"save_backup": true` next to
+  `"save_dependent": true` (`dsl_running_save_backup`, `dsl_reg.c`; Hell difficulty has no backup and keeps its text).
+  With such a mod running, the warning is a shorter text that ends with the backup folder (the stock box is a fixed
+  520 x 109: the old text + a path ran over its buttons in en/de/ru). Its Load first makes byte copies (read back and
+  compared, file times kept) of the loaded save + every other game save with the same world guid into
+  `<DSML_DATA>/Mods/save_backups/<YYYY-MM-DD_HHMM>_<clan name, file-safe>/` (the folder named in the question; `_2`.. when
+  it exists; never inside game_d or mod_d: the game lists Saves recursively). Copies, never a move or delete. A copy
+  that fails = NOT loaded, not marked answered (asked again), a one-button notice with the reason 3 frames later.
+  Asked once per world and mod set, so copied once. Rig test `test/l1_savebackup_test.py` (copy W; LANGTYPE=3/4/7 for
+  the box in de/ru/ja).
 - Delete (owner 2026-10-17, branch savesync2): a game save is the normal game's file too. After the game's own delete
   confirm, a game world (`SaveLoadView.CompleteDeleteConfirmation`, the world's delete button) or a game save
   (`SaveLoadView.ConfirmRemove`) asks once more in the game's notice box: "This save is also used by Dungeon Settlers
