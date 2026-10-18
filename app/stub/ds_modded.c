@@ -533,7 +533,7 @@ static int steam_probe(const char *lib, int init) {
     if (pid == 0) {
         void *h = dlopen(lib, RTLD_NOW | RTLD_LOCAL);
         if (!h) { logf_("dlopen %s: %s", lib, dlerror()); _exit(3); }
-        if (!init) { int (*run)(void) = (int (*)(void))dlsym(h, "SteamAPI_IsSteamRunning"); _exit(!run ? 3 : run() ? 0 : 1); }
+        if (!init) { uint8_t (*run)(void) = (uint8_t (*)(void))dlsym(h, "SteamAPI_IsSteamRunning"); _exit(!run ? 3 : run() ? 0 : 1); }
         int (*ini)(char *) = (int (*)(char *))dlsym(h, "SteamAPI_InitFlat");
         void (*shut)(void) = (void (*)(void))dlsym(h, "SteamAPI_Shutdown");
         if (!ini || !shut) _exit(3);
