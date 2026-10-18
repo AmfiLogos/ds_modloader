@@ -253,7 +253,7 @@ def start(x, api, extra=None):
         os.unlink(lrig.sockpath(x))                             # our copy's own socket file
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'USER': os.environ.get('USER', ''),
            'LOGNAME': os.environ.get('LOGNAME', ''), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': os.environ.get('TMPDIR', '/tmp'),
-           'DSRIG_DIR': I, 'DSRIG_FPS': '30', 'DYLD_INSERT_LIBRARIES': os.path.join(k, 'loader', 'dsload.dylib'),
+           'DSRIG_DIR': I, 'DSRIG_FPS': '30', **(lrig.ctl_env() if hasattr(lrig, 'ctl_env') else {'DSRIG_CTL': '1'}), 'DYLD_INSERT_LIBRARIES': os.path.join(k, 'loader', 'dsload.dylib'),
            'DSL_MODS_DIR': os.path.join(k, 'loader', 'mods'), 'DSML_ROOT': k, 'DSML_USER_MODS_DIR': os.path.join(k, 'mods'),
            'DSL_PROFILE': os.path.join(I, 'data', 'Mods', 'active.json'), 'DSML_SESSION': os.path.join(I, 'data', 'Mods', 'worlds.json'),
            'DSML_DATA': os.path.join(I, 'data'), 'DSL_UPDATE_API': api,

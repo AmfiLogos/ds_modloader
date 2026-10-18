@@ -77,7 +77,7 @@ def start_modded(enabled, worlds=None, extra_env=None):
     if os.path.exists(r.sockpath(X)): os.unlink(r.sockpath(X))
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'USER': os.environ.get('USER', ''),
            'LOGNAME': os.environ.get('LOGNAME', ''), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': os.environ.get('TMPDIR', '/tmp'),
-           'DSRIG_DIR': I, 'DSRIG_FPS': '60', 'DYLD_INSERT_LIBRARIES': os.path.join(I, r.DYLIB_REL),
+           'DSRIG_DIR': I, 'DSRIG_FPS': '60', **(r.ctl_env() if hasattr(r, 'ctl_env') else {'DSRIG_CTL': '1'}), 'DYLD_INSERT_LIBRARIES': os.path.join(I, r.DYLIB_REL),
            'DSL_PROFILE': os.path.join(T.MODS, 'active.json'), 'DSML_SESSION': os.path.join(T.MODS, 'worlds.json'),
            'DSML_DATA': os.path.join(I, 'data'), 'DSML_GAME_SAVES': GSAVES, 'DSL_CLOUD': '0',
            'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': T.STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0'}
@@ -117,7 +117,7 @@ def start_normal():
         if os.path.exists(os.path.join(GROOT, f)): os.unlink(os.path.join(GROOT, f))
     shutil.copy2(os.path.join(I, 'data', 'UserSetting.json'), os.path.join(GROOT, 'data', 'UserSetting.json'))
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin',
-           'TMPDIR': os.environ.get('TMPDIR', '/tmp'), 'DSRIG_DIR': GROOT, 'DSRIG_BATCH': '1', 'DSRIG_FPS': '30',
+           'TMPDIR': os.environ.get('TMPDIR', '/tmp'), 'DSRIG_DIR': GROOT, 'DSRIG_BATCH': '1', **(r.ctl_env() if hasattr(r, 'ctl_env') else {'DSRIG_CTL': '1'}), 'DSRIG_FPS': '30',
            'DYLD_INSERT_LIBRARIES': DSRIG}
     args = [os.path.join(I, r.EXE_REL), '-batchmode', '-logFile', os.path.join(GROOT, 'player.log')]
     p = subprocess.Popen(args, env=env, cwd=GROOT, stdin=subprocess.DEVNULL, stdout=open(os.path.join(GROOT, 'stdout.log'), 'ab'),

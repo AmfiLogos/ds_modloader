@@ -66,6 +66,17 @@ def pidfile(x): return os.path.join(idir(x), 'game.pid')
 def sockpath(x): return os.path.join(idir(x), 'ctl.sock')
 
 
+def ctl_env():
+    """Test copies only: DSRIG_CTL=1 opens the control socket (<DSRIG_DIR>/ctl.sock; a player's game never has it), and
+    the folders where test commands may write (screenshot / mpm_shot / ui_capture paths) or read (load_save file,
+    plan_file) besides the copy's own folder: the test worktrees (~/ds_*), the scratch roots, the seed saves (read)."""
+    h = os.path.expanduser('~')
+    tmp = [os.environ.get('TMPDIR', ''), '/tmp']
+    w = [os.path.join(h, 'ds_*')] + [t.rstrip('/') for t in tmp if t]
+    r = w + [os.path.join(h, 'DungeonSettlers_SaveBackups')]
+    return {'DSRIG_CTL': '1', 'DSRIG_WRITE_DIRS': ':'.join(w), 'DSRIG_READ_DIRS': ':'.join(r)}
+
+
 def read_pid(x):
     try:
         return int(open(pidfile(x)).read().split()[0])
@@ -348,6 +359,7 @@ def start(x, window=False, fps=30, show=None):
            'USER': os.environ.get('USER', ''), 'LOGNAME': os.environ.get('LOGNAME', ''), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin',
            'TMPDIR': os.environ.get('TMPDIR', '/tmp'), 'DSRIG_DIR': idir(x), 'DSRIG_FPS': str(fps),
            'DYLD_INSERT_LIBRARIES': ':'.join([os.environ.get('LRIG_DYLIB') or os.path.join(idir(x), DYLIB_REL)] + ([os.environ['LRIG_EXTRA_INSERT']] if os.environ.get('LRIG_EXTRA_INSERT') else []))}
+    env.update(ctl_env())                                      # test copy: control socket on (test tools)
     env.update({k: v for k, v in os.environ.items() if (k.startswith('DSRIG_') or k.startswith('DSL_') or k.startswith('FOREIGN_') or k.startswith('DSML_')) and k not in env})   # DSRIG_DIAG, DSRIG_DETAIL_SYNC...
     env.setdefault('DSL_SOFT_NOACTIVATE', '1')                 # a soft restart in a test copy never activates B (loader dsl_soft.c)
     env.setdefault('DSL_NOTCH', '0')                           # the notch fix covers the whole screen: off in tests (notch_test sets 1)

@@ -85,7 +85,7 @@ def start_a(enabled=('multiplayer',), extra_env=None):
         os.unlink(r.sockpath(X))
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'USER': os.environ.get('USER', ''),
            'LOGNAME': os.environ.get('LOGNAME', ''), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': os.environ.get('TMPDIR', '/tmp'),
-           'DSRIG_DIR': I, 'DSRIG_FPS': '60', 'DYLD_INSERT_LIBRARIES': os.path.join(I, r.DYLIB_REL),
+           'DSRIG_DIR': I, 'DSRIG_FPS': '60', **(r.ctl_env() if hasattr(r, 'ctl_env') else {'DSRIG_CTL': '1'}), 'DYLD_INSERT_LIBRARIES': os.path.join(I, r.DYLIB_REL),
            'DSL_PROFILE': os.path.join(MODS, 'active.json'), 'DSML_SESSION': os.path.join(MODS, 'worlds.json'), 'DSML_DATA': os.path.join(I, 'data'),
            'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0'}
     env.update(r.soft_test_env())

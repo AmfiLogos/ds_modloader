@@ -128,7 +128,7 @@ DSL_EXPORT int dsl_module_early(const DSLHost *host, DSLPlugin *self) {
     mpmenu_install();
     char sp[1100]; snprintf(sp, sizeof sp, "%s/ctl.sock", rig_dir);
     rig_sock_start(sp);
-    host->log(self, "multiplayer started (control socket %s)", sp);
+    { const char *on = getenv("DSRIG_CTL"); host->log(self, "multiplayer started (control socket %s)", on && !strcmp(on, "1") ? sp : "off"); }
     return 0;
 }
 

@@ -83,7 +83,7 @@ fn hidden_run(app: &Path, profile: &Path, mods: &[dsml_core::model::ModRelease],
               session: Option<flow::Session>,
               ready: impl Fn(&serde_json::Value) -> bool, limit: Duration) -> (serde_json::Value, String, u32) {
     let mut env = BTreeMap::new();
-    for (k, v) in [("DSRIG_LIVE", ""), ("DSRIG_BATCH", "1"), ("DSRIG_FPS", "30")] { env.insert(k.to_string(), v.to_string()); }
+    for (k, v) in [("DSRIG_LIVE", ""), ("DSRIG_BATCH", "1"), ("DSRIG_FPS", "30"), ("DSRIG_CTL", "1")] { env.insert(k.to_string(), v.to_string()); }
     env.insert("HOME".into(), profile.join("home").display().to_string());
     let spec = launch::LaunchSpec {
         app: app.to_path_buf(), profile_dir: profile.to_path_buf(), saves_from: None, mods: mods.to_vec(), steam: false,
