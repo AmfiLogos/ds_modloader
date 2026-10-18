@@ -94,6 +94,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_tt_show, *m_tt_hide, *m_tb_id, *m_tb_hidediv, *m_tb_disablehold, *m_cg_blocks, *m_scr_w,
     *m_ls_font, *m_ls_mat;                                           /* LanguageSetting.GetFont / GetMaterial (the language's fonts) */
 static void *m_lr_force, *m_cur_perform;                             /* LayoutRebuilder.ForceRebuildLayoutImmediate, CanvasUpdateRegistry.PerformUpdate */
+static void *m_lg_getpad, *m_ro_gettop, *m_ro_settop;                /* LayoutGroup.padding, RectOffset.top (the notice box grows) */
 
 static int32_t f_tb_label = -1, f_tv_btn[7], f_tv_credit = -1, f_nv_text = -1, f_nv_tok = -1, f_nv_tcancel = -1,
                f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1,
@@ -367,7 +368,7 @@ static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
    text, the text keeps its design size and wraps to more lines (the line grows; it draws past its rect, centred); a box
    we own grows to DSLUi.text_height. Same code as multiplayer's mpmenu.c. */
 #define FIT_N 2048                                                   /* open addressing by object address */
-typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi, stock; } FitE;
+typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi; } FitE;
 typedef struct { float x, y, w, h; } FRect;
 static FitE fit_tab[FIT_N];
 static int fit_count;
@@ -452,29 +453,13 @@ static void fit_frame(void) {
         if (!e->t || e->t == (Obj)1 || (!e->dirty && !all)) continue;
         Obj t = hget(e->h);
         if (!t) { fit_drop(e); continue; }
-        if (!on_tree(t)) {                                            /* measured once it shows */
-            if (e->stock) { if (e->on) { fit_auto(t, 0); CALL(m_tmp_size, void, Obj, float)(t, e->size, m_tmp_size); CALL(m_tmp_wrap, void, Obj, int)(t, e->wrap, m_tmp_wrap); }
-                            fit_drop(e); }                            /* a stock box closed: its own settings again */
-            continue;
-        }
+        if (!on_tree(t)) continue;                                    /* measured once it shows */
         Obj rt = tr_of(t); if (!isa(rt, K.RectTransform)) continue;
         FRect r = CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect);
-        if (!e->dirty && !e->stock && r.w == e->w && r.h == e->h_) continue;   /* a stock text: the game may set it too */
+        if (!e->dirty && r.w == e->w && r.h == e->h_) continue;
         int first = e->dirty; e->w = first ? -1 : r.w; e->h_ = r.h; e->dirty = 0;   /* -1: measured again at the next full pass */
         fit_one(e, t, r.w, r.h);
     }
-}
-/* the stock notice box text (CommonNoticeView Txt_Notice: Lora 16 in a fixed 520 x 109 rect; the game never sizes it):
-   while our text is up it auto-sizes when too long; when the box closes, its stock settings come back */
-static void fit_stock(Obj t) {
-    if (!isa(t, K.TMP_Text) || !fit_ok()) return;
-    FitE *e = fit_find(t, 0);
-    if (e) { e->dirty = 1; return; }
-    if (CALL(m_tmp_getauto, bool, Obj)(t, m_tmp_getauto)) return;         /* the game auto-sizes it already */
-    float fs = CALL(m_tmp_getsize, float, Obj)(t, m_tmp_getsize);
-    if (fs < 4) return;
-    fit_style(t, fs, 1);
-    e = fit_find(t, 0); if (e) e->stock = 1;
 }
 
 /* templates: kept under one inactive DontDestroyOnLoad holder, so the kit works in every scene once the title was seen.
@@ -1137,7 +1122,22 @@ static struct { int serial; dsl_ui_cb ok, cancel; void *ud; uintptr_t h_ok, h_ca
 static uintptr_t nfit_lab[2], nfit_txt[2]; static int nfit_tries, nfit_auto[2]; static uintptr_t nfit_grid; static V2 nfit_cell;
 #define NFIT_KIDS 12
 static uintptr_t nfit_kid[NFIT_KIDS]; static V2 nfit_kidsz[NFIT_KIDS]; static int nfit_nkid;
+/* a notice text taller than the stock text rect (520 x 109, the game never sizes it: a long text ran over the frame
+   and the buttons): the game's way for long text, the text keeps its size and its box grows. The frame
+   (Panel_Notice/Img_BackGroundBox), the text rect and the buttons' top padding (the frame's GridLayoutGroup) grow by
+   the extra height; the text keeps its gap to the frame's top, so the buttons stay under it. Taller than the screen
+   allows: the text auto-sizes down to the game's 0.75 too. The stock sizes come back with the buttons' (notice_unfit). */
+static uintptr_t ngrow_pend, ngrow_box, ngrow_txt, ngrow_pad; static V2 ngrow_boxsz, ngrow_txtsz, ngrow_txtpos;
+static int ngrow_top = -1, ngrow_auto; static float ngrow_fs;
+static V2 rt_pos(Obj o); static void rt_setpos(Obj o, V2 p); static Obj tr_find(Obj t, const char *path);
 static void notice_unfit(void) {
+    Obj gb = hget(ngrow_box), gt = hget(ngrow_txt), gp = hget(ngrow_pad);
+    if (gb && m_rt_size) CALL(m_rt_size, void, Obj, V2)(tr_of(gb), ngrow_boxsz, m_rt_size);
+    if (gt && m_rt_size) { CALL(m_rt_size, void, Obj, V2)(tr_of(gt), ngrow_txtsz, m_rt_size); rt_setpos(gt, ngrow_txtpos); }
+    if (gt && ngrow_auto) { CALL(m_tmp_auto, void, Obj, bool)(gt, false, m_tmp_auto); CALL(m_tmp_size, void, Obj, float)(gt, ngrow_fs, m_tmp_size); }
+    if (gp && ngrow_top >= 0) CALL(m_ro_settop, void, Obj, int)(gp, ngrow_top, m_ro_settop);
+    if (gb) { if (m_lr_force) CALL(m_lr_force, void, Obj)(tr_of(gb), m_lr_force); dsl_log("ui: notice box back to its stock size"); }
+    hset(&ngrow_pend, NULL); hset(&ngrow_box, NULL); hset(&ngrow_txt, NULL); hset(&ngrow_pad, NULL); ngrow_top = -1; ngrow_auto = 0;
     for (int i = 0; i < 2; i++) {
         Obj t = hget(nfit_txt[i]); if (t && m_tmp_auto) CALL(m_tmp_auto, void, Obj, bool)(t, nfit_auto[i] != 0, m_tmp_auto);
         hset(&nfit_lab[i], NULL); hset(&nfit_txt[i], NULL);
@@ -1181,24 +1181,85 @@ static int notice_fit(int i, Obj label) {
     dsl_log("ui: notice buttons widened %.0f -> %.0f for \"%s\"", c.x, want, i ? "cancel" : "ok");
     return 1;
 }
+static int notice_grow(Obj v, Obj nt) {                                  /* 1 = done (grown, fits, or cannot), 0 = not laid out yet */
+    Obj box = tr_find(v, "Panel_Notice/Img_BackGroundBox"), g = box && K.GridLayout ? comp_get(box, K.GridLayout) : NULL;
+    if (!isa(nt, K.TMP_Text) || !g || !m_lg_getpad || !m_ro_gettop || !m_ro_settop || !m_rt_getpos || !m_rt_rect) return 1;
+    R4 r = CALL(m_rt_rect, R4, Obj)(tr_of(nt), m_rt_rect), br = CALL(m_rt_rect, R4, Obj)(tr_of(box), m_rt_rect);
+    if (r.w <= 0 || br.h <= 0) return 0;
+    float need = fit_pref(nt, r.w).y + 8;                                /* the text at its own size, wrapped at its width */
+    if (need <= r.h) return 1;
+    float b0[4], t0[4], b1[4], t1[4], c[4] = { 0 };
+    if (!rect_screen(box, b0) || !rect_screen(nt, t0) || b0[3] - b0[1] <= 0 || t0[3] - t0[1] <= 0) return 1;
+    float sc = (b0[3] - b0[1]) / br.h, d = need - r.h;                   /* screen pixels per box unit; y up */
+    Obj cv = K.Canvas ? CALL(m_comp_inparent, Obj, Obj, Obj)(tr_of(box), type_of(K.Canvas), m_comp_inparent) : NULL;
+    Obj root = alive(cv) && m_cv_root ? CALL(m_cv_root, Obj, Obj)(cv, m_cv_root) : NULL;
+    int capped = 0;
+    if (alive(root) && rect_screen(root, c) && c[3] - c[1] > 0) {        /* the frame stays 40 units off the screen's edges */
+        float room = (c[3] - c[1]) / sc - 80 - br.h;
+        if (d > room) { d = room > 0 ? room : 0; capped = 1; }
+    }
+    Obj pad = CALL(m_lg_getpad, Obj, Obj)(g, m_lg_getpad); if (!pad) return 1;
+    hset(&ngrow_box, box); hset(&ngrow_txt, nt); hset(&ngrow_pad, pad);
+    ngrow_boxsz = rt_size(box); ngrow_txtsz = rt_size(nt); ngrow_txtpos = rt_pos(nt);
+    ngrow_top = CALL(m_ro_gettop, int, Obj)(pad, m_ro_gettop);
+    float gap = b0[3] - t0[3];                                           /* frame top to text top, screen */
+    int di = (int)(d + 0.99f);
+    CALL(m_rt_size, void, Obj, V2)(tr_of(box), (V2){ ngrow_boxsz.x, ngrow_boxsz.y + di }, m_rt_size);
+    CALL(m_ro_settop, void, Obj, int)(pad, ngrow_top + di, m_ro_settop);
+    R4 r1 = CALL(m_rt_rect, R4, Obj)(tr_of(nt), m_rt_rect);             /* a text stretched in the frame grew with it */
+    if (r1.h < r.h + di) CALL(m_rt_size, void, Obj, V2)(tr_of(nt), (V2){ ngrow_txtsz.x, ngrow_txtsz.y + (r.h + di - r1.h) }, m_rt_size);
+    if (rect_screen(box, b1) && rect_screen(nt, t1)) {                   /* the text's top keeps its gap to the frame's top */
+        V2 p = rt_pos(nt); p.y += (b1[3] - gap - t1[3]) / sc; rt_setpos(nt, p);
+    }
+    if (capped && m_tmp_fsmin && m_tmp_fsmax && m_tmp_getsize) {
+        ngrow_fs = CALL(m_tmp_getsize, float, Obj)(nt, m_tmp_getsize); ngrow_auto = 1;
+        CALL(m_tmp_fsmin, void, Obj, float)(nt, fit_min(ngrow_fs), m_tmp_fsmin); CALL(m_tmp_fsmax, void, Obj, float)(nt, ngrow_fs, m_tmp_fsmax);
+        CALL(m_tmp_auto, void, Obj, bool)(nt, true, m_tmp_auto);
+    }
+    if (m_lr_force) CALL(m_lr_force, void, Obj)(tr_of(box), m_lr_force);
+    rect_screen(box, b1); rect_screen(nt, t1);
+    dsl_log("ui: notice box grown %.0f -> %.0f high for its text (%.0f)%s; screen frame y %.0f-%.0f, text y %.0f-%.0f",
+            br.h, br.h + di, need, capped ? ", screen height reached: the text auto-sizes" : "", b1[1], b1[3], t1[1], t1[3]);
+    return 1;
+}
 static void notice_fit_frame(void) {                                     /* kit tick: the labels set by k_notice */
+    if (hget(ngrow_box) && frames % 10 == 0) {                          /* our box closed or replaced (the game's own text): stock sizes */
+        Obj v = notice_view(); char cur[1024] = "";
+        if (v && on_tree(v)) utf8_of(tmp_get(AT(v, f_nv_text, Obj)), cur, sizeof cur);
+        if (!v || !on_tree(v) || strcmp(cur, NB.text)) notice_unfit();
+    }
     if (nfit_tries <= 0) return;
     int left = 0;
     for (int i = 0; i < 2; i++) { Obj l = hget(nfit_lab[i]); if (l) { if (notice_fit(i, l)) hset(&nfit_lab[i], NULL); else left = 1; } }
+    { Obj t = hget(ngrow_pend), v = t ? notice_view() : NULL; if (t) { if (!v || notice_grow(v, t)) hset(&ngrow_pend, NULL); else left = 1; } }
     nfit_tries = left ? nfit_tries - 1 : 0;
+}
+/* a long path breaks at its separators: TMP breaks a word with no space only where the line ends, mid-name. A zero-width
+   space after each / or \\ of a word longer than 30 bytes (not in a rich-text tag); no room for them: the text as it is */
+static void path_breaks(const char *s, char *out, size_t cap) {
+    size_t o = 0; const char *ws = s;
+    for (const char *p = s; *p; p++) {
+        if (*p == ' ' || *p == '\n') ws = p + 1;
+        if (o + 4 >= cap) { snprintf(out, cap, "%s", s); return; }
+        out[o++] = *p;
+        if ((*p == '/' || *p == '\\') && p > ws && p[-1] != '<' && p[1] && p[1] != ' ' && p[1] != '\n' && (size_t)(p - ws) + strcspn(p, " \n") > 30) {
+            memcpy(out + o, "\xE2\x80\x8B", 3); o += 3;
+        }
+    }
+    out[o] = 0;
 }
 static void k_notice(const char *text, const char *ok_label, const char *cancel_label, dsl_ui_cb ok, dsl_ui_cb cancel, void *ud) {
     notice_unfit(); nview_last = -1000; Obj v = notice_view();
     if (!v || !m_nv_select || !m_nv_confirm || f_nv_text < 0) { dsl_log("ui: notice: no CommonNoticeView in this scene: \"%s\" not shown", text ? text : ""); return; }
     NB.serial = (NB.serial + 1) & 0x0FFFFFFF; NB.ok = ok; NB.cancel = cancel; NB.ud = ud;
-    snprintf(NB.text, sizeof NB.text, "%s", text ? text : ""); dsi_utf8_fix_end(NB.text);   /* the box shows (and k_notice_close compares) this copy */
+    path_breaks(text ? text : "", NB.text, sizeof NB.text); dsi_utf8_fix_end(NB.text);   /* the box shows (and k_notice_close compares) this copy */
     Obj a = mk_action(TOKEN(NB.serial, P_OK)), c = cancel_label ? mk_action(TOKEN(NB.serial, P_CANCEL)) : NULL;
     hset(&NB.h_ok, a); hset(&NB.h_cancel, c);
     if (cancel_label) CALL(m_nv_select, void, Obj, Obj, Obj, Obj, bool)(v, str(NB.text), a, c, false, m_nv_select);
     else CALL(m_nv_confirm, void, Obj, Obj, Obj)(v, str(NB.text), a, m_nv_confirm);
     Obj nt = AT(v, f_nv_text, Obj);
     tmp_set(nt, NB.text);
-    fit_stock(nt);                                                   /* a long text auto-sizes in the stock box */
+    hset(&ngrow_pend, nt);                                           /* a long text: the box grows (notice_grow) */
     if (isa(nt, K.TMP_Text)) CALL(m_tmp_align, void, Obj, int)(nt, 514, m_tmp_align);
     if (f_nv_tok >= 0) { tmp_set(AT(v, f_nv_tok, Obj), ok_label ? ok_label : TR("OK")); hset(&nfit_lab[0], AT(v, f_nv_tok, Obj)); }
     if (cancel_label && f_nv_tcancel >= 0) { tmp_set(AT(v, f_nv_tcancel, Obj), cancel_label); hset(&nfit_lab[1], AT(v, f_nv_tcancel, Obj)); }
@@ -1736,7 +1797,8 @@ void dsl_ui_install(void) {
     m_tmp_auto = MTH(K.TMP_Text, "set_enableAutoSizing", 1); m_tmp_align = MTH(K.TMP_Text, "set_alignment", 1);
     m_tmp_prefw = MTH(K.TMP_Text, "get_preferredWidth", 0);
     K.GridLayout = klass(UI, "GridLayoutGroup");
-    if (K.GridLayout) { m_grid_cell = MTH(K.GridLayout, "set_cellSize", 1); m_grid_getcell = MTH(K.GridLayout, "get_cellSize", 0); }
+    if (K.GridLayout) { m_grid_cell = MTH(K.GridLayout, "set_cellSize", 1); m_grid_getcell = MTH(K.GridLayout, "get_cellSize", 0); m_lg_getpad = OPT(K.GridLayout, "get_padding", 0); }
+    { void *kRO = dsl_find_class(UE, "RectOffset"); m_ro_gettop = OPT(kRO, "get_top", 0); m_ro_settop = OPT(kRO, "set_top", 1); }
     m_rt_rect = MTH(K.RectTransform, "get_rect", 0); m_tmp_getsize = MTH(K.TMP_Text, "get_fontSize", 0); m_tmp_getauto = MTH(K.TMP_Text, "get_enableAutoSizing", 0);
     m_tmp_wrap = MTH(K.TMP_Text, "set_textWrappingMode", 1); m_tmp_overflow = MTH(K.TMP_Text, "set_overflowMode", 1);
     m_tmp_rich = MTH(K.TMP_Text, "set_richText", 1); m_tmp_shmat = OPT(K.TMP_Text, "set_fontSharedMaterial", 1);
