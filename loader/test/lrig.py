@@ -201,6 +201,18 @@ def require_windowed(x):
         raise SystemExit(f'refused: test copy {x} ({dom}) would open full screen (Screenmanager Fullscreen mode {m})')
 
 
+def require_background_only(x):
+    """a test copy is a background-only app (LSBackgroundOnly + LSUIElement, make_instance.sh): only then does the loader
+    keep its window hidden and the app out of the front (dsl_quiet_mac.c), whatever modules it loads; else refused"""
+    import plistlib
+    try:
+        pl = plistlib.load(open(os.path.join(idir(x), 'DungeonSettlers.app', 'Contents', 'Info.plist'), 'rb'))
+    except Exception as e:
+        raise SystemExit(f'refused: test copy {x}: cannot read its Info.plist ({e})')
+    if pl.get('LSBackgroundOnly') not in (True, 1, '1') or pl.get('LSUIElement') not in (True, 1, '1'):
+        raise SystemExit(f'refused: test copy {x} is not a background-only app (Info.plist LSBackgroundOnly / LSUIElement): run test/make_instance.sh {x}')
+
+
 def win_size():
     """the copy's window size: LRIG_SIZE=<w>x<h> (e.g. 960x600 for 16:10), default 960x540 (16:9)"""
     try:
@@ -310,6 +322,7 @@ def start(x, window=False, fps=30, show=None):
     exe = os.path.join(idir(x), EXE_REL)
     if not os.path.exists(exe):
         raise SystemExit(f'{x}: no copy; run test/make_instance.sh {x} + test/install_mods.sh first')
+    require_background_only(x)
     prepare_data(x)
     fix_mp_port(x)
     for p in (sockpath(x),):

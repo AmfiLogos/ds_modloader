@@ -9,6 +9,14 @@
 //     'steam://run/<app>'") and the owner's CrossOver Steam answered steam:// once (2026-10-17 21:47, not proven); the
 //     game resolves that call with dlsym, which here gives a stub returning false (keep running, open nothing).
 //     Only the copy's own soft restart (NSWorkspace openApplicationAtURL on its own app, dsl_soft_mac.c) still opens.
+//  3. The game window itself stays invisible and never goes full screen, whatever modules the copy loads (not in the
+//     demo modes DSRIG_SHOWWIN / DSRIG_SPACE). It was left to the multiplayer module's rig layer, so a copy without it
+//     showed its window on the owner's screen (2026-10-18 01:35, copy L, guard kill) or went full screen (~1.5 min, maybe
+//     switched his Space). From creation every window has alpha 0, the lowest level, no mouse, no shadow and is out of
+//     Spaces / Mission Control; no later call lifts that (the soft restart's "show" included). Native full screen, the
+//     full-screen style, presentation options, display capture / mode change / fade are refused; with the notch fix off
+//     (DSL_NOTCH=0, every test copy except notch_test) the window is at most 1280x800 points. It still sits in the window
+//     server's list (Metal keeps presenting frames), as with the multiplayer rig layer, which chains on these hooks.
 // Outside test copies every hook passes straight through (the interposers are always bound, inert while off).
 #include "dsl_internal.h"
 #include <objc/runtime.h>
@@ -23,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define MSG(ret, ...) ((ret (*)(__VA_ARGS__))objc_msgSend)
 #define SEL_(s) sel_registerName(s)
@@ -88,13 +97,94 @@ static void my_tic(id self, SEL s) {
     static int once; if (q_on) { if (!once++) QLOG("quiet: text input context activation blocked (no input method window)"); return; }
     ((void (*)(id, SEL))o_tic)(self, s);
 }
-/* every 0.25 s: a window that got on screen by a path not hooked above goes out at once */
+/* ------------------------------------------------------------------ the game window: invisible, never full screen */
+static int q_hide, q_clamp;                      /* q_hide: not a demo copy; q_clamp: notch fix off (it covers the screen) */
+#define LEVEL_HIDDEN (-2147483000L)
+#define CB_HIDDEN ((1ul << 3) | (1ul << 4) | (1ul << 6) | (1ul << 9))   /* Transient | Stationary | IgnoresCycle | FullScreenNone */
+#define SM_FULLSCREEN (1ul << 14)
+#define MAX_W 1280.0
+#define MAX_H 800.0
+typedef id (*init4_t)(id, SEL, CGRect, unsigned long, unsigned long, BOOL);
+typedef id (*init5_t)(id, SEL, CGRect, unsigned long, unsigned long, BOOL, id);
+static init4_t o_init4; static init5_t o_init5;
+static IMP o_alpha, o_level, o_cb, o_sm, o_fs, o_frame, o_frame3, o_csize, o_pres;
+static void once(int *f, const char *what) { if (!(*f)++) QLOG("quiet: %s", what); }
+static void hide_game(id w) {
+    if (!w) return;
+    ((void (*)(id, SEL, double))o_alpha)(w, SEL_("setAlphaValue:"), 0.0);
+    ((void (*)(id, SEL, long))o_level)(w, SEL_("setLevel:"), LEVEL_HIDDEN);
+    ((void (*)(id, SEL, unsigned long))o_cb)(w, SEL_("setCollectionBehavior:"), CB_HIDDEN);
+    MSG(void, id, SEL, BOOL)(w, SEL_("setIgnoresMouseEvents:"), YES);
+    MSG(void, id, SEL, BOOL)(w, SEL_("setHasShadow:"), NO);
+}
+static CGSize clamp(CGSize z, double extra_h, const char *how) {
+    if (!q_clamp || (z.width <= MAX_W && z.height <= MAX_H + extra_h)) return z;
+    static int n; if (n++ < 3) QLOG("quiet: game window %s %.0fx%.0f refused: at most %.0fx%.0f (test copy, windowed)", how, z.width, z.height, MAX_W, MAX_H);
+    if (z.width > MAX_W) z.width = MAX_W;
+    if (z.height > MAX_H + extra_h) z.height = MAX_H + extra_h;
+    return z;
+}
+static double title_h(id w) {                    /* frame height minus content height: the title bar */
+    CGRect f = MSG(CGRect, id, SEL)(w, SEL_("frame"));
+    CGRect c = MSG(CGRect, id, SEL, CGRect)(w, SEL_("contentRectForFrameRect:"), f);
+    return f.size.height - c.size.height;
+}
+static id my_init4(id self, SEL s, CGRect r, unsigned long st, unsigned long b, BOOL d) {
+    id w = o_init4(self, s, r, q_hide ? st & ~SM_FULLSCREEN : st, b, d); if (q_hide) hide_game(w); return w;
+}
+static id my_init5(id self, SEL s, CGRect r, unsigned long st, unsigned long b, BOOL d, id sc) {
+    id w = o_init5(self, s, r, q_hide ? st & ~SM_FULLSCREEN : st, b, d, sc); if (q_hide) hide_game(w); return w;
+}
+static void my_alpha(id self, SEL s, double a) { ((void (*)(id, SEL, double))o_alpha)(self, s, q_hide ? 0.0 : a); }
+static void my_level(id self, SEL s, long l) { ((void (*)(id, SEL, long))o_level)(self, s, q_hide ? LEVEL_HIDDEN : l); }
+static void my_cb(id self, SEL s, unsigned long b) { ((void (*)(id, SEL, unsigned long))o_cb)(self, s, q_hide ? CB_HIDDEN : b); }
+static void my_sm(id self, SEL s, unsigned long m) {
+    static int f; if (q_hide && (m & SM_FULLSCREEN)) { once(&f, "full-screen window style refused (test copy)"); m &= ~SM_FULLSCREEN; }
+    ((void (*)(id, SEL, unsigned long))o_sm)(self, s, m);
+}
+static void my_fs(id self, SEL s, id a) {
+    static int f; if (q_hide) { once(&f, "native full screen (toggleFullScreen:) refused (test copy)"); return; }
+    ((void (*)(id, SEL, id))o_fs)(self, s, a);
+}
+static void my_frame(id self, SEL s, CGRect r, BOOL d) {
+    if (q_hide) r.size = clamp(r.size, title_h(self), "frame");
+    ((void (*)(id, SEL, CGRect, BOOL))o_frame)(self, s, r, d);
+}
+static void my_frame3(id self, SEL s, CGRect r, BOOL d, BOOL an) {
+    if (q_hide) r.size = clamp(r.size, title_h(self), "frame");
+    ((void (*)(id, SEL, CGRect, BOOL, BOOL))o_frame3)(self, s, r, d, an);
+}
+static void my_csize(id self, SEL s, CGSize z) { if (q_hide) z = clamp(z, 0, "content size"); ((void (*)(id, SEL, CGSize))o_csize)(self, s, z); }
+static void my_pres(id self, SEL s, unsigned long o) {          /* hide Dock / menu bar, kiosk, full-screen options */
+    static int f; if (q_hide) { if (o) once(&f, "presentation options refused (test copy: the owner's Dock and menu bar stay)"); return; }
+    ((void (*)(id, SEL, unsigned long))o_pres)(self, s, o);
+}
+/* exclusive full screen paths: capturing a display, changing its mode or fading it would act on the owner's screen */
+static int f_cap, f_mode, f_fade;
+static CGError q_cap1(CGDirectDisplayID d) { if (q_hide) { once(&f_cap, "display capture refused (test copy)"); return kCGErrorSuccess; } return CGDisplayCapture(d); }
+static CGError q_cap2(CGDirectDisplayID d, CGCaptureOptions o) { if (q_hide) { once(&f_cap, "display capture refused (test copy)"); return kCGErrorSuccess; } return CGDisplayCaptureWithOptions(d, o); }
+static CGError q_capall(void) { if (q_hide) { once(&f_cap, "display capture refused (test copy)"); return kCGErrorSuccess; } return CGCaptureAllDisplays(); }
+static CGError q_capall2(CGCaptureOptions o) { if (q_hide) { once(&f_cap, "display capture refused (test copy)"); return kCGErrorSuccess; } return CGCaptureAllDisplaysWithOptions(o); }
+static CGError q_setmode(CGDirectDisplayID d, CGDisplayModeRef m, CFDictionaryRef o) { if (q_hide) { once(&f_mode, "display mode change refused (test copy)"); return kCGErrorSuccess; } return CGDisplaySetDisplayMode(d, m, o); }
+static CGError q_cfgmode(CGDisplayConfigRef c, CGDirectDisplayID d, CGDisplayModeRef m, CFDictionaryRef o) { if (q_hide) { once(&f_mode, "display mode change refused (test copy)"); return kCGErrorSuccess; } return CGConfigureDisplayWithDisplayMode(c, d, m, o); }
+static CGError q_fadeacq(CGDisplayReservationInterval s, CGDisplayFadeReservationToken *t) { if (q_hide) { once(&f_fade, "display fade refused (test copy)"); return kCGErrorNoneAvailable; } return CGAcquireDisplayFadeReservation(s, t); }
+static CGError q_fade(CGDisplayFadeReservationToken t, CGDisplayFadeInterval i, CGDisplayBlendFraction a, CGDisplayBlendFraction b, float r, float g, float bl, boolean_t sy) {
+    if (q_hide) { once(&f_fade, "display fade refused (test copy)"); return kCGErrorSuccess; }
+    return CGDisplayFade(t, i, a, b, r, g, bl, sy);
+}
+
+/* every 0.25 s: a window that got on screen by a path not hooked above goes out at once; the game window hidden again */
 static void sweep(CFRunLoopTimerRef t, void *i) {
     (void)t; (void)i;
     id *nsapp = (id *)dlsym(RTLD_DEFAULT, "NSApp"); if (!nsapp || !*nsapp) return;
     id ws = MSG(id, id, SEL)(*nsapp, SEL_("windows")); unsigned long n = ws ? MSG(unsigned long, id, SEL)(ws, SEL_("count")) : 0;
     for (unsigned long k = 0; k < n; k++) {
         id w = MSG(id, id, SEL, unsigned long)(ws, SEL_("objectAtIndex:"), k);
+        if (q_hide && (MSG(double, id, SEL)(w, SEL_("alphaValue")) != 0.0 || MSG(long, id, SEL)(w, SEL_("level")) != LEVEL_HIDDEN)) {
+            static int m; if (m++ < 3) QLOG("quiet: window %s (alpha %.2f, level %ld) by another path: hidden again", object_getClassName(w),
+                                             MSG(double, id, SEL)(w, SEL_("alphaValue")), MSG(long, id, SEL)(w, SEL_("level")));
+            hide_game(w);
+        }
         if (allowed_window(w) || !MSG(BOOL, id, SEL)(w, SEL_("isVisible"))) continue;
         hide_now(w); MSG(void, id, SEL, id)(w, SEL_("orderOut:"), nil);
         note_block(w, "on screen by another path, ordered out", 0);
@@ -203,6 +293,14 @@ INTERPOSE(q_lsopen, LSOpenCFURLRef)
 INTERPOSE(q_lsroles, LSOpenURLsWithRole)
 #pragma clang diagnostic pop
 INTERPOSE(q_dlsym, dlsym)
+INTERPOSE(q_cap1, CGDisplayCapture)
+INTERPOSE(q_cap2, CGDisplayCaptureWithOptions)
+INTERPOSE(q_capall, CGCaptureAllDisplays)
+INTERPOSE(q_capall2, CGCaptureAllDisplaysWithOptions)
+INTERPOSE(q_setmode, CGDisplaySetDisplayMode)
+INTERPOSE(q_cfgmode, CGConfigureDisplayWithDisplayMode)
+INTERPOSE(q_fadeacq, CGAcquireDisplayFadeReservation)
+INTERPOSE(q_fade, CGDisplayFade)
 
 static IMP swap(const char *cls, const char *sel, IMP imp) {
     Class c = objc_getClass(cls); Method m = c ? class_getInstanceMethod(c, SEL_(sel)) : NULL;
@@ -228,6 +326,26 @@ void dsl_quiet_install(void) {
     o_order = swap("NSWindow", "orderWindow:relativeTo:", (IMP)my_order);
     o_deep = swap("NSWindow", "_reallyDoOrderWindowAboveOrBelow:", (IMP)my_deep);
     o_tic = swap("NSTextInputContext", "activate", (IMP)my_tic);
+    /* the game window (point 3): before Unity makes it; the multiplayer rig layer and the soft restart chain on these */
+    q_hide = !getenv("DSRIG_SHOWWIN") && !getenv("DSRIG_SPACE");
+    const char *nt = getenv("DSL_NOTCH"); q_clamp = nt && *nt == '0';
+    if (q_hide) {
+        o_init4 = (init4_t)swap("NSWindow", "initWithContentRect:styleMask:backing:defer:", (IMP)my_init4);
+        o_init5 = (init5_t)swap("NSWindow", "initWithContentRect:styleMask:backing:defer:screen:", (IMP)my_init5);
+        o_alpha = swap("NSWindow", "setAlphaValue:", (IMP)my_alpha);
+        o_level = swap("NSWindow", "setLevel:", (IMP)my_level);
+        o_cb = swap("NSWindow", "setCollectionBehavior:", (IMP)my_cb);
+        o_sm = swap("NSWindow", "setStyleMask:", (IMP)my_sm);
+        o_fs = swap("NSWindow", "toggleFullScreen:", (IMP)my_fs);
+        o_frame = swap("NSWindow", "setFrame:display:", (IMP)my_frame);
+        o_frame3 = swap("NSWindow", "setFrame:display:animate:", (IMP)my_frame3);
+        o_csize = swap("NSWindow", "setContentSize:", (IMP)my_csize);
+        o_pres = swap("NSApplication", "setPresentationOptions:", (IMP)my_pres);
+        if (!o_init4 || !o_init5 || !o_alpha || !o_level || !o_cb || !o_sm || !o_fs || !o_frame || !o_frame3 || !o_csize || !o_pres) {
+            QLOG("quiet: refused: the game window cannot be kept hidden (an AppKit method is missing): this copy does not start");
+            _exit(3);
+        }
+    }
     Class wc = objc_getClass("NSWorkspace"); unsigned n = 0; Method *ms = wc ? class_copyMethodList(wc, &n) : NULL;
     int nws = 0;
     for (unsigned i = 0; i < n; i++) {
@@ -244,4 +362,6 @@ void dsl_quiet_install(void) {
     CFRunLoopTimerRef tm = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.25, 0.25, 0, 0, sweep, NULL);
     CFRunLoopAddTimer(CFRunLoopGetMain(), tm, kCFRunLoopCommonModes);
     QLOG("quiet: test copy: only the game window may show, no input method window, no outgoing open (%d NSWorkspace methods; own folder %s)", nws, q_own_dir);
+    if (q_hide) QLOG("quiet: game window invisible from creation (alpha 0, lowest level), never full screen%s", q_clamp ? ", at most 1280x800 points" : "");
+    else QLOG("quiet: demo copy (DSRIG_SHOWWIN / DSRIG_SPACE): the game window is left to the rig");
 }

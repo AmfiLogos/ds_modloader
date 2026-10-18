@@ -1,7 +1,8 @@
 // quiet_test: start/mac/dsl_quiet_mac.c in a background-only test app (QuietTest.app, LSBackgroundOnly, activation
 // policy Prohibited). Breaks it catches: a test copy's non-game window reaching the screen (guard kills, a window on the
 // owner's screen), a test copy opening a URL / Steam (the owner's CrossOver Steam started), and the always-bound interposers
-// changing anything while off (every player's game). Every window sits at -20000,-20000 with alpha 0 and
+// changing anything while off (every player's game), and a test copy's game window being visible, going full screen or
+// growing to the screen when no other module hides it (copy L on the owner's screen, 2026-10-18). Every window sits at -20000,-20000 with alpha 0 and
 // every command only names a missing file, so nothing shows even if a hook fails. Run: test/quiet/run.sh
 #import <AppKit/AppKit.h>
 #include <dlfcn.h>
@@ -32,7 +33,9 @@ int main(int argc, char **argv) { @autoreleasepool {
     if (off) {
         CHECK(seen == real, "off: dlsym gives the real SteamAPI_RestartAppIfNecessary");
         CHECK(system("/usr/bin/true") == 0, "off: system() runs");
-        NSWindow *o = mk([NSPanel class]); [o orderFront:nil]; CHECK(o.isVisible, "off: an ordinary window orders in"); [o orderOut:nil];
+        NSWindow *o = mk([NSPanel class]); [o orderFront:nil]; CHECK(o.isVisible, "off: an ordinary window orders in");
+        o.alphaValue = 0.25; o.level = NSFloatingWindowLevel; CHECK(o.alphaValue == 0.25 && o.level == NSFloatingWindowLevel, "off: alpha and level as set");
+        o.alphaValue = 0; [o orderOut:nil];
         return fails ? 1 : 0;
     }
     CHECK(seen && seen != real && ((bool (*)(unsigned))seen)(1) == false, "dlsym SteamAPI_RestartAppIfNecessary from a late image = stub returning false");
@@ -53,6 +56,16 @@ int main(int argc, char **argv) { @autoreleasepool {
     CHECK(called == 1, "openApplicationAtURL of another app blocked");
     NSWindow *g = mk([PlayerWindow class]); [g orderFront:nil];
     CHECK(g.isVisible, "game window (PlayerWindow) still orders in");
+    CHECK(g.alphaValue == 0 && g.level < -2000000000L && g.ignoresMouseEvents, "game window made invisible at creation (alpha 0, lowest level, no mouse)");
+    g.alphaValue = 1; g.level = NSNormalWindowLevel; CHECK(g.alphaValue == 0 && g.level < -2000000000L, "game window: alpha 1 / normal level refused");
+    g.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
+    CHECK(!(g.collectionBehavior & NSWindowCollectionBehaviorFullScreenPrimary) && (g.collectionBehavior & NSWindowCollectionBehaviorFullScreenNone), "game window: native full screen off");
+    g.styleMask = g.styleMask | NSWindowStyleMaskFullScreen; CHECK(!(g.styleMask & NSWindowStyleMaskFullScreen), "game window: full-screen style refused");
+    [g toggleFullScreen:nil];                    /* FullScreenNone above: even a broken hook could not go full screen here */
+    char lb[8192] = ""; FILE *lf = fopen(getenv("QUIET_LOG"), "r"); if (lf) { lb[fread(lb, 1, sizeof lb - 1, lf)] = 0; fclose(lf); }
+    CHECK(strstr(lb, "toggleFullScreen:) refused") != NULL, "game window: toggleFullScreen: refused");
+    [g setFrame:NSMakeRect(-20000, -20000, 3456, 2234) display:NO];
+    CHECK(g.frame.size.width <= 1280 && g.frame.size.height <= 800, "game window: a screen-sized frame is cut to 1280x800 (DSL_NOTCH=0)");
     NSWindow *s = mk([NSPanel class]);
     [s orderFront:nil]; CHECK(!s.isVisible && !onscreen(s), "orderFront: blocked");
     [s makeKeyAndOrderFront:nil]; CHECK(!s.isVisible, "makeKeyAndOrderFront: blocked");
