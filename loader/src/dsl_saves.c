@@ -98,11 +98,10 @@ static GSave G[MAXG]; static int ng;
 static char extra[64][256]; static int nextra;          /* new save names of game worlds (SaveFile), routed to the game */
 static char gworld[64][40]; static int ngworld;         /* game worlds seen loaded (manual save names have no guid) */
 
-/* "mp_*" = a multiplayer temporary save (mp_sync join point, mp_fullcheck full-state check, test saves): the mod writes
-   it through the game's Save and reads it back from <DSML_DATA>/Saves by path. Never a game save, never routed to the
-   game folder, even when its world is a game world (bug 2026-10-18: a guest's full check with the guid of one of its
-   game saves went to the game folder, Steam Cloud synced, and was never deleted). */
-static int mp_temp(const char *name) { return !strncasecmp(name, "mp_", 3); }
+/* mp_* temporary saves (dsl_save_is_mp_temp): never routed to the game folder, even when its world is a game world (bug
+   2026-10-18: a guest's full check with the guid of one of its game saves went to the game folder, Steam Cloud synced,
+   and was never deleted). */
+#define mp_temp dsl_save_is_mp_temp
 static GSave *g_find(const char *name) { for (int i = 0; i < ng; i++) if (!strcasecmp(G[i].name, name)) return &G[i]; return NULL; }
 static void scan_game_locked(void) {
     static GSave old[MAXG]; int nold = ng; memcpy(old, G, sizeof(GSave) * (size_t)ng);

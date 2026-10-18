@@ -113,6 +113,20 @@ int main(int argc, char **argv) {
     machine("F"); pc("dsmodded_Keep.json", q); unlink(q);                   /* gone from the cloud ... */
     loc("F", "Keep.json", p); put(p, "keep changed on F", now - 100);       /* ... but F changed it since the sync: upload */
     dsl_cloud_pass(); check("F: changed here since the sync -> uploaded, not moved aside", has(q) && !strcmp(get(q), "keep changed on F"));
+    puts("== 14 multiplayer temporary saves (mp_*) never go to the cloud; earlier loaders' dsmodded_mp_* copies are deleted");
+    char s2[900]; sprintf(p, "%s/M", T); mkdir(p, 0755); sprintf(p, "%s/M/Saves", T); mkdir(p, 0755);
+    pc("dsmodded_mp_fullcheck.json", q); put(q, "old loader's full check", now - 400);   /* uploaded by an earlier loader */
+    pc("dsmodded_MP_Test.json", q); put(q, "old loader's test world", now - 400);
+    pc("mp_other.json", q); put(q, "not ours (no prefix)", now - 400);
+    pc("dsmodded_Mpire.json", q); put(q, "a player's world", now - 400);
+    machine("M"); loc("M", "mp_sync.json", p); put(p, "join point", now - 60); loc("M", "Mpire.json", q); put(q, "a player's world", now - 400);
+    extern int dsl_cloud_mp_removed; int mr0 = dsl_cloud_mp_removed; dsl_cloud_pass();
+    pc("dsmodded_mp_sync.json", q); check("M: local mp_sync.json not uploaded", !has(q) && has(p));
+    pc("dsmodded_mp_fullcheck.json", q); pc("dsmodded_MP_Test.json", p);
+    check("M: the cloud's dsmodded_mp_* files deleted, not downloaded", !has(q) && !has(p) && dsl_cloud_mp_removed == mr0 + 2
+          && (loc("M", "mp_fullcheck.json", s2), !has(s2)) && (loc("M", "MP_Test.json", s2), !has(s2)));
+    pc("mp_other.json", q); pc("dsmodded_Mpire.json", p); check("M: other cloud files kept (no prefix; Mpire is not mp_)", has(q) && has(p));
+    pc("Game__AutoSave_00000000000000000000000000000000_0.json", q); check("M: the game's own cloud file untouched", has(q));
     printf("== %d ok, %d failed\n", oks, fails);
     return fails != 0;
 }
