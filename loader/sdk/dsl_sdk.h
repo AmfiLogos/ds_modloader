@@ -194,7 +194,19 @@ typedef struct DSLHost {
 
     const struct DSLUi *ui;                   /* widget kit, NULL until il2cpp_init returned */
     const char *(*data_dir)(void);            /* <game data>/Mods (profiles, groups.json, worlds.json, units/) */
+
+    /* ---- appended after API 4 (no version change: check DSL_HAS(host, title_button_icon), or use the wrapper) */
+    /* A picture at the left of this module's title button (the one of title_add_button with the same self, click and
+       ud). The loader keeps a size x size box (units) at the button's left edge, centred in height, and the label in
+       the rest of the button (its text centred there), from the first frame the button is drawn: the button never
+       changes size or moves. fill(ud, box, fresh) runs right before a frame is drawn: fresh = 1 with a new, empty box
+       (a new title view, a language change), 0 each time the button shows again after it was hidden (a sub-page's
+       Back); the module puts its picture under box (a RectTransform; a picture there must not take clicks). Call it
+       after title_add_button. 0 = ok, -1 = no such button. */
+    int (*title_button_icon)(DSLPlugin *self, void (*click)(void *ud), void *ud, float size,
+                             void (*fill)(void *ud, DSLObj box, int fresh));
 } DSLHost;
+#define DSL_HAS_TITLE_BUTTON_ICON 1               /* this header has title_button_icon (older copies of it do not) */
 
 #ifndef DSL_PLUGIN_API
 #define DSL_PLUGIN_API 3                      /* the API a module needs from its loader (API 4 = runtime check only) */
@@ -223,6 +235,9 @@ static inline int dsl_loadrow_add(const DSLHost *h, DSLPlugin *self, const DSLLo
 static inline int dsl_loadlist_filter(const DSLHost *h, DSLPlugin *self, const DSLLoadFilter *f) {
     return DSL_HAS(h, loadlist_filter) ? h->loadlist_filter(self, f) : -1; }
 static inline const DSLUi *dsl_ui(const DSLHost *h) { return DSL_HAS(h, ui) ? h->ui : NULL; }
+static inline int dsl_title_button_icon(const DSLHost *h, DSLPlugin *self, void (*click)(void *), void *ud, float size,
+                                        void (*fill)(void *ud, DSLObj box, int fresh)) {
+    return DSL_HAS(h, title_button_icon) ? h->title_button_icon(self, click, ud, size, fill) : -1; }
 
 #ifdef __cplusplus
 }

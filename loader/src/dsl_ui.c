@@ -79,7 +79,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_comp_go, *m_comp_tr, *m_comp_get, *m_comp_inparent,
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
     *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
-    *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_getpos, *m_rt_corners, *m_tr_find, *m_spr_rect, *m_scr_h, *m_tr_setscale, *m_lg_setsp, *m_lg_getsp,
+    *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_getpos, *m_rt_corners, *m_rt_omin, *m_rt_setomin, *m_rt_getamin, *m_rt_omax, *m_rt_setomax, *m_rt_getamax, *m_tr_find, *m_spr_rect, *m_scr_h, *m_tr_setscale, *m_lg_setsp, *m_lg_getsp,
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
@@ -367,7 +367,7 @@ static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
    text, the text keeps its design size and wraps to more lines (the line grows; it draws past its rect, centred); a box
    we own grows to DSLUi.text_height. Same code as multiplayer's mpmenu.c. */
 #define FIT_N 2048                                                   /* open addressing by object address */
-typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi, stock; } FitE;
+typedef struct { Obj t; uintptr_t h; float size, w, h_; uint32_t hash; uint8_t wrap, on, dirty, multi, stock, one; } FitE;   /* one: never two lines */
 typedef struct { float x, y, w, h; } FRect;
 static FitE fit_tab[FIT_N];
 static int fit_count;
@@ -424,7 +424,7 @@ static void fit_one(FitE *e, Obj t, float w, float h) {
     e->on = 0;
     if (over) {
         float mn = fit_min(e->size);
-        int two = !e->wrap && !e->multi && h >= 2.7f * mn;           /* a one-line label that may use two lines */
+        int two = !e->wrap && !e->multi && !e->one && h >= 2.7f * mn;   /* a one-line label that may use two lines */
         fit_set(t, 0, mn, e->wrap || two);                           /* does it fit at 0.75? */
         int fits = e->wrap || two ? fit_pref(t, w).y <= h * 1.1f + 2 : fit_pref(t, 0).x <= w + 1;
         fit_set(t, 0, e->size, e->wrap);
@@ -1297,7 +1297,8 @@ static DSLUi KIT = {
 
 /* ------------------------------------------------------------------ title screen buttons */
 #define TBMAX 16
-typedef struct { char owner[64], label[96], tip[600]; int order, seq; void (*click)(void *); void *ud; uintptr_t h_btn, h_view, h_act; } TBE;
+typedef struct { char owner[64], label[96], tip[600]; int order, seq; void (*click)(void *); void *ud; uintptr_t h_btn, h_view, h_act;
+                 float icon; void (*fill)(void *, DSLObj, int); uintptr_t h_box; int shown; } TBE;
 static TBE tbs[TBMAX]; static int ntbs, tb_seq;
 static uintptr_t h_tview, h_tview_off; static int64_t tview_last = -1000, tview_fast_until;
 static Obj title_view(void) {
@@ -1336,6 +1337,48 @@ int dsl_ui_title_add(const char *owner_id, const char *label, int order, const c
     dsl_log("ui: title button \"%s\" (%s, order %d) registered", label, e->owner, order);
     return 0;
 }
+/* a picture box at the left of that button (dsl_sdk.h title_button_icon); made with the button (title_frame) */
+__attribute__((visibility("default")))
+int dsl_ui_title_icon(const char *owner_id, void (*click)(void *), void *ud, float size, void (*fill)(void *, DSLObj, int)) {
+    for (int i = 0; i < ntbs; i++) {
+        TBE *e = &tbs[i];
+        if (e->click != click || e->ud != ud || strcmp(e->owner, owner_id ? owner_id : "?")) continue;
+        e->icon = size > 0 && fill ? size : 0; e->fill = e->icon > 0 ? fill : NULL;
+        hfree(&e->h_view);                                            /* made again with its box at the next title frame */
+        dsl_log("ui: title button \"%s\": icon box %.0f", e->label, e->icon);
+        return 0;
+    }
+    return -1;
+}
+/* the box: size x size at the button's left edge, centred in height, as far from the left edge as from the top; the
+   label's left edge moves right of it (the text stays centred in what is left). Made with the clone, before the frame
+   it is first drawn in, so the button never changes. */
+static void tb_icon_make(TBE *e, Obj b) {
+    Obj box = inst(hget(h_tpl_img), b); if (!box) { dsl_log("ui: title button \"%s\": icon box failed", e->label); return; }
+    go_active(box, 1); gr_material(box, NULL); img_set(box, NULL, (Col){ 0, 0, 0, 0 }, 0);   /* empty, no clicks */
+    Obj rt = tr_of(b), l = btn_label(b);
+    FRect br = m_rt_rect && isa(rt, K.RectTransform) ? CALL(m_rt_rect, FRect, Obj)(rt, m_rt_rect) : (FRect){ 0, 0, 0, 0 };
+    float pad = br.h > e->icon ? (br.h - e->icon) / 2 : 0; if (pad < 2) pad = 2;
+    float gap = pad > 6 ? pad : 6;
+    rt_set(box, (V2){ 0, 0.5f }, (V2){ 0, 0.5f }, (V2){ 0, 0.5f }, (V2){ e->icon, e->icon }, (V2){ pad, 0 });
+    hset(&e->h_box, tr_of(box));
+    /* the label's edges in its own offset units: the button's left edge is at -anchorMin.x x width, its right edge at
+       (1 - anchorMax.x) x width (the label is a child of the button). Left: right of the box; right: as far in
+       as the box's right side, so a long text that fills the label (auto size) keeps clear of the border */
+    Obj lt = l ? tr_of(l) : NULL;
+    if (lt && m_rt_omin && m_rt_setomin && m_rt_getamin && m_rt_omax && m_rt_setomax && m_rt_getamax && tr_parent(lt) == rt && br.w > 0) {
+        V2 o = CALL(m_rt_omin, V2, Obj)(lt, m_rt_omin), a = CALL(m_rt_getamin, V2, Obj)(lt, m_rt_getamin);
+        V2 o2 = CALL(m_rt_omax, V2, Obj)(lt, m_rt_omax), a2 = CALL(m_rt_getamax, V2, Obj)(lt, m_rt_getamax);
+        float left = -a.x * br.w, want = left + pad + e->icon + gap, right = (1 - a2.x) * br.w, want2 = right - pad - gap;
+        if (o.x < want) CALL(m_rt_setomin, void, Obj, V2)(lt, (V2){ want, o.y }, m_rt_setomin);
+        if (o2.x > want2) CALL(m_rt_setomax, void, Obj, V2)(lt, (V2){ want2, o2.y }, m_rt_setomax);
+        /* the narrower label keeps one line: smaller (down to the game's 0.75) rather than two lines (Spanish) */
+        txt_style(l, 0, 22, 514, 0); FitE *fe = fit_find(l, 1); if (fe) fe->one = 1;
+        dsl_log("ui: title button \"%s\": icon box %.0f at %.0f (button %.0fx%.0f), label %.0f-%.0f -> %.0f-%.0f",
+                e->label, e->icon, pad, br.w, br.h, o.x - left, br.w - (right - o2.x), (o.x < want ? want : o.x) - left,
+                br.w - (right - (o2.x > want2 ? want2 : o2.x)));
+    } else dsl_log("ui: title button \"%s\": icon box %.0f, label not moved (label %s)", e->label, e->icon, lt ? "not a child of the button" : "missing");
+}
 static int tb_cmp(const void *a, const void *b) {
     const TBE *x = *(TBE *const *)a, *y = *(TBE *const *)b;
     return x->order != y->order ? (x->order < y->order ? -1 : 1) : x->seq - y->seq;
@@ -1370,7 +1413,7 @@ static void title_frame(void) {
     qsort(ord, (size_t)ntbs, sizeof *ord, tb_cmp);
     int n = child_count(col);
     for (int i = 0; i < ntbs; i++) {
-        TBE *e = ord[i]; Obj b = hget(e->h_btn);
+        TBE *e = ord[i]; Obj b = hget(e->h_btn); int fresh = 0;
         if (!b || hget(e->h_view) != v) {
             if (b) destroy_obj(go_of(b));
             Obj c = inst(credit, col); b = c ? comp_get(c, K.TitleButton) : NULL;
@@ -1383,8 +1426,13 @@ static void title_frame(void) {
             hset(&e->h_btn, b); hset(&e->h_view, v); n = child_count(col);
             if (e->tip[0]) k_tooltip(tr_of(b), e->label, e->tip);
             dsl_log("ui: title button \"%s\" added to the title column (%d children)", e->label, n);
+            hfree(&e->h_box); e->shown = 0;
+            if (e->icon > 0 && e->fill) { tb_icon_make(e, b); Obj box = hget(e->h_box); if (box) { e->fill(e->ud, (DSLObj)box, 1); fresh = 1; } }
         }
         go_active(b, stock_on);
+        int on = on_tree(b); Obj box = hget(e->h_box);              /* shown again (a sub-page's Back): the module's turn */
+        if (on && !e->shown && !fresh && box && e->fill) e->fill(e->ud, (DSLObj)box, 0);
+        e->shown = on;
     }
     /* order (owner 2026-10-16 #2): right below the multiplayer module's "Multiplayer" button, then by order; without
        it, last in the column as before. That button is found by its owner, not by its label (the label is translated):
@@ -1726,6 +1774,9 @@ void dsl_ui_install(void) {
     m_rt_getpos = OPT(K.RectTransform, "get_anchoredPosition", 0); m_tr_find = OPTSIG(K.Transform, "Find", 1, "System.String");   /* title brand */
     m_spr_rect = OPT(K.Sprite, "get_rect", 0); m_scr_h = OPT(klass(UE, "Screen"), "get_height", 0);
     m_tr_setscale = OPT(K.Transform, "set_localScale", 1);
+    m_rt_omin = OPT(K.RectTransform, "get_offsetMin", 0); m_rt_setomin = OPT(K.RectTransform, "set_offsetMin", 1);   /* title button icon */
+    m_rt_getamin = OPT(K.RectTransform, "get_anchorMin", 0); m_rt_getamax = OPT(K.RectTransform, "get_anchorMax", 0);
+    m_rt_omax = OPT(K.RectTransform, "get_offsetMax", 0); m_rt_setomax = OPT(K.RectTransform, "set_offsetMax", 1);
     K.HVLayout = klass(UI, "HorizontalOrVerticalLayoutGroup");
     if (K.HVLayout) { m_lg_setsp = OPT(K.HVLayout, "set_spacing", 1); m_lg_getsp = OPT(K.HVLayout, "get_spacing", 0); }
     m_gr_color = MTH(K.Graphic, "set_color", 1); m_gr_raycast = MTH(K.Graphic, "set_raycastTarget", 1); m_gr_material = OPT(K.Graphic, "set_material", 1);
