@@ -7,6 +7,7 @@
 #                  game settings (windowed) into the profile's data folder. A kept game copy gets a fresh BepInEx.
 #   -Step start    -Ids a,b: writes the mod profile (data\Mods\active.json) and starts the starter (the real start path:
 #                  bie_prepare, Doorstop on or off, environment). Run it through runProgramInGuest -interactive.
+#   -Step chain    runs stage\chain\chaintest.exe (no game; after setup) and returns its exit code and log lines.
 #   -Step collect  pings the multiplayer control port twice (frame counter, 3 s apart), copies the logs into one zip.
 param([string]$Step = '', [string]$Tag = '0', [string]$Ids = '', [switch]$Download)
 $ErrorActionPreference = 'Stop'
@@ -129,6 +130,15 @@ try {
         if (Test-Path "$OUT\collect-$Tag.zip") { Move-Old "$OUT\collect-$Tag.zip" }
         Compress-Archive -Path "$d\*" -DestinationPath "$OUT\collect-$Tag.zip"
         $r.ok = $true
+    }
+    'chain' {
+        # chaintest.exe (stage\chain, unpacked by setup): the loader's engine + BepInEx's Dobby detour, both orders, no game
+        $d = "$STAGE\chain"
+        if (-not (Test-Path "$d\chaintest.exe")) { throw "no $d\chaintest.exe (stage.zip without chain\)" }
+        $p = Start-Process -FilePath "$d\chaintest.exe" -WorkingDirectory $d -WindowStyle Hidden -PassThru -Wait
+        $r.exit = $p.ExitCode
+        $r.log = @(Get-Content -LiteralPath "$d\chaintest.log" -ErrorAction SilentlyContinue)
+        $r.ok = ($p.ExitCode -eq 0)
     }
     default { throw "unknown step '$Step'" }
     }

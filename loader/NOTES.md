@@ -47,6 +47,7 @@ Log: `<log dir>/dsload.log` (previous run: `dsload.prev.log`).
 - Our engine writes 4 bytes per site (MelonLoader's 16-byte hook broke a 4-byte export, PLAN.md).
 - Another hook engine in the same process (old `dsrig.dylib` / `dsmods.dylib`, Doorstop) is logged as a warning.
   Hooks on the SAME function by two engines are refused by ours, not chained. Chaining with Harmony/Dobby is not done.
+  (Windows since v0.1.16: chained over an `E9` / `FF 25` jump, see "Harmony + our MinHook on one function, Windows".)
 
 ## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).
@@ -582,13 +583,34 @@ function's first bytes before / after Harmony, which engine patched first, where
   `python3 winharmony_test.py [out]` (guest side `wh_guest.ps1`; own test folder C:\dsm\winharmony\root, VMWARE.md rules).
 - Order: ours is always first. dsload's hooks go in at GameAssembly mapping; Harmony patches in the plugin's Load, later.
   So our engine never sees Harmony's jump (no "refused" line); the question is whether Harmony's detour (Il2CppInterop,
-  Dobby on Windows) survives a site that already starts with our `E9` jump.
+  Dobby on Windows) survives a function we already hooked.
 - Wine dry run (DSMP bottle, -nographics, the bottle's 0.1.13 loader; same MinHook engine) [V: one run]: site before =
   `e9 ..` (our jump), our trampoline copies 6 bytes and returns to site+6; Harmony's patch then CRASHED the game inside
   dobby.dll (access violation reading 0, dobby.dll+0x2b62, stack through coreclr). No chain. With the plugin off the
   next start was clean (Doorstop off, plugin folder moved out, MainFlow.Update hooked, frame counter moving).
-  Not yet seen on real Windows: the VM run decides. Until then: a BepInEx plugin that Harmony-patches a function the
-  multiplayer module hooks is expected to crash on Windows.
+  Real Windows VM (lane vmwin2, 2026-10-18 22:26): the same crash, `dobby.DLL+0x2b62` (write to 0), 3.6 min after start.
+- Cause (lane harmonyfix, v0.1.16) [V: BepInEx be.788 decompiled, shipped dobby.dll disassembled, Dobby source]:
+  BepInEx's `INativeDetour.Create` first runs `FollowExportThunks`: it follows up to 8 jumps `E9 rel32` / `FF 25
+  [rip+disp32]` (meant for il2cpp export thunks). From MainFlow.Update it went site `E9` -> MinHook relay `FF 25` -> the
+  dsload thunk, so Dobby patched our THUNK, not the site. The thunk block came from `VirtualAlloc(NULL)` (VM
+  0x1d29def0000, Wine 0x62540000). Dobby x64 needs an 8-byte RW slot within +-2 GB of what it patches
+  (`AllocIndirectStub`, for `jmp [rip+disp32]`); its search found none there, returned NULL, and the caller wrote
+  through it (`dobby+0x2b62 = mov [rbx], rsi` after the "[!] Not found near forward stub" log). This is before Dobby
+  reads any code: the `E9` at the site was not the cause. Mac: FollowExportThunks only knows x86 bytes, Dobby patches
+  the site.
+- Fix (`start/win/dsl_engine_win.c`): the thunk block is allocated next to GameAssembly (nearest free range below the
+  image, then above its end, within 1 GB; dsload.log "engine: MinHook, 2048 thunks at ... (below GameAssembly)"), like
+  the Mac engine's region. Dobby then reuses the slot page of BepInEx's own il2cpp_runtime_invoke detour or finds one as
+  for game code. Order at run time: site -> relay -> thunk (Dobby's jump) -> Harmony -> Dobby's copy of the thunk ->
+  ours -> the game. Our unhook (slot = 0) still works; Harmony keeps running.
+- Reverse order (a BepInEx patch first, our hook second, e.g. a late hook): the engine no longer refuses a site that
+  starts with `E9` or `FF 25` (Dobby's patch). MinHook copies that jump into our trampoline; the engine checks that the
+  copy reaches the same target / slot (MinHook does not check a new disp32, and Dobby's slot can be 2 GB away) and else
+  takes the hook back and refuses as before. Then ours runs first, Harmony second. `EB` and `mov rax; jmp rax` sites
+  are still refused. A Harmony unpatch after that puts Dobby's saved bytes back over our jump: our hook stops firing
+  there (no crash).
+- `chaintest/chaintest.c` (run 0 of winharmony_test.py, no game): the engine + the pinned dobby.dll + BepInEx's
+  follow logic on one function, both orders, unhook and re-arm.
 - Found on the way [V: Doorstop source, master entrypoint.c]: Doorstop sets `DOORSTOP_DISABLE=TRUE` inside the game
   process once its hooks are in. `dsl_reg.c` (Windows branch) reads that variable as "BepInEx is off", so with BepInEx
   running it logs "0 BepInEx plugin(s) running" (Wine run: yes) and the Mods window says the plugin did not start; the

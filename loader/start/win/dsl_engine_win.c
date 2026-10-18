@@ -24,13 +24,53 @@ int dsl_codepatch_ok = 1;
 
 #define SLOT(h) ((void *volatile *)((h)->thunk + 24))
 
+/* The thunks sit next to GameAssembly, like the Mac engine's region after the image. BepInEx (be.788
+   INativeDetour.Create -> FollowExportThunks) follows E9 / FF 25 jumps from a method's start before Dobby patches it:
+   through our site jump and MinHook's relay it lands on the dsload thunk, so Harmony's detour goes on the thunk.
+   Dobby x64 needs an 8-byte RW slot within +-2 GB of what it patches (AllocIndirectStub); at a VirtualAlloc(NULL)
+   address its search found none and it wrote through NULL (dobby.dll+0x2b62, VM and Wine 2026-10-18). Near
+   GameAssembly it reuses the slot page of BepInEx's own il2cpp_runtime_invoke detour, or finds one as for game code.
+   Below the image first (nearest free range), then above its end, within 1 GB; else anywhere (logged). */
+#define NEAR_RANGE 0x40000000ull
+static void *alloc_near_ga(size_t size, const char **where) {
+    SYSTEM_INFO si; GetSystemInfo(&si);
+    uintptr_t g = si.dwAllocationGranularity, amin = (uintptr_t)si.lpMinimumApplicationAddress, amax = (uintptr_t)si.lpMaximumApplicationAddress;
+    size = (size + g - 1) & ~(g - 1);
+    uintptr_t base = dsl_ga_base & ~(g - 1), end = (dsl_ga_base + dsl_image_end + g - 1) & ~(g - 1);
+    uintptr_t lo = base > amin + NEAR_RANGE ? base - NEAR_RANGE : amin, hi = end + NEAR_RANGE < amax ? end + NEAR_RANGE : amax;
+    MEMORY_BASIC_INFORMATION mi;
+    for (uintptr_t a = base - size; dsl_ga_base && base >= lo + size && a >= lo; ) {
+        if (!VirtualQuery((void *)a, &mi, sizeof mi)) break;
+        if (mi.State == MEM_FREE && (uintptr_t)mi.BaseAddress + mi.RegionSize >= a + size) {
+            void *p = VirtualAlloc((void *)a, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+            if (p) { *where = "below GameAssembly"; return p; }
+        }
+        uintptr_t b = mi.State == MEM_FREE ? a : (uintptr_t)mi.AllocationBase & ~(g - 1);
+        if (b < lo + size) break;
+        a = b == a ? a - g : b - size;
+    }
+    for (uintptr_t a = end; dsl_ga_base && a + size <= hi; ) {
+        if (!VirtualQuery((void *)a, &mi, sizeof mi)) break;
+        uintptr_t re = (uintptr_t)mi.BaseAddress + mi.RegionSize;
+        if (mi.State == MEM_FREE && re >= a + size) {
+            void *p = VirtualAlloc((void *)a, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+            if (p) { *where = "above GameAssembly"; return p; }
+            re = a + g;
+        }
+        a = (re + g - 1) & ~(g - 1);
+    }
+    *where = "far from GameAssembly: a BepInEx (Dobby) patch on a hooked function can crash";
+    return VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+}
+
 int dsl_engine_init(void) {
     if (thunks) return 0;
     MH_STATUS s = MH_Initialize();
     if (s != MH_OK && s != MH_ERROR_ALREADY_INITIALIZED) { dsl_log("engine: MH_Initialize failed (%d): hooks off", s); return -1; }
-    thunks = VirtualAlloc(NULL, MAXH * THUNK_SZ, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    const char *where = "";
+    thunks = alloc_near_ga(MAXH * THUNK_SZ, &where);
     if (!thunks) { dsl_log("engine: no thunk memory: hooks off"); return -1; }
-    dsl_log("engine: MinHook, %d thunks at %p", MAXH, (void *)thunks);
+    dsl_log("engine: MinHook, %d thunks at %p (%s)", MAXH, (void *)thunks, where);
     return 0;
 }
 
@@ -103,6 +143,27 @@ static int foreign_jump(const uint8_t *p) {
     return p[0] == 0xE9 || p[0] == 0xEB || (p[0] == 0xFF && p[1] == 0x25) || (p[0] == 0x48 && p[1] == 0xB8 && p[10] == 0xFF && p[11] == 0xE0);
 }
 
+/* Where a jump at p goes: E9 rel32 -> its target; FF 25 [rip+disp32] (Dobby's patch, MinHook's relay) -> the address
+   of the slot it reads (the slot's value can change later). 0 = another form. */
+static uintptr_t jump_ref(const uint8_t *p) {
+    if (p[0] == 0xE9) { int32_t r; memcpy(&r, p + 1, 4); return (uintptr_t)p + 5 + (intptr_t)r; }
+    if (p[0] == 0xFF && p[1] == 0x25) { int32_t r; memcpy(&r, p + 2, 4); return (uintptr_t)p + 6 + (intptr_t)r; }
+    return 0;
+}
+
+/* Reverse order (a BepInEx / Dobby patch first, our hook second): MinHook copies the other engine's jump into our
+   trampoline (E9 -> FF 25 00000000 <abs>, FF 25 -> FF 25 with a new disp32) and ours runs first, then theirs.
+   MinHook does not check that a new disp32 still reaches the slot (Dobby puts it up to 2 GB from the site): the copy
+   must go to the same place, else the hook is taken back. */
+static int same_jump(const uint8_t *site, const uint8_t *tramp) {
+    uintptr_t want = jump_ref(site);
+    if (site[0] == 0xE9) {
+        uint64_t to; memcpy(&to, tramp + 6, 8);
+        return tramp[0] == 0xFF && tramp[1] == 0x25 && !memcmp(tramp + 2, "\0\0\0\0", 4) && to == want;
+    }
+    return want && jump_ref(tramp) == want;
+}
+
 static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who) {
     uintptr_t site = (uintptr_t)target;
     if (!dsl_build_id) { dsl_log("%s: hook refused: the game build is not the pinned one", who); return -1; }
@@ -126,7 +187,8 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     }
     const Patch *pp = patch_over(site, 5);
     if (pp) { dsl_log("%s: hook refused: %#llx is inside a code patch of %s (%s)", who, (unsigned long long)rva, dsl_owner_name(pp->owner), pp->name); return -1; }
-    if (foreign_jump((const uint8_t *)site)) {
+    int chain = foreign_jump((const uint8_t *)site);
+    if (chain && !jump_ref((const uint8_t *)site)) {
         dsl_log("%s: hook refused: %#llx already starts with a jump (a static patch or another loader's hook)", who, (unsigned long long)rva);
         return -1;
     }
@@ -135,6 +197,12 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     void *tramp = NULL;
     MH_STATUS s = MH_CreateHook(target, t, &tramp);
     if (s != MH_OK) { dsl_log("%s: hook %#llx failed (MinHook create %d)", who, (unsigned long long)rva, s); return -1; }
+    if (chain && !same_jump((const uint8_t *)site, tramp)) {
+        MH_RemoveHook(target);
+        dsl_log("%s: hook refused: %#llx starts with another loader's jump that MinHook could not copy", who, (unsigned long long)rva);
+        return -1;
+    }
+    if (chain) dsl_log("%s: %#llx already starts with another loader's jump (BepInEx/Dobby?): chained, ours runs first", who, (unsigned long long)rva);
     make_thunk(t, tramp, repl);
     dsl_mark_codepatch();
     s = batch ? MH_QueueEnableHook(target) : MH_EnableHook(target);
