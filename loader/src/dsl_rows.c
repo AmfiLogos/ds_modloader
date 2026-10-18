@@ -64,6 +64,7 @@ static int32_t mf_handler = -1;
 static int32_t o_parent = -1;                            /* SaveLoadView._saveSlotParent (groups_apply) */
 static void (*set_sib)(Obj t, int i, const void *mi);
 static int (*get_sib)(Obj t, const void *mi);
+static void (*set_last)(Obj t, const void *mi);
 
 static void *cls(const char *ns, const char *n) { void *c = dsl_find_class(ns, n); if (!c) dsl_log("rows: class %s.%s missing", ns, n); return c; }
 static int32_t fo(void *k, const char *n) { int32_t o = k ? dsl_field_offset(k, n) : -1; if (o < 0) dsl_log("rows: field %s missing", n); return o; }
@@ -84,7 +85,7 @@ void dsl_rows_install(void) {
     refresh_size = ma(k_slv, "RefreshPanelSize", 0);
     o_parent = fo(k_slv, "_saveSlotParent");                               /* the list's rows (groups_apply) */
     void *kTr = cls("UnityEngine", "Transform");
-    set_sib = ma(kTr, "SetSiblingIndex", 1); get_sib = ma(kTr, "GetSiblingIndex", 0);
+    set_sib = ma(kTr, "SetSiblingIndex", 1); get_sib = ma(kTr, "GetSiblingIndex", 0); set_last = ma(kTr, "SetAsLastSibling", 0);
     rt_rect = ma(cls("UnityEngine", "RectTransform"), "get_rect", 0);
     void *kh = cls("Refactor.Main.Event", "CampaignLoadingEventHandler"); try_header = ma(kh, "TryGetSaveHeader", 3);
     void *kmf = cls("Refactor.Main", "MainFlow"); mf_handler = fo(kmf, "_eventHandler");
@@ -369,6 +370,83 @@ static void groups_apply(Obj slv) {
     dsl_rows_groups[0] = n[0]; dsl_rows_groups[1] = n[1];
 }
 
+/* worlds that are not on the list (owner 2026-10-18: the player must see they are hidden, not lost): one line where they
+   would be, with how many and why. Top (where the game saves would be): the game's worlds this list cannot show
+   (dsl_saves.c: its hooks off this session, or a save the game could not read). Bottom: world rows a filter hides, the
+   kind from the module that hides them (dsl_sdk.h dsl_loadlist_hidden: the multiplayer list filter), else the loader's
+   own filter toggles; with no such export the line says "a filter". */
+static DSLObj hid[2];                                    /* 0 top, 1 bottom */
+int dsl_rows_hidden[2];                                  /* test: worlds named by the top / bottom line at the last rebuild */
+static void hid_show(int k, Obj content, float wd, const char *txt) {
+    const DSLUi *u = dsl_ui_kit();
+    if (hid[k] && !live((Obj)hid[k])) hid[k] = NULL;
+    if (!txt[0]) { if (hid[k]) u->set_active(hid[k], 0); return; }
+    if (!hid[k]) hid[k] = u->text(content, 0, 0, wd - 24, 30, txt, 16, DSL_TXT_LEFT | DSL_TXT_WRAP, 0xC9B79CFF);
+    else u->set_text(hid[k], txt);
+    if (!hid[k]) return;
+    float h = u->size >= offsetof(DSLUi, text_height) + sizeof u->text_height && u->text_height ? u->text_height(hid[k], wd - 24) : 0;
+    u->place(hid[k], 0, 0, wd - 24, (h > 22 ? h : 22) + 12);
+    u->set_active(hid[k], 1);
+}
+static void hidden_apply(Obj slv) {
+    const DSLUi *u = dsl_ui_kit();
+    Obj content = o_parent >= 0 ? AT(slv, o_parent, Obj) : NULL;
+    if (!u || !set_sib || !get_sib || !set_last || !live(content)) return;
+    float wd = rt_rect ? rt_rect(content, NULL).w : 600; if (wd < 100) wd = 600;
+    char top[1400] = "", end[900] = "", one[600];
+    int off, unread; dsl_saves_hidden(&off, &unread);
+    if (off > 0) snprintf(top, sizeof top, TRN("%d of your game worlds is not listed: the mod loader could not connect your game saves "
+                                               "this session. It is safe in Dungeon Settlers.",
+                                               "%d of your game worlds are not listed: the mod loader could not connect your game saves "
+                                               "this session. They are safe in Dungeon Settlers.", off), off);
+    if (unread > 0) {
+        snprintf(one, sizeof one, TRN("%d game save could not be read by the game, so it is not listed. The file stays in your save folder.",
+                                      "%d game saves could not be read by the game, so they are not listed. The files stay in your save folder.", unread), unread);
+        if (top[0]) strlcat(top, "\n", sizeof top);
+        strlcat(top, one, sizeof top);
+    }
+    int ours = 0, others = 0;                                               /* inactive world rows: our filters' / someone else's */
+    for (int i = 0; i < nw; i++) {
+        Obj cs = gc_get(W[i].cs); Obj g = live(cs) ? comp_go(cs, NULL) : NULL;
+        if (!g || go_self(g, NULL)) continue;
+        if (hid_find(W[i].guid) >= 0) ours++; else others++;
+    }
+    int kind = 0;
+    if (others) {
+        void *f[8]; int nf_ = dsl_module_syms("dsl_loadlist_hidden", f, 8);
+        for (int i = 0; i < nf_ && !kind; i++) { int k = 0; if (((int (*)(int *))f[i])(&k) > 0 && (k == 1 || k == 2)) kind = k; }
+    }
+    if (others && kind == 1) snprintf(end, sizeof end, TRN("%d multiplayer world is hidden. Tick the box under the list to show it.",
+                                                           "%d multiplayer worlds are hidden. Tick the box under the list to show them.", others), others);
+    else if (others && kind == 2) snprintf(end, sizeof end, TRN("%d single-player world is hidden. Tick the box under the list to show it.",
+                                                                "%d single-player worlds are hidden. Tick the box under the list to show them.", others), others);
+    int gen = ours + (kind ? 0 : others);
+    if (gen) {
+        snprintf(one, sizeof one, TRN("%d world is hidden by a filter under the list.", "%d worlds are hidden by a filter under the list.", gen), gen);
+        if (end[0]) strlcat(end, "\n", sizeof end);
+        strlcat(end, one, sizeof end);
+    }
+    dsi_utf8_fix_end(top); dsi_utf8_fix_end(end);
+    hid_show(0, content, wd, top); hid_show(1, content, wd, end);
+    if (top[0] && hid[0]) {                                                 /* before the first row / group header */
+        int base = get_sib((Obj)hid[0], NULL);                             /* its own place too: moving down shifts the rest up */
+        for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs)) { int s = get_sib(comp_tr(cs, NULL), NULL); if (s < base) base = s; } }
+        for (int k = 0; k < 2; k++) if (hdr[k] && live((Obj)hdr[k])) { int s = get_sib((Obj)hdr[k], NULL); if (s < base) base = s; }
+        set_sib((Obj)hid[0], base == 1 << 30 ? 0 : base, NULL);
+    }
+    if (end[0] && hid[1]) set_last((Obj)hid[1], NULL);
+    refresh_size(slv, NULL);
+    int h0 = off + unread, h1 = others + ours;
+    if (h0 != dsl_rows_hidden[0] || h1 != dsl_rows_hidden[1])
+        dsl_log("rows: hidden-worlds lines: top %d (game worlds not listed %d, unreadable %d), bottom %d (kind %d, %d by other filters, %d by ours)",
+                h0, off, unread, h1, kind, others, ours);
+    dsl_rows_hidden[0] = top[0] ? h0 : 0; dsl_rows_hidden[1] = end[0] ? h1 : 0;
+}
+static void hidden_off(void) {
+    const DSLUi *u = dsl_ui_kit();
+    for (int k = 0; k < 2; k++) if (u && hid[k] && live((Obj)hid[k])) u->set_active(hid[k], 0);
+}
+
 /* the New Campaign line */
 static DSLObj nc_line, nc_btn; static uintptr_t h_cs;
 static void nc_click(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("rows: New Campaign [Change]"); dsl_newworld_change(); }
@@ -397,7 +475,7 @@ void dsl_rows_frame(void) {
     if (!live(slv)) { if (h_slv) gc_free(h_slv); h_slv = 0; slv = (fr % 30 == 0) ? find_obj(t_slv, 1, NULL) : NULL; if (slv) h_slv = gc_new(slv, 0); }
     if (fr % 30 == 0) new_campaign_frame();
     int open = live(slv) && shown(slv) && o_lowload >= 0 && shown(AT(slv, o_lowload, Obj));   /* the Load panel (not Save) */
-    if (!open) { if (list_open) { list_open = 0; rows_clear(); } return; }
+    if (!open) { if (list_open) { list_open = 0; rows_clear(); hidden_off(); } return; }
     uint32_t s = list_sig(slv);
     if (!list_open) { list_open = 1; toggles_build(slv); sig_last = 0; }
     if (s != sig_last || dirty) {
@@ -406,9 +484,10 @@ void dsl_rows_frame(void) {
         filters_apply(slv);
         decorate();
         groups_apply(slv);
+        hidden_apply(slv);
         sig_last = list_sig(slv);
         int hidden = 0; for (int i = 0; i < nw; i++) hidden += W[i].hid;
-        dsl_log("rows: Load list rebuilt: %d world row(s) (%d hidden by filters), %d text source(s), %d filter(s); groups: %d game, %d modded",
-                nw, hidden, nr, nf, dsl_rows_groups[0], dsl_rows_groups[1]);
+        dsl_log("rows: Load list rebuilt: %d world row(s) (%d hidden by filters), %d text source(s), %d filter(s); groups: %d game, %d modded; hidden lines: %d top, %d bottom",
+                nw, hidden, nr, nf, dsl_rows_groups[0], dsl_rows_groups[1], dsl_rows_hidden[0], dsl_rows_hidden[1]);
     }
 }

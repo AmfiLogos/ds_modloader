@@ -2,8 +2,29 @@
  "%d file is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.||%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.": [
   "%d개 파일은 Dungeon Settlers Modded용 모드가 아닙니다. 파일들은 mods/.failed 폴더로 옮겨졌습니다."
  ],
+ "%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder.": [
+  "게임이 일반 세이브 %d개를 읽지 못해 목록에 표시되지 않습니다. 파일은 세이브 폴더에 그대로 있습니다."
+ ],
  "%d mod is ready. The new version installs the next time the game starts.||%d mods are ready. The new versions install the next time the game starts.": [
   "%d개의 모드가 준비되었습니다. 새 버전은 다음에 게임을 시작할 때 설치됩니다."
+ ],
+ "%d modded world is not in the Load list this session. It is not lost: it stays in the Dungeon Settlers Modded save folder and comes back when the mods are on again.||%d modded worlds are not in the Load list this session. They are not lost: they stay in the Dungeon Settlers Modded save folder and come back when the mods are on again.": [
+  "이번 세션에서는 모드 월드 %d개가 불러오기 목록에 없습니다. 사라진 것이 아닙니다. Dungeon Settlers Modded 세이브 폴더에 그대로 있으며, 모드가 다시 켜지면 돌아옵니다."
+ ],
+ "%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them.": [
+  "멀티플레이 월드 %d개가 숨겨져 있습니다. 표시하려면 목록 아래의 상자를 체크하세요."
+ ],
+ "%d of your game worlds is not in the Load list this session. It is not lost: play it in Dungeon Settlers, or here when the mods are on again.||%d of your game worlds are not in the Load list this session. They are not lost: play them in Dungeon Settlers, or here when the mods are on again.": [
+  "이번 세션에서는 일반 월드 %d개가 불러오기 목록에 없습니다. 사라진 것이 아닙니다. Dungeon Settlers에서 플레이하거나, 모드가 다시 켜지면 여기서 플레이하세요."
+ ],
+ "%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers.": [
+  "일반 월드 %d개가 목록에 없습니다. 이번 세션에서 모드 로더가 일반 세이브를 연결하지 못했습니다. 월드는 Dungeon Settlers에 안전하게 있습니다."
+ ],
+ "%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them.": [
+  "싱글플레이 월드 %d개가 숨겨져 있습니다. 표시하려면 목록 아래의 상자를 체크하세요."
+ ],
+ "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
+  "월드 %d개가 목록 아래의 필터로 숨겨져 있습니다."
  ],
  "%s (not installed)": "%s (설치 안 됨)",
  "%s and %s": "%s 및 %s",
@@ -129,6 +150,7 @@
  "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).": "게임을 시작할 수 없습니다. Dungeon Settlers Modded 폴더(profiles\\modded)의 starter.log를 확인하십시오.",
  "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.": "게임을 시작할 수 없습니다. ~/Library/Logs/DungeonSettlersModded.log를 확인하십시오.",
  "The game files changed after the start check. Mods stay off. Restart the game.": "게임 파일이 시작 점검 이후 바뀌었습니다. 모드는 꺼진 상태로 유지됩니다. 게임을 재시작하십시오.",
+ "The game stopped while the mod loader was starting last time, so mods stay off until the mod loader is updated.": "지난번에 모드 로더가 시작되는 동안 게임이 멈췄습니다. 그래서 모드 로더가 업데이트될 때까지 모드는 꺼진 상태로 유지됩니다.",
  "The game was updated. Mods stay off until they are updated for this game version.": "게임이 업데이트되었습니다. 이 게임 버전용으로 업데이트될 때까지 모드는 꺼진 상태로 유지됩니다.",
  "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded.": "이 폴더에서는 게임이 시작되지 않습니다:\n%s\n\n경로에 이 PC에서 게임이 읽을 수 없는 글자가 있습니다(예: 중국어 또는 일본어 글자).\n일반 글자만 있는 폴더(예: C:\\Games\\Dungeon Settlers Modded)에 Dungeon Settlers Modded를 다시 설치하십시오.",
  "The group could not be deleted.": "그룹을 삭제할 수 없습니다.",

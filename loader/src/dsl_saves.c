@@ -28,6 +28,7 @@
 // Env: DSML_GAME_SAVES (none = this file is off: one save folder as before), DSML_DATA.
 #include "dsl_internal.h"
 #include "dsl_menu.h"
+#include "dsl_os.h"
 #include <dirent.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -154,6 +155,71 @@ void dsl_saves_loading(const char *name, const char *guid) {
     pthread_mutex_unlock(&mu);
 }
 
+/* ------------------------------------------------------------------ worlds that are not on the Load list
+   (owner 2026-10-18: the player must see that they are hidden, not lost). Counted on disk, no game code:
+   - mods off this session (unknown game build, the Windows save-folder redirect failed, the crash guard): the game lists
+     one folder only. Windows (no redirect): the game's own folder, so the modded worlds are hidden. Mac copy: the modded
+     folder, so the game saves are hidden. Said in the start notice (dsl_main.c); the Load list cannot carry it, since no
+     hook is written in that session.
+   - this file off with mods on (names missing, a hook refused): the game saves are hidden; a line on the Load list.
+   - a game save the game could not read: it stays in the game's folder (my_quar), so it is not listed; same line. */
+/* the worlds (distinct CampaignGuid) of a folder's .json saves; mp_* temporary saves are no world, nor a file with no
+   readable header (the game cannot load it either). Worlds that also have a save in not_in are left out: they are listed
+   from there. */
+#define MAXHW 512
+static int folder_worlds(const char *dir, char (*g)[40], int max) {
+    char nd[1300]; dsl_os_native_path(dir, nd, sizeof nd);
+    DIR *d = opendir(nd); struct dirent *de; int n = 0; if (!d) return 0;
+    while ((de = readdir(d)) && n < max) {
+        if (de->d_name[0] == '.' || !is_json(de->d_name) || mp_temp(de->d_name)) continue;
+        char p[1600], nm[300], w[40] = "", clan[64]; struct stat st;
+        snprintf(p, sizeof p, "%s" SEP "%s", nd, de->d_name);
+        if (stat(p, &st) || !S_ISREG(st.st_mode)) continue;
+        snprintf(nm, sizeof nm, "%.*s", (int)(strlen(de->d_name) - 5), de->d_name);
+        if (!name_guid(nm, w) && !file_header(p, w, clan)) continue;
+        int dup = 0; for (int i = 0; i < n && !dup; i++) dup = !strcmp(g[i], w);
+        if (!dup) snprintf(g[n++], 40, "%s", w);
+    }
+    closedir(d); return n;
+}
+int dsl_saves_hidden_worlds(const char *dir, const char *not_in) {
+    if (!dir || !*dir) return 0;
+    static char a[MAXHW][40], b[MAXHW][40];
+    int na = folder_worlds(dir, a, MAXHW), nb = not_in && *not_in ? folder_worlds(not_in, b, MAXHW) : 0, k = 0;
+    for (int i = 0; i < na; i++) {
+        int both = 0; for (int j = 0; j < nb && !both; j++) both = !strcmp(a[i], b[j]);
+        k += !both;
+    }
+    return k;
+}
+/* mods off this session: the start notice's line on the worlds the Load list will not show ("" = none) */
+void dsl_saves_off_note(int win, char *out, size_t cap) {
+    out[0] = 0;
+    const char *g = getenv("DSML_GAME_SAVES"), *d = getenv("DSML_DATA");
+    if (!d || !*d) return;
+    char m[1100]; snprintf(m, sizeof m, "%s" SEP "Saves", d);
+    int n = win ? dsl_saves_hidden_worlds(m, g) : dsl_saves_hidden_worlds(g, m);
+    if (n <= 0) return;
+    if (win) snprintf(out, cap, TRN("%d modded world is not in the Load list this session. It is not lost: it stays in the "
+                                    "Dungeon Settlers Modded save folder and comes back when the mods are on again.",
+                                    "%d modded worlds are not in the Load list this session. They are not lost: they stay in the "
+                                    "Dungeon Settlers Modded save folder and come back when the mods are on again.", n), n);
+    else snprintf(out, cap, TRN("%d of your game worlds is not in the Load list this session. It is not lost: play it in "
+                                "Dungeon Settlers, or here when the mods are on again.",
+                                "%d of your game worlds are not in the Load list this session. They are not lost: play them in "
+                                "Dungeon Settlers, or here when the mods are on again.", n), n);
+    dsi_utf8_fix_end(out);
+    dsl_log("saves: mods off: %d %s world(s) not listed this session", n, win ? "modded" : "game");
+}
+static int off_worlds;                                   /* this file off with mods on: game worlds not listed */
+static char unread[16][256]; static int nunread;         /* game saves the game could not read (kept, so not listed) */
+void dsl_saves_hidden(int *off, int *unread_n) {
+    *off = off_worlds; *unread_n = 0;
+    pthread_mutex_lock(&mu);
+    for (int i = 0; i < nunread; i++) { struct stat st; char nd[1300]; if (!stat(dsl_os_native_path(unread[i], nd, sizeof nd), &st)) (*unread_n)++; }
+    pthread_mutex_unlock(&mu);
+}
+
 /* ------------------------------------------------------------------ il2cpp access */
 static Obj (*str_new)(const char *);
 static Obj (*arr_new)(void *klass, size_t n);
@@ -252,6 +318,10 @@ static uint8_t my_quar(Obj path, Obj why, const void *mi) {
         if (!strcasecmp(d, g)) {
             char w[400]; utf8_of(why, w, sizeof w);
             dsl_log("saves: the game could not read %s (%s): it stays in the game's folder (not moved)", p, w);
+            pthread_mutex_lock(&mu);                                     /* not listed: the Load list says so (dsl_rows.c) */
+            int k = 0; while (k < nunread && strcmp(unread[k], p)) k++;
+            if (k == nunread && nunread < 16) snprintf(unread[nunread++], sizeof unread[0], "%s", p);
+            pthread_mutex_unlock(&mu);
             return 0;
         }
     }
@@ -544,6 +614,7 @@ static int hk(void *a, void *repl, void **orig, const char *who) {
     if (r) dsl_log("saves: hook %s refused", who);
     return r;
 }
+static int install_hooks(void);
 void dsl_saves_install(void) {
     const char *g = getenv("DSML_GAME_SAVES"), *d = getenv("DSML_DATA");
     if (!g || !*g || !d || !*d) { dsl_log("saves: one save folder (no DSML_GAME_SAVES / DSML_DATA)"); return; }
@@ -553,6 +624,13 @@ void dsl_saves_install(void) {
     snprintf(copies_d, sizeof copies_d, "%s" SEP "Mods" SEP "save_copies", d);
     struct stat st;
     if (stat(game_d, &st) || !S_ISDIR(st.st_mode)) { dsl_log("saves: the game's save folder %s is not there: modded saves only", game_d); return; }
+    if (install_hooks()) {                                    /* off: the game saves are not listed; the Load list says how many */
+        off_worlds = dsl_saves_hidden_worlds(game_d, mod_d);
+        dsl_log("saves: off: %d game world(s) in %s are not listed", off_worlds, game_d);
+    }
+}
+static int install_hooks(void) {
+    if (getenv("DSL_TEST_SAVES_OFF") && *getenv("DSL_TEST_SAVES_OFF") == '1') { dsl_log("saves: DSL_TEST_SAVES_OFF=1: hooks not tried"); return -1; }
     str_new = dsl_ga_sym("il2cpp_string_new"); arr_new = dsl_ga_sym("il2cpp_array_new"); arr_len = dsl_ga_sym("il2cpp_array_length");
     wbarrier = dsl_ga_sym("il2cpp_gc_wbarrier_set_field"); obj_class = dsl_ga_sym("il2cpp_object_get_class");
     obj_new = dsl_ga_sym("il2cpp_object_new");
@@ -565,12 +643,12 @@ void dsl_saves_install(void) {
     void *a_all = meth("Refactor", "SaveLoadHelper", "GetAllSavePaths", 0), *a_path = meth("Refactor", "SaveLoadHelper", "GetCampaignSavePath", 1);
     void *a_save = meth("Refactor", "SaveLoadHelper", "SaveFile", 1), *a_quar = meth("Refactor", "SaveLoadHelper", "TryQuarantineCorruptSaveFile", 2);
     if (!str_new || !arr_new || !arr_len || !wbarrier || !obj_class || !k_string || !a_all || !a_path || !a_save || off_guid < 0) {
-        dsl_log("saves: names missing (offsets guid %d name %d): the game's saves are NOT listed", off_guid, off_name); return;
+        dsl_log("saves: names missing (offsets guid %d name %d): the game's saves are NOT listed", off_guid, off_name); return -1;
     }
     /* all four or none: half of them would write a game world into the modded folder */
-    if (hk(a_all, (void *)my_all, (void **)&o_all, "loader saves GetAllSavePaths")) return;
-    if (hk(a_path, (void *)my_path, (void **)&o_path, "loader saves GetCampaignSavePath")) { dsl_unhook(DSL_OWNER_LOADER, a_all, "saves"); return; }
-    if (hk(a_save, (void *)my_savefile, (void **)&o_savefile, "loader saves SaveFile")) { dsl_unhook(DSL_OWNER_LOADER, a_all, "saves"); dsl_unhook(DSL_OWNER_LOADER, a_path, "saves"); return; }
+    if (hk(a_all, (void *)my_all, (void **)&o_all, "loader saves GetAllSavePaths")) return -1;
+    if (hk(a_path, (void *)my_path, (void **)&o_path, "loader saves GetCampaignSavePath")) { dsl_unhook(DSL_OWNER_LOADER, a_all, "saves"); return -1; }
+    if (hk(a_save, (void *)my_savefile, (void **)&o_savefile, "loader saves SaveFile")) { dsl_unhook(DSL_OWNER_LOADER, a_all, "saves"); dsl_unhook(DSL_OWNER_LOADER, a_path, "saves"); return -1; }
     if (a_quar) hk(a_quar, (void *)my_quar, (void **)&o_quar, "loader saves TryQuarantineCorruptSaveFile");
     move_old_copies();
     pthread_mutex_lock(&mu); scan_game_locked(); int n = ng; pthread_mutex_unlock(&mu);
@@ -594,4 +672,5 @@ void dsl_saves_install(void) {
         a_remove = NULL; dsl_log("saves: save remove question off");
     }
     dsl_log("saves: on: %d game save(s) in %s are listed and played in place; modded-only saves in %s", n, game_d, mod_d);
+    return 0;
 }

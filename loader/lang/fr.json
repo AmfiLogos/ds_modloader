@@ -3,9 +3,37 @@
   "%d fichier n'est pas un mod pour Dungeon Settlers Modded. Il a été déplacé dans le dossier mods/.failed.",
   "%d fichiers ne sont pas des mods pour Dungeon Settlers Modded. Ils ont été déplacés dans le dossier mods/.failed."
  ],
+ "%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder.": [
+  "%d sauvegarde du jeu n'a pas pu être lue par le jeu : elle n'est donc pas listée. Le fichier reste dans votre dossier de sauvegardes.",
+  "%d sauvegardes du jeu n'ont pas pu être lues par le jeu : elles ne sont donc pas listées. Les fichiers restent dans votre dossier de sauvegardes."
+ ],
  "%d mod is ready. The new version installs the next time the game starts.||%d mods are ready. The new versions install the next time the game starts.": [
   "%d mod est prêt. La nouvelle version s'installera au prochain démarrage du jeu.",
   "%d mods sont prêts. Les nouvelles versions s'installeront au prochain démarrage du jeu."
+ ],
+ "%d modded world is not in the Load list this session. It is not lost: it stays in the Dungeon Settlers Modded save folder and comes back when the mods are on again.||%d modded worlds are not in the Load list this session. They are not lost: they stay in the Dungeon Settlers Modded save folder and come back when the mods are on again.": [
+  "%d monde avec mods n'est pas dans la liste de chargement pendant cette session. Il n'est pas perdu : il reste dans le dossier de sauvegardes de Dungeon Settlers Modded et reviendra quand les mods seront de nouveau actifs.",
+  "%d mondes avec mods ne sont pas dans la liste de chargement pendant cette session. Ils ne sont pas perdus : ils restent dans le dossier de sauvegardes de Dungeon Settlers Modded et reviendront quand les mods seront de nouveau actifs."
+ ],
+ "%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them.": [
+  "%d monde multijoueur est masqué. Cochez la case sous la liste pour l'afficher.",
+  "%d mondes multijoueurs sont masqués. Cochez la case sous la liste pour les afficher."
+ ],
+ "%d of your game worlds is not in the Load list this session. It is not lost: play it in Dungeon Settlers, or here when the mods are on again.||%d of your game worlds are not in the Load list this session. They are not lost: play them in Dungeon Settlers, or here when the mods are on again.": [
+  "%d de vos mondes du jeu n'est pas dans la liste de chargement pendant cette session. Il n'est pas perdu : jouez-y dans Dungeon Settlers, ou ici quand les mods seront de nouveau actifs.",
+  "%d de vos mondes du jeu ne sont pas dans la liste de chargement pendant cette session. Ils ne sont pas perdus : jouez-y dans Dungeon Settlers, ou ici quand les mods seront de nouveau actifs."
+ ],
+ "%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers.": [
+  "%d de vos mondes du jeu n'est pas listé : le chargeur de mods n'a pas pu se connecter à vos sauvegardes du jeu pendant cette session. Il est en sécurité dans Dungeon Settlers.",
+  "%d de vos mondes du jeu ne sont pas listés : le chargeur de mods n'a pas pu se connecter à vos sauvegardes du jeu pendant cette session. Ils sont en sécurité dans Dungeon Settlers."
+ ],
+ "%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them.": [
+  "%d monde solo est masqué. Cochez la case sous la liste pour l'afficher.",
+  "%d mondes solo sont masqués. Cochez la case sous la liste pour les afficher."
+ ],
+ "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
+  "%d monde est masqué par un filtre sous la liste.",
+  "%d mondes sont masqués par un filtre sous la liste."
  ],
  "%s (not installed)": "%s (non installé)",
  "%s and %s": "%s et %s",
@@ -135,6 +163,7 @@
  "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).": "Impossible de démarrer le jeu. Voir starter.log dans le dossier Dungeon Settlers Modded (profiles\\modded).",
  "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.": "Impossible de démarrer le jeu. Voir ~/Library/Logs/DungeonSettlersModded.log.",
  "The game files changed after the start check. Mods stay off. Restart the game.": "Les fichiers du jeu ont changé après la vérification au démarrage. Les mods restent désactivés. Redémarrez le jeu.",
+ "The game stopped while the mod loader was starting last time, so mods stay off until the mod loader is updated.": "Le jeu s'est arrêté pendant le démarrage du chargeur de mods la dernière fois : les mods restent désactivés jusqu'à la mise à jour du chargeur de mods.",
  "The game was updated. Mods stay off until they are updated for this game version.": "Le jeu a été mis à jour. Les mods restent désactivés jusqu'à leur mise à jour pour cette version du jeu.",
  "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded.": "Le jeu ne peut pas démarrer depuis ce dossier :\n%s\n\nSon chemin contient des caractères que le jeu ne peut pas lire sur ce PC (par exemple des caractères chinois ou japonais).\nRéinstallez Dungeon Settlers Modded dans un dossier dont le chemin ne contient que des caractères simples, par exemple C:\\Games\\Dungeon Settlers Modded.",
  "The group could not be deleted.": "Impossible de supprimer le groupe.",

@@ -4,10 +4,45 @@
   "%d файла не являются модами для Dungeon Settlers Modded. Они перемещены в папку mods/.failed.",
   "%d файлов не являются модами для Dungeon Settlers Modded. Они перемещены в папку mods/.failed."
  ],
+ "%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder.": [
+  "Игра не смогла прочитать %d обычное сохранение, поэтому его нет в списке. Файл остаётся в вашей папке сохранений.",
+  "Игра не смогла прочитать %d обычных сохранения, поэтому их нет в списке. Файлы остаются в вашей папке сохранений.",
+  "Игра не смогла прочитать %d обычных сохранений, поэтому их нет в списке. Файлы остаются в вашей папке сохранений."
+ ],
  "%d mod is ready. The new version installs the next time the game starts.||%d mods are ready. The new versions install the next time the game starts.": [
   "%d мод готов. Новая версия установится при следующем запуске игры.",
   "%d мода готовы. Новые версии установятся при следующем запуске игры.",
   "%d модов готовы. Новые версии установятся при следующем запуске игры."
+ ],
+ "%d modded world is not in the Load list this session. It is not lost: it stays in the Dungeon Settlers Modded save folder and comes back when the mods are on again.||%d modded worlds are not in the Load list this session. They are not lost: they stay in the Dungeon Settlers Modded save folder and come back when the mods are on again.": [
+  "%d мир с модами не показан в списке загрузки в этом сеансе. Он не потерян: он остаётся в папке сохранений Dungeon Settlers Modded и вернётся, когда моды снова включатся.",
+  "%d мира с модами не показаны в списке загрузки в этом сеансе. Они не потеряны: они остаются в папке сохранений Dungeon Settlers Modded и вернутся, когда моды снова включатся.",
+  "%d миров с модами не показаны в списке загрузки в этом сеансе. Они не потеряны: они остаются в папке сохранений Dungeon Settlers Modded и вернутся, когда моды снова включатся."
+ ],
+ "%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them.": [
+  "%d мир мультиплеера скрыт. Отметьте флажок под списком, чтобы показать его.",
+  "%d мира мультиплеера скрыты. Отметьте флажок под списком, чтобы показать их.",
+  "%d миров мультиплеера скрыты. Отметьте флажок под списком, чтобы показать их."
+ ],
+ "%d of your game worlds is not in the Load list this session. It is not lost: play it in Dungeon Settlers, or here when the mods are on again.||%d of your game worlds are not in the Load list this session. They are not lost: play them in Dungeon Settlers, or here when the mods are on again.": [
+  "%d ваш обычный мир не показан в списке загрузки в этом сеансе. Он не потерян: играйте в него в Dungeon Settlers или здесь, когда моды снова включатся.",
+  "%d ваших обычных мира не показаны в списке загрузки в этом сеансе. Они не потеряны: играйте в них в Dungeon Settlers или здесь, когда моды снова включатся.",
+  "%d ваших обычных миров не показаны в списке загрузки в этом сеансе. Они не потеряны: играйте в них в Dungeon Settlers или здесь, когда моды снова включатся."
+ ],
+ "%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers.": [
+  "%d ваш обычный мир не показан: загрузчик модов не смог подключить ваши обычные сохранения в этом сеансе. Он в безопасности в Dungeon Settlers.",
+  "%d ваших обычных мира не показаны: загрузчик модов не смог подключить ваши обычные сохранения в этом сеансе. Они в безопасности в Dungeon Settlers.",
+  "%d ваших обычных миров не показаны: загрузчик модов не смог подключить ваши обычные сохранения в этом сеансе. Они в безопасности в Dungeon Settlers."
+ ],
+ "%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them.": [
+  "%d мир одиночной игры скрыт. Отметьте флажок под списком, чтобы показать его.",
+  "%d мира одиночной игры скрыты. Отметьте флажок под списком, чтобы показать их.",
+  "%d миров одиночной игры скрыты. Отметьте флажок под списком, чтобы показать их."
+ ],
+ "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
+  "%d мир скрыт фильтром под списком.",
+  "%d мира скрыты фильтром под списком.",
+  "%d миров скрыты фильтром под списком."
  ],
  "%s (not installed)": "%s (не установлено)",
  "%s and %s": "%s и %s",
@@ -141,6 +176,7 @@
  "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).": "Не удалось запустить игру. См. starter.log в папке Dungeon Settlers Modded (profiles\\modded).",
  "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.": "Не удалось запустить игру. См. ~/Library/Logs/DungeonSettlersModded.log.",
  "The game files changed after the start check. Mods stay off. Restart the game.": "Файлы игры изменились после проверки при запуске. Моды остаются выключенными. Перезапустите игру.",
+ "The game stopped while the mod loader was starting last time, so mods stay off until the mod loader is updated.": "В прошлый раз игра остановилась во время запуска загрузчика модов, поэтому моды остаются выключенными, пока загрузчик модов не обновится.",
  "The game was updated. Mods stay off until they are updated for this game version.": "Игра обновлена. Моды остаются выключенными, пока их не обновят для этой версии игры.",
  "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded.": "Игра не запустится из этой папки:\n%s\n\nВ пути есть символы, которые игра не может прочитать на этом ПК (например, китайские или японские иероглифы).\nУстановите Dungeon Settlers Modded заново в папку только с латинскими буквами, например C:\\Games\\Dungeon Settlers Modded.",
  "The group could not be deleted.": "Не удалось удалить группу.",
