@@ -31,6 +31,13 @@ int dsl_uos_kit_asset(const char *asset_name);           /* 1 = the release asse
    holds one plain sentence. */
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
+/* crash reports (src/dsl_crash.c). Paths and texts here are UTF-8 on both OS. */
+int dsl_uos_post(const char *url, const char *file, const char *const *headers, int nh);   /* POST the file; 0 = HTTP 2xx */
+void dsl_uos_sysinfo(char *os, size_t on, char *cpu, size_t cn, char *plat, size_t pn);   /* "macOS 27.2", CPU name, "mac-arm64" */
+int dsl_uos_pid_alive(long pid);
+void dsl_uos_random(unsigned char *buf, size_t n);
+void dsl_uos_identity(void (*add)(void *ud, const char *s), void *ud);   /* user name, full name, home, computer name */
+int dsl_uos_steam_dir(char *out, size_t n);                             /* Steam's own folder; 0 = found */
 /* shared by the OS parts: record a move in mv (and its pending file) before it is made; -1 = list full */
 static inline int dsl_umove_add(DslMoves *mv, const char *path, const char *backup) {
     if (mv->n >= DSL_UMOVES) return -1;

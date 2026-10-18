@@ -712,6 +712,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
         fprintf(o, "CWD %ls\nCMD %ls\n", game, line); fflush(o);
         return 0;
     }
+    { wchar_t pl[MAX_PATH * 2], pp[MAX_PATH * 2];              /* crash reports: the last session's game log is kept (the game
+                                                                  opens player.log before the loader could copy it) */
+      _snwprintf(pl, MAX_PATH * 2, L"%ls\\player.log", profile); _snwprintf(pp, MAX_PATH * 2, L"%ls\\player.prev.log", profile);
+      MoveFileExW(pl, pp, MOVEFILE_REPLACE_EXISTING); }
     STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
     if (!CreateProcessW(exe, line, NULL, NULL, FALSE, 0, NULL, game, &si, &pi)) {
         logf_("CreateProcess %ls failed (%lu)", exe, GetLastError());

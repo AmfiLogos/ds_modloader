@@ -1,0 +1,12 @@
+{
+  "name": "ds-crashrep",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.8.1",
+    "@vercel/functions": "3.10.1"
+  }
+}

@@ -161,6 +161,7 @@ static void start(HMODULE ga) {
     dsl_log("start order: armed thread %lu at %.1f ms, loader lock held: %s (GameAssembly %s)", tid_arm, ms(t_arm), yn(lock_arm), arm_how);
     dsl_log("start order: start thread %lu at %.1f ms via %s, loader lock held: %s", tid_start, ms(t_start), start_via, yn(lock_start));
     dsl_soft_snapshot(dsl_core_logdir());                                        /* soft restart: role A or B, tick */
+    dsl_crash_boot();                                                            /* before the game writes over player.log */
     const char *build = ga_build(ga, &lo, &hi, &end, id, sizeof id);
     dsl_log("GameAssembly %s: %s", path, id);
     char mods[MAX_PATH + 16] = "";

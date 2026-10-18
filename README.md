@@ -63,6 +63,22 @@ Nothing installs while the game runs. If the new version does not reach the titl
 version comes back and that version is not offered again. Your saves are not changed. Without internet the game starts
 as usual and checks again next time.
 
+## Crash reports
+
+At the first start, the game asks: "Send crash reports to help fix bugs?". Nothing is sent before you click Yes.
+
+- A report is sent only after a crash, a freeze, a multiplayer desync report, a failed join or a multiplayer
+  view that showed nothing. It is sent at the next
+  start or at the title screen, never while you play. At most 3 reports per day.
+- It holds the logs (`dsload.log`, `player.log`, `rig.log`, the game's `ErrorLog.txt`), desync report summaries, the
+  versions of the loader, mods and game, your OS and CPU type, and a random install id (not a hardware id).
+- Before sending, your computer removes user names in folder paths, your user, full and computer names, Steam names and
+  Steam ids, player names, IP and MAC addresses and e-mail addresses.
+- Reports are kept 90 days, then deleted automatically. The server does not keep your IP address with a report.
+- To change your answer: title screen, Mods, the switch "Send crash reports".
+
+Privacy note: [crashrep/PRIVACY.md](crashrep/PRIVACY.md), also at https://ds-crashrep.vercel.app/privacy.
+
 ## Add a mod
 
 Each mod has its own download: `<mod>-<version>.zip` (for example `gcd-cdr-0.1.2.zip`). One file works on Mac and Windows.

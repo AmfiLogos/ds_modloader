@@ -42,6 +42,11 @@ const char *dsl_busy_reason(void);              /* session busy / soft restart r
 int dsl_world_mods(const char *guid, const char **ids, int max);    /* count; an unknown world = the running set; 0 = vanilla */
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n);
 
+/* crash reports (dsl_crash.c): -2 = not in this start, -1 = not asked yet, 0 = no, 1 = yes */
+int dsl_crash_consent(void);
+void dsl_crash_set_consent(int yes);
+const char *dsl_crash_privacy_url(void);
+
 /* ---- provided by L2 (loader/ui); weak in L1 */
 void dsl_win_init(void) __attribute__((weak));            /* after il2cpp_init, once */
 void dsl_win_open(const char *tab_id) __attribute__((weak));  /* NULL = Mods tab; from the title button / menu_open */

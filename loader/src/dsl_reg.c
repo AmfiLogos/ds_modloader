@@ -946,6 +946,7 @@ void dsl_frame_hook(void) {
     test_frame();
     dsl_rows_frame();
     dsl_update_frame();
+    dsl_crash_frame();
     if (dsl_win_frame) dsl_win_frame();
     dsl_progress_frame();
 }
@@ -1003,4 +1004,5 @@ void dsl_reg_after_init(void) {
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
             run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());
     dsl_update_start();
+    dsl_crash_start();
 }
