@@ -14,7 +14,7 @@ $CC -dynamiclib -o $A/MacOS/fakesteam.dylib $T/fakesteam.c
 $CC -fobjc-arc -framework AppKit -o $A/MacOS/quiet_test $T/quiet_test.m
 codesign -f -s - $OUT/quiet.dylib $A/MacOS/fakesteam.dylib $A/MacOS/quiet_test 2>/dev/null
 r=0
-QUIET_LOG=$OUT/quiet.log DYLD_INSERT_LIBRARIES=$OUT/quiet.dylib $A/MacOS/quiet_test || r=1
+QUIET_LOG=$OUT/quiet.log DSL_NOTCH=0 DYLD_INSERT_LIBRARIES=$OUT/quiet.dylib $A/MacOS/quiet_test || r=1
 QUIET_LOG=$OUT/quiet_off.log QUIET_OFF=1 DYLD_INSERT_LIBRARIES=$OUT/quiet.dylib $A/MacOS/quiet_test off || r=1
 # the loader's test copy cap (dsl_start_mac.c test_copy_cap) in the real dsload: fake 6 other copies -> refused (exit 3)
 # after DSRIG_CAP_WAIT; fake 5 -> starts. Own HOME / log folder: nothing of the owner's is read or written.
