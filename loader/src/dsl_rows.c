@@ -19,7 +19,8 @@ typedef void *Obj;
 /* ------------------------------------------------------------------ registry */
 #define MAXR 16
 static struct { DSLLoadRow r; char owner[64]; } R[MAXR]; static int nr;
-static struct { DSLLoadFilter f; char owner[64]; int on, mode; DSLObj tog; } F[MAXR]; static int nf;
+static struct { DSLLoadFilter f; char owner[64]; int on, mode; uintptr_t tog; } F[MAXR]; static int nf;   /* tog: GC handle (held()) */
+static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);
 static int dirty;
 int dsl_rows_add(const char *owner, const DSLLoadRow *r) {
     if (!r || !r->text || nr >= MAXR) return -1;
@@ -36,7 +37,7 @@ void dsl_rows_refresh(void) { dirty = 1; }
 /* test only (dsl_reg.c test_frame): every filter toggle on, as a click would do */
 void dsl_rows_test_toggles(int on) {
     const DSLUi *u = dsl_ui_kit();
-    for (int i = 0; i < nf; i++) { F[i].on = on; if (u && F[i].tog) u->toggle_set(F[i].tog, on); }
+    for (int i = 0; i < nf; i++) { F[i].on = on; DSLObj t = held(&F[i].tog); if (u && t) u->toggle_set(t, on); }
     dirty = 1;
 }
 
@@ -70,6 +71,10 @@ static void *cls(const char *ns, const char *n) { void *c = dsl_find_class(ns, n
 static int32_t fo(void *k, const char *n) { int32_t o = k ? dsl_field_offset(k, n) : -1; if (o < 0) dsl_log("rows: field %s missing", n); return o; }
 static void *ma(void *k, const char *n, int argc) { void *m = k ? dsl_find_method(k, n, argc) : NULL; return m ? dsl_method_address(m) : NULL; }
 static int live(Obj o) { return o && alive && alive(o, NULL); }
+/* a line we made, through its GC handle: NULL once Unity destroyed it (scene change), the handle freed then.
+   Our lines are only kept this way (a raw pointer outlived its line: SIGBUS, v0.1.15 rc) */
+static DSLObj held(uintptr_t *h) { Obj o = *h ? gc_get(*h) : NULL; if (!live(o)) { if (*h) gc_free(*h); *h = 0; return NULL; } return (DSLObj)o; }
+static void hold(uintptr_t *h, DSLObj o) { if (*h) gc_free(*h); *h = o ? gc_new((Obj)o, 0) : 0; }
 static int shown(Obj comp) { Obj g = live(comp) ? comp_go(comp, NULL) : NULL; return g && go_tree(g, NULL); }
 static void set_on(Obj comp, int on) { Obj g = live(comp) ? comp_go(comp, NULL) : NULL; if (g && go_self(g, NULL) != on) go_set(g, on, NULL); }
 
@@ -134,14 +139,19 @@ static const char *guid_of_save(const char *name) {
 
 /* ------------------------------------------------------------------ the open list */
 #define MAXW 64
-typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid, game; } WRow;
+typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; uintptr_t line, chg; int hid, game; } WRow;   /* line, chg: GC handles */
 static WRow W[MAXW]; static int nw;
 static uintptr_t h_slv; static uint32_t sig_last; static int list_open;
-static DSLObj band;                                     /* our toggles' strip */
+static uintptr_t band;                                  /* our toggles' strip (GC handle) */
 
 static void rows_clear(void) {
     const DSLUi *u = dsl_ui_kit();
-    for (int i = 0; i < nw; i++) { if (u && W[i].line) u->destroy(W[i].line); if (u && W[i].chg) u->destroy(W[i].chg); gc_free(W[i].cs); }
+    for (int i = 0; i < nw; i++) {
+        DSLObj l = held(&W[i].line), c = held(&W[i].chg);
+        if (u && l) u->destroy(l);
+        if (u && c) u->destroy(c);
+        hold(&W[i].line, NULL); hold(&W[i].chg, NULL); gc_free(W[i].cs);
+    }
     nw = 0;
 }
 static uint32_t list_sig(Obj slv) {
@@ -257,13 +267,14 @@ static void decorate(void) {
         }
         world_warning(w->guid, all, sizeof all);
         Obj tr = comp_tr(cs, NULL);
-        if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, txt, 14, DSL_TXT_RIGHT, 0xD9C7B0FF);
-        else u->set_text(w->line, txt);
-        dsi_utf8_fix_end(all); u->tooltip(w->line, TR("Mods of this world"), all);
-        if (!w->chg) { w->chg = u->button(tr, 0, 0, 10, 10, TR("Change"), change_click, (void *)(intptr_t)i);
-                       u->tooltip(w->chg, TR("Change"), TR("Choose the mods this world loads with.")); }
-        u->set_active(w->chg, at_title);
-        dsl_rows_place(cs, w->line, at_title ? w->chg : NULL);
+        DSLObj line = held(&w->line), chg = held(&w->chg);
+        if (!line) hold(&w->line, line = u->text(tr, 0, 0, 10, 10, txt, 14, DSL_TXT_RIGHT, 0xD9C7B0FF));
+        else u->set_text(line, txt);
+        dsi_utf8_fix_end(all); u->tooltip(line, TR("Mods of this world"), all);
+        if (!chg) { hold(&w->chg, chg = u->button(tr, 0, 0, 10, 10, TR("Change"), change_click, (void *)(intptr_t)i));
+                    u->tooltip(chg, TR("Change"), TR("Choose the mods this world loads with.")); }
+        u->set_active(chg, at_title);
+        dsl_rows_place(cs, line, at_title ? chg : NULL);
     }
 }
 
@@ -315,20 +326,21 @@ static void filters_apply(Obj slv) {
 static void toggles_build(Obj slv) {
     const DSLUi *u = dsl_ui_kit(); if (!u || !nf) return;
     Obj low = o_lowload >= 0 ? AT(slv, o_lowload, Obj) : NULL; if (!live(low)) return;
-    if (!band || !live((Obj)band)) {
-        band = u->panel(low, 0, -40, 600, 36, 0x00000000);
-        if (!band) return;
+    DSLObj bd = held(&band);
+    if (!bd) {
+        hold(&band, bd = u->panel(low, 0, -40, 600, 36, 0x00000000));
+        if (!bd) return;
     }
     int k = 0;
     for (int f = 0; f < nf; f++) {
         F[f].mode = F[f].f.mode ? F[f].f.mode(F[f].f.ud) : DSL_LIST_LOAD;
         const char *lb = F[f].mode != DSL_LIST_OFF && F[f].f.label ? F[f].f.label(F[f].f.ud) : NULL;
-        if (F[f].tog && !live((Obj)F[f].tog)) F[f].tog = NULL;
-        if (!lb || !*lb) { if (F[f].tog) u->set_active(F[f].tog, 0); continue; }
+        DSLObj t = held(&F[f].tog);
+        if (!lb || !*lb) { if (t) u->set_active(t, 0); continue; }
         F[f].on = 0;                                                        /* off each time the list opens */
         float x0 = dsl_mod_state("multiplayer", NULL) == 1 ? 310 : 8;      /* MP draws its own toggle on the left until it uses this API */
-        if (!F[f].tog) F[f].tog = u->toggle(band, x0 + 250 * k, 4, 230, lb, 0, toggle_change, (void *)(intptr_t)f);
-        else { u->set_text(F[f].tog, lb); u->toggle_set(F[f].tog, 0); u->set_active(F[f].tog, 1); }
+        if (!t) hold(&F[f].tog, u->toggle(bd, x0 + 250 * k, 4, 230, lb, 0, toggle_change, (void *)(intptr_t)f));
+        else { u->set_text(t, lb); u->toggle_set(t, 0); u->set_active(t, 1); }
         k++;
     }
 }
@@ -337,10 +349,7 @@ static void toggles_build(Obj slv) {
    worlds only this game has (multiplayer, worlds started here). One header line above each group, in the look of the
    multiplayer pages' section headers (title font 20, gold). The rows are only moved (Transform.SetSiblingIndex) inside
    the list's own layout (SaveLoadView._saveSlotParent); no game save on the list = the list as before, no header. */
-static uintptr_t hdr_h[2];                               /* GC handles (a raw pointer outlived the line: SIGBUS, v0.1.15 rc) */
-/* a line we made, through its GC handle: NULL once Unity destroyed it (scene change), the handle freed then */
-static DSLObj held(uintptr_t *h) { Obj o = *h ? gc_get(*h) : NULL; if (!live(o)) { if (*h) gc_free(*h); *h = 0; return NULL; } return (DSLObj)o; }
-static void hold(uintptr_t *h, DSLObj o) { if (*h) gc_free(*h); *h = o ? gc_new((Obj)o, 0) : 0; }
+static uintptr_t hdr_h[2];                               /* GC handles (see held()) */
 int dsl_rows_groups[2];                                  /* test: rows shown per group at the last rebuild */
 static void groups_apply(Obj slv) {
     const DSLUi *u = dsl_ui_kit();
@@ -452,22 +461,23 @@ static void hidden_off(void) {
 }
 
 /* the New Campaign line */
-static DSLObj nc_line, nc_btn; static uintptr_t h_cs;
+static uintptr_t nc_line, nc_btn, h_cs;                  /* GC handles */
 static void nc_click(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("rows: New Campaign [Change]"); dsl_newworld_change(); }
 static void new_campaign_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || !t_cs) return;
     Obj cs = h_cs ? gc_get(h_cs) : NULL;
-    if (!live(cs)) { if (h_cs) gc_free(h_cs); h_cs = 0; nc_line = nc_btn = NULL; cs = find_obj(t_cs, 0, NULL); if (!cs) return; h_cs = gc_new(cs, 0); }
+    if (!live(cs)) { if (h_cs) gc_free(h_cs); h_cs = 0; hold(&nc_line, NULL); hold(&nc_btn, NULL); cs = find_obj(t_cs, 0, NULL); if (!cs) return; h_cs = gc_new(cs, 0); }
     if (!shown(cs)) return;
     char t[600]; dsl_newworld_label(t, sizeof t);
     Obj tr = comp_tr(cs, NULL);
-    if (!nc_line || !live((Obj)nc_line)) { nc_line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF); nc_btn = u->button(tr, 0, 0, 10, 10, TR("Change"), nc_click, NULL); }
-    else u->set_text(nc_line, t);
-    dsl_rows_place_newcampaign(cs, nc_line, nc_btn);
+    DSLObj line = held(&nc_line), btn = held(&nc_btn);
+    if (!line) { hold(&nc_line, line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF)); hold(&nc_btn, btn = u->button(tr, 0, 0, 10, 10, TR("Change"), nc_click, NULL)); }
+    else u->set_text(line, t);
+    dsl_rows_place_newcampaign(cs, line, btn);
 }
 
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
-DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
+DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? held(&W[i].line) : NULL; }
 
 /* test only: the "Change" of world row i, as a click */
 void dsl_rows_test_change(int i) { change_click((void *)(intptr_t)i, NULL); }
