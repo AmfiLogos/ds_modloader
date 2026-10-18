@@ -217,10 +217,16 @@
  "Your mods could not be changed: %s": "Your mods could not be changed: %s",
  "Your world opens when this is done.": "Your world opens when this is done.",
  "applying the mods took too long": "applying the mods took too long",
+ "cannot run together with %s": "cannot run together with %s",
  "did not load": "did not load",
  "it crashed while starting": "it crashed while starting",
  "mods are being applied": "mods are being applied",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "mods cannot be applied right now (the game is loading, or mods are being applied)",
+ "needs %s, but version %s is installed": "needs %s, but version %s is installed",
+ "needs %s, which cannot run": "needs %s, which cannot run",
+ "needs %s, which is not installed": "needs %s, which is not installed",
+ "needs %s, which is turned off": "needs %s, which is turned off",
+ "needs a newer version of Dungeon Settlers Modded": "needs a newer version of Dungeon Settlers Modded",
  "no write access to the app's folder": "no write access to the app's folder",
  "none": "none",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "not loaded: it needs another mod, clashes with one, or crashed last time",
@@ -252,5 +258,6 @@
  "the new mods stopped before they were ready": "the new mods stopped before they were ready",
  "this update needs the installer (new game version)": "this update needs the installer (new game version)",
  "this world": "this world",
- "unknown error": "unknown error"
+ "unknown error": "unknown error",
+ "works only with %s, but version %s is installed": "works only with %s, but version %s is installed"
 }

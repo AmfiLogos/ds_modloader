@@ -249,10 +249,16 @@
  "Your mods could not be changed: %s": "無法變更你的模組：%s",
  "Your world opens when this is done.": "完成後會開啟你的世界。",
  "applying the mods took too long": "套用模組耗時過長",
+ "cannot run together with %s": "不能與 %s 同時執行",
  "did not load": "未載入",
  "it crashed while starting": "啟動時當機",
  "mods are being applied": "正在套用模組",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "現在無法套用模組（遊戲正在載入，或正在套用模組）",
+ "needs %s, but version %s is installed": "需要 %s，但已安裝的版本是 %s",
+ "needs %s, which cannot run": "需要 %s，但該模組無法執行",
+ "needs %s, which is not installed": "需要 %s，但未安裝",
+ "needs %s, which is turned off": "需要 %s，但它已關閉",
+ "needs a newer version of Dungeon Settlers Modded": "需要更新版本的 Dungeon Settlers Modded",
  "no write access to the app's folder": "沒有寫入應用程式資料夾的權限",
  "none": "無",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "未載入：需要另一個模組、與某模組衝突，或上次當機",
@@ -284,5 +290,6 @@
  "the new mods stopped before they were ready": "新模組在就緒前停止了",
  "this update needs the installer (new game version)": "此更新需要安裝程式：遊戲版本已變更",
  "this world": "此世界",
- "unknown error": "未知錯誤"
+ "unknown error": "未知錯誤",
+ "works only with %s, but version %s is installed": "僅適用於 %s，但已安裝的版本是 %s"
 }

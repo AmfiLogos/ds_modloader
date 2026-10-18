@@ -53,6 +53,7 @@ static void logf_(const char *fmt, ...) {
 
 /* the loader's auto-update parts built into this stub (they log through dsl_log) */
 #include "../../loader/src/dsl_internal.h"
+#include "../../loader/src/dsl_deps.h"         /* mod.json requires / optional / conflicts: the loader's rule */
 void dsl_log(const char *fmt, ...) {
     FILE *f = fopen(logpath, "a"); if (!f) return;
     time_t t = time(NULL); char ts[32]; strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", localtime(&t));
@@ -612,19 +613,40 @@ static void bg_notification(const char *text) {             /* non-blocking bann
    per start: a profile with both kinds starts the BepInEx ones (the loader's Mods window refuses such a set). */
 #define ML_VER "0.1.0"
 /* the enabled mods of one kind ("bepinex" / "melon") in profile order, as "<mods>/<id>:..." folders; an id that is not
-   a plain mod id (a-z 0-9 . _ -, as the starters accept) is skipped, never put into a path */
+   a plain mod id (a-z 0-9 . _ -, as the starters accept) is skipped, never put into a path. A mod whose mod.json
+   requires / optional / conflicts fail (loader/src/dsl_deps.h, the loader decides the same way) is not run. */
 static int kind_dirs(const char *mods, const char *act, const char *kind, char *dirs, size_t cap) {
     char *t = slurp(act); JNode *j = t ? json_parse(t) : NULL; free(t);
     JNode *en = json_get(j, "enabled"); int n = 0; dirs[0] = 0;
+    enum { MD = 160 }; static DslDep dep[MD]; JNode *mfs[MD]; int nd = 0, nmf = 0;
+    struct dirent **ents = NULL; int ne = scandir(mods, &ents, NULL, alphasort);
+    for (int i = 0; i < ne; i++) {
+        if (ents[i]->d_name[0] != '.' && nmf < MD) {
+            char mj[PATH_MAX]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, ents[i]->d_name);
+            char *mt = slurp(mj); JNode *m = mt ? json_parse(mt) : NULL; free(mt);
+            const char *id = json_str(m, "id");
+            if (id && !strcmp(id, ents[i]->d_name) && dsl_dep_add(dep, &nd, MD, id, m, en, json_get(j, "order"), i)) mfs[nmf++] = m;
+            else json_free(m);
+        }
+        free(ents[i]);
+    }
+    free(ents);
+    JNode *prov = json_get(j, "provided");
+    if (prov && prov->t == JN_ARR) for (JNode *c = prov->child; c; c = c->next)
+        if (c->t == JN_STR) { DslDep *x = dsl_dep_add(dep, &nd, MD, c->str, NULL, NULL, NULL, 0); if (x) x->fixed = x->on = 1; }
+    dsl_deps_resolve(dep, nd, DSL_LOADER_VERSION, NULL);
     for (JNode *c = en && en->t == JN_ARR ? en->child : NULL; c; c = c->next) {
         if (c->t != JN_STR) continue;
         if (!valid_id(c->str)) { logf_("mods: profile id '%s' is not a mod id: skipped", c->str); continue; }
         char mj[PATH_MAX], k[32]; snprintf(mj, sizeof mj, "%s/%s/mod.json", mods, c->str);
         char *m = slurp(mj); int hit = m && jtop(m, "kind", k, sizeof k) && !strcmp(k, kind); free(m);
         if (!hit) continue;
+        DslDep *x = dsl_dep_find(dep, nd, c->str);
+        if (x && !x->ok) { char why[400]; logf_("%s: %s is not run: %s", kind, c->str, dsl_dep_text(x, why, sizeof why)); continue; }
         if (n++) strlcat(dirs, ":", cap);
         strlcat(dirs, mods, cap); strlcat(dirs, "/", cap); strlcat(dirs, c->str, cap);
     }
+    for (int i = 0; i < nmf; i++) json_free(mfs[i]);
     json_free(j); return n;
 }
 static int melon_launch(const char *root, const char *data, char *dyld, size_t cap, int allowed) {

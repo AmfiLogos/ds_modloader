@@ -97,9 +97,12 @@ static char MI_short[MAXM][128];                         /* mod.json "short_name
    "i18n": {"<code>": {"name", "short_name", "description"}} (NULL = English). Not part of the mod-set hash (that hashes
    id, version and the listed files only), so a translation fix never splits players. */
 static struct { char *name[DSI_LANGS], *shortn[DSI_LANGS], *desc[DSI_LANGS]; } MT[MAXM];
+static int MI_dep[MAXM];                                /* not running because of mod.json requires / optional / conflicts */
 static void mods_lang(void) {                           /* the current language's texts into MI[] (stable pointers) */
     int L = dsi_lang();
     for (int i = 0; i < nmi; i++) {
+        char dt[400];                                   /* a dependency reason is a formatted text: made again */
+        if (MI_dep[i] && dsl_mod_dep_text(MI[i].id, dt, sizeof dt)) { free((void *)MI[i].reason); MI[i].reason = xstrdup(dt); }
         MI[i].name = MT[i].name[L] ? MT[i].name[L] : MT[i].name[0];
         MI[i].description = MT[i].desc[L] ? MT[i].desc[L] : MT[i].desc[0];
         snprintf(MI_short[i], sizeof MI_short[i], "%s", MT[i].shortn[L] ? MT[i].shortn[L] : MT[i].shortn[0]);
@@ -166,6 +169,9 @@ static void mods_scan(void) {
             st = dsl_ml_running_dir(pd) ? 1 : 0;
             why = mr && *mr ? mr : dsl_ml_state() < 0 ? TR_NOOP("MelonLoader is not available in this start") : TR_NOOP("MelonLoader mod: not running in this start");
         }
+        char dt[400];                                   /* requires / optional / conflicts (dsl_deps.h): the exact reason */
+        MI_dep[nmi - 1] = on && dsl_mod_dep_text(id, dt, sizeof dt);
+        if (MI_dep[nmi - 1]) { st = 0; why = dt; }
         x->active = st == 1 ? 1 : (on ? -1 : 0);
         x->reason = xstrdup(st == 1 ? "" : !on ? "off" : (why ? why : TR_NOOP("did not load")));
         json_free(m);
@@ -584,7 +590,10 @@ static int prepare(const char *const *ids, int n, const char *env, char *p, size
     key_of(all, k, kk, kcap);
     /* BepInEx plugins or MelonLoader mods of the new set (profile order; one .NET host per set, src/dsl_ml.h): install at
        first use, the host's env for the new process */
-    const char *kinds[MAXM]; for (int i = 0; i < k; i++) { const DSLModInfo *m = mod_by_id(all[i]); kinds[i] = m ? m->kind : "code"; }
+    /* a mod whose requires / optional / conflicts fail in the new set does not run there (dsl_deps.h): no .NET host for it */
+    int dok[MAXM]; dsl_deps_for_set(all, k, dok);
+    const char *kinds[MAXM];
+    for (int i = 0; i < k; i++) { const DSLModInfo *m = mod_by_id(all[i]); kinds[i] = !dok[i] ? "off" : m ? m->kind : "code"; if (!dok[i]) dsl_log("reg: %s: its dependencies fail in the new set: not run", all[i]); }
     int nk = dsl_net_check(kinds, k, why, cap);
     if (nk < 0) return -1;
     *kind_out = nk;

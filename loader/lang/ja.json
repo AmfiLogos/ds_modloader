@@ -249,10 +249,16 @@
  "Your mods could not be changed: %s": "MODを変更できませんでした：%s",
  "Your world opens when this is done.": "完了するとワールドが開きます。",
  "applying the mods took too long": "MODの適用に時間がかかりすぎました",
+ "cannot run together with %s": "%sと同時に動かせません",
  "did not load": "読み込まれませんでした",
  "it crashed while starting": "起動中にクラッシュしました",
  "mods are being applied": "MODを適用中です",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "今はMODを適用できません（ゲームの読み込み中、またはMODの適用中）",
+ "needs %s, but version %s is installed": "%sが必要ですが、インストールされているのはバージョン%sです",
+ "needs %s, which cannot run": "%sが必要ですが、そのMODは動かせません",
+ "needs %s, which is not installed": "%sが必要ですが、インストールされていません",
+ "needs %s, which is turned off": "%sが必要ですが、オフになっています",
+ "needs a newer version of Dungeon Settlers Modded": "より新しいバージョンのDungeon Settlers Moddedが必要です",
  "no write access to the app's folder": "アプリのフォルダへの書き込み権限がありません",
  "none": "なし",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "読み込まれていません：別のMODが必要、別のMODと衝突、または前回クラッシュしました",
@@ -284,5 +290,6 @@
  "the new mods stopped before they were ready": "新しいMODが準備完了前に停止しました",
  "this update needs the installer (new game version)": "ゲームの新バージョンのため、このアップデートにはインストーラーが必要です",
  "this world": "このワールド",
- "unknown error": "不明なエラー"
+ "unknown error": "不明なエラー",
+ "works only with %s, but version %s is installed": "%sでのみ動作しますが、インストールされているのはバージョン%sです"
 }

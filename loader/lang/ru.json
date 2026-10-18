@@ -281,10 +281,16 @@
  "Your mods could not be changed: %s": "Не удалось изменить ваши моды: %s",
  "Your world opens when this is done.": "Ваш мир откроется, когда это будет готово.",
  "applying the mods took too long": "применение модов заняло слишком много времени",
+ "cannot run together with %s": "не может работать вместе с %s",
  "did not load": "не загрузился",
  "it crashed while starting": "вылетел при запуске",
  "mods are being applied": "моды применяются",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "моды сейчас нельзя применить (игра загружается или моды уже применяются)",
+ "needs %s, but version %s is installed": "нужен %s, но установлена версия %s",
+ "needs %s, which cannot run": "нужен %s, который не может работать",
+ "needs %s, which is not installed": "нужен %s, который не установлен",
+ "needs %s, which is turned off": "нужен %s, который выключен",
+ "needs a newer version of Dungeon Settlers Modded": "нужна более новая версия Dungeon Settlers Modded",
  "no write access to the app's folder": "нет доступа на запись в папку приложения",
  "none": "нет",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "не загружен: нужен другой мод, он конфликтует с другим или вылетел в прошлый раз",
@@ -316,5 +322,6 @@
  "the new mods stopped before they were ready": "новые моды остановились, не успев загрузиться",
  "this update needs the installer (new game version)": "для этого обновления нужен установщик (новая версия игры)",
  "this world": "этот мир",
- "unknown error": "неизвестная ошибка"
+ "unknown error": "неизвестная ошибка",
+ "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s"
 }

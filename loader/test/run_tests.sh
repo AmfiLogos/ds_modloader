@@ -33,9 +33,14 @@ mod no-table 3 '{"id":"no-table","version":"1.0.0","kind":"code","api":2,"game_b
 mod patcher 5 '{"id":"patcher","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"client","requires":["early-mod"]}'
 mod failpatch 6 '{"id":"failpatch","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}'
 mod data-mod none '{"id":"data-mod","version":"1.0.0","type":"data","game_build":"test"}'
+# dependencies with BepInEx plugins (dsl_deps.h): bie-core 0.4.0 is too old for the three mods below
+mod bie-core none '{"id":"bie-core","version":"0.4.0","kind":"bepinex"}'
+mod bie-needs none '{"id":"bie-needs","version":"1.0.0","kind":"bepinex","requires":["bie-core>=0.5.0"]}'
+mod needs-bie none '{"id":"needs-bie","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["bie-core>=0.5.0"]}'
+mod opt-old none '{"id":"opt-old","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"optional":["bie-core>=0.5.0"]}'
 mkdir -p "$M/floor-logger"; cp ~/DungeonSettlersMods/mods/floor-logger/floor-logger.dylib "$M/floor-logger/"
 sed 's/"game_build": "25846389"/"game_build": "test"/' ~/DungeonSettlersMods/mods/floor-logger/mod.json > "$M/floor-logger/mod.json"
-print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch"],"provided":["notch-fix"]}' > "$M/profile.json"
+print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch","bie-core","bie-needs","needs-bie","opt-old"],"provided":["notch-fix"]}' > "$M/profile.json"
 
 run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_NO_ALERT=1 DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
 EXPECT="orig_init=1 orig_safe=2 orig_normal=1 orig_tick=1 orig_update=2"
@@ -52,6 +57,8 @@ check "dependency order: early-mod before clash, data-mod satisfies plain" 'log 
 check "sha256 mismatch refused" 'log | grep -q "bad-sha: files do not match mod.json: not loaded"'
 check "conflict refused (later one dropped)" 'log | grep -q "CONFLICT: conflicter and early-mod cannot run together; conflicter is not loaded"'
 check "missing requirement refused" 'log | grep -q "needs-missing: needs nope, which is not installed / enabled"'
+check "BepInEx mod needing a newer BepInEx mod: not run, not in the mod set" 'log | grep -q "bie-needs: needs bie-core>=0.5.0, which wrong version: not loaded" && grep -q "\"bepinex\":\[{\"id\":\"bie-core\"" "$LOGD/dsload_modset.json" && ! grep -q "\"bie-needs\"" "$LOGD/dsload_modset.json"'
+check "code mod needing a newer BepInEx mod, and one with a too-old optional mod: not loaded" 'log | grep -q "needs-bie: needs bie-core>=0.5.0, which wrong version: not loaded" && log | grep -q "opt-old: needs bie-core>=0.5.0, which wrong version (optional): not loaded" && ! log | grep -q "needs-bie 1.0.0: loaded\|opt-old 1.0.0: loaded"'
 check "other build refused" 'log | grep -q "other-build: made for game build(s) other than test"'
 check "missing per-build table refused" 'log | grep -q "no-table: no mac-arm64 table for game build test"'
 check "DYLD_INSERT_LIBRARIES: ours removed, foreign kept (in-process and seen by the foreign loader)" '[[ "$r" == *"ENV DYLD_INSERT_LIBRARIES=$FW/foreign.dylib"* ]] && grep -q "saw DYLD_INSERT_LIBRARIES=$FW/foreign.dylib$" "$OUT/foreign.txt"'
