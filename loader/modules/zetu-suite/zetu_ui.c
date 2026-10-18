@@ -16,8 +16,7 @@
 //   - result screen: DungeonResultView._portraitUIList (List<SubUI_DungeonResultPortrait>), before SetPlayerData; its
 //     GridLayoutGroup row is made one line long and scaled (the view is made again for each opening).
 // Proof on a hidden test copy: test/zetu_ui_test.py (8 units: expedition, supplies, dungeon, windows, result).
-// The Inventory / Status / Skill windows keep the stock 4 (zetu.c: party_stock_enter around them): with 8 selected
-// they show the first 4, as before.
+// The Inventory / Status / Skill windows of selected units grow the same way (their panel rows: see "unit windows").
 
 #include <stdio.h>
 
@@ -355,6 +354,101 @@ static void my_result_set(ZObj view, ZObj units, ZObj idx, ZObj dead, ZObj keys,
     H->log(ME, "result: %d units + %d dead, %d portraits shown", list_count(units), list_count(dead), shown);
 }
 
+/* ------------------------------------------------------------------------- unit windows: Inventory, Status, Skill
+   Each view holds 4 panels (EntityInventoryUI / EntityStatusUI / EntitySkillUI._panels) in a HorizontalLayoutGroup row;
+   its presenter fills panel i with selected unit i, up to PlayerPartyMax, and blanks the rest. The panel copies go into
+   _panels before the view's Init (Init / InitUI wire every panel of the array); the layout group places them. After
+   each refresh the row is fitted: the panels of the shown units keep the stock top-left corner and the row is scaled
+   down (only) so its right edge stays inside the screen with the stock margin. */
+typedef struct { const char *view, *panel; void *k_panel; int32_t f_panels; uintptr_t h_view; float tl_x, tl_y, last_s; int have_tl; } zwin;
+static zwin zw[3] = { { .view = "EntityInventoryUI", .panel = "EntityInventoryPanelUI" },
+                      { .view = "EntityStatusUI", .panel = "EntityStatusPanelUI" },
+                      { .view = "EntitySkillUI", .panel = "EntitySkillPanelUI" } };
+static void *zk_v3, *zm_corners, *zm_lossy, *zm_screen_w;
+static void z_corners(ZObj rt, ZV3 out[4]) {                   /* world corners = screen pixels (overlay canvas) */
+    ZObj a = ZI.array_new(zk_v3, 4);
+    ZCALL(zm_corners, void, ZObj, ZObj)(rt, a, zm_corners);
+    memcpy(out, (char *)a + 0x20, sizeof(ZV3) * 4);
+}
+static void grow_window(int w, ZObj view) {
+    zwin *z = &zw[w];
+    uintptr_t (*hn)(ZObj, int) = H->il2cpp_fn("il2cpp_gchandle_new");
+    if (!z->h_view && hn) z->h_view = hn(view, 0);
+    ZObj arr = ZAT(view, z->f_panels, ZObj);
+    int n = arr ? (int)ZAT(arr, 0x18, uintptr_t) : 0;
+    if (n >= s_max_units) return;                               /* grown (InitUI runs more than once) */
+    if (n < 2) { H->log(ME, "%s: %d panels, left as is", z->view, n); return; }
+    ZObj last = z_tr(ZAT(arr, 0x20 + 8 * (n - 1), ZObj)), row = z_parent(last);
+    if (!row || z_parent(z_tr(ZAT(arr, 0x20, ZObj))) != row) { H->log(ME, "%s: panels not in one row, left as is", z->view); return; }
+    int sib = ZCALL(zm_sib_get, int32_t, ZObj)(last, zm_sib_get);
+    ZObj na = ZI.array_new(z->k_panel, (uintptr_t)s_max_units);
+    for (int i = 0; i < n; i++) z_setref(na, 0x20 + 8 * i, ZAT(arr, 0x20 + 8 * i, ZObj));
+    for (int i = n; i < s_max_units; i++) {
+        ZObj c = z_copy(last, ++sib), p = c ? z_comp(c, z->k_panel) : NULL;
+        if (!p) { H->log(ME, "%s: copy %d has no %s", z->view, i, z->panel); return; }
+        z_setref(na, 0x20 + 8 * i, p);
+    }
+    z_setref(view, z->f_panels, na);
+    H->log(ME, "%s: %d panels (%d stock + %d copies)", z->view, s_max_units, n, s_max_units - n);
+}
+static void fit_window(int w) {
+    zwin *z = &zw[w];
+    ZObj (*hget)(uintptr_t) = H->il2cpp_fn("il2cpp_gchandle_get_target");
+    ZObj view = z->h_view && hget ? hget(z->h_view) : NULL;
+    ZObj arr = z_alive(view) ? ZAT(view, z->f_panels, ZObj) : NULL;
+    int n = arr ? (int)ZAT(arr, 0x18, uintptr_t) : 0, k = -1;
+    if (n < 2) return;
+    ZObj p0 = z_tr(ZAT(arr, 0x20, ZObj)), row = z_parent(p0);
+    for (int i = 0; i < n; i++) if (z_active(ZAT(arr, 0x20 + 8 * i, ZObj))) k = i;
+    if (!row || k < 0) return;
+    ZCALL(zm_rebuild, void, ZObj)(row, zm_rebuild);
+    float sc = z_scale(row);
+    ZV3 c0[4], ck[4];
+    z_corners(p0, c0); z_corners(z_tr(ZAT(arr, 0x20 + 8 * k, ZObj)), ck);
+    if (!z->have_tl) { z->tl_x = c0[1].x; z->tl_y = c0[1].y; z->have_tl = 1; z->last_s = sc; }   /* the stock corner */
+    float w1 = (ck[2].x - c0[0].x) / sc;                          /* the shown panels' width at scale 1, in pixels */
+    float sw = (float)((int32_t (*)(const void *))*(void **)zm_screen_w)(zm_screen_w);
+    float margin = z->tl_x > 8 ? z->tl_x : 8, avail = sw - z->tl_x - margin;
+    float s = w1 > avail && w1 > 0 ? avail / w1 : 1;
+    z_setscale(row, s);
+    ZCALL(zm_rebuild, void, ZObj)(row, zm_rebuild);
+    z_corners(p0, c0);                                          /* back to the stock top-left corner */
+    float ps = ZCALL(zm_lossy, ZV3, ZObj)(z_parent(row), zm_lossy).x;
+    ZV2 pos = z_pos(row);
+    if (ps > 0) z_setpos(row, (ZV2){ pos.x + (z->tl_x - c0[1].x) / ps, pos.y + (z->tl_y - c0[1].y) / ps });
+    if (s != z->last_s) {
+        z_corners(p0, c0); z_corners(z_tr(ZAT(arr, 0x20 + 8 * k, ZObj)), ck);
+        H->log(ME, "%s: %d units shown, row scale %.3f, x %.0f..%.0f of %.0f px, top %.0f", z->view, k + 1, s, c0[0].x, ck[2].x, sw, c0[1].y);
+        z->last_s = s;
+    }
+}
+static void (*o_inv_init)(ZObj, ZObj, const void *);
+static void my_inv_init(ZObj v, ZObj a, const void *mi) { grow_window(0, v); o_inv_init(v, a, mi); }
+static void (*o_status_init)(ZObj, const void *);
+static void my_status_init(ZObj v, const void *mi) { grow_window(1, v); o_status_init(v, mi); }
+static void (*o_skill_init)(ZObj, ZObj, ZObj, const void *);
+static void my_skill_init(ZObj v, ZObj a, ZObj b, const void *mi) { grow_window(2, v); o_skill_init(v, a, b, mi); }
+/* presenters: fill the panels (now up to N), then fit the row */
+static void (*o_inv_set)(ZObj, const void *);
+static void my_inv_set(ZObj p, const void *mi) { o_inv_set(p, mi); fit_window(0); }
+static void (*o_status_refresh)(ZObj, ZObj, const void *);
+static void my_status_refresh(ZObj p, ZObj a, const void *mi) { o_status_refresh(p, a, mi); fit_window(1); }
+static int32_t zf_skill_idx = -1;
+static void (*o_skill_refresh)(ZObj, ZObj, const void *);
+static void my_skill_refresh(ZObj p, ZObj a, const void *mi) {
+    /* the presenter's int[] _skillTreeIndices (selected tree per panel) is sized by PlayerPartyMax in its ctor */
+    ZObj ia = ZAT(p, zf_skill_idx, ZObj);
+    int n = ia ? (int)ZAT(ia, 0x18, uintptr_t) : 0;
+    if (n < s_max_units) {
+        ZObj na = ZI.array_new(H->find_class("System", "Int32"), (uintptr_t)s_max_units);
+        if (n) memcpy((char *)na + 0x20, (char *)ia + 0x20, (size_t)n * 4);
+        z_setref(p, zf_skill_idx, na);
+        H->log(ME, "EntitySkillUIPresenter: skill tree indices %d -> %d", n, s_max_units);
+    }
+    o_skill_refresh(p, a, mi);
+    fit_window(2);
+}
+
 static int zetu_ui_init(void) {
 #define ZFN(f, n) *(void **)&ZI.f = H->il2cpp_fn(n)
     ZFN(class_get_methods, "il2cpp_class_get_methods"); ZFN(method_get_name, "il2cpp_method_get_name");
@@ -410,10 +504,29 @@ static int zetu_ui_init(void) {
                zf_sel_text, zf_sel_imgs, zf_sel_lines, zf_res_list);
         return 22;
     }
+    zk_v3 = H->find_class("UnityEngine", "Vector3");
+    zm_corners = zmi_sig(zk_rect, "GetWorldCorners", 1, NULL); zm_lossy = zmi_sig(zk_transform, "get_lossyScale", 0, NULL);
+    zm_screen_w = zmi_sig(H->find_class("UnityEngine", "Screen"), "get_width", 0, NULL);
+    for (int i = 0; i < 3; i++) {
+        void *kv = H->find_class(ui, zw[i].view);
+        zw[i].k_panel = H->find_class(ui, zw[i].panel);
+        zw[i].f_panels = kv ? H->field_offset(kv, "_panels") : -1;
+        if (!zw[i].k_panel || zw[i].f_panels < 0) { H->log(ME, "unit windows: %s / %s missing", zw[i].view, zw[i].panel); return 24; }
+    }
+    void *k_skp = H->find_class(ui, "EntitySkillUIPresenter");
+    zf_skill_idx = k_skp ? H->field_offset(k_skp, "_skillTreeIndices") : -1;
+    if (!zk_v3 || !zm_corners || !zm_lossy || !zm_screen_w || zf_skill_idx < 0) { H->log(ME, "unit windows: Unity methods / fields missing"); return 25; }
+    if (hook_named(ui, "EntityInventoryUI", "Init", 1, (void *)my_inv_init, (void **)&o_inv_init)
+        || hook_named(ui, "EntityStatusUI", "Init", 0, (void *)my_status_init, (void **)&o_status_init)
+        || hook_named(ui, "EntitySkillUI", "InitUI", 2, (void *)my_skill_init, (void **)&o_skill_init)
+        || hook_named(ui, "EntityInventoryPresenter", "SetUnitUI", 0, (void *)my_inv_set, (void **)&o_inv_set)
+        || hook_named(ui, "EntityStatusUIPresenter", "RefreshSelectedEntityUI", 1, (void *)my_status_refresh, (void **)&o_status_refresh)
+        || hook_named(ui, "EntitySkillUIPresenter", "RefreshSelectedEntityUI", 1, (void *)my_skill_refresh, (void **)&o_skill_refresh))
+        return 26;
     if (hook_named(ui, "ExpeditionPlanView", "Init", 8, (void *)my_plan_init, (void **)&o_plan_init)
         || hook_named(ui, "SubUI_ExpeditionPlanLowerPanel", "OnSetUnit", 1, (void *)my_lower_setunit, (void **)&o_lower_setunit)
         || hook_named(ui, "DungeonResultView", "SetPlayerData", 4, (void *)my_result_set, (void **)&o_result_set))
         return 23;
-    H->log(ME, "expedition UI: %d unit panels, portraits and result portraits; count text /%d", s_max_units, s_max_units);
+    H->log(ME, "expedition UI: %d unit panels, portraits and result portraits; count text /%d; unit windows %d panels", s_max_units, s_max_units, s_max_units);
     return 0;
 }

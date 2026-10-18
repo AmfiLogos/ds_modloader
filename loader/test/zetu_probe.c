@@ -6,6 +6,7 @@
 //   select_all         SelectAllUnitRequested (the "select all units" key; a toggle)
 //   toggle <n>         ToggleEntityUIRequested(StaticUIType n): 6 Status, 7 Skill, 8 Inventory (the HUD buttons / keys)
 //   result             ShowDungeonResultRequested (the dungeon's "Return to base" button: the result screen)
+//   risks              the risk rows of the expedition window's supplies step (SubUI_CheckInventoryPanelUI._riskRows)
 //   tree <Class> <d>   layout of the live Refactor.UI.<Class> view: name, active, anchors, pivot, position, size, scale,
 //                      layout components, to depth d
 // Each answer is one dsload.log line "zetu-probe: <cmd>: ...". Every game call by il2cpp name.
@@ -125,6 +126,24 @@ static void tree(Obj t, int d, int maxd) {
 static void run_req(Obj eq, const char *line) {
     char cmd[32] = "", cls[64] = ""; int arg = 0;
     sscanf(line, "%31s %d", cmd, &arg);
+    if (!strcmp(cmd, "risks")) {
+        void *k = H->find_class("Refactor.UI", "SubUI_CheckInventoryPanelUI");
+        Obj (*tobj)(void *) = H->il2cpp_fn("il2cpp_type_get_object"); void *(*ctype)(void *) = H->il2cpp_fn("il2cpp_class_get_type");
+        Obj v = k ? find_obj(tobj(ctype(k)), find_obj_mi) : NULL;
+        int32_t off = k ? H->field_offset(k, "_riskRows") : -1;
+        Obj l = v && off >= 0 ? AT(v, off, Obj) : NULL;
+        int n = l ? AT(l, 0x18, int32_t) : 0, shown = 0;
+        void *mg = msig(H->find_class("TMPro", "TMP_Text"), "get_text", 0), *mgo = msig(H->find_class("UnityEngine", "Component"), "get_gameObject", 0);
+        void *mself = msig(H->find_class("UnityEngine", "GameObject"), "get_activeSelf", 0);
+        void *(*vm)(Obj, void *) = H->il2cpp_fn("il2cpp_object_get_virtual_method");
+        for (int i = 0; i < n; i++) {
+            Obj t = AT(AT(l, 0x10, Obj), 0x20 + 8 * i, Obj); if (!t) continue;
+            if (!MC(mself, uint8_t, Obj)(MC(mgo, Obj, Obj)(t, mgo), mself)) continue;
+            void *g = vm(t, mg); char tx[300]; u8(MC(g, Obj, Obj)(t, g), tx, sizeof tx);
+            H->log(ME, "risk row %d: %s", i, tx); shown++;
+        }
+        H->log(ME, "zetu-probe: risks: %d shown of %d rows%s", shown, n, v ? "" : " (no supplies step open)"); return;
+    }
     if (!strcmp(cmd, "tree")) {
         int dep = 6; sscanf(line, "%*s %63s %d", cls, &dep);
         void *k = H->find_class("Refactor.UI", cls);
