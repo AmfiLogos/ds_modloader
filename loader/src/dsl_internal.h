@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_LOADER_VERSION "3.0.0"         /* internal loader API number: mods' "requires": ["loader>=x"]. Never shown */
+#define DSL_LOADER_VERSION "3.1.0"         /* internal loader API number: mods' "requires": ["loader>=x"]. Never shown */
 #ifndef DSL_RELEASE                          /* the release number players see (repo file RELEASE, set by the builds) */
 #define DSL_RELEASE "dev"
 #endif
@@ -130,4 +130,11 @@ const char *dsl_plugin_name(struct DSLPlugin *self);
 int dsl_mod_state(const char *id, const char **why);     /* 1 running, 2 failed, 3 skipped, 0 listed / unknown */
 int dsl_soft_shot(const char *png_path);                 /* test: full frame incl. UI */
 void *dsl_soft_mainflow(void);                           /* dsl_soft.c: the live MainFlow or NULL */
+/* dsl_settings.c: mod settings (SDK API 5) */
+struct DSLHost; void dsl_settings_host(struct DSLHost *h);   /* fills the API 5 host fields */
+void dsl_settings_init(void);                            /* mod.json "settings" + settings.json + the profile's values */
+void dsl_settings_rescan(void);                          /* mods folder changed (package installed) */
+int dsl_settings_lines(const char *mod, char *out, size_t cap);   /* "<mod>/<id>@<value>" lines of its gameplay settings */
+int dsl_settings_profile_member(char *out, size_t cap);  /* "settings":{...} for pending.json (0 = no gameplay setting) */
+void dsl_settings_commit(void);                          /* B on screen: the Apply's gameplay values -> settings.json */
 #define MAXP_REG 32

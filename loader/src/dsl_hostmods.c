@@ -41,17 +41,8 @@ typedef struct { char id[64], name[128], ver[32], files[2048], url[1024], asset[
 /* ------------------------------------------------------------------ the gameplay-settings adapter (lane modsettings,
    src/dsl_settings.c): "<mod>/<setting>@<value>" lines. dsl_settings_lines = this game's running values of one mod,
    dsl_settings_take_lines = the host's values become the drafts the next Apply writes into pending.json,
-   dsl_settings_undo = drafts dropped. Looked up by name (a loader without mod settings: rows shown, never copied).
-   A format change is an edit here only. */
-#ifdef _WIN32
-int dsl_settings_lines(const char *mod, char *out, size_t cap) __attribute__((weak));
-int dsl_settings_take_lines(const char *lines) __attribute__((weak));
-void dsl_settings_undo(void) __attribute__((weak));
-#define SET_FN(n) ((void *)(n))
-#else
-#define SET_FN(n) dlsym(RTLD_DEFAULT, #n)
-#endif
-static int settings_can_copy(void) { return SET_FN(dsl_settings_take_lines) != NULL; }
+   dsl_settings_undo = drafts dropped (all three in this loader, src/dsl_settings.c). A format change is an edit here only. */
+static int settings_can_copy(void) { return 1; }
 static int cmp_line(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
 static void sort_lines(char *s) {                         /* '\n'-joined lines sorted in place */
     char tmp[2048]; snprintf(tmp, sizeof tmp, "%s", s); const char *v[128]; int n = 0;
@@ -61,15 +52,13 @@ static void sort_lines(char *s) {                         /* '\n'-joined lines s
     for (int i = 0; i < n; i++) k += (size_t)snprintf(s + k, k < 2048 ? 2048 - k : 0, "%s%s", i ? "\n" : "", v[i]);
 }
 static void settings_mine(const char *id, char *out, size_t cap) {      /* cap = 2048 */
-    int (*f)(const char *, char *, size_t) = (int (*)(const char *, char *, size_t))SET_FN(dsl_settings_lines);
-    out[0] = 0; if (f && f(id, out, cap) < 0) out[0] = 0;
+    out[0] = 0; if (dsl_settings_lines(id, out, cap) < 0) out[0] = 0;
     sort_lines(out);
 }
 static int settings_take(const char *host_text) {
-    int (*f)(const char *) = (int (*)(const char *))SET_FN(dsl_settings_take_lines);
-    return f ? f(host_text) : -1;
+    return dsl_settings_take_lines(host_text);
 }
-static void settings_drop(void) { void (*f)(void) = (void (*)(void))SET_FN(dsl_settings_undo); if (f) f(); }
+static void settings_drop(void) { dsl_settings_undo(); }
 /* "<mod>/<setting>@<value>": 1 (mod id into mod) */
 static int setting_line(const char *line, char *mod, size_t cap) {
     const char *sl = strchr(line, '/'), *at = strchr(line, '@');
