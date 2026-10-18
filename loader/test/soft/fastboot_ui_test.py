@@ -38,6 +38,7 @@ if os.path.exists(png): shutil.copy2(png, d)
 SET = ['multiplayer', 'custom-modes', 'gcd-cdr', 'uikit-demo']
 prof = os.path.join(OUT, 'profile.json'); json.dump({'enabled': SET, 'order': SET}, open(prof, 'w'))
 ROOT = os.path.join(OUT, 'root'); os.makedirs(os.path.join(ROOT, 'loader'), exist_ok=True)
+os.makedirs(os.path.join(ROOT, 'crash'), exist_ok=True); open(os.path.join(ROOT, 'crash', 'consent.json'), 'w').write('{"consent":"no"}\n')   # answered: the crash-report question (v0.1.15) would take the clicks
 open(os.path.join(ROOT, 'loader', 'RELEASE'), 'w').write('0.1.8\n')
 SHOTS = os.path.join(OUT, 'shots'); os.makedirs(SHOTS, exist_ok=True)
 DRV = os.path.join(OUT, 'drv'); os.makedirs(os.path.join(DRV, 'cap'), exist_ok=True)

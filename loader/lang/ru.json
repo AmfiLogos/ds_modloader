@@ -178,7 +178,7 @@
  "Preparing mods (first start): MelonLoader prepares its files for this game version. About 2 minutes, once.": "Подготовка модов (первый запуск): MelonLoader готовит файлы для этой версии игры. Около 2 минут, только один раз.",
  "Preparing mods (first start): downloading BepInEx (31 MB).": "Подготовка модов (первый запуск): скачивается BepInEx (31 МБ).",
  "Preparing mods (first start): downloading MelonLoader (52 MB).": "Подготовка модов (первый запуск): скачивается MelonLoader (52 МБ).",
- "Privacy": "Конфиденциальность",
+ "Privacy": "Приватность",
  "Privacy note: %s": "Конфиденциальность: %s",
  "Put the mod's .zip file in this folder. Click Refresh to add it to this list. Then turn it on and click Apply.": "Положите .zip-файл мода в эту папку. Нажмите «Обновить», чтобы добавить его в этот список. Затем включите его и нажмите «Применить».",
  "Puts every setting of this mod back to its default value.": "Возвращает все настройки этого мода к значениям по умолчанию.",

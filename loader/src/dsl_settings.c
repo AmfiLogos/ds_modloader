@@ -394,8 +394,13 @@ void dsl_settings_value_label(const char *mod, int i, int v, char *out, size_t c
 /* for the multiplayer mod's join refusal text (dlsym, no SDK change): one setting line's words in the current language.
    mod / setting / value as in "<mod>/<setting>@<value>"; label = the setting's label, vtext = the value as the player
    reads it (On / Off, the number, the choice's label). 0 = known setting, -1 = not installed here (out = the raw ids). */
-__attribute__((visibility("default"))) int dsl_setting_text(const char *mod, const char *setting, const char *value,
-                                                            char *label, size_t lcap, char *vtext, size_t vcap) {
+#ifdef _WIN32
+__declspec(dllexport)                                    /* the multiplayer mod finds it in baselib.dll (its hostmods box) */
+#else
+__attribute__((visibility("default")))
+#endif
+int dsl_setting_text(const char *mod, const char *setting, const char *value,
+                     char *label, size_t lcap, char *vtext, size_t vcap) {
     if (!inited) dsl_settings_init();
     Mod *m = mod_of(mod ? mod : ""); Set *s = set_of(m, setting);
     if (!s) { snprintf(label, lcap, "%s", setting ? setting : ""); snprintf(vtext, vcap, "%s", value ? value : ""); return -1; }
