@@ -572,3 +572,24 @@ Owner: "add a way to adjust mod settings in the modloader". First user: ZET-U Mo
 - Mods window: a Settings button on rows of mods with settings (not in the world-bound mode); the Settings page shares
   the bottom bar (status lists the gameplay drafts, Undo changes drops them, Apply applies switches + settings).
   Rig proof: `test/settings/ui_settings_test.py <out>` (copy T, lease, cap, hidden).
+
+## Harmony + our MinHook on one function, Windows (lane mpapi_win, 2026-10-18) - `test/winharmony/`
+Counterpart of `test/l1_bie_test.py`: BepInEx be.788 plugin `SameFnWin` (Harmony postfix on `Refactor.Main.MainFlow.Update`,
+the multiplayer module's command-pump hook, rva 0xa3b1d0) + multiplayer, then the plugin off. The plugin also logs the
+function's first bytes before / after Harmony, which engine patched first, where our MinHook trampoline returns, and the
+`DOORSTOP_DISABLE` value it sees (`BepInEx\samefn_win.log`, written per line so a crash keeps it).
+- Run on the real VM (lane that owns it): `./stage.sh` (KIT=<built kit> or MP_MOD=<multiplayer module folder>), then
+  `python3 winharmony_test.py [out]` (guest side `wh_guest.ps1`; own test folder C:\dsm\winharmony\root, VMWARE.md rules).
+- Order: ours is always first. dsload's hooks go in at GameAssembly mapping; Harmony patches in the plugin's Load, later.
+  So our engine never sees Harmony's jump (no "refused" line); the question is whether Harmony's detour (Il2CppInterop,
+  Dobby on Windows) survives a site that already starts with our `E9` jump.
+- Wine dry run (DSMP bottle, -nographics, the bottle's 0.1.13 loader; same MinHook engine) [V: one run]: site before =
+  `e9 ..` (our jump), our trampoline copies 6 bytes and returns to site+6; Harmony's patch then CRASHED the game inside
+  dobby.dll (access violation reading 0, dobby.dll+0x2b62, stack through coreclr). No chain. With the plugin off the
+  next start was clean (Doorstop off, plugin folder moved out, MainFlow.Update hooked, frame counter moving).
+  Not yet seen on real Windows: the VM run decides. Until then: a BepInEx plugin that Harmony-patches a function the
+  multiplayer module hooks is expected to crash on Windows.
+- Found on the way [V: Doorstop source, master entrypoint.c]: Doorstop sets `DOORSTOP_DISABLE=TRUE` inside the game
+  process once its hooks are in. `dsl_reg.c` (Windows branch) reads that variable as "BepInEx is off", so with BepInEx
+  running it logs "0 BepInEx plugin(s) running" (Wine run: yes) and the Mods window says the plugin did not start; the
+  running mod-set key leaves the BepInEx mod out. Not fixed here; the VM test's "1 BepInEx plugin" check shows it.
