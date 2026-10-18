@@ -614,4 +614,5 @@ function's first bytes before / after Harmony, which engine patched first, where
 - Found on the way [V: Doorstop source, master entrypoint.c]: Doorstop sets `DOORSTOP_DISABLE=TRUE` inside the game
   process once its hooks are in. `dsl_reg.c` (Windows branch) reads that variable as "BepInEx is off", so with BepInEx
   running it logs "0 BepInEx plugin(s) running" (Wine run: yes) and the Mods window says the plugin did not start; the
-  running mod-set key leaves the BepInEx mod out. Not fixed here; the VM test's "1 BepInEx plugin" check shows it.
+  running mod-set key leaves the BepInEx mod out. Fixed (harmonyfix, v0.1.16): `dsl_reg.c` reads "TRUE" (Doorstop's
+  own mark, `windows/entrypoint.c` after its hooks are in) as running; only the starter's "1" (or any other value) means off.
