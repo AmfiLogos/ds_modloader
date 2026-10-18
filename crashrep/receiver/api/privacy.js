@@ -39,12 +39,12 @@ h1{font-size:1.5rem}h2{font-size:1.15rem;margin-top:1.6rem}
 </ul>
 
 <h2>Why we collect it</h2>
-<p>We use the reports to find and fix crashes, freezes, desyncs and failed joins.</p>
+<p>We use the reports to find and fix crashes, freezes, desyncs, failed joins and an empty game view.</p>
 
 <h2>When it is sent</h2>
 <ul>
 <li>Only after you click Yes.</li>
-<li>Only after a crash, a freeze, a desync report or a failed join.</li>
+<li>Only after a crash, a freeze, a desync report, a failed join, or a multiplayer view that showed nothing.</li>
 <li>At most 3 reports per day.</li>
 <li>The report is sent at the next start of the game, or at the title screen. Never while you play.</li>
 </ul>

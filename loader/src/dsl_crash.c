@@ -14,6 +14,7 @@
 //     player.log): dsload.prev.log, player.log, rig.log, ErrorLog.txt (tails).
 //   - desync: a new folder in <data>/desync_reports (multiplayer): its README.txt summary (up to 3), plus rig.log.
 //   - failed join: a new rig.log line of a join with rc -2 / -3 / -4.
+//   - blank view: a new rig.log line "ERROR [view_blank] view: nothing visible for" (multiplayer, Mac and Windows).
 // Limits: queue of 5, 3 sent per 24 h (ROOT/crash/sent.txt), gzip at most 3.5 MB (tails cut further when bigger).
 // Personal data out before sending: dsl_scrub.c (names of this PC from dsl_uos_identity, Steam's loginusers.vdf, the
 // multiplayer names in mp.json / mp_menu.json / mp_history.json).
@@ -297,14 +298,16 @@ static void scan_mp(void) {
     }
     if (dir) closedir(dir);
     /* failed joins in the new part of rig.log (it restarts when the log was rotated) */
-    char joinl[600] = "";
+    char joinl[600] = "", blankl[600] = "";
     if (s.init && s.rig_off > rs) s.rig_off = 0;
     if (s.init && rs > s.rig_off) {
         size_t want = (size_t)(rs - s.rig_off) > (8u << 20) ? (8u << 20) : (size_t)(rs - s.rig_off), n = 0;
         char *b = tail(rig, want, &n);
         char *cur = b;
-        for (char *l; !joinl[0] && (l = next_line(&cur));) {
-            if (!strstr(l, "join")) continue;
+        for (char *l; (!joinl[0] || !blankl[0]) && (l = next_line(&cur));) {
+            /* multiplayer (lane watchfog): no map tile visible for 5 s in a session */
+            if (!blankl[0] && strstr(l, "ERROR [view_blank] view: nothing visible for")) { snprintf(blankl, sizeof blankl, "%s", l); continue; }
+            if (joinl[0] || !strstr(l, "join")) continue;
             for (const char *c = l; (c = strstr(c, "rc -")); c += 4)
                 if ((c[4] == '2' || c[4] == '3' || c[4] == '4') && !(c[5] >= '0' && c[5] <= '9')) { snprintf(joinl, sizeof joinl, "%s", l); break; }
         }
@@ -312,7 +315,7 @@ static void scan_mp(void) {
     }
     int first = !s.init; s.init = 1; s.rig_off = rs; s.desync_t = newest; scan_save(&s);
     if (first) { dsl_log("crash: multiplayer scan starts here (rig.log %lld bytes)", rs); return; }
-    if (consent == 0 || (!nd && !joinl[0])) return;
+    if (consent == 0 || (!nd && !joinl[0] && !blankl[0])) return;
     char cur[1200], plog[1200]; snprintf(cur, sizeof cur, "%s/dsload.log", logdir_s); snprintf(plog, sizeof plog, "%s/player.log", logdir_s);
     if (nd) {
         char meta[1200]; size_t m = (size_t)snprintf(meta, sizeof meta, "kind: desync\nreason: %d new desync report(s)\n", nd);
@@ -329,6 +332,12 @@ static void scan_mp(void) {
         QFile f[3] = { { "rig.log", "", 512u << 10 }, { "dsload.log", "", 512u << 10 }, { "player.log", "", 1024u << 10 } };
         snprintf(f[0].path, sizeof f[0].path, "%s", rig); snprintf(f[1].path, sizeof f[1].path, "%s", cur); snprintf(f[2].path, sizeof f[2].path, "%s", plog);
         queue_add("join", meta, f, 3);
+    }
+    if (blankl[0]) {
+        char meta[900]; snprintf(meta, sizeof meta, "kind: blank\nreason: the game view showed nothing\nblank_line: %s\n", blankl);
+        QFile f[3] = { { "rig.log", "", 512u << 10 }, { "dsload.log", "", 512u << 10 }, { "player.log", "", 1024u << 10 } };
+        snprintf(f[0].path, sizeof f[0].path, "%s", rig); snprintf(f[1].path, sizeof f[1].path, "%s", cur); snprintf(f[2].path, sizeof f[2].path, "%s", plog);
+        queue_add("blank", meta, f, 3);
     }
 }
 

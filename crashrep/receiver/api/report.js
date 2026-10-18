@@ -6,7 +6,7 @@ import { json, safeEqual, ipKey } from '../lib/common.js';
 import { checkIp, checkInstallAndGlobal } from '../lib/limits.js';
 
 const APP_KEY = 'dscr1-621ed5ae365845cd8ed0034a'; // public app key, shipped in the client
-const KINDS = new Set(['crash', 'freeze', 'desync', 'join', 'test']);
+const KINDS = new Set(['crash', 'freeze', 'desync', 'join', 'blank', 'test']);
 const MAX_GZ = 4 * 1024 * 1024;
 const MAX_RAW = 32 * 1024 * 1024;
 const MAGIC = 'DSCRASH 1';

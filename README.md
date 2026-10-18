@@ -67,7 +67,8 @@ as usual and checks again next time.
 
 At the first start, the game asks: "Send crash reports to help fix bugs?". Nothing is sent before you click Yes.
 
-- A report is sent only after a crash, a freeze, a multiplayer desync report or a failed join. It is sent at the next
+- A report is sent only after a crash, a freeze, a multiplayer desync report, a failed join or a multiplayer
+  view that showed nothing. It is sent at the next
   start or at the title screen, never while you play. At most 3 reports per day.
 - It holds the logs (`dsload.log`, `player.log`, `rig.log`, the game's `ErrorLog.txt`), desync report summaries, the
   versions of the loader, mods and game, your OS and CPU type, and a random install id (not a hardware id).

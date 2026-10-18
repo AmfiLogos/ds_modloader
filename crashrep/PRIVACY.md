@@ -28,12 +28,12 @@ Your computer removes these items before it sends the report:
 
 ## Why we collect it
 
-We use the reports to find and fix crashes, freezes, desyncs and failed joins.
+We use the reports to find and fix crashes, freezes, desyncs, failed joins and an empty game view.
 
 ## When it is sent
 
 - Only after you click Yes.
-- Only after a crash, a freeze, a desync report or a failed join.
+- Only after a crash, a freeze, a desync report, a failed join, or a multiplayer view that showed nothing.
 - At most 3 reports per day.
 - The report is sent at the next start of the game, or at the title screen. Never while you play.
 

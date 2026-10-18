@@ -22,7 +22,7 @@ Admin calls need `Authorization: Bearer <ADMIN_TOKEN>`. The cron needs `Authoriz
 - `Content-Type: application/gzip` (else 415).
 - `X-DSCR-Key`: the public app key (else 401).
 - `X-DSCR-Install`: 32 lower-case hex chars (else 400).
-- `X-DSCR-Kind`: `crash`, `freeze`, `desync`, `join` or `test` (else 400).
+- `X-DSCR-Kind`: `crash`, `freeze`, `desync`, `join`, `blank` (multiplayer view showed nothing) or `test` (else 400).
 - Body: gzip of UTF-8 text. First line must be `DSCRASH 1` (else 400).
 - Stored at `reports/YYYY/MM/DD/<time>-<kind>-<install8>-<random>.txt.gz` (original gzip bytes, private Blob store). Time is ISO 8601 basic format, for example `20261018T001137Z`.
 - `X-DSCR-Admin: <ADMIN_TOKEN>` skips the rate limits (tests only).
