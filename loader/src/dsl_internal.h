@@ -68,6 +68,9 @@ void dsl_update_frame(void);                 /* every frame (title corner, confi
 void dsl_crash_boot(void);                   /* start part, after dsl_soft_snapshot: the previous session's end */
 void dsl_crash_start(void);                  /* after the modules' init: the quit mark */
 void dsl_crash_frame(void);                  /* every frame (consent notice, desync / join scan, sending) */
+/* signed updates (dsl_sig.c): sig_b64 = a .sig file's text; the trusted key's index, -1 = not a valid signature */
+int dsl_sig_check(const void *msg, size_t n, const char *sig_b64);
+int dsl_sig_dev(void);                             /* 1 = a test build that trusts the public dev key */
 /* dsl_update.c helpers for "Get the host's mods" (any thread) */
 const char *dsl_update_mod_repo(const char *id);   /* the official repo of a mod id (MOD_REPOS); NULL = not an official mod */
 int dsl_update_ready(void);                        /* 1 = ROOT/update known (downloads possible in this start) */

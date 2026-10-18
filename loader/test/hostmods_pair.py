@@ -23,7 +23,8 @@ missing mod by its display name (mod.json "name"), never by its raw id.
 
 Inputs (phase 2 builds them; nothing is published):
   HM_BUILD     loader build folder: dsload.dylib + mods/multiplayer (build.sh with MP_PIN / MP_REPO = the hostmods
-               ds_multiplayer commit). Default: ../build next to this file.
+               ds_multiplayer commit, and EXTRA_CFLAGS=-DDSL_SIGN_DEV_KEY: relserver.py signs with the public dev key).
+               Default: ../build next to this file.
   HM_PACKAGES  folder with gcd-cdr-<v>.zip + hell-difficulty-<v>.zip (modules/package_mods.sh). Missing: Mac-only
                zips are made from HM_BUILD/mods/<id> (same layout: one folder <id>/).
   HM_SRC_APP   a ready hidden test copy to clone (make_instance.sh output). Default ~/ds_launcher/.../instances/Z.
@@ -57,6 +58,8 @@ S_SRC = os.path.join(HERE, 'settings', 'demo')
 SHOT_PREFIX = os.environ.get('HM_SHOT_PREFIX', '')
 PLAY = int(sys.argv[sys.argv.index('--play') + 1]) if '--play' in sys.argv else 240
 BUILD = os.environ.get('HM_BUILD', os.path.join(L, 'build'))
+if os.path.exists(os.path.join(BUILD, 'dsload.dylib')) and b'1T/QLlHQ8evd8g7BGFA5kO2x2kBHBXA1zX7AngSSO6U=' not in open(os.path.join(BUILD, 'dsload.dylib'), 'rb').read():
+    raise SystemExit('HM_BUILD/dsload.dylib does not trust the dev signing key: build it with EXTRA_CFLAGS=-DDSL_SIGN_DEV_KEY')
 OUT = os.path.join(L, 'test_env', 'hostmods', time.strftime('%Y%m%d-%H%M%S')); os.makedirs(OUT, exist_ok=True)
 SHOTS = os.environ.get('HM_SHOTS', OUT); os.makedirs(SHOTS, exist_ok=True)
 checks, info = [], {}

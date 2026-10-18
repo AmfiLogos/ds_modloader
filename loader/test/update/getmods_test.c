@@ -3,6 +3,8 @@
 // printed). The game is never involved.
 //   getmods_test plan <host lines file> <vanilla>      prints the plan JSON
 //   getmods_test get <host lines file> <env line>      runs the fix (frames until done) and prints STATE / WHY / APPLY
+//   getmods_test check                                 the auto-update check (DSL_UPDATE unset; signed_test.sh): prints
+//                                                      ROOT/update/ready.txt once written, "(none)" after 5 s
 // Env: DSML_ROOT (ROOT), DSL_UPDATE_API (relserver.py), HM_ON / HM_EN (",a,b," running / enabled ids), HM_APPLY_REFUSE=1,
 // HM_MYSET (mod settings lines).
 #include "dsl_internal.h"
@@ -85,9 +87,14 @@ static char *slurp(const char *p) {
     char *b = calloc(1, 1 << 16); size_t n = fread(b, 1, (1 << 16) - 1, f); fclose(f); b[n] = 0; return b;
 }
 int main(int argc, char **argv) {
-    if (argc < 4) return 2;
+    if (argc < 2) return 2;
     dsl_update_start();                                           /* ROOT/update (DSL_UPDATE=0: no update check) */
-    char *host = slurp(argv[2]); if (!host) return 2;
+    if (argc == 2 && !strcmp(argv[1], "check")) {
+        char p[1200], *b = NULL; snprintf(p, sizeof p, "%s/update/ready.txt", getenv("DSML_ROOT"));
+        for (int i = 0; i < 100 && !(b = slurp(p)); i++) usleep(50000);
+        printf("READY\n%s", b ? b : "(none)\n"); return 0;
+    }
+    char *host = argc >= 4 ? slurp(argv[2]) : NULL; if (!host) return 2;
     if (!strcmp(argv[1], "plan")) {
         static char out[65536]; int r = dsl_hostmods_plan(host, atoi(argv[3]), out, sizeof out);
         for (int i = 0; i < 100 && !strcmp(argv[1], "plan") && argc > 4 && strstr(out, "\"names_pending\":1"); i++) {   /* the box asks again */

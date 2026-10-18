@@ -9,7 +9,7 @@ OUT=$(mktemp -d "${TMPDIR:-/tmp}/getmods_test.XXXXXX"); R=$OUT/root; REL=$OUT/re
 mkdir -p $M $REL $OUT/zips
 fails=0; pass=0
 check() { if eval "$2"; then print "PASS $1"; pass=$((pass+1)); else print "FAIL $1"; fails=$((fails+1)); fi }
-nice -n 19 clang -arch arm64 -O1 -Wall -Wno-unused-function -I$L/src -o $OUT/t getmods_test.c $L/src/dsl_hostmods.c $L/src/dsl_update.c \
+nice -n 19 clang -arch arm64 -O1 -Wall -Wno-unused-function -DDSL_SIGN_DEV_KEY -I$L/src -o $OUT/t getmods_test.c $L/src/dsl_hostmods.c $L/src/dsl_update.c $L/src/dsl_sig.c $L/src/dsl_sig_mc.c \
   $L/src/dsl_json.c $L/start/mac/dsl_update_mac.c || exit 1
 
 modjson() { print -r -- "{\"id\":\"$1\",\"name\":\"$1 name\",\"version\":\"$2\",\"scope\":\"${3:-gameplay}\"}"; }
@@ -29,7 +29,8 @@ release AmfiLogos/ds_custommodes custom-modes 0.2.0
 mkdir -p $REL/evil/evil/evil-v1.0.0; print x > $REL/evil/evil/evil-v1.0.0/evil-1.0.0.zip
 
 PORT=$((20000 + RANDOM % 20000))
-python3 $H/relserver.py $REL $PORT & SRV=$!
+nice -n 19 clang -O2 -o $OUT/dsl_sign ${L:h}/tools/release_sign/dsl_sign.c $L/src/dsl_sig.c $L/src/dsl_sig_mc.c || exit 1   # releases signed with the dev key
+DSL_SIGN_TOOL=$OUT/dsl_sign python3 $H/relserver.py $REL $PORT & SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
 for i in {1..50}; do curl -s -o /dev/null http://127.0.0.1:$PORT/repos/x/y/releases && break; sleep 0.1; done
 [[ -f $REL/requests.log ]] && mv $REL/requests.log $OUT/probe.log    # the readiness probe is not a loader request
@@ -77,7 +78,7 @@ host $'gcd-cdr@0.1.4\nhell-difficulty@0.1.4\ncustom-modes@0.2.0'
 r=$($OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
 check "fix: installed at the host's version, Apply = host ids + client + multiplayer, foo off, env passed" \
   '[[ "$r" == *"STATE 3"* && $(ver gcd-cdr) == 0.1.4 && "$r" == *"APPLY gcd-cdr,hell-difficulty,custom-modes,"* && "$r" == *multiplayer* && "$r" == *comfy* && "$r" != *foo* && "$r" == *"ENV DSMP_REJOIN=ip|10.0.0.2|7777"* ]]'
-check "only official release URLs were requested" '! reqs | grep -v -E "^GET /(repos/AmfiLogos/(ds_modloader|ds_custommodes)/releases|dl/AmfiLogos/(ds_modloader|ds_custommodes)/[a-z-]+-v[0-9.]+/[a-z-]+-[0-9.]+\.zip)[? ]" | grep -q .'
+check "only official release URLs were requested" '! reqs | grep -v -E "^GET /(repos/AmfiLogos/(ds_modloader|ds_custommodes)/releases|dl/AmfiLogos/(ds_modloader|ds_custommodes)/[a-z-]+-v[0-9.]+/([a-z-]+-[0-9.]+\.zip|release-manifest\.json(\.sig)?))[? ]" | grep -q .'
 
 # 6 Apply refused after the install: rolled back (gcd-cdr back to 0.1.4)
 export HM_ON=",custom-modes,gcd-cdr,hell-difficulty,multiplayer,comfy,"

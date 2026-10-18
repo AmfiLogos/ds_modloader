@@ -24,10 +24,14 @@ if [[ ${3:-} == real ]]; then
   python3 $H/mac_update_test.py $W/run $A $INST
   exit $?
 fi
+# signed updates: the test apps' loader trusts the public dev key that relserver.py signs with (-DDSL_SIGN_DEV_KEY);
+# loader/build/dsload.dylib is a release build again right after (sign_release.sh also refuses a kit with the dev key)
+EXTRA_CFLAGS=-DDSL_SIGN_DEV_KEY LOADER_ONLY=1 zsh $REPO/loader/build.sh > $W/build_loader_dev.log 2>&1 || { tail -3 $W/build_loader_dev.log; exit 1; }
 for v in 0.1.3 0.1.4; do
-  DSM_RELEASE=$v zsh $REPO/app/build_app.sh > $W/build_$v.log 2>&1 || { tail -3 $W/build_$v.log; exit 1; }
+  DSM_RELEASE=$v zsh $REPO/app/build_app.sh > $W/build_$v.log 2>&1 || { tail -3 $W/build_$v.log; LOADER_ONLY=1 zsh $REPO/loader/build.sh > /dev/null 2>&1; exit 1; }
   mkdir -p $A/$v; ditto "$REPO/app/build/Dungeon Settlers Modded.app" "$A/$v/Dungeon Settlers Modded.app"
 done
+LOADER_ONLY=1 zsh $REPO/loader/build.sh > $W/build_loader_release.log 2>&1 || { print "loader/build/dsload.dylib is still the TEST build (dev key): rebuild it"; exit 1; }
 B="$A/0.1.5/Dungeon Settlers Modded.app"; mkdir -p $A/0.1.5; ditto "$A/0.1.4/Dungeon Settlers Modded.app" "$B"
 print '#include <stdlib.h>\n__attribute__((constructor)) static void die(void) { abort(); }' > $W/die.c
 clang -arch arm64 -arch x86_64 -dynamiclib -o "$B/Contents/Resources/dsml/dsload.dylib" $W/die.c

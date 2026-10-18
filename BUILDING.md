@@ -79,6 +79,12 @@ Run each command from the repo root. Set the env vars of section 2 first.
    `zsh app/build_app.sh`
    Output: `app/build/Dungeon Settlers Modded.app` and `.zip`.
 7. Mac disk image: `zsh app/make_dmg.sh`. Output: `app/build/Dungeon-Settlers-Modded-Mac.dmg`.
+8. Sign every release before the upload (the loader's signed auto-update, v0.1.16 and later; `loader/src/dsl_sig.c`):
+   `zsh tools/release_sign/sign_release.sh <repo> <tag> <files...>`, one call per release (the kit `v0.1.N`, and each
+   mod release `<id>-v<ver>` of ds_modloader, ds_multiplayer and ds_custommodes). It writes `release-manifest.json` and
+   `release-manifest.json.sig` next to the first file: upload both with the release's files. A loader refuses a release
+   without them. The private key is only in the owner's macOS Keychain (service `ds-modloader-release-signing`); the
+   script reads it there. It refuses a kit whose loader was built with `-DDSL_SIGN_DEV_KEY` (test builds).
 
 BepInEx and MelonLoader are not built here. `app/bepinex/install_bepinex.sh` and `app/melon/install_melon.sh` go into
 the app. At first use they download a release zip from ds_multiplayer GitHub Releases and check its sha256.
@@ -88,6 +94,9 @@ Old outputs are moved to `old/` folders, never deleted. Each build scans its out
 ## 4. Tests
 
 - Loader host test (fake GameAssembly, no game): `zsh loader/test/run_tests.sh`. Needs the floor-logger files (section 2).
+- Update host tests (local release server, no game): `zsh loader/test/update/signed_test.sh`, `getmods_test.sh`,
+  `kitonly_test.sh`. The test release server signs with the public dev key (`dev_keys/dev.key`); only loaders built with
+  `EXTRA_CFLAGS=-DDSL_SIGN_DEV_KEY` trust it (`mac_gate.sh` does that for its test apps, then rebuilds the release loader).
 - Rust: `cargo test -p dsml-core` and `cargo test -p ds-unit-builder`.
   The game test `cargo test -p dsml-core --test e2e_mac -- --ignored --nocapture` needs the game from Steam.
 - App: `zsh app/test/run.sh`. Needs the built app and the game installed by Steam.

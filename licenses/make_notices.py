@@ -66,6 +66,8 @@ def build():
          "Our own code is under the MIT license in LICENSE.txt. The parts below keep their own licenses.\n\n"]
     s.append(section("MinHook (BSD 2-Clause)", "Windows: baselib.dll (the loader)",
                      read(mp / "win/third_party/minhook/LICENSE.txt")))
+    s.append(section("Monocypher 4.0.2 (BSD 2-Clause or CC0)", "the loader, Mac and Windows: the signature check of updates",
+                     read(REPO / "loader/src/third_party/monocypher/LICENCE.md")))
     s.append(section("musl libc math functions (MIT)", "multiplayer module (Mac and Windows)",
                      read(mp / "win/math/musl/COPYRIGHT")))
     s.append(section("RimWorld Multiplayer (MIT)",
