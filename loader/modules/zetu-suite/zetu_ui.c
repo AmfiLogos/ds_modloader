@@ -35,7 +35,7 @@ static struct {
     void (*il_free)(void *);
     void *(*class_get_parent)(void *);
     void *(*object_get_class)(ZObj);
-    int (*class_is_assignable_from)(void *, void *);
+    uint8_t (*class_is_assignable_from)(void *, void *);       /* C bool: only the low byte is set (Windows: sete al) */
     void *(*class_get_type)(void *);
     ZObj (*type_get_object)(void *);
     ZObj (*array_new)(void *, uintptr_t);
