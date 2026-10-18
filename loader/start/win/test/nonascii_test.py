@@ -5,7 +5,9 @@
   zip       a mod zip with a non-ASCII name (gcd-cdr) dropped into <root>\\mods: the starter unpacks it
   start     starter, -batchmode: title, save folder = <root>\\profiles\\modded\\data
   soft      soft restart at the title (DSL_SOFT_TEST apply request) to a set with the new mod on: B shown, mod loaded in B
-  save      a fresh start loads a world and saves it (save_file request): the file is under <root>\\profiles\\modded\\data\\Saves
+  save      a fresh start loads a modded-only world and saves it (save_file request): the file is under <root>\\profiles\\modded\\data\\Saves
+            (since v0.1.13 the starter copies no saves and a game-folder world saves back to LocalLow, an ASCII path in the
+            bottle: the test puts the seed save in the modded folder itself, and its world must not be in the game folder)
 usage: nonascii_test.py <kit dir> <mod folder>   (kit of build_win.sh with MODS=<multiplayer module>; mod folder = a
 Windows build of gcd-cdr, e.g. build_mods.sh output win/gcd-cdr)"""
 import json, os, re, shutil, signal, socket, subprocess, sys, time, zipfile
@@ -18,6 +20,8 @@ WROOT = f"C:\\users\\crossover\\AppData\\Local\\{NAME}\\Dungeon Settlers Modded"
 P = f"{ROOT}/profiles/modded"
 STEAMGAME = "C:\\SteamLibrary\\steamapps\\common\\Dungeon Settlers"
 SAVE = "ElvenExpedition__AutoSave_f816ebc6195c432c9fff754b75ee3738_0"
+SEED = os.path.expanduser(f"~/DungeonSettlers_SaveBackups/2026-10-11-1827/Saves/{SAVE}.json")
+GAME_SAVES = f"{H}/Library/Application Support/CrossOver/Bottles/DSMP/drive_c/users/crossover/AppData/LocalLow/CanOpener/Dungeon Settlers/Saves"
 PORT = 47851
 res = {}
 
@@ -106,7 +110,11 @@ def run(kit, mod):
     kill_ours(); time.sleep(5)                        # B cannot take A's control port: a fresh start for the save
     port = PORT
     saves = f"{P}/data/Saves"
-    before = {f: os.path.getmtime(f"{saves}/{f}") for f in os.listdir(saves)} if os.path.isdir(saves) else {}
+    os.makedirs(saves, exist_ok=True); shutil.copy2(SEED, f"{saves}/{SAVE}.json")   # a modded-only world under the accented path
+    if os.path.isfile(f"{GAME_SAVES}/nonascii_test.json"):    # left by this test before v0.1.13 support: moved aside, never deleted
+        os.makedirs(f"{LOCAL}/old_nonascii", exist_ok=True); os.replace(f"{GAME_SAVES}/nonascii_test.json", f"{LOCAL}/old_nonascii/game_nonascii_test_{int(time.time())}.json")
+    clash = [f for f in os.listdir(GAME_SAVES) if SAVE.split("_")[-2] in f] if os.path.isdir(GAME_SAVES) else []
+    if clash: log("the bottle's game folder holds this world (it would save there, not under " + NAME + "):", clash); return 1
     t0 = time.time()
     subprocess.run(["nice", "-n", "19", f"{C}/wine", "--bottle", "DSMP", "--no-wait", WROOT + "\\Dungeon Settlers Modded.exe",
                     "-batchmode", "-nographics"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -121,8 +129,8 @@ def run(kit, mod):
         new = [f for f in os.listdir(saves) if f == "nonascii_test.json" and os.path.getmtime(f"{saves}/{f}") > t0]
         return new or None
     new = wait(written, 90)
-    check("save: a save file written under " + NAME, new, str(new))
     c_log = read(f"{P}/dsload.log")
+    check("save: a save file written under " + NAME, new and "saving nonascii_test (world f816ebc6-195c-432c-9fff-754b75ee3738) to the modded folder" in c_log, str(new))
     wj = read(f"{P}/data/Mods/worlds.json")
     check("worlds.json: read at the load, written with the world", "could not be read" not in c_log and "not readable" not in c_log and re.search(r"world check: .*allowed", c_log)
           and "f816ebc6-195c-432c-9fff-754b75ee3738" in wj, (re.findall(r"world check: [^\n]*", c_log) or [""])[0][:120])
