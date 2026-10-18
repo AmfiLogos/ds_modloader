@@ -8,7 +8,7 @@ It is made for Steam build 25846389 of Dungeon Settlers. Other game builds are n
 ## The three repositories
 
 - ds_modloader (this repo): the mod loader, the Mac app, the Windows installer, and two small mods
-  (Global cooldown, Hell difficulty). Its releases page has the installers (`Dungeon-Settlers-Modded-Mac.dmg`,
+  (Global cooldown fix, Hell difficulty). Its releases page has the installers (`Dungeon-Settlers-Modded-Mac.dmg`,
   `Dungeon-Settlers-Modded-Setup.exe`).
 - [ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer): the Multiplayer mod.
 - [ds_custommodes](https://github.com/AmfiLogos/ds_custommodes): the Custom Modes mod (My Units, Unit Builder,
@@ -46,7 +46,7 @@ A release named `v0.1.N` is the installer release. Its number is the mod loader'
 4. Start "Dungeon Settlers Modded" from the desktop or the Start menu.
    To remove it: Settings, Apps, "Dungeon Settlers Modded", Uninstall. Your modded saves stay.
 
-The default mods are inside: Multiplayer, Custom Modes, Global cooldown, Hell difficulty (off until you turn it on).
+The default mods are inside: Multiplayer, Custom Modes, Global cooldown fix, Hell difficulty (off until you turn it on).
 On the title screen, click Mods to turn mods on or off.
 
 ## Auto-update
