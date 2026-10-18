@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
 extern int il2cpp_init(const char *);
 extern int fake_orig_init_calls, fake_orig_safe, fake_orig_normal, fake_orig_tick, fake_orig_update, fake_orig_foreign;
 extern int Patch_Target(void), fake_load(const char *), fake_cancel_calls; extern char fake_cancel_text[];
@@ -16,5 +17,7 @@ int main(void) {
     int s1 = fake_load("save1"), s2 = fake_load("save2");
     printf("PATCH target=%d\nWORLD save1_state=%d save2_state=%d cancels=%d text=%s\n", Patch_Target(), s1, s2, fake_cancel_calls, fake_cancel_text);
     printf("ENV DYLD_INSERT_LIBRARIES=%s\n", e ? e : "(unset)");
+    const char *wf = getenv("HOST_WAIT_FILE");          /* update test: stay up (max 60 s) until the loader's thread wrote it */
+    for (int i = 0; wf && *wf && i < 600 && access(wf, 0); i++) usleep(100000);
     return 0;
 }

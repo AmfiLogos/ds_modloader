@@ -18,6 +18,9 @@
 // that never gets there is rolled back by the starter after a second try. ROOT/update/notice.txt (the starter's one
 // line: an install failed, a rollback) is shown in the corner once.
 // Kit first: a kit update carries the mods; mod updates wait for the next start.
+// Kit only (dsl_update_start_kit_only): the game build is unknown / not the pinned one (dsl_main.c dsl_core_start), so
+// no mod, no hook and no title: the same kit check and download (ready.txt), no mod check, no title corner. A kit the
+// starter just installed is confirmed at that start (its loader does nothing more, so nothing of it can crash later).
 // Test only: DSL_UPDATE_API=<base URL> (a local release server instead of https://api.github.com), DSL_UPDATE=0 (off),
 // DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button).
 #include "dsl_internal.h"
@@ -52,7 +55,7 @@ static struct {
     int dl;                                                /* 0 none, 1 running, 2 ready, -1 failed */
     int dl_wanted;
 } S;
-static int auto_on = 1, enabled, thread_on;
+static int auto_on = 1, enabled, thread_on, kit_only;
 static char root[1024], udir[1100];
 /* the corner's one short line, made into text in the current language every frame (a language change at the title
    shows at once): LN_UPDATED_MODS "Updated: <names>", LN_UPDATED "Updated to <ver>" (arg), LN_NOTICE the starter's
@@ -273,7 +276,7 @@ static void download_all(void) {
 static void *check_thread(void *arg) {
     (void)arg;
     check_kit();
-    if (!S.kit_ver[0]) check_mods();
+    if (!S.kit_ver[0] && !kit_only) check_mods();
     char key[400], p[1200]; update_key(key, sizeof key); upath(p, sizeof p, "want.txt");
     char *w = slurp_(p, 4096); int wanted = w && key[0] && !strncmp(w, key, strlen(key)) && (w[strlen(key)] == '\n' || !w[strlen(key)]); free(w);
     pthread_mutex_lock(&mu); S.checked = 1; if (wanted) { S.dl_wanted = 1; consent = 1; } int want = S.dl_wanted || auto_on; pthread_mutex_unlock(&mu);
@@ -292,9 +295,9 @@ static void moved_old(const char *file, const char *why) {
     snprintf(q, sizeof q, "%s/old/%s-%s-%s", udir, why, ts, file);
     if (dsl_uos_move(p, q)) dsl_log("update: cannot move %s", p);
 }
-static void title_results(void) {
+static void confirm_pending(void) {                       /* the update this start runs reached the title */
     char p[1200]; char *b;
-    if (confirm_label[0]) {                                  /* the update this start runs reached the title */
+    if (confirm_label[0]) {
         upath(p, sizeof p, "pending.txt"); b = slurp_(p, 1 << 20);
         char label[200] = ""; const char *l = b ? strstr(b, "LABEL\t") : NULL;
         if (l) { l += 6; size_t k = strcspn(l, "\r\n"); snprintf(label, sizeof label, "%.*s", (int)(k < sizeof label ? k : sizeof label - 1), l); }
@@ -303,10 +306,14 @@ static void title_results(void) {
             moved_old("pending.txt", "ok");
             if (!strncmp(label, "mods:", 5)) { line_kind = LN_UPDATED_MODS; snprintf(line_arg, sizeof line_arg, "%s", label + 5); }
             else { line_kind = LN_UPDATED; snprintf(line_arg, sizeof line_arg, "%s", label[0] == 'v' ? label + 1 : label); }
-            dsl_log("update: %s confirmed at the title", label);
+            dsl_log("update: %s confirmed %s", label, kit_only ? "at the start (mods are off: no title)" : "at the title");
         } else dsl_log("update: DSML_UPDATE=%s but pending.txt says \"%s\": nothing to confirm", confirm_label, label);
         confirm_label[0] = 0;
     }
+}
+static void title_results(void) {
+    char p[1200]; char *b;
+    confirm_pending();
     upath(p, sizeof p, "notice.txt");
     if ((b = slurp_(p, 2000))) {                             /* the starter's one line (install failed, rollback) */
         b[strcspn(b, "\r\n")] = 0;
@@ -389,12 +396,13 @@ void dsl_update_start(void) {
     if (dsl_uos_release(S.have, sizeof S.have)) S.have[0] = 0;
     if (S.have[0]) setenv("DSML_RELEASE", S.have, 1);            /* the multiplayer mod names it when the mod sets differ */
     { const char *e = getenv("DSML_UPDATE"); if (e && *e) snprintf(confirm_label, sizeof confirm_label, "%s", e); }
-    enabled = 1;
-    dsl_log("update: release %s, auto-update %s, ROOT %s%s", S.have[0] ? S.have : "unknown", auto_on ? "on" : "off", root,
-            confirm_label[0] ? " (this start runs a new update)" : "");
+    enabled = !kit_only;                                   /* kit only: no title corner (no frame call either) */
+    dsl_log("update: release %s, auto-update %s, ROOT %s%s%s", S.have[0] ? S.have : "unknown", auto_on ? "on" : "off", root,
+            confirm_label[0] ? " (this start runs a new update)" : "", kit_only ? "; kit only (mods are off this start)" : "");
+    if (kit_only) confirm_pending();
     if (off && !strcmp(off, "0")) { dsl_log("update: DSL_UPDATE=0: no check"); return; }
     if (dsl_soft_wanted()) return;                         /* B of a soft restart: A checked already */
-    for (int i = 0; i < dsl_mods_count() && S.nmods < MAXU; i++) {
+    for (int i = 0; !kit_only && i < dsl_mods_count() && S.nmods < MAXU; i++) {
         const DSLModInfo *m = dsl_mods_at(i); if (!m || !m->version) continue;
         const char *repo = NULL;
         for (size_t k = 0; k < sizeof MOD_REPOS / sizeof MOD_REPOS[0]; k++) if (!strcmp(MOD_REPOS[k].id, m->id)) repo = MOD_REPOS[k].repo;
@@ -406,6 +414,17 @@ void dsl_update_start(void) {
     pthread_t t; thread_on = 1;
     if (pthread_create(&t, NULL, check_thread, NULL)) { thread_on = 0; dsl_log("update: no thread"); return; }
     pthread_detach(t);
+}
+/* the game build is unknown / not pinned (dsl_main.c): mods are off, but a newer kit may support this build */
+void dsl_update_start_kit_only(void) { kit_only = 1; dsl_update_start(); }
+/* for the mods-off notice: 1 = this start checks for a newer kit and auto-update installs it; 0 = it does not
+   (Auto-update off, DSL_UPDATE=0, no ROOT) */
+int dsl_update_will_install(void) {
+    const char *off = getenv("DSL_UPDATE"); if (off && !strcmp(off, "0")) return 0;
+    const char *r = dsl_uos_root(); if (!r || !*r) return 0;
+    char p[1200]; snprintf(p, sizeof p, "%s/update/settings.json", r); char *b = slurp_(p, 4096); int on = 1;
+    if (b) { JNode *j = json_parse(b); JNode *a = json_get(j, "auto"); if (a && a->t == JN_BOOL) on = a->b; json_free(j); free(b); }
+    return on;
 }
 void dsl_update_frame(void) {
     if (!enabled) return;

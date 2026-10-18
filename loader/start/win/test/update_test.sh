@@ -7,8 +7,11 @@
 #   c  install fails after baselib / starter / RELEASE were swapped (a folder where the kit has mods\multiplayer\mod.json):
 #      the exact old files back, notice.txt, ready.txt in update\old
 #   d  pending.txt DONE + 1 STARTED: kept, 2 STARTED, label passed; then 2 STARTED: rolled back, KEY in bad.txt
+#   g  a kit for another game build only (files\BUILDS.txt): refused twice, nothing changed, never in bad.txt (the
+#      installer can make it fit later: not a failed install)
 #   a  a good kit of a higher RELEASE: installed (RELEASE, baselib.dll + starter swapped, DONE), the new starter starts
-#      and appends STARTED, DSML_UPDATE passed
+#      and appends STARTED, DSML_UPDATE passed. Its BUILD.txt names another build, its BUILDS.txt lists the copy's build
+#      second: the update install reads BUILDS.txt
 #   e  one real start after a, to the title (control port boot_ready); the loader confirms there (pending.txt -> update\old)
 #   x  (with a) a file only the old version of a kit mod had (mods\multiplayer\old_extra.dll) is gone after the update
 #      (in the backup); the player's own mod (mods\player-own) stays
@@ -40,9 +43,10 @@ print "base RELEASE $BASE"
 
 # test kits: <ver> <RELEASE inside>
 ST="$OLD/stage"; mkdir -p "$U/test"
-mkzip() {
+mkzip() {  # mkzip <ver> <RELEASE inside> [<BUILD.txt line> <BUILDS.txt lines, space-separated>]
   local s="$ST/$1"; mkdir -p "$s"; cp -R $KIT "$s/Dungeon Settlers Modded"
   printf '%s\r\n' "$2" > "$s/Dungeon Settlers Modded/files/RELEASE"
+  if (( $# > 2 )); then printf '%s\r\n' "$3" > "$s/Dungeon Settlers Modded/files/BUILD.txt"; printf '%s\r\n' ${=4} > "$s/Dungeon Settlers Modded/files/BUILDS.txt"; fi
   (cd "$s" && zip -qrX "$U/test/kit-$1.zip" "Dungeon Settlers Modded")
 }
 ready() {  # ready <ver>: ready.txt for update\test\kit-<ver>.zip
@@ -69,7 +73,8 @@ dry() {  # one --dry start; LOG = its starter.log lines
 }
 has() { print -r -- "$LOG" | grep -q -- "$1" }
 
-mkzip 0.1.91 0.1.90; mkzip 0.1.92 0.1.92; mkzip 0.1.93 0.1.93
+COPYB=$(head -1 "$R/game/dsmodded_build.txt" | tr -d '\r ')
+mkzip 0.1.91 0.1.90; mkzip 0.1.92 0.1.92; mkzip 0.1.93 0.1.93 1 "1 $COPYB"; mkzip 0.1.94 0.1.94 1 "1 2"
 
 # b: RELEASE in the kit differs from the KIT version
 M0=$(manifest); ready 0.1.91; dry
@@ -92,6 +97,11 @@ check "d1: one retry: STARTED appended, label passed" '[[ $(grep -c "^STARTED" "
 dry
 check "d2: started twice: rolled back, KEY in bad.txt, no label" '[[ $(cat "$R/dtest.txt") == old ]] && [[ ! -e $U/pending.txt ]] && grep -qx "kit 0.1.99" "$U/bad.txt" && has "ENV DSML_UPDATE=$"'
 mv "$R/dtest.txt" "$OLD/dtest.txt"
+
+# g: a kit only for other game builds, twice: refused, not counted as a failed install
+M0=$(manifest); ready 0.1.94; dry; ready 0.1.94; dry
+check "g: kit for other builds refused twice, nothing changed" 'has "is for game build(s) 1,2, the game copy is build $COPYB" && has "kit 0.1.94 is not for this game build: not counted" && [[ "$(manifest)" == "$M0" ]] && [[ ! -e $U/pending.txt ]]'
+check "g: never in bad.txt or fails.txt, one line for the player" '! grep -qx "kit 0.1.94" "$U/bad.txt" 2>/dev/null && ! grep -qx "kit 0.1.94" "$U/fails.txt" 2>/dev/null && grep -q "0.1.94 could not be installed" "$U/notice.txt"'
 
 # x: a file only the old multiplayer had, and a player's own mod
 own() { mkdir -p "$R/mods/player-own"; print '{"id":"player-own","name":"Mine","version":"1.0.0"}' > "$R/mods/player-own/mod.json"; print mine > "$R/mods/player-own/data.txt" }
