@@ -52,7 +52,8 @@ cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
 LJ=($L/lang/*.json(N)); if (( ${#LJ} )); then mkdir -p $K/files/lang; cp $LJ $K/files/lang/; fi
 # install.bat / uninstall.bat texts in the game's languages (files\lang\setup_<code>.bat, copied to ROOT\game\lang too)
 python3 setup_lang/gen_setup_lang.py bat $K/files/lang
-print 25846389 > $K/files/BUILD.txt
+print 25846389 > $K/files/BUILD.txt      # first line only: install.bat and the 0.1.13 starters read it
+print 25846389 > $K/files/BUILDS.txt     # every game build this kit runs on, one a line (the update install, dsl_update_win.c)
 print ${DSM_RELEASE:-$(head -1 $L/../RELEASE)} > $K/files/RELEASE     # the kit release (auto-update compares it)
 stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done

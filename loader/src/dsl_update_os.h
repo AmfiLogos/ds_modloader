@@ -28,7 +28,8 @@ int dsl_uos_kit_asset(const char *asset_name);           /* 1 = the release asse
 /* install a downloaded kit / mod zip of version ver. backup = a new empty folder for the old files. Every change goes
    into mv (also on failure: the caller rolls back what mv lists). The kit's RELEASE file / the mod's mod.json version
    must be ver (a release whose files carry another number would be offered again at every start). 0 = ok; else why
-   holds one plain sentence. */
+   holds one plain sentence. -2 = the kit is not for this install's game build (Windows: needs the installer): no file
+   moved, and the starter does not count it as a failed install (it is never put into bad.txt for that). */
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 /* crash reports (src/dsl_crash.c). Paths and texts here are UTF-8 on both OS. */

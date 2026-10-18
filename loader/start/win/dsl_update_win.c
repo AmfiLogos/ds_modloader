@@ -251,13 +251,29 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     }
     char exe[1500]; snprintf(exe, sizeof exe, "%s\\Dungeon Settlers Modded.exe", fdir);
     if (!fdir[0] || !dsl_uos_exists(exe)) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded kit")); return -1; }
-    /* the kit is made for one game build; another build needs the full installer (a new game copy) */
-    char nb[64], ob[64], p[1500];
-    snprintf(p, sizeof p, "%s\\BUILD.txt", fdir); first_line(p, nb, sizeof nb);
+    /* the kit is made for the game builds in files\BUILDS.txt (one a line; a kit without it: the first line of BUILD.txt,
+       which the 0.1.13 starters read); the game copy's build must be one of them, another build needs the full
+       installer (a new game copy): -2, not a failed install (dsl_update_os.h) */
+    char nb[600] = "", ob[64], p[1500]; int match = 0;
     snprintf(p, sizeof p, "%s\\game\\dsmodded_build.txt", root); first_line(p, ob, sizeof ob);
-    if (!nb[0] || strcmp(nb, ob)) {
-        dsl_log("update: the kit is for game build %s, the game copy is build %s", nb[0] ? nb : "?", ob[0] ? ob : "?");
-        snprintf(why, wn, TR("this update needs the installer (new game version)")); return -1;
+    snprintf(p, sizeof p, "%s\\BUILDS.txt", fdir);
+    FILE *bf = fopen(p, "r");
+    if (bf) {
+        char l[128];
+        while (fgets(l, sizeof l, bf)) {
+            l[strcspn(l, "\r\n ")] = 0; if (!l[0]) continue;
+            size_t k = strlen(nb); snprintf(nb + k, sizeof nb - k, "%s%s", k ? "," : "", l);
+            if (ob[0] && !strcmp(l, ob)) match = 1;
+        }
+        fclose(bf);
+    } else {
+        snprintf(p, sizeof p, "%s\\BUILD.txt", fdir); first_line(p, nb, sizeof nb);
+        match = nb[0] && ob[0] && !strcmp(nb, ob);
+    }
+    if (!nb[0]) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded kit")); return -1; }
+    if (!match) {
+        dsl_log("update: the kit is for game build(s) %s, the game copy is build %s", nb, ob[0] ? ob : "?");
+        snprintf(why, wn, TR("this update needs the installer (new game version)")); return -2;
     }
     char rel[64]; snprintf(p, sizeof p, "%s\\RELEASE", fdir); first_line(p, rel, sizeof rel);
     if (strcmp(rel, ver)) {
