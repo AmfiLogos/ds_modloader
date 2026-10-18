@@ -1,4 +1,8 @@
-// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 5.
+// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 6.
+// API 6 = API 5 + mod_data_dir (appended to DSLHost): <game data>/ModData/<mod id>/, a folder of this mod that a mod
+// update or a disable / enable never touches (the mod's own folder is replaced by an update). mod.json "sync" lists
+// the files there that are gameplay: a multiplayer guest gets the host's copy of them for the session (../NOTES.md
+// "Mod data folder"). Wrapper dsl_mod_data_dir (NULL from an older loader).
 // API 5 = API 4 + mod settings (appended to DSLHost): a module declares its settings in mod.json "settings" and reads
 // them with dsl_get_bool / dsl_get_int / dsl_get_choice (wrappers below: an older loader gives the default back).
 // API 4 = API 3, same DSLHost layout, plus one behaviour: title_add_button called again with the same self, click
@@ -40,7 +44,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_API_VERSION 5
+#define DSL_API_VERSION 6
 
 #ifdef __cplusplus
 extern "C" {
@@ -232,6 +236,17 @@ typedef struct DSLHost {
     /* changed(ud, id) on the game's main thread after a local setting of this module changed (Settings page). Several
        calls add several callbacks. 0 = ok. */
     int (*settings_on_change)(DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud);
+
+    /* ---- API 6 (appended): this mod's data folder, <game data>/ModData/<mod id> (made if missing), in the form the
+       module's own fopen opens. Kept when the mod is updated, turned off or on (put settings, progress, campaign files
+       there, never in module_dir). mod.json "sync": a list of patterns (examples in ../NOTES.md) = files of this folder
+       that every multiplayer player needs the same (relative, '/' only; * and ? inside a name, ** = any folders; names
+       A-Z a-z 0-9 . _ - and inner spaces; no program files). A guest gets the host's copy of them when it joins
+       (at most 1 MB and 256 files per mod) and its own come back after the session; a module reads them again when a
+       world loads. The same folder for .NET mods: env DSML_MOD_DATA (= <game data>/ModData), else
+       Application.persistentDataPath + "/ModData"; <game data>/ModData/moddata.json lists the folders and the
+       session ("guest" = the host's files are in place). NULL = no folder (bad id). */
+    const char *(*mod_data_dir)(DSLPlugin *self);
 } DSLHost;
 #define DSL_HAS_TITLE_BUTTON_ICON 1               /* this header has title_button_icon (older copies of it do not) */
 
@@ -272,6 +287,9 @@ static inline int dsl_get_int(const DSLHost *h, DSLPlugin *self, const char *id,
     return DSL_HAS(h, settings_get_int) ? h->settings_get_int(self, id, dflt) : dflt; }
 static inline const char *dsl_get_choice(const DSLHost *h, DSLPlugin *self, const char *id, const char *dflt) {
     return DSL_HAS(h, settings_get_choice) ? h->settings_get_choice(self, id, dflt) : dflt; }
+/* API 6 wrapper: NULL when the loader is older than API 6 */
+static inline const char *dsl_mod_data_dir(const DSLHost *h, DSLPlugin *self) {
+    return DSL_HAS(h, mod_data_dir) ? h->mod_data_dir(self) : NULL; }
 static inline int dsl_on_setting_change(const DSLHost *h, DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud) {
     return DSL_HAS(h, settings_on_change) ? h->settings_on_change(self, changed, ud) : -1; }
 
