@@ -1,5 +1,5 @@
 {
-  "S_WELCOME": "Будет установлен {NAME}: загрузчик модов для Dungeon Settlers с модами Multiplayer, Units Laboratory, сложность Hell и моды перезарядки.\n\nОн запускает копию игры. Игра в Steam, ваши обычные сохранения и настройки не изменятся.\n\nЗакройте Dungeon Settlers, прежде чем продолжить.",
+  "S_WELCOME": "Будет установлен {NAME}: загрузчик модов для Dungeon Settlers с модами Multiplayer, Units Laboratory, сложность Hell и «Исправление глобального времени восстановления».\n\nОн запускает копию игры. Игра в Steam, ваши обычные сохранения и настройки не изменятся.\n\nЗакройте Dungeon Settlers, прежде чем продолжить.",
   "S_GAME_HEADER": "Папка игры",
   "S_GAME_SUB": "Куда Steam установил Dungeon Settlers.",
   "S_GAME_TOP": "Это папка Dungeon Settlers в Steam (в ней есть DungeonSettlers.exe). Она только читается и никогда не изменяется.\n\nКак её найти: в Steam нажмите правой кнопкой мыши на Dungeon Settlers, выберите «Управление», затем «Просмотреть локальные файлы».",

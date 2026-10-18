@@ -1,5 +1,5 @@
 {
-  "S_WELCOME": "{NAME} をインストールします。Dungeon Settlers 用の MOD ローダーで、マルチプレイ、ユニット研究所、ヘル難易度、クールダウンの各 MOD が入っています。\n\nゲームのコピーでプレイします。Steam のゲーム、通常のセーブ、設定は変更されません。\n\n続ける前に Dungeon Settlers を終了してください。",
+  "S_WELCOME": "{NAME} をインストールします。Dungeon Settlers 用の MOD ローダーで、マルチプレイ、ユニット研究所、ヘル難易度、全体クールタイム修正の各 MOD が入っています。\n\nゲームのコピーでプレイします。Steam のゲーム、通常のセーブ、設定は変更されません。\n\n続ける前に Dungeon Settlers を終了してください。",
   "S_GAME_HEADER": "ゲームフォルダ",
   "S_GAME_SUB": "Steam が Dungeon Settlers をインストールした場所です。",
   "S_GAME_TOP": "Steam の Dungeon Settlers のフォルダです（DungeonSettlers.exe があります）。読み取るだけで、変更はしません。\n\n探し方：Steam で Dungeon Settlers を右クリックし、「管理」、「ローカルファイルを閲覧」の順にクリックします。",

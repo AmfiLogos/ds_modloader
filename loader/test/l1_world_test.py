@@ -45,7 +45,7 @@ def main():
         body = b.group(1).split('|') if b else []
         S['row_text'] = text; S['card_lines'] = body
         check('row shows more than one mod (name + "+N" or both names)', text and 'Global cooldown' in text and ('+1' in text or 'Multiplayer' in text), text)
-        check('card lists every mod on for the world', sorted(body) == ['Global cooldown uses cooldown reduction', 'Multiplayer'], body)
+        check('card lists every mod on for the world', sorted(body) == ['Global cooldown fix', 'Multiplayer'], body)
         T.request({'cmd': 'change', 'row': 0}); st = {}
         for _ in range(15):
             time.sleep(1); st = V.ui('state')

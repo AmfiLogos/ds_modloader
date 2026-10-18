@@ -1,5 +1,5 @@
 {
-  "S_WELCOME": "Isto instala o {NAME}: um carregador de mods para Dungeon Settlers, com os mods Multiplayer, Units Laboratory, dificuldade Hell e tempo de recarga.\n\nEle roda uma cópia do jogo. O jogo da Steam, seus salvamentos normais e suas configurações não mudam.\n\nFeche o Dungeon Settlers antes de continuar.",
+  "S_WELCOME": "Isto instala o {NAME}: um carregador de mods para Dungeon Settlers, com os mods Multiplayer, Units Laboratory, dificuldade Hell e Correção da recarga global.\n\nEle roda uma cópia do jogo. O jogo da Steam, seus salvamentos normais e suas configurações não mudam.\n\nFeche o Dungeon Settlers antes de continuar.",
   "S_GAME_HEADER": "Pasta do jogo",
   "S_GAME_SUB": "Onde a Steam instalou o Dungeon Settlers.",
   "S_GAME_TOP": "Esta é a pasta do Dungeon Settlers na Steam (ela tem o DungeonSettlers.exe). Ela só é lida, nunca alterada.\n\nPara encontrá-la: na Steam, clique com o botão direito em Dungeon Settlers, clique em Gerenciar e depois em Explorar arquivos locais.",
