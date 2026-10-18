@@ -265,7 +265,7 @@ static void tmp_set(Obj t, const char *s) {
 
 /* ------------------------------------------------------------------ stock look: sprites, fonts, templates */
 static const Col C_MAIN = { 0.8f, 0.745f, 0.722f, 1 }, C_SUB = { 0.651f, 0.565f, 0.522f, 1 }, C_WHITE = { 1, 1, 1, 1 },
-                 C_ORANGE = { 0.918f, 0.624f, 0.239f, 1 }, C_ROW1 = { 0.212f, 0.196f, 0.227f, 1 }, C_BOXF = { 0.133f, 0.125f, 0.145f, 1 },
+                 C_ORANGE = { 0.918f, 0.624f, 0.239f, 1 }, C_ROW1 = { 0.212f, 0.196f, 0.227f, 1 }, C_BOXF = { 0.133f, 0.125f, 0.145f, 1 }, C_EDGE = { 0.714f, 0.514f, 0.353f, 1 },
                  C_GREY = { 0.45f, 0.42f, 0.45f, 1 }, C_FIELD = { 0.6f, 0.58f, 0.6f, 1 };
 enum { S_BOX, S_NBTN, S_CHECK, S_TEXTBOX, S_N };
 static const char *const spr_names[S_N] = { "Box", "Button_Normal", "CheckBox_Selected", "TextBox" };
@@ -806,8 +806,10 @@ static DSLObj k_button(DSLObj parent, float x, float y, float w, float h, const 
 #define TOGGLE_H 36
 static void toggle_look(W *w) {
     Obj ck = hget(w->h_b), box = hget(w->h_a);
-    if (ck) { Obj s = spr(S_CHECK); img_set(ck, s, s ? C_WHITE : C_ORANGE, 0); go_active(ck, w->on); }
-    if (box) { Obj s = spr(S_TEXTBOX); img_set(box, s, s ? C_WHITE : C_BOXF, 1); }
+    /* off = an empty box (dark inside, light brown edge): the game's dark text-box sprite did not show on the dark rows,
+       so an off switch looked like a plain row (zetu lane 2026-10-18); on = the check sprite inside the same edge */
+    if (ck) { Obj s = spr(S_CHECK); if (w->on) img_set(ck, s, s ? C_WHITE : C_ORANGE, 0); else img_set(ck, NULL, C_BOXF, 0); go_active(ck, 1); }
+    if (box) img_set(box, NULL, w->enabled ? C_EDGE : C_GREY, 0);
 }
 static void toggle_layout(W *w) {
     Obj l = hget(w->h_label), box = hget(w->h_a), ck = hget(w->h_b);
@@ -1420,7 +1422,7 @@ static void k_set_enabled(DSLObj o, int on) {
     W *w = w_of(o); if (!w) return;
     w->enabled = on != 0;
     switch (w->kind) {
-    case W_BUTTON: case W_TOGGLE: btn_enable(hget(w->h_btn), on); if (w->kind == W_TOGGLE) { Obj ck = hget(w->h_b); if (ck) gr_color(ck, on ? (spr(S_CHECK) ? C_WHITE : C_ORANGE) : C_GREY); } break;
+    case W_BUTTON: case W_TOGGLE: btn_enable(hget(w->h_btn), on); if (w->kind == W_TOGGLE) toggle_look(w); break;
     case W_VALUE: btn_enable(hget(w->h_a), on); btn_enable(hget(w->h_b), on); gr_color(hget(w->h_c), on ? C_MAIN : C_GREY); break;
     case W_FIELD: { Obj f = hget(w->h_a); if (f && m_sel_inter) CALL(m_sel_inter, void, Obj, bool)(f, on != 0, m_sel_inter); } break;
     case W_SLIDER: { Obj f = hget(w->h_a); if (f && m_sel_inter) CALL(m_sel_inter, void, Obj, bool)(f, on != 0, m_sel_inter); gr_color(hget(w->h_c), on ? C_MAIN : C_GREY); } break;

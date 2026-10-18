@@ -245,7 +245,7 @@
  "This world uses: %s.\nIt cannot be loaded now: %s": "Diese Welt nutzt: %s.\nSie kann jetzt nicht geladen werden: %s",
  "This world uses: %s.\nLoad it with them?": "Diese Welt nutzt: %s.\nMit ihnen laden?",
  "Turns these mods on behind a loading screen and brings you back here.": "Schaltet diese Mods hinter einem Ladebildschirm ein und bringt dich hierher zurück.",
- "Undo changes": "Änderungen rückgängig machen",
+ "Undo changes": "Änderungen verwerfen",
  "Update": "Aktualisieren",
  "Update mods": "Mods aktualisieren",
  "Update to %s": "Auf %s aktualisieren",

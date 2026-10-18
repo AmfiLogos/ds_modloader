@@ -221,13 +221,16 @@ def main():
       except Skip: pass
       if True:
         # ---- Japanese
-        start(7)
-        check('ja: language 7', 'language 7 (ja)' in dlog(), [l for l in dlog().splitlines() if 'language' in l][:3])
-        try: st = open_window('ja')
-        except RuntimeError: sample_hang('ja'); raise
-        lab = (control(st, 'heading') or {}).get('text', '')
-        check('ja: heading in Japanese', lab.startswith('設定'), lab)
-        shutil.copy2(os.path.join(I, 'dsload.log'), os.path.join(OUT, 'ja_dsload.log'))
+        lang, tag = (3, 'de') if '--de' in sys.argv else (7, 'ja')          # --de: German (the longest button texts)
+        start(lang)
+        check(f'{tag}: language {lang}', f'language {lang} ({tag})' in dlog(), [l for l in dlog().splitlines() if 'language' in l][:3])
+        try: st = open_window(tag)
+        except RuntimeError: sample_hang(tag); raise
+        if tag == 'ja':
+            lab = (control(st, 'heading') or {}).get('text', '')
+            check('ja: heading in Japanese', lab.startswith('設定'), lab)
+        ui('click', target='set:hard_rule'); time.sleep(1.0); shot(f'{tag}_3_settings_changed')
+        shutil.copy2(os.path.join(I, 'dsload.log'), os.path.join(OUT, f'{tag}_dsload.log'))
         stop_all()
     finally:
         stop_guard.set(); stop_all()
