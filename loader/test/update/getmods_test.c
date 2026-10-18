@@ -3,7 +3,8 @@
 // printed). The game is never involved.
 //   getmods_test plan <host lines file> <vanilla>      prints the plan JSON
 //   getmods_test get <host lines file> <env line>      runs the fix (frames until done) and prints STATE / WHY / APPLY
-// Env: DSML_ROOT (ROOT), DSL_UPDATE_API (relserver.py), HM_ON / HM_EN (",a,b," running / enabled ids), HM_APPLY_REFUSE=1.
+// Env: DSML_ROOT (ROOT), DSL_UPDATE_API (relserver.py), HM_ON / HM_EN (",a,b," running / enabled ids), HM_APPLY_REFUSE=1,
+// HM_MYSET (mod settings lines).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include <dirent.h>
@@ -39,6 +40,20 @@ int dsl_apply_mods_env(const char *const *ids, int n, const char *env, char *why
     printf(" ENV %s", env ? env : "");
     applied = 1; return 0;
 }
+/* mod settings (lane modsettings), found by name like in the loader: HM_MYSET = this game's "<mod>/<setting>@<value>"
+   lines ('|' between); take prints what it was given */
+int dsl_settings_lines(const char *mod, char *out, size_t cap) {
+    const char *e = getenv("HM_MYSET"); char b[2048]; snprintf(b, sizeof b, "%s", e ? e : ""); size_t k = 0, ml = strlen(mod); int c = 0;
+    out[0] = 0;
+    for (char *sv = NULL, *t = strtok_r(b, "|", &sv); t; t = strtok_r(NULL, "|", &sv))
+        if (!strncmp(t, mod, ml) && t[ml] == '/') { k += (size_t)snprintf(out + k, cap - k, "%s%s", c++ ? "\n" : "", t); }
+    return c;
+}
+int dsl_settings_take_lines(const char *lines) {
+    printf("TAKE "); for (const char *c = lines; *c; c++) putchar(*c == '\n' ? '|' : *c); printf(" ");
+    return 1;
+}
+void dsl_settings_undo(void) { printf("UNDO "); }
 static DSLModInfo MI[32]; static int nmi, scanned;
 static int listed(const char *var, const char *id) {
     const char *l = getenv(var); char k[80]; snprintf(k, sizeof k, ",%s,", id); return l && strstr(l, k) != NULL;

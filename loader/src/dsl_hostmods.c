@@ -4,10 +4,11 @@
 // from our official releases (dsl_update.c: tag "<id>-v<ver>", asset "<id>-<ver>.zip", sha256 required; DSL_UPDATE_API
 // for tests), never from the host and never for an id that is not in MOD_REPOS; installed with dsl_uos_mod_install
 // (moves recorded, old folder into a backup). On the main thread (dsl_hostmods_frame): the mods folder read again, the
-// host's gameplay settings copied (one adapter, settings_*), and the normal Apply (pending.json + soft restart) with the
+// host's gameplay settings taken (one adapter, settings_*), and the normal Apply (pending.json + soft restart) with the
 // host's gameplay ids + the guest's own client mods and multiplayer, env_lines passed to the new process.
 // Any failure before the new process runs: every move rolled back, settings put back, nothing applied.
-// Host line: <id>@<ver>[:<file sha256s>[:<patch hash>]][;set=<k>=<v>&...] (the multiplayer mod is never in it).
+// Host lines: <id>@<ver>[:<file sha256s>[:<patch hash>]] per gameplay mod (the multiplayer mod is never in them) and
+// <id>/<setting>@<value> per gameplay setting of a mod (lane modsettings, src/dsl_settings.c).
 // Test only: DSL_HOSTMODS_TEST=1 = no title check, and the Apply is a log line ("hostmods: test apply: ...").
 #include "dsl_internal.h"
 #include "dsl_menu.h"
@@ -30,39 +31,50 @@ int dsl_reg_scene(void);                                   /* dsl_reg.c: 1 title
 int dsl_mod_hashes(const char *id, char *out, size_t cap); /* dsl_main.c: sorted listed sha256s of a mod folder */
 
 #define HM_MAX 64
-typedef struct { char id[64], ver[32], files[2048], set[600]; } HostMod;
+typedef struct { char id[64], ver[32], files[2048], set[2048]; } HostMod;
 typedef struct {
-    char id[64], name[128], host_ver[32], my_ver[32], host_set[600], my_set[600];
+    char id[64], name[128], host_ver[32], my_ver[32], host_set[2048], my_set[2048];
     int my_on, official; const char *action;
 } Row;
 typedef struct { char id[64], name[128], ver[32], files[2048], url[1024], asset[160], sha[65], file[1100]; int host_older; } Job;
 
-/* ------------------------------------------------------------------ the gameplay-settings adapter (lane modsettings).
-   Assumed until that lane answers: int dsl_mod_settings_apply(const char *id, const char *kv) (0 = ok) and
-   int dsl_mod_settings_get(const char *id, char *kv, size_t cap) (0 = ok), kv = "k=v&k2=v2" as in the ";set=" suffix.
-   Absent = settings rows are shown but not copied. A format change is an edit here only. */
-static void *own_sym(const char *name) {
+/* ------------------------------------------------------------------ the gameplay-settings adapter (lane modsettings,
+   src/dsl_settings.c): "<mod>/<setting>@<value>" lines. dsl_settings_lines = this game's running values of one mod,
+   dsl_settings_take_lines = the host's values become the drafts the next Apply writes into pending.json,
+   dsl_settings_undo = drafts dropped. Looked up by name (a loader without mod settings: rows shown, never copied).
+   A format change is an edit here only. */
 #ifdef _WIN32
-    HMODULE m = NULL;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)(void *)&own_sym, &m);
-    return m ? (void *)GetProcAddress(m, name) : NULL;
+int dsl_settings_lines(const char *mod, char *out, size_t cap) __attribute__((weak));
+int dsl_settings_take_lines(const char *lines) __attribute__((weak));
+void dsl_settings_undo(void) __attribute__((weak));
+#define SET_FN(n) ((void *)(n))
 #else
-    return dlsym(RTLD_DEFAULT, name);
+#define SET_FN(n) dlsym(RTLD_DEFAULT, #n)
 #endif
+static int settings_can_copy(void) { return SET_FN(dsl_settings_take_lines) != NULL; }
+static int cmp_line(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
+static void sort_lines(char *s) {                         /* '\n'-joined lines sorted in place */
+    char tmp[2048]; snprintf(tmp, sizeof tmp, "%s", s); const char *v[128]; int n = 0;
+    for (char *sv = NULL, *t = strtok_r(tmp, "\n", &sv); t && n < 128; t = strtok_r(NULL, "\n", &sv)) v[n++] = t;
+    qsort(v, (size_t)n, sizeof *v, cmp_line);
+    size_t k = 0; s[0] = 0;
+    for (int i = 0; i < n; i++) k += (size_t)snprintf(s + k, k < 2048 ? 2048 - k : 0, "%s%s", i ? "\n" : "", v[i]);
 }
-static int settings_can_copy(void) { return own_sym("dsl_mod_settings_apply") != NULL; }
-static void settings_mine(const char *id, char *out, size_t cap) {
-    int (*get)(const char *, char *, size_t) = (int (*)(const char *, char *, size_t))own_sym("dsl_mod_settings_get");
-    out[0] = 0; if (get && get(id, out, cap)) out[0] = 0;
+static void settings_mine(const char *id, char *out, size_t cap) {      /* cap = 2048 */
+    int (*f)(const char *, char *, size_t) = (int (*)(const char *, char *, size_t))SET_FN(dsl_settings_lines);
+    out[0] = 0; if (f && f(id, out, cap) < 0) out[0] = 0;
+    sort_lines(out);
 }
-static int settings_copy(const char *id, const char *kv) {
-    int (*set)(const char *, const char *) = (int (*)(const char *, const char *))own_sym("dsl_mod_settings_apply");
-    return set ? set(id, kv) : -1;
+static int settings_take(const char *host_text) {
+    int (*f)(const char *) = (int (*)(const char *))SET_FN(dsl_settings_take_lines);
+    return f ? f(host_text) : -1;
 }
-/* "<line>;set=<kv>" -> line, kv */
-static void settings_split(char *line, char *kv, size_t cap) {
-    char *s = strstr(line, ";set="); kv[0] = 0;
-    if (s) { snprintf(kv, cap, "%s", s + 5); *s = 0; }
+static void settings_drop(void) { void (*f)(void) = (void (*)(void))SET_FN(dsl_settings_undo); if (f) f(); }
+/* "<mod>/<setting>@<value>": 1 (mod id into mod) */
+static int setting_line(const char *line, char *mod, size_t cap) {
+    const char *sl = strchr(line, '/'), *at = strchr(line, '@');
+    if (!sl || !at || sl > at || strchr(line, ':')) return 0;
+    snprintf(mod, cap, "%.*s", (int)(sl - line), line); return 1;
 }
 
 /* ------------------------------------------------------------------ parsing + the plan (main thread) */
@@ -86,8 +98,9 @@ static int parse_host(const char *lines, int vanilla, HostMod *h, int max) {
         while (l && (line[l - 1] == '\r' || line[l - 1] == ' ')) line[--l] = 0;
         if (!*line) continue;
         if (n >= max) return -1;
+        char smod[64];
+        if (setting_line(line, smod, sizeof smod)) continue;          /* settings: second pass */
         HostMod *m = &h[n]; memset(m, 0, sizeof *m);
-        settings_split(line, m->set, sizeof m->set);
         char *at = strchr(line, '@'); if (!at) return -1;
         *at = 0; char *co = strchr(at + 1, ':');
         if (co) { *co = 0; char *c2 = strchr(co + 1, ':'); if (c2) *c2 = 0; snprintf(m->files, sizeof m->files, "%s", co + 1); }   /* patch hash: launcher only */
@@ -97,6 +110,17 @@ static int parse_host(const char *lines, int vanilla, HostMod *h, int max) {
         int dup = 0; for (int i = 0; i < n; i++) dup |= !strcmp(h[i].id, m->id);
         if (!dup) n++;
     }
+    for (const char *s = lines; *s;) {                               /* each mod's setting lines, sorted */
+        const char *e = strchr(s, '\n'); size_t l = e ? (size_t)(e - s) : strlen(s);
+        char line[300]; if (l >= sizeof line) l = sizeof line - 1;
+        memcpy(line, s, l); line[l] = 0; s = e ? e + 1 : s + l;
+        while (l && (line[l - 1] == '\r' || line[l - 1] == ' ')) line[--l] = 0;
+        char smod[64]; if (!setting_line(line, smod, sizeof smod)) continue;
+        for (int i = 0; i < n; i++) if (!strcmp(h[i].id, smod)) {
+            size_t k = strlen(h[i].set); snprintf(h[i].set + k, sizeof h[i].set - k, "%s%s", k ? "\n" : "", line);
+        }
+    }
+    for (int i = 0; i < n; i++) sort_lines(h[i].set);
     return n;
 }
 static const DSLModInfo *mod_find(const char *id) {
@@ -151,7 +175,8 @@ static int plan_can_fix(int diff) {
     if (diff <= 0) return 0;
     for (int i = 0; i < nr; i++) {
         if (!strcmp(R[i].action, "not_official")) return 0;
-        if (R[i].host_set[0] && strcmp(R[i].host_set, R[i].my_set) && !settings_can_copy()) return 0;   /* would be refused again */
+        if (strcmp(R[i].action, "settings")) continue;                 /* same version, other gameplay settings: */
+        if (!settings_can_copy() || !R[i].host_set[0]) return 0;       /* nothing here can make them equal */
     }
     return 1;
 }
@@ -197,7 +222,7 @@ static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static int st, pct, installed_ok, err; static char err_a[300], err_b[400];
 static Job J[HM_MAX]; static int nj;
 static char want_ids[HM_MAX][64]; static int nwant;                    /* the host's gameplay ids */
-static struct { char id[64], set[600], old[600]; } SETS[HM_MAX]; static int nsets, sets_done;
+static int nsets, sets_taken; static char host_text[65536];       /* settings rows; the host's lines as given */
 static char env_s[2048];
 static DslMoves *MV; static FILE *mv_log; static char run_dir[1300];
 
@@ -272,7 +297,7 @@ HM_EXPORT int dsl_hostmods_get(const char *host_lines, int vanilla, const char *
         dsl_log("hostmods: refused: %s %s is not official", R[i].id, R[i].host_ver); return -1;
     }
     if (!plan_can_fix(diff)) { snprintf(why, cap, "%s", TR("The host's mod settings cannot be copied by this version of the mod loader.")); return -1; }
-    nj = 0; nwant = 0; nsets = 0; sets_done = 0; installed_ok = 0; err = E_NONE; pct = 0;
+    nj = 0; nwant = 0; nsets = 0; sets_taken = 0; installed_ok = 0; err = E_NONE; pct = 0;
     for (int i = 0; i < nr; i++) {
         const Row *r = &R[i];
         if (!strcmp(r->action, "turn_off")) continue;
@@ -283,11 +308,9 @@ HM_EXPORT int dsl_hostmods_get(const char *host_lines, int vanilla, const char *
             snprintf(j->ver, sizeof j->ver, "%s", r->host_ver); j->host_older = !strcmp(r->action, "host_older");
             for (int k = 0; k < nh; k++) if (!strcmp(H[k].id, r->id)) snprintf(j->files, sizeof j->files, "%s", H[k].files);
         }
-        if (strcmp(r->host_set, r->my_set) && settings_can_copy()) {
-            snprintf(SETS[nsets].id, sizeof SETS[0].id, "%s", r->id); snprintf(SETS[nsets].set, sizeof SETS[0].set, "%s", r->host_set);
-            snprintf(SETS[nsets].old, sizeof SETS[0].old, "%s", r->my_set); nsets++;
-        }
+        nsets += strcmp(r->host_set, r->my_set) != 0;
     }
+    snprintf(host_text, sizeof host_text, "%s", vanilla || !host_lines ? "" : host_lines);
     snprintf(env_s, sizeof env_s, "%s", env_lines ? env_lines : "");
     if (env_s[0] && env_s[strlen(env_s) - 1] != '\n' && strlen(env_s) + 1 < sizeof env_s) strcat(env_s, "\n");
     if (nj) {
@@ -335,8 +358,8 @@ HM_EXPORT int dsl_hostmods_state(int *p, char *why, size_t cap) {
 static void undo_all(int code, const char *a, const char *b) {
     int moved = MV && MV->n;
     if (moved) rollback();
-    for (int i = 0; i < sets_done; i++) if (settings_copy(SETS[i].id, SETS[i].old)) dsl_log("hostmods: settings of %s could not be put back", SETS[i].id);
-    sets_done = 0;
+    if (sets_taken) { settings_drop(); dsl_log("hostmods: the host's settings drafts dropped"); }
+    sets_taken = 0;
     close_log();
     if (moved) dsl_mods_rescan();
     fail(code, a, b);
@@ -366,9 +389,9 @@ void dsl_hostmods_frame(void) {
             undo_all(E_FILES, J[i].name, NULL); return;
         }
     }
-    for (int i = 0; i < nsets; i++) {
-        if (settings_copy(SETS[i].id, SETS[i].set)) { dsl_log("hostmods: settings of %s could not be copied", SETS[i].id); undo_all(E_APPLY, NULL, TR("the host's mod settings could not be copied")); return; }
-        sets_done = i + 1;
+    if (host_text[0] && settings_can_copy()) {                      /* after the rescan: a new mod's settings are known */
+        int took = settings_take(host_text); sets_taken = 1;
+        dsl_log("hostmods: %d gameplay setting value(s) taken from the host (%d mod(s) differed)", took, nsets);
     }
     /* the new set: the host's gameplay mods + my client mods and multiplayer that are on */
     const char *ids[HM_MAX * 2]; int n = 0;

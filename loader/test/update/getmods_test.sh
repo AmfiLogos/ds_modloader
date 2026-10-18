@@ -76,5 +76,14 @@ host $'gcd-cdr@0.1.6\nhell-difficulty@0.1.4\ncustom-modes@0.2.0'
 r=$(HM_APPLY_REFUSE=1 $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
 check "Apply refused: install rolled back, the old version is back" '[[ "$r" == *"STATE -1"* && $(ver gcd-cdr) == 0.1.4 ]]'
 
+# 7 mod settings lines in the host's text (lane modsettings): parsed, a settings row, the host's values taken before Apply
+host $'gcd-cdr@0.1.4\ngcd-cdr/cdr@off\nhell-difficulty@0.1.4\ncustom-modes@0.2.0'
+p=$(HM_MYSET='gcd-cdr/cdr@on' $OUT/t plan $OUT/host.txt 0 2>/dev/null)
+check "settings: only the setting differs = settings row, button on" '[[ $(act gcd-cdr) == "settings 1" && $(act hell-difficulty) == "same 1" ]]'
+r=$(HM_MYSET='gcd-cdr/cdr@on' $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "settings: the host's lines taken, then Apply" '[[ "$r" == *"TAKE gcd-cdr@0.1.4|gcd-cdr/cdr@off|"*"APPLY gcd-cdr,"* && "$r" == *"STATE 3"* ]]'
+r=$(HM_MYSET='gcd-cdr/cdr@on' HM_APPLY_REFUSE=1 $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "settings: Apply refused = the taken values dropped" '[[ "$r" == *"TAKE "*"UNDO "* && "$r" == *"STATE -1"* ]]'
+
 print "== $pass passed, $fails failed (output $OUT)"
 exit $fails
