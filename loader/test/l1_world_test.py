@@ -25,7 +25,7 @@ def worlds():
 def main():
     for p in T.game_pids(): raise SystemExit(f'copy S already running: {p}')
     os.makedirs(T.SDIR, exist_ok=True)
-    for f in glob.glob(os.path.join(T.I, 'data', 'Saves', MANUAL + '*')):
+    for f in glob.glob(os.path.join(T.I, 'data', 'Saves', '*')) + glob.glob(os.path.join(T.I, 'mp.json')):   # copy S is shared: other lanes' saves (row 0) and mp.json (MP session = Apply refused) aside; start_a puts the Elven seed back
         os.makedirs(os.path.join(T.I, 'old'), exist_ok=True); os.replace(f, os.path.join(T.I, 'old', os.path.basename(f) + '.%d' % time.time()))
     V.install()
     g = threading.Thread(target=T.guard, daemon=True); g.start()
