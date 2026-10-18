@@ -73,9 +73,12 @@ WRAP1(status_refresh, void *)
 WRAP0(status_clear)
 WRAP1(skill_refresh, void *)
 WRAP1(summary_refresh, int32_t)
-static void *(*o_risk_calc)(void *, void *, void *, void *, const void *);
-static void *w_risk_calc(void *self, void *sel, void *all, void *slots, const void *mi) {
-    party_stock_enter(); void *r = o_risk_calc(self, sel, all, slots, mi); party_stock_leave(); return r;
+/* Calculate returns ExpeditionPlanSummaryData, a 24-byte struct: returned through memory (arm64 x8, Win64 hidden
+   first argument), so the wrapper returns the same struct type and the compiler passes the result address on */
+typedef struct { void *rows, *risk_messages, *risks; } plan_summary;
+static plan_summary (*o_risk_calc)(void *, void *, void *, void *, const void *);
+static plan_summary w_risk_calc(void *self, void *sel, void *all, void *slots, const void *mi) {
+    party_stock_enter(); plan_summary r = o_risk_calc(self, sel, all, slots, mi); party_stock_leave(); return r;
 }
 
 static void *nested_class(const char *ns, const char *outer, const char *name) {
