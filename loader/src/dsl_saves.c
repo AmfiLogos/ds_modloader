@@ -459,14 +459,22 @@ static void ask(void) {
         else { snprintf(t, sizeof t, TR("%s, %s"), list, nm); snprintf(list, sizeof list, "%s", t); }
     }
     w_backup = dsl_running_save_backup();
+    char shown[2400] = "";                  /* the folder as shown: a zero-width space after each separator, so the box
+                                               wraps the long path at a folder name, never in the middle of a word */
     if (w_backup) {          /* shorter warning + the folder: the stock box is a fixed 520 x 109 (longer text runs over its buttons) */
         backup_dir_for(w_name, w_bdir, sizeof w_bdir);
+        size_t o = 0;
+        for (const char *c = w_bdir; *c && o + 4 < sizeof shown; c++) {
+            shown[o++] = *c;
+            if (*c == '/' || *c == '\\') { shown[o++] = (char)0xE2; shown[o++] = (char)0x80; shown[o++] = (char)0x8B; }
+        }
+        shown[o] = 0;
         snprintf(b, sizeof b, TRN("This world is one of your game saves. This mod changes what it saves: %s. "
                                   "It may break later in the game without the mod loader.\n\n"
                                   "Load first keeps a copy of its save files in:\n%s",
                                   "This world is one of your game saves. These mods change what it saves: %s. "
                                   "It may break later in the game without the mod loader.\n\n"
-                                  "Load first keeps a copy of its save files in:\n%s", i), list, w_bdir);
+                                  "Load first keeps a copy of its save files in:\n%s", i), list, shown);
     } else
         snprintf(b, sizeof b, TRN("This world is one of your game saves. This mod changes what the world saves: %s.\n\n"
                                   "If you play it now, the world may break when you load it later in the game without the mod loader.",
