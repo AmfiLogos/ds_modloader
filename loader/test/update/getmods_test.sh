@@ -20,7 +20,9 @@ release() {
   local d=$REL/$1/$2-v$3; mkdir -p $d; (cd $s && zip -qr $d/$2-$3.zip $2); [[ -n ${4:-} ]] && touch $d/$4
 }
 inst hell-difficulty 0.1.4; inst custom-modes 0.2.0; inst foo 1.0.0; inst multiplayer 0.1.13; inst comfy 1.0.0 client
-release AmfiLogos/ds_modloader gcd-cdr 0.1.4
+mkdir -p $OUT/zips/gcd-cdr-0.1.4/gcd-cdr $REL/AmfiLogos/ds_modloader/gcd-cdr-v0.1.4     # with names per language
+print -r -- '{"id":"gcd-cdr","name":"Global cooldown fix","version":"0.1.4","scope":"gameplay","i18n":{"fr":{"name":"Correctif du temps de recharge global"}}}' > $OUT/zips/gcd-cdr-0.1.4/gcd-cdr/mod.json
+(cd $OUT/zips/gcd-cdr-0.1.4 && zip -qr $REL/AmfiLogos/ds_modloader/gcd-cdr-v0.1.4/gcd-cdr-0.1.4.zip gcd-cdr)
 release AmfiLogos/ds_modloader gcd-cdr 0.1.5 BAD_SHA
 release AmfiLogos/ds_modloader gcd-cdr 0.1.6
 release AmfiLogos/ds_custommodes custom-modes 0.2.0
@@ -47,6 +49,13 @@ check "plan: not one of ours = not_official, can_fix 0" '[[ $(act evil) == "not_
 check "plan: my extra gameplay mod = turn_off; multiplayer and client mods never rows" '[[ $(act foo) == "turn_off 0" && $(act multiplayer) == "None 0" && $(act comfy) == "None 0" ]]'
 host $'hell-difficulty@0.1.5\ncustom-modes@0.2.0\nfoo@1.0.0'
 p=$($OUT/t plan $OUT/host.txt 0 2>/dev/null); check "plan: mine older = update, equal and on = same, button on" '[[ $(act hell-difficulty) == "update 1" && $(act custom-modes) == "same 1" ]]'
+
+# 1b a mod I do not have: its name from the official release's mod.json, in the player's language (never the raw id)
+host $'gcd-cdr@0.1.4\nevil@1.0.0'
+p=$(HM_LANG=fr $OUT/t plan $OUT/host.txt 0 wait 2>/dev/null)
+nm() { print -r -- "$p" | python3 -c "import json,sys; d=json.loads(sys.stdin.read().split('\n',1)[1]); print({r['id']:r['name'] for r in d['rows']}.get('$1'), d.get('names_pending'))"; }
+check "plan: missing official mod named from its release (fr); not-official id: no request" '[[ "$(nm gcd-cdr)" == "Correctif du temps de recharge global 0" && "$(nm evil)" == "evil 0" && -z "$(reqs | grep -i evil)" ]]'
+[[ -f $REL/requests.log ]] && mv $REL/requests.log $OUT/names.log
 
 # 2 get with a mod that is not ours: refused before any request
 host $'gcd-cdr@0.1.4\nevil@1.0.0'

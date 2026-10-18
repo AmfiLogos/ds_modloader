@@ -38,6 +38,7 @@ int dsl_uos_pid_alive(long pid);
 void dsl_uos_random(unsigned char *buf, size_t n);
 void dsl_uos_identity(void (*add)(void *ud, const char *s), void *ud);   /* user name, full name, home, computer name */
 int dsl_uos_steam_dir(char *out, size_t n);                             /* Steam's own folder; 0 = found */
+int dsl_uos_unpack(const char *zip, const char *dst);  /* a downloaded zip into the folder dst (made); 0 = ok */
 /* shared by the OS parts: record a move in mv (and its pending file) before it is made; -1 = list full */
 static inline int dsl_umove_add(DslMoves *mv, const char *path, const char *backup) {
     if (mv->n >= DSL_UMOVES) return -1;

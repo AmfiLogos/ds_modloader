@@ -116,19 +116,82 @@ static const DSLModInfo *mod_find(const char *id) {
     for (int i = 0; i < dsl_mods_count(); i++) { const DSLModInfo *m = dsl_mods_at(i); if (m && !strcmp(m->id, id)) return m; }
     return NULL;
 }
+/* ------------------------------------------------------------------ names of host mods this copy does not have: the
+   mod.json of the official release (the zip the button downloads anyway: same URL, sha256 checked, kept in
+   ROOT/update/hostmods/dl), cached as ROOT/update/hostmods/names/<id>-<ver>.json, shown in the player's language
+   (i18n.<code>.name, else name). A plan that needs one starts a fetch thread and says "names_pending": 1; the multiplayer
+   mod asks again a moment later. A failed fetch (offline, no such release) = the id, as before. */
+static pthread_mutex_t net_mu = PTHREAD_MUTEX_INITIALIZER;       /* one release lookup at a time (name fetch, the fix) */
+static pthread_mutex_t nq_mu = PTHREAD_MUTEX_INITIALIZER;
+static struct { char id[64], ver[32]; int st; } NQ[HM_MAX]; static int nnq, nq_thread;   /* st 0 queued, 1 done, -1 failed */
+static void name_file(char *out, size_t n, const char *id, const char *ver) { snprintf(out, n, "%s/hostmods/names/%s-%s.json", dsl_update_dir(), id, ver); }
+static int name_from_modjson(const char *path, const char *id, const char *ver, char *out, size_t cap) {
+    FILE *f = fopen(path, "rb"); if (!f) return -1;
+    char *b = calloc(1, 1 << 20); if (b && !fread(b, 1, (1 << 20) - 1, f)) b[0] = 0; fclose(f);
+    JNode *m = b ? json_parse(b) : NULL; free(b);
+    const char *mid = json_str(m, "id"), *mv = json_str(m, "version"), *v = NULL;
+    if (mid && mv && !strcmp(mid, id) && !strcmp(mv, ver)) {
+        v = json_str(json_get(json_get(m, "i18n"), dsi_code()), "name");
+        if (!v || !*v) v = json_str(m, "name");
+    }
+    int ok = v && *v; if (ok) { snprintf(out, cap, "%s", v); dsi_utf8_fix_end(out); }
+    json_free(m); return ok ? 0 : -1;
+}
+static void *name_thread(void *arg) {
+    (void)arg;
+    for (;;) {
+        pthread_mutex_lock(&nq_mu);
+        int i = 0; while (i < nnq && NQ[i].st) i++;
+        if (i == nnq) { nq_thread = 0; pthread_mutex_unlock(&nq_mu); return NULL; }
+        char id[64], ver[32]; snprintf(id, sizeof id, "%s", NQ[i].id); snprintf(ver, sizeof ver, "%s", NQ[i].ver);
+        pthread_mutex_unlock(&nq_mu);
+        char url[1024], asset[160], sha[65], file[1100], dir[1300], from[1500], to[1300], nm[128]; int ok = 0;
+        pthread_mutex_lock(&net_mu);
+        if (!dsl_update_find_mod_release(id, ver, url, sizeof url, asset, sizeof asset, sha)
+            && !dsl_update_fetch(url, asset, sha, "hostmods/dl", file, sizeof file)) {
+            snprintf(dir, sizeof dir, "%s/hostmods/names/unpack-%s-%s", dsl_update_dir(), id, ver);
+            snprintf(from, sizeof from, "%s/%s/mod.json", dir, id); name_file(to, sizeof to, id, ver);
+            if (!dsl_uos_unpack(file, dir) && !name_from_modjson(from, id, ver, nm, sizeof nm)) { remove(to); ok = !dsl_uos_move(from, to); }
+        }
+        pthread_mutex_unlock(&net_mu);
+        dsl_log("hostmods: name of %s %s from its release: %s", id, ver, ok ? "found" : "not found (the id is shown)");
+        pthread_mutex_lock(&nq_mu); NQ[i].st = ok ? 1 : -1; pthread_mutex_unlock(&nq_mu);
+    }
+}
+/* the name of a mod this copy does not have into out; fetch = start the lookup if not cached (the box's plan only);
+   1 = still being fetched (out = the id meanwhile) */
+static int release_name(const char *id, const char *ver, char *out, size_t cap, int fetch) {
+    char p[1300]; snprintf(out, cap, "%s", id);
+    const char *ud = dsl_update_dir();
+    if (!ud || !*ud || !dsl_update_mod_repo(id)) return 0;
+    name_file(p, sizeof p, id, ver);
+    if (!name_from_modjson(p, id, ver, out, cap)) return 0;
+    if (!fetch || !dsl_update_ready()) return 0;                    /* the button's own plan, or no downloads in this start */
+    pthread_mutex_lock(&nq_mu);
+    int k = 0; while (k < nnq && (strcmp(NQ[k].id, id) || strcmp(NQ[k].ver, ver))) k++;
+    int pending = 0;
+    if (k == nnq && nnq < HM_MAX) { snprintf(NQ[k].id, sizeof NQ[k].id, "%s", id); snprintf(NQ[k].ver, sizeof NQ[k].ver, "%s", ver); NQ[k].st = 0; nnq++; }
+    if (k < nnq && NQ[k].st == 0) {
+        pending = 1;
+        if (!nq_thread) { pthread_t t; nq_thread = 1; if (pthread_create(&t, NULL, name_thread, NULL)) { nq_thread = 0; NQ[k].st = -1; pending = 0; } else pthread_detach(t); }
+    }
+    pthread_mutex_unlock(&nq_mu);
+    return pending;
+}
 static int is_gameplay(const DSLModInfo *m) { return m && m->scope && !strcmp(m->scope, "gameplay") && strcmp(m->id, "multiplayer"); }
 
-static HostMod H[HM_MAX]; static Row R[HM_MAX * 2]; static int nh, nr;
+static HostMod H[HM_MAX]; static Row R[HM_MAX * 2]; static int nh, nr, names_pending;
 /* the rows; returns the number that differ, -1 bad input */
-static int make_plan(const char *host_lines, int vanilla) {
-    nh = parse_host(host_lines, vanilla, H, HM_MAX); nr = 0;
+static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
+    nh = parse_host(host_lines, vanilla, H, HM_MAX); nr = 0; names_pending = 0;
     if (nh < 0) { nh = 0; return -1; }
     int diff = 0;
     for (int i = 0; i < nh; i++) {
         Row *r = &R[nr++]; memset(r, 0, sizeof *r); const HostMod *h = &H[i];
         const DSLModInfo *m = mod_find(h->id);
         snprintf(r->id, sizeof r->id, "%s", h->id); snprintf(r->host_ver, sizeof r->host_ver, "%s", h->ver);
-        snprintf(r->name, sizeof r->name, "%s", m && m->name ? m->name : h->id);
+        if (m && m->name) snprintf(r->name, sizeof r->name, "%s", m->name);
+        else names_pending |= release_name(h->id, h->ver, r->name, sizeof r->name, fetch_names);
         snprintf(r->host_set, sizeof r->host_set, "%s", h->set);
         r->official = dsl_update_mod_repo(h->id) != NULL && safe_ver(h->ver);
         if (m) { snprintf(r->my_ver, sizeof r->my_ver, "%s", m->version ? m->version : ""); r->my_on = m->active == 1; settings_mine(h->id, r->my_set, sizeof r->my_set); }
@@ -185,7 +248,7 @@ static void jesc(char *out, size_t n, const char *s) {
 HM_EXPORT int dsl_hostmods_plan(const char *host_lines, int vanilla, char *out, size_t cap) {
     if (!out || cap < 64) return -1;
     out[0] = 0;
-    int diff = make_plan(host_lines, vanilla);
+    int diff = make_plan(host_lines, vanilla, 1);
     if (diff < 0) { snprintf(out, cap, "{\"rows\":[],\"can_fix\":0,\"downloads\":0}"); dsl_log("hostmods: plan: bad host lines"); return -1; }
     size_t k = 0; int dls = 0, over = 0;
 #define PUT(...) do { int w_ = snprintf(out + k, cap - k, __VA_ARGS__); if (w_ < 0 || (size_t)w_ >= cap - k) { over = 1; break; } k += (size_t)w_; } while (0)
@@ -198,7 +261,7 @@ HM_EXPORT int dsl_hostmods_plan(const char *host_lines, int vanilla, char *out, 
             i ? "," : "", e[0], e[1], e[2], e[3], r->my_on, r->official, r->action, e[4], e[5]);
         dls += is_download(r);
     }
-    PUT("],\"can_fix\":%d,\"downloads\":%d}", plan_can_fix(diff), dls);
+    PUT("],\"can_fix\":%d,\"downloads\":%d,\"names_pending\":%d}", plan_can_fix(diff), dls, names_pending);
 #undef PUT
     if (over) { snprintf(out, cap, "{\"rows\":[],\"can_fix\":0,\"downloads\":0}"); dsl_log("hostmods: plan: output buffer too small (%zu)", cap); return -1; }
     dsl_log("hostmods: plan: %d row(s), %d differ, %d download(s), can_fix %d", nr, diff, dls, plan_can_fix(diff));
@@ -249,9 +312,12 @@ static void *fix_thread(void *arg) {
     for (int i = 0; i < nj; i++) {
         Job *j = &J[i];
         set_state(1, 100 * i / (nj ? nj : 1));
+        pthread_mutex_lock(&net_mu);
         int r = dsl_update_find_mod_release(j->id, j->ver, j->url, sizeof j->url, j->asset, sizeof j->asset, j->sha);
+        int d = r ? -1 : dsl_update_fetch(j->url, j->asset, j->sha, "hostmods/dl", j->file, sizeof j->file);
+        pthread_mutex_unlock(&net_mu);
         if (r == 1) { fail(j->host_older ? E_HOSTOLD : E_NOREL, j->name, j->ver); return NULL; }
-        if (r < 0 || dsl_update_fetch(j->url, j->asset, j->sha, "hostmods/dl", j->file, sizeof j->file)) { fail(E_DL, j->name, NULL); return NULL; }
+        if (r < 0 || d) { fail(E_DL, j->name, NULL); return NULL; }
         dsl_log("hostmods: %s %s downloaded (sha256 %s)", j->id, j->ver, j->sha);
     }
     /* 2: installed, every move recorded first (run_dir/moves.txt) */
@@ -278,7 +344,7 @@ HM_EXPORT int dsl_hostmods_get(const char *host_lines, int vanilla, const char *
     const char *busy = dsl_busy_reason();
     if (busy) { snprintf(why, cap, "%s", busy); dsi_utf8_fix_end(why); return -1; }
     if (!test && dsl_reg_scene() != 1) { snprintf(why, cap, "%s", TR("Go back to the title screen to change mods.")); return -1; }
-    int diff = make_plan(host_lines, vanilla);
+    int diff = make_plan(host_lines, vanilla, 0);
     if (diff < 0) { snprintf(why, cap, "%s", TR("The host's mod list could not be read.")); return -1; }
     if (diff == 0) { snprintf(why, cap, "%s", TR("Your mods already match the host's.")); return -1; }
     for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_official")) {

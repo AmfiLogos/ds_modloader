@@ -219,6 +219,7 @@ static int unpack(const char *zip, const char *dst) {
     if (k <= 0) dsl_log("update: unzip of %s gave %d", zip, k);
     return k > 0 ? 0 : -1;
 }
+int dsl_uos_unpack(const char *zip, const char *dst) { return unpack(zip, dst); }
 static void first_line(const char *p, char *out, size_t n) {
     out[0] = 0; FILE *f = fopen(p, "r"); if (!f) return;
     if (!fgets(out, (int)n, f)) out[0] = 0;

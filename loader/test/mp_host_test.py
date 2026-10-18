@@ -2,10 +2,14 @@
 """Single-copy multiplayer self-test through dsload (no test pair needed).
 Copy L hosts a session (mp.json role host) with multiplayer + gcd-cdr + floor-logger + a foreign inserted dylib.
 Loads the x10 demo save with det on -> lockstep locks; player units get orders through the real capture path
-(ord_inject select + right-click -> ord capture -> dsnet host -> replay) towards enemies, so they fight (skills ->
-global cooldown -> gcd-cdr hook). Soak SOAK_S seconds (default 600): alive, tick advancing, det tick_errors 0.
+(ord_inject select + right-click -> ord capture -> dsnet host -> replay) towards enemies. Soak SOAK_S seconds
+(default 600): alive, tick advancing, det tick_errors 0.
+gcd-cdr: the demo units cast no skill that starts a global cooldown (NOTES "gcd-cdr proven in game": none in 150 s;
+here 0 in every run since 2026-10-14), so gcd-probe (test/probe/gcd-probe, test only) starts GCD_FORCE global
+cooldowns through the game's own SetGlobalCooldown() (what TickEventApplier.Apply calls after a skill, the function
+gcd-cdr hooks) inside the host session; the check needs a gcd-cdr line with the 5 / (1 + CDR/100) result.
 Owner prefs only CHECKED. Writes test_env/smoke_out/<time>/mp_host_results.json."""
-import json, os, shutil, sys, time
+import json, os, re, shutil, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, os.path.expanduser('~/ds_multiplayer/rig'))
 import lrig
@@ -21,6 +25,20 @@ def session(world_modset):
     json.dump({'world': GUID, 'modset': 'mine', 'rule': 'mods', 'offer': None, 'offer_error': None, 'client_mods': [],
                'worlds': {GUID: world_modset}, 'modset_lines': []}, open(SESSION + '.tmp', 'w')); os.replace(SESSION + '.tmp', SESSION)
 os.environ['DSML_SESSION'] = SESSION; os.environ['DSML_MODSET'] = 'mine'
+MODS = os.path.join(lrig.idir(X), 'DungeonSettlers.app', 'Contents', 'Resources', 'mods')
+PROBE = os.path.join(lrig.LROOT, 'test_env', 'probe_build', 'gcd-probe')       # built from test/probe/gcd-probe
+def install_probe():                                                  # same as gcd_world_test.py; never rm
+    d = os.path.join(MODS, 'gcd-probe')
+    if os.path.exists(d):
+        os.makedirs(os.path.join(lrig.LROOT, 'test_env', 'old'), exist_ok=True)
+        shutil.move(d, os.path.join(lrig.LROOT, 'test_env', 'old', f'gcd-probe.{time.time():.0f}'))
+    shutil.copytree(PROBE, d)
+    prof = json.load(open(os.path.join(MODS, 'profile.json')))       # the copy's installed profile + the probe
+    for k in ('enabled', 'order'):
+        if k in prof and 'gcd-probe' not in prof[k]: prof[k] = prof[k] + ['gcd-probe']
+    p = os.path.join(out, 'profile.json'); json.dump(prof, open(p, 'w')); return p
+os.environ['DSL_PROFILE'] = install_probe()
+os.environ['DSL_GCDPROBE_FORCE'] = os.environ.get('GCD_FORCE', '4')
 res = {}
 def log(*a): print(time.strftime('%H:%M:%S'), *a, flush=True)
 def c(**k): return lrig.send(X, k, timeout=120)
@@ -50,6 +68,11 @@ def portal():
 def gcd_lines():
     p = os.path.join(lrig.idir(X), 'dsload.log')
     return [l for l in open(p) if '[gcd-cdr] global cooldown #' in l] if os.path.exists(p) else []
+def gcd_applied(l):                                                   # "#n: 5.000 s, cooldown reduction 2.8 -> 4.866 s"
+    m = re.search(r'#\d+: ([\d.]+) s, cooldown reduction ([\d.]+) -> ([\d.]+) s', l)
+    if not m: return False
+    g, r, o = map(float, m.groups())
+    return r > 0 and o < g and abs(o - g / (1 + r / 100)) < 0.01
 
 json.dump({'role': 'host', 'port': lrig.pair_port(X), 'name': 'L', 'allow_speedup': True, 'allow_pause': True},
           open(os.path.join(lrig.idir(X), 'mp.json'), 'w'))
@@ -126,8 +149,12 @@ try:
                 if enemies: order_move(u['guid'], min(enemies, key=lambda e: d2(u, e))['cell'])
     check(f'soak {SOAK} s: alive, tick advancing, no det tick errors', lrig.alive(lrig.read_pid(X)) and ticks and ticks[-1] > ticks[0] and not any(errs),
           f'ticks {ticks[0] if ticks else None} -> {ticks[-1] if ticks else None}, tick_errors max {max(errs) if errs else None}')
-    g = gcd_lines()
-    check('gcd-cdr hook ran inside the multiplayer session', len(g) > 0, (g[0].strip() if g else 'no global cooldown logged'))
+    g = gcd_lines(); ok = [l for l in g if gcd_applied(l)]
+    dl = open(os.path.join(lrig.idir(X), 'dsload.log')).read()
+    forced = dl.count('[gcd-probe] GCD force #') // 2                  # two lines per forced cooldown
+    check('gcd-cdr hook ran inside the multiplayer session', ok,
+          ok[0].strip() if ok else f"no gcd-cdr result with cooldown reduction; {forced} forced by the probe, {len(g)} gcd-cdr line(s)"
+          + ('' if '[gcd-probe] GCD probe up' in dl else '; gcd-probe did not load'))
     res['gcd_samples'] = [l.strip() for l in g[:5]]
 finally:
     lrig.stop(X)
