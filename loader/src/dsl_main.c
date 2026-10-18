@@ -132,7 +132,7 @@ void dsl_mark_codepatch(void) {
    Pinned = the launcher's build for this world (DSML_BUILD, or "build" in the DSML_SESSION file) when given,
    and always one of the builds this loader was made for (dsl_builds.h). The reason goes to dsload.log, stderr,
    <log dir>/dsload_status.json (for the launcher) and, in a normal (not -batchmode) start, one system notice. */
-static char status_why[512];
+static char status_why[1024];                         /* a translated sentence or three (UTF-8, Cyrillic: 2 bytes a letter) */
 static void json_esc(char *out, size_t n, const char *s) {
     size_t k = 0;
     for (; s && *s && k + 7 < n; s++) {
@@ -144,7 +144,7 @@ static void json_esc(char *out, size_t n, const char *s) {
 }
 static void write_status(int active, const char *reason, const char *uuid, const char *found, const char *pinned) {
     if (!logdir[0]) return;
-    char known[512], w[600], e[1100];
+    char known[512], w[2100], e[3200];
     snprintf(known, sizeof known, "%s", dsl_os_build_list());
     json_esc(w, sizeof w, status_why);
     snprintf(e, sizeof e, "{\"loader\":\"%s\",\"api\":\"%s\",\"active\":%s,\"reason\":\"%s\",\"uuid\":\"%s\",\"found_build\":\"%s\",\"pinned_build\":\"%s\",\"loader_builds\":[%s],\"message\":\"%s\"}\n",
@@ -813,14 +813,23 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     dsl_build_id = build;
     const char *pin = launcher_pin();
     if (!dsl_build_id) {
-        snprintf(status_why, sizeof status_why, "%s", TR("The game was updated. Mods stay off until they are updated for this game version."));
+        /* the next step: a newer kit may support this build (the kit check below runs with mods off too) */
+        snprintf(status_why, sizeof status_why, "%s", dsl_update_will_install()
+                 ? TR("The game was updated. Mods stay off until they are updated for this game version. Dungeon Settlers Modded "
+                      "checks for that update each time you start it and installs it at the next start.")
+                 : TR("The game was updated. Mods stay off until they are updated for this game version. Auto-update is off: "
+                      "download the new version from github.com/AmfiLogos/ds_modloader/releases."));
         dsl_log("unknown GameAssembly build (%s%s%s): loader inactive, the game runs without code mods", ga_id, pin ? "; the launcher pinned build " : "", pin ? pin : "");
-        build_refused("unknown_build", ga_id, NULL, pin); return -1;
+        build_refused("unknown_build", ga_id, NULL, pin);
+        dsl_update_start_kit_only();
+        return -1;
     }
     if (pin && strcmp(pin, dsl_build_id)) {
         snprintf(status_why, sizeof status_why, TR("This game is build %s, but the launcher started this world for build %s. "
                  "Mods stay off. Start the world from the launcher again."), dsl_build_id, pin);
-        build_refused("not_pinned_build", ga_id, dsl_build_id, pin); return -1;
+        build_refused("not_pinned_build", ga_id, dsl_build_id, pin);
+        dsl_update_start_kit_only();
+        return -1;
     }
     snprintf(status_why, sizeof status_why, "build %s%s", dsl_build_id, pin ? " (launcher pin)" : "");
     write_status(1, "ok", ga_id, dsl_build_id, pin ? pin : dsl_build_id);

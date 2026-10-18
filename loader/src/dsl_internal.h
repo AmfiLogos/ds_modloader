@@ -61,6 +61,8 @@ const char *json_str(const JNode *obj, const char *key);  /* NULL if missing / n
 
 /* auto-update (dsl_update.c) */
 void dsl_update_start(void);                 /* after the modules' init: check thread */
+void dsl_update_start_kit_only(void);       /* mods off (unknown / not pinned build): kit check + download only */
+int dsl_update_will_install(void);          /* 1 = a newer kit is fetched and installed at the next start */
 void dsl_update_frame(void);                 /* every frame (title corner, confirm, the starter's notice) */
 /* soft restart (dsl_soft.c) */
 void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is edited */

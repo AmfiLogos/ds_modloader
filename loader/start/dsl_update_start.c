@@ -14,7 +14,8 @@
 //      to 0.1.N" with a progress bar, the install (pending.txt written first, each MOVE line before its move), DONE.
 //      Kit: the caller starts the new starter (it goes through step 2). Mods: step 2 here. Install failed: rolled back,
 //      the old version starts, one line for the player (ROOT/update/notice.txt, shown by the loader at the title); the
-//      second failure of the same update puts it into bad.txt.
+//      second failure of the same update puts it into bad.txt. A kit refused as not for this game build (-2: Windows,
+//      it needs the installer) is not counted: the installer can make that kit fit later.
 // Rollback walks the MOVE lines backwards and skips what never happened, so it can run again after a crash; bad.txt /
 // moving pending.txt away happen only when every move back worked.
 #include "../src/dsl_internal.h"
@@ -190,8 +191,11 @@ static int us_ready(const char *root, int auto_on, const DslUpdWin *w) {
         if (us_rollback(mv, root)) dsl_log("update: rollback incomplete: pending.txt stays (the next start tries again)");
         else {
             us_old("pending.txt", "installfailed");
-            us_append("fails.txt", key);
-            if (us_count("fails.txt", key) >= 2) { us_bad_keys(key); dsl_log("update: %s failed twice: not offered again", key); }
+            if (r == -2) dsl_log("update: %s is not for this game build: not counted as a failure", key);
+            else {
+                us_append("fails.txt", key);
+                if (us_count("fails.txt", key) >= 2) { us_bad_keys(key); dsl_log("update: %s failed twice: not offered again", key); }
+            }
         }
         us_old("ready.txt", "installfailed");
         dsi_utf8_fix_end(why);
