@@ -446,9 +446,13 @@ def main():
     for x in (H, G):
         if pids(x):
             raise SystemExit(f'copy {x} already running: {pids(x)}')
-    pair = realrig.lease('hostmods', os.getpid())
+    t0 = time.time(); pair = realrig.lease('hostmods', os.getpid())
+    while not pair and time.time() - t0 < 1800:                  # the owner's pair limit: wait for a lane to give one back
+        if int(time.time() - t0) % 300 < 15:
+            log('waiting for a free pair lease')
+        time.sleep(15); pair = realrig.lease('hostmods', os.getpid())
     if not pair:
-        raise SystemExit('no free pair lease')
+        raise SystemExit('no free pair lease for 30 min')
     port = realrig.PAIR_PORTS[pair]
     log('lease', pair, 'port', port, 'build', BUILD, 'out', OUT)
     srv = None
