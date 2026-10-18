@@ -31,6 +31,7 @@ int dsl_uos_kit_asset(const char *asset_name);           /* 1 = the release asse
    holds one plain sentence. */
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
+int dsl_uos_unpack(const char *zip, const char *dst);  /* a downloaded zip into the folder dst (made); 0 = ok */
 /* shared by the OS parts: record a move in mv (and its pending file) before it is made; -1 = list full */
 static inline int dsl_umove_add(DslMoves *mv, const char *path, const char *backup) {
     if (mv->n >= DSL_UMOVES) return -1;

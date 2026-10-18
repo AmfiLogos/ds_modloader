@@ -22,6 +22,7 @@ int dsl_hostmods_state(int *pct, char *why, size_t cap);
 void dsl_log(const char *fmt, ...) { va_list a; va_start(a, fmt); fprintf(stderr, "log: "); vfprintf(stderr, fmt, a); fputc('\n', stderr); va_end(a); }
 const char *dsi_tr(const char *en) { return en; }
 unsigned dsi_generation(void) { return 0; }
+const char *dsi_code(void) { return getenv("HM_LANG") ? getenv("HM_LANG") : "en"; }
 void dsi_utf8_fix_end(char *s) { (void)s; }
 const DSLUi *dsl_ui_kit(void) { return NULL; }
 void dsl_ui_place_tr(DSLObj w, float r, float t, float wd, float h) { (void)w; (void)r; (void)t; (void)wd; (void)h; }
@@ -89,6 +90,9 @@ int main(int argc, char **argv) {
     char *host = slurp(argv[2]); if (!host) return 2;
     if (!strcmp(argv[1], "plan")) {
         static char out[65536]; int r = dsl_hostmods_plan(host, atoi(argv[3]), out, sizeof out);
+        for (int i = 0; i < 100 && !strcmp(argv[1], "plan") && argc > 4 && strstr(out, "\"names_pending\":1"); i++) {   /* the box asks again */
+            usleep(100000); r = dsl_hostmods_plan(host, atoi(argv[3]), out, sizeof out);
+        }
         printf("RET %d\n%s\n", r, out); return 0;
     }
     char why[600] = "", env[600]; snprintf(env, sizeof env, "%s\n", argv[3]);

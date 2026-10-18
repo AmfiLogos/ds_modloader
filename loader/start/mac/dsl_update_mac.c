@@ -109,6 +109,7 @@ static int unpack(const char *file, const char *dst) {
     char *av[] = { "/usr/bin/ditto", "-x", "-k", (char *)file, (char *)dst, NULL };
     return run(av);
 }
+int dsl_uos_unpack(const char *zip, const char *dst) { return unpack(zip, dst); }
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     const char *app = getenv("DSML_APP"), *root = dsl_uos_root();
     if (!app || !*app || !dsl_uos_exists(app)) { snprintf(why, wn, TR("the app's place is not known in this start")); return -1; }
