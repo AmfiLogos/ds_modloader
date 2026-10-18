@@ -503,6 +503,11 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
 - Test requests (DSL_SOFT_TEST): `<log dir>/softrestart/saves_request.json` `{"cmd":"del_world","guid":..}` /
   `{"cmd":"del_save","name":..}` (the game's own box answered Yes on the open Load list); answers: warn_load / warn_cancel.
 - Removed: the title button "Import a save", its code and texts (14 keys pruned from lang/). Kept: the cloud backup.
+- Multiplayer temporary saves (bug 2026-10-18, Windows VM): names `mp_*` (mp_sync join point, mp_fullcheck full-state
+  check, test saves) are never game saves: not listed from the game folder, never added as a new game save name by
+  `SaveFile`, so never routed there. Before, a guest whose game save had the host world's guid wrote mp_fullcheck.json
+  (4.4 MB) into the game's Saves folder (Steam Cloud synced); the mod read it from `<DSML_DATA>/Saves`, logged "save
+  failed" and never deleted it.
 - Packaging: `modules/scan_saves.py` fails a build when a save or player file is inside (folders Saves / profiles /
   instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,
   `start/win/build_win.sh` (kit), `start/win/installer/make_installer.sh`. The released packages checked: none has one.
