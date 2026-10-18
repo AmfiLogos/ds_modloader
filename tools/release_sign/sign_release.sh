@@ -19,15 +19,13 @@
 # The key: macOS Keychain, service ds-modloader-release-signing, account ed25519 (KEY_ACCOUNT=ed25519-spare signs with
 # the spare). It only goes from the Keychain through a pipe into dsl_sign: never on disk, in an argument or in a log.
 # Checks: file names fit the tag (make_manifest.py); the new signature is checked again by the loader's own code against
-# the keys the loader trusts (a key that is not in dsl_sig.c fails here); a kit whose loader trusts the public dev key
-# (a test build, -DDSL_SIGN_DEV_KEY) is refused.
+# the keys the loader trusts (a key that is not in dsl_sig.c fails here); a kit whose loaders do not hold exactly the two
+# release keys, or also trust the public dev key (a test build, -DDSL_SIGN_DEV_KEY), is refused (check_keys.py).
 set -euo pipefail
 H="${0:A:h}"; REPO="${H:h:h}"; SVC=ds-modloader-release-signing; ACCT=${KEY_ACCOUNT:-ed25519}
 T=$(mktemp -d "${TMPDIR:-/tmp}/sign_release.XXXXXX")
 SIGN=$T/dsl_sign
 clang -O2 -Wall -o $SIGN $H/dsl_sign.c $REPO/loader/src/dsl_sig.c $REPO/loader/src/dsl_sig_mc.c
-DEV=$(sed -n 's/^#define DSL_SIG_DEV_PUB "\([^"]*\)".*/\1/p' $REPO/loader/src/dsl_sig.c)
-[[ -n $DEV ]] || { print -u2 "sign_release: DSL_SIG_DEV_PUB not found in dsl_sig.c"; exit 1; }
 
 if [[ ${1:-} == --keygen ]]; then
   for a in ed25519 ed25519-spare; do
@@ -63,21 +61,8 @@ fi
 
 M=$OUT/release-manifest.json
 python3 -I $H/make_manifest.py $R $TAG $T/release-manifest.json "$@"
-# a kit built for tests trusts the public dev key: never sign it
-if [[ $TAG == v* ]]; then
-  for f in "$@"; do
-    hit=0
-    case ${f:t} in
-      *.zip) unzip -tq $f >/dev/null 2>&1 || { print -u2 "sign_release: ${f:t} is not a readable zip: not signed"; exit 1; }
-             n=$(unzip -p $f | grep -a -c -F -- "$DEV" || true); if (( n > 0 )); then hit=1; fi ;;   # -c reads it all (no SIGPIPE under pipefail)
-      *.dmg) mnt=$T/dmg_${f:t:r}; mkdir -p $mnt
-             hdiutil attach -nobrowse -readonly -noautoopen -mountpoint $mnt $f >/dev/null
-             if grep -r -a -q -F -- "$DEV" $mnt; then hit=1; fi
-             hdiutil detach $mnt -quiet || hdiutil detach $mnt -force -quiet ;;
-    esac
-    if (( hit )); then print -u2 "sign_release: ${f:t} holds a loader that trusts the DEV key: not signed"; exit 1; fi
-  done
-fi
+# a kit: every loader in its files must trust exactly the two release keys, never the public dev key (check_keys.py)
+if [[ $TAG == v* ]]; then python3 -I $H/check_keys.py "$@" || { print -u2 "sign_release: kit loader keys wrong: not signed"; exit 1; }; fi
 security find-generic-password -s $SVC -a $ACCT -w | $SIGN sign $T/release-manifest.json > $T/release-manifest.json.sig
 $SIGN verify $T/release-manifest.json $T/release-manifest.json.sig > /dev/null
 mv -f $T/release-manifest.json $T/release-manifest.json.sig $OUT/

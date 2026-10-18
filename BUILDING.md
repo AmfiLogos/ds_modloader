@@ -84,7 +84,9 @@ Run each command from the repo root. Set the env vars of section 2 first.
    mod release `<id>-v<ver>` of ds_modloader, ds_multiplayer and ds_custommodes). It writes `release-manifest.json` and
    `release-manifest.json.sig` next to the first file: upload both with the release's files. A loader refuses a release
    without them. The private key is only in the owner's macOS Keychain (service `ds-modloader-release-signing`); the
-   script reads it there. It refuses a kit whose loader was built with `-DDSL_SIGN_DEV_KEY` (test builds).
+   script reads it there. For a kit it first runs `python3 tools/release_sign/check_keys.py <kit files>`: every loader in
+   the .dmg, the zips and the unpacked Setup.exe must hold both release keys and never the public dev key (a test build,
+   `-DDSL_SIGN_DEV_KEY`, as `mac_gate.sh` makes). Any mismatch stops the signing; run it in the release gate too.
 
 BepInEx and MelonLoader are not built here. `app/bepinex/install_bepinex.sh` and `app/melon/install_melon.sh` go into
 the app. At first use they download a release zip from ds_multiplayer GitHub Releases and check its sha256.
