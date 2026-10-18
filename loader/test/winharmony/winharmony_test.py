@@ -92,8 +92,27 @@ def ours(cmd):
     return '\\winharmony\\root\\' in cmd.lower()
 
 
+NSTEP = [0]
+
+
+def our_pids():
+    """pids of the game / crash handler / starter running from the test folder, seen in the guest (Get-Process .Path).
+    vmrun listProcessesInGuest did not show the test game's folder (VM 2026-10-18: "no game of ours runs" while it ran)."""
+    NSTEP[0] += 1
+    try:
+        return step('procs', f'{time.strftime("%H%M%S")}n{NSTEP[0]}', limit=60).get('pids') or []
+    except Exception as e:
+        log('procs step failed:', e); return None
+
+
 def kill_ours():
-    """our game, and whatever else runs from the test folder (Unity's crash handler, the starter)"""
+    """our game, and whatever else runs from the test folder (Unity's crash handler, the starter); waits until gone"""
+    NSTEP[0] += 1
+    try:
+        r = step('kill', f'{time.strftime("%H%M%S")}k{NSTEP[0]}', limit=90)
+        log(f"killed {r.get('killed')}, still running {r.get('left')}")
+    except Exception as e:
+        log('kill step failed:', e)
     for pid, cmd in procs():
         if ours(cmd):
             rc, o = vm('killProcessInGuest', str(pid), timeout=60)
@@ -138,13 +157,16 @@ def new_crashes(c, start_utc):
 
 
 def wait_log(guest_file, local, pred, limit, alive_after=90):
-    """poll one guest file until pred(text); stops early when no game of ours runs for alive_after s"""
+    """poll one guest file until pred(text) (run 1: the postfix lines = MainFlow.Update runs = the game reached its frame
+    loop; BepInEx's first start spends minutes generating interop assemblies before that); stops early when no game of
+    ours runs for alive_after s"""
     t0 = time.time(); seen = None; text = ''
     while time.time() - t0 < limit:
         time.sleep(10)
         if get(guest_file, local): text = read(local)
         if pred(text): return text, True
-        if any(ours(c) for _, c in games()): seen = time.time()
+        pids = our_pids()
+        if pids or pids is None: seen = time.time()
         elif time.time() - t0 > alive_after and (seen is None or time.time() - seen > 30):
             log('no game of ours runs'); return text, False
     return text, False
