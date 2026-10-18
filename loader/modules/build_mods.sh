@@ -29,6 +29,14 @@ for i in ids:
         if not os.path.exists(p): bad.append(f"{i}: no {side} copy"); continue
         mj[side] = open(p, "rb").read()
         m = json.loads(mj[side]); pl = m.get("platforms", {})
+        if m.get("kind") == "bepinex":           # BepInEx plugin: platforms.any.files = the same DLLs on both systems
+            fs = (pl.get("any") or {}).get("files") or {}
+            if not fs: bad.append(f"{i}: bepinex mod.json lists no platforms.any files")
+            for f, h in fs.items():
+                fp = os.path.join(d, i, f)
+                if not os.path.exists(fp): bad.append(f"{i}: {side} file {f} missing")
+                elif hashlib.sha256(open(fp, "rb").read()).hexdigest() != h: bad.append(f"{i}: {side} file {f} sha256 differs from mod.json")
+            continue
         key = "mac-arm64" if side == "mac" else "win-x64"
         for k in ("mac-arm64", "win-x64"):
             if k not in pl: bad.append(f"{i}: mod.json lacks {k}")
@@ -123,6 +131,8 @@ done
 # ---- what ships carries no debug info (build paths) and no user name: strip, then scan every file (fails the build)
 for f in $OUT/win/**/*.dll(N); do ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $f; done
 for f in $OUT/mac/**/*.dylib(N); do strip -S $f 2>/dev/null; codesign -f -s - $f 2>/dev/null; done
+# ---- dsmp-bridge (BepInEx library for C# mods, one AnyCPU DLL for both): after the strip (a .NET DLL is not stripped)
+zsh $MD/build_bridge.sh $OUT
 python3 $MD/scan_names.py "$USER" $OUT/mac $OUT/win > $OUT/name_scan.txt || { cat $OUT/name_scan.txt; echo "build_mods: the user name is inside the built mods" >&2; exit 1; }
 tail -1 $OUT/name_scan.txt
 
@@ -134,6 +144,7 @@ def sha(p): return hashlib.sha256(open(p, "rb").read()).hexdigest()
 for i in sorted(set(os.listdir(f"{out}/mac")) | set(os.listdir(f"{out}/win"))):
     srcs = [f"{out}/{s}/{i}/mod.json" for s in ("mac", "win") if os.path.exists(f"{out}/{s}/{i}/mod.json")]
     m = json.load(open(srcs[0], encoding="utf-8")); pl = m.setdefault("platforms", {})
+    if m.get("kind") == "bepinex": print(f"{i}: any {len(pl.get('any', {}).get('files', {}))} file(s) (bepinex)"); continue   # build_bridge.sh wrote it
     for s in srcs[1:]:                                   # the Windows build may add its own win-x64 part (entry)
         for k, v in json.load(open(s)).get("platforms", {}).items(): pl.setdefault(k, {}).update({x: y for x, y in v.items() if x != "files"})
     for side, key, ext in (("mac", "mac-arm64", ".dylib"), ("win", "win-x64", ".dll")):
