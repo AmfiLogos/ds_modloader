@@ -66,17 +66,20 @@ for i in multiplayer custom-modes; do [[ -d $L/build/mods/$i ]] && cp -R $L/buil
 # ---- simple modules (one C file each, same source for both platforms)
 simple() {   # id src
   local id=$1 src=$2
-  mkdir -p $OUT/mac/$id/rva $OUT/win/$id/rva
+  mkdir -p $OUT/mac/$id $OUT/win/$id
   nice -n 19 clang $CFM -dynamiclib -install_name @rpath/$id.dylib -o $OUT/mac/$id/$id.dylib.tmp $MD/$id/$src
   codesign -f -s - $OUT/mac/$id/$id.dylib.tmp 2>/dev/null; mv -f $OUT/mac/$id/$id.dylib.tmp $OUT/mac/$id/$id.dylib
   nice -n 19 $TC $CFW -shared -Wl,--no-insert-timestamp -o $OUT/win/$id/$id.dll.tmp $MD/$id/$src -Wl,--export-all-symbols -static -static-libgcc
   mv -f $OUT/win/$id/$id.dll.tmp $OUT/win/$id/$id.dll
-  cp $MD/$id/rva/*_mac*.tsv $OUT/mac/$id/rva/; cp $MD/$id/rva/*_win*.tsv $OUT/win/$id/rva/
+  if [[ -d $MD/$id/rva ]]; then                                  # none for an all-by-name module (zetu-suite)
+    mkdir -p $OUT/mac/$id/rva $OUT/win/$id/rva; cp $MD/$id/rva/*_mac*.tsv $OUT/mac/$id/rva/; cp $MD/$id/rva/*_win*.tsv $OUT/win/$id/rva/
+  fi
   cp $MD/$id/mod.json $OUT/mac/$id/; cp $MD/$id/mod.json $OUT/win/$id/
   echo "built $id (mac-arm64 + win-x64)"
 }
 simple gcd-cdr gcd_cdr.c
 simple hell-difficulty hell.c
+simple zetu-suite zetu.c
 # Hell table half: deltas from the stock table bundles (game files, read only; only the delta ships)
 HW=${HELL_STOCK_WIN:-"$HOME/Library/Application Support/CrossOver/Bottles/DSMP/drive_c/DSW/DungeonSettlers_Data/StreamingAssets/aa/StandaloneWindows64/table_assets_all_ea6555cd907771d454adb127292fd425.bundle"}
 HM=${HELL_STOCK_MAC:-$HOME/DungeonSettlers_HellDifficulty/b25846389/stock/table_assets_all_ee685f7db1494c1e6bf42e948951b8dc.bundle}

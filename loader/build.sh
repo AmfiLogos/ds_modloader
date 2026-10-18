@@ -70,6 +70,13 @@ put $G/gcd-cdr.dylib
 cp modules/gcd-cdr/mod.json $G/; cp modules/gcd-cdr/rva/*.tsv $G/rva/
 echo "built $G"
 
+# zetu-suite (ZET-U Mod Suite): one source, every hook by il2cpp name (no per-build table)
+Z=build/mods/zetu-suite; mkdir -p $Z
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/zetu-suite.dylib -o $Z/zetu-suite.dylib.tmp modules/zetu-suite/zetu.c
+put $Z/zetu-suite.dylib
+cp modules/zetu-suite/mod.json $Z/
+echo "built $Z"
+
 # hell-difficulty: code half + table half (hell_data.c rebuilds the Hell table bundle from the player's stock one and the
 # delta rva/<build>_mac_tables.dsdelta; without the delta the module turns Hell off). The delta is made from the stock
 # Mac table bundle (game file, read only; HELL_STOCK_MAC) by modules/hell-difficulty/tools/hell_delta.py, as build_mods.sh does.

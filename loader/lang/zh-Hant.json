@@ -220,6 +220,9 @@
  "This mod has no settings.": "此模組沒有設定。",
  "This save is also used by Dungeon Settlers without mods. Delete it there too?": "無模組的 Dungeon Settlers 也在使用此存檔。也在那裡刪除嗎？",
  "This world is one of your game saves.": "此世界是你的遊戲存檔之一。",
+ "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s": [
+  "此世界是你的遊戲存檔之一。下列模組會改變世界儲存的內容：%s。之後在沒有模組載入器的遊戲中，世界可能會損壞。\n\n載入前會先把它的存檔檔案複製一份，保存在：\n%s"
+ ],
  "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.": [
   "此世界是你的遊戲存檔之一。下列模組會改變世界儲存的內容：%s。\n\n如果現在遊玩，之後在沒有模組載入器的遊戲中載入時，世界可能會損壞。"
  ],
@@ -229,6 +232,7 @@
  "This world uses: %s.\nInstall the missing mods to load it.": "此世界使用：%s。\n請安裝缺少的模組後再載入。",
  "This world uses: %s.\nIt cannot be loaded now: %s": "此世界使用：%s。\n目前無法載入：%s",
  "This world uses: %s.\nLoad it with them?": "此世界使用：%s。\n要使用這些模組載入嗎？",
+ "This world was not loaded: its save files could not be copied first.\n\n%s": "未載入此世界：無法先複製它的存檔檔案。\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "在載入畫面後啟用這些模組，然後回到這裡。",
  "Undo changes": "復原變更",
  "Update": "更新",

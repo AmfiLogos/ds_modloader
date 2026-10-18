@@ -1,0 +1,173 @@
+{
+ "id": "zetu-suite",
+ "name": "ZET-U Mod Suite",
+ "short_name": "ZET-U",
+ "version": "0.1.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "api": 2,
+ "scope": "gameplay",
+ "sim": true,
+ "save_dependent": true,
+ "save_backup": true,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "zetu-suite.dylib"
+  },
+  "win-x64": {
+   "entry": "zetu-suite.dll"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "conflicts": [],
+ "description": "Skills without their weapon, and more units in the dungeon.",
+ "settings": [
+  {
+   "id": "skills_no_weapon",
+   "type": "toggle",
+   "default": true,
+   "scope": "gameplay",
+   "label": "Skills without weapon requirement",
+   "help": "A unit can use the skills of a skill tree without holding that tree's weapon. Prerequisite skills, level requirements and skill point costs stay the same.",
+   "i18n": {
+    "fr": {
+     "label": "Compétences sans arme requise",
+     "help": "Une unité peut utiliser les compétences d'un arbre de compétences sans tenir l'arme de cet arbre. Les compétences préalables, les niveaux requis et le coût en points de compétence ne changent pas."
+    },
+    "de": {
+     "label": "Skills ohne Waffenvoraussetzung",
+     "help": "Eine Einheit kann die Skills eines Skillbaums nutzen, ohne die Waffe dieses Baums zu tragen. Vorausgesetzte Skills, Levelvoraussetzungen und Skillpunktkosten bleiben gleich."
+    },
+    "es": {
+     "label": "Habilidades sin requisito de arma",
+     "help": "Una unidad puede usar las habilidades de un árbol de habilidades sin llevar el arma de ese árbol. Las habilidades previas, los requisitos de nivel y el coste en puntos de habilidad no cambian."
+    },
+    "pt-BR": {
+     "label": "Habilidades sem exigência de arma",
+     "help": "Uma unidade pode usar as habilidades de uma árvore de habilidades sem segurar a arma dessa árvore. Habilidades pré-requisito, exigências de nível e custo em pontos de habilidade continuam iguais."
+    },
+    "ru": {
+     "label": "Навыки без требования к оружию",
+     "help": "Юнит может использовать навыки дерева навыков, не держа оружие этого дерева. Требуемые навыки, требования к уровню и стоимость в очках навыков не меняются."
+    },
+    "ja": {
+     "label": "スキルの武器条件なし",
+     "help": "ユニットは、スキルツリーの武器を持っていなくても、そのツリーのスキルを使えます。前提スキル、必要レベル、スキルポイントの消費は変わりません。"
+    },
+    "ko": {
+     "label": "스킬 무기 조건 없음",
+     "help": "유닛이 스킬 트리의 무기를 들지 않아도 그 트리의 스킬을 사용할 수 있습니다. 선행 스킬, 레벨 조건, 스킬 포인트 비용은 그대로입니다."
+    },
+    "zh-Hans": {
+     "label": "技能无需武器",
+     "help": "单位无需持有技能树对应的武器，即可使用该技能树的技能。前置技能、等级要求和技能点消耗保持不变。"
+    },
+    "zh-Hant": {
+     "label": "技能無需武器",
+     "help": "單位無需持有技能樹對應的武器，即可使用該技能樹的技能。前置技能、等級要求與技能點消耗維持不變。"
+    }
+   }
+  },
+  {
+   "id": "max_units",
+   "type": "int",
+   "default": 4,
+   "min": 4,
+   "max": 8,
+   "step": 1,
+   "scope": "gameplay",
+   "label": "Max units in the dungeon",
+   "help": "How many units can go on one expedition. 4 is the game's normal value.",
+   "i18n": {
+    "fr": {
+     "label": "Unités max. dans le donjon",
+     "help": "Nombre d'unités qui peuvent partir en une expédition. 4 est la valeur normale du jeu."
+    },
+    "de": {
+     "label": "Max. Einheiten im Dungeon",
+     "help": "Wie viele Einheiten an einer Expedition teilnehmen können. 4 ist der normale Wert des Spiels."
+    },
+    "es": {
+     "label": "Máximo de unidades en la mazmorra",
+     "help": "Cuántas unidades pueden ir en una expedición. 4 es el valor normal del juego."
+    },
+    "pt-BR": {
+     "label": "Máximo de unidades na masmorra",
+     "help": "Quantas unidades podem ir em uma expedição. 4 é o valor normal do jogo."
+    },
+    "ru": {
+     "label": "Макс. юнитов в подземелье",
+     "help": "Сколько юнитов может отправиться в одну экспедицию. 4 — обычное значение игры."
+    },
+    "ja": {
+     "label": "ダンジョンの最大ユニット数",
+     "help": "1回の探索に出せるユニット数です。4がゲームの通常の値です。"
+    },
+    "ko": {
+     "label": "던전 최대 유닛 수",
+     "help": "한 번의 탐사에 보낼 수 있는 유닛 수입니다. 4가 게임의 기본값입니다."
+    },
+    "zh-Hans": {
+     "label": "地下城最大单位数",
+     "help": "一次探险可派出的单位数量。4 是游戏的默认值。"
+    },
+    "zh-Hant": {
+     "label": "地下城最大單位數",
+     "help": "一次探險可派出的單位數量。4 是遊戲的預設值。"
+    }
+   }
+  }
+ ],
+ "i18n": {
+  "fr": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "Des compétences sans leur arme, et plus d'unités dans le donjon."
+  },
+  "de": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "Skills ohne ihre Waffe und mehr Einheiten im Dungeon."
+  },
+  "es": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "Habilidades sin su arma y más unidades en la mazmorra."
+  },
+  "pt-BR": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "Habilidades sem a arma delas e mais unidades na masmorra."
+  },
+  "ru": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "Навыки без нужного оружия и больше юнитов в подземелье."
+  },
+  "ja": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "武器なしでスキルを使い、ダンジョンにより多くのユニットを連れて行けます。"
+  },
+  "ko": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "무기 없이 스킬을 쓰고, 던전에 더 많은 유닛을 데려갑니다."
+  },
+  "zh-Hans": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "无需对应武器即可使用技能，并可带更多单位进入地下城。"
+  },
+  "zh-Hant": {
+   "name": "ZET-U Mod Suite",
+   "short_name": "ZET-U",
+   "description": "無需對應武器即可使用技能，並可帶更多單位進入地下城。"
+  }
+ }
+}
