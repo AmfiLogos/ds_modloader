@@ -2,8 +2,29 @@
  "%d file is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.||%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.": [
   "%d件のファイルはDungeon Settlers ModdedのMODではありません。mods/.failedフォルダに移動しました。"
  ],
+ "%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder.": [
+  "ゲームが通常のセーブ%d個を読み込めなかったため、一覧に表示されません。ファイルはセーブフォルダーに残っています。"
+ ],
  "%d mod is ready. The new version installs the next time the game starts.||%d mods are ready. The new versions install the next time the game starts.": [
   "%d個のMODの準備ができました。新しいバージョンは次回ゲーム起動時にインストールされます。"
+ ],
+ "%d modded world is not in the Load list this session. It is not lost: it stays in the Dungeon Settlers Modded save folder and comes back when the mods are on again.||%d modded worlds are not in the Load list this session. They are not lost: they stay in the Dungeon Settlers Modded save folder and come back when the mods are on again.": [
+  "今回のセッションでは、MOD版のワールド%d個が読み込み一覧に表示されません。消えたわけではありません。Dungeon Settlers Moddedのセーブフォルダーに残っていて、MODが再びオンになると戻ります。"
+ ],
+ "%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them.": [
+  "マルチプレイワールド%d個が非表示です。表示するには一覧の下のチェックボックスをオンにしてください。"
+ ],
+ "%d of your game worlds is not in the Load list this session. It is not lost: play it in Dungeon Settlers, or here when the mods are on again.||%d of your game worlds are not in the Load list this session. They are not lost: play them in Dungeon Settlers, or here when the mods are on again.": [
+  "今回のセッションでは、通常のワールド%d個が読み込み一覧に表示されません。消えたわけではありません。Dungeon Settlersで遊ぶか、MODが再びオンになったらここで遊べます。"
+ ],
+ "%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers.": [
+  "通常のワールド%d個が一覧に表示されません。今回のセッションではMODローダーが通常のセーブにつなげませんでした。ワールドはDungeon Settlersに安全に残っています。"
+ ],
+ "%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them.": [
+  "シングルプレイワールド%d個が非表示です。表示するには一覧の下のチェックボックスをオンにしてください。"
+ ],
+ "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
+  "ワールド%d個が一覧の下のフィルターで非表示になっています。"
  ],
  "%s (not installed)": "%s（未インストール）",
  "%s and %s": "%sと%s",
@@ -137,6 +158,7 @@
  "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).": "ゲームを起動できませんでした。Dungeon Settlers Moddedフォルダ（profiles\\modded）の starter.log を確認してください。",
  "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.": "ゲームを起動できませんでした。~/Library/Logs/DungeonSettlersModded.log を確認してください。",
  "The game files changed after the start check. Mods stay off. Restart the game.": "起動チェックの後にゲームファイルが変わりました。MODはオフのままです。ゲームを再起動してください。",
+ "The game stopped while the mod loader was starting last time, so mods stay off until the mod loader is updated.": "前回、MODローダーの起動中にゲームが停止しました。そのため、MODローダーが更新されるまでMODはオフのままです。",
  "The game was updated. Mods stay off until they are updated for this game version.": "ゲームが更新されました。このゲームバージョン向けにMODが更新されるまで、MODはオフのままです。",
  "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded.": "このフォルダからはゲームを起動できません：\n%s\n\nこのPCでゲームが読めない文字がパスに含まれています（例：中国語や日本語の文字）。\n半角英数字だけのフォルダに Dungeon Settlers Modded を再インストールしてください。例：C:\\Games\\Dungeon Settlers Modded。",
  "The group could not be deleted.": "グループを削除できませんでした。",

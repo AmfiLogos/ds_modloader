@@ -2,8 +2,29 @@
  "%d file is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.||%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed.": [
   "%d 个文件不是 Dungeon Settlers Modded 的模组，已移至 mods/.failed 文件夹。"
  ],
+ "%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder.": [
+  "游戏无法读取 %d 个游戏存档，因此它们不在列表中。文件仍保留在你的存档文件夹中。"
+ ],
  "%d mod is ready. The new version installs the next time the game starts.||%d mods are ready. The new versions install the next time the game starts.": [
   "%d 个模组已就绪。新版本将在下次启动游戏时安装。"
+ ],
+ "%d modded world is not in the Load list this session. It is not lost: it stays in the Dungeon Settlers Modded save folder and comes back when the mods are on again.||%d modded worlds are not in the Load list this session. They are not lost: they stay in the Dungeon Settlers Modded save folder and come back when the mods are on again.": [
+  "本次运行中，%d 个模组世界不在读取列表中。它们没有丢失：仍保存在 Dungeon Settlers Modded 的存档文件夹中，模组重新开启后就会回来。"
+ ],
+ "%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them.": [
+  "%d 个多人游戏世界已隐藏。勾选列表下方的方框即可显示。"
+ ],
+ "%d of your game worlds is not in the Load list this session. It is not lost: play it in Dungeon Settlers, or here when the mods are on again.||%d of your game worlds are not in the Load list this session. They are not lost: play them in Dungeon Settlers, or here when the mods are on again.": [
+  "本次运行中，你的 %d 个游戏世界不在读取列表中。它们没有丢失：可以在 Dungeon Settlers 中游玩，或在模组重新开启后在这里游玩。"
+ ],
+ "%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers.": [
+  "你的 %d 个游戏世界未列出：本次运行中模组加载器无法连接你的游戏存档。它们在 Dungeon Settlers 中安然无恙。"
+ ],
+ "%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them.": [
+  "%d 个单人游戏世界已隐藏。勾选列表下方的方框即可显示。"
+ ],
+ "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
+  "%d 个世界被列表下方的筛选隐藏。"
  ],
  "%s (not installed)": "%s（未安装）",
  "%s and %s": "%s 和 %s",
@@ -137,6 +158,7 @@
  "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).": "无法启动游戏。请查看 Dungeon Settlers Modded 文件夹（profiles\\modded）中的 starter.log。",
  "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.": "无法启动游戏。请查看 ~/Library/Logs/DungeonSettlersModded.log。",
  "The game files changed after the start check. Mods stay off. Restart the game.": "游戏文件在启动检查后发生了变化。模组保持关闭。请重启游戏。",
+ "The game stopped while the mod loader was starting last time, so mods stay off until the mod loader is updated.": "上次启动模组加载器时游戏停止了，因此在模组加载器更新之前，模组保持关闭。",
  "The game was updated. Mods stay off until they are updated for this game version.": "游戏已更新。在为此游戏版本更新之前，模组保持关闭。",
  "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded.": "游戏无法从此文件夹启动：\n%s\n\n此路径包含本电脑上游戏无法读取的字符（例如中文或日文字符）。\n请将 Dungeon Settlers Modded 重新安装到仅含普通字符的文件夹中，例如 C:\\Games\\Dungeon Settlers Modded。",
  "The group could not be deleted.": "无法删除组合。",

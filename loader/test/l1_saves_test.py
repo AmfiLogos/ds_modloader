@@ -64,7 +64,7 @@ def install():
     log('installed', sorted(os.listdir(md)))
 
 
-def start_modded(enabled, worlds=None):
+def start_modded(enabled, worlds=None, extra_env=None):
     """the modded game as the starters start it (DSML_GAME_SAVES = the game folder); worlds = worlds.json to write, or
     None = keep the one of the last run"""
     T.require_hidden_copy(os.path.join(I, 'DungeonSettlers.app'))
@@ -82,11 +82,13 @@ def start_modded(enabled, worlds=None):
            'DSML_DATA': os.path.join(I, 'data'), 'DSML_GAME_SAVES': GSAVES, 'DSL_CLOUD': '0',
            'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': T.STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0'}
     env.update(r.soft_test_env())
+    env.update(extra_env or {})
     r.require_windowed(X)
     args = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(19), start_new_session=True)
     open(r.pidfile(X), 'w').write(f'{p.pid}\n'); log('modded copy started pid', p.pid, enabled)
+    if (extra_env or {}).get('DSML_BUILD'): return p.pid                     # mods off (other build): no title wait by the rig socket
     T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'title'); time.sleep(3)
     return p.pid
 

@@ -132,7 +132,7 @@ void dsl_mark_codepatch(void) {
    Pinned = the launcher's build for this world (DSML_BUILD, or "build" in the DSML_SESSION file) when given,
    and always one of the builds this loader was made for (dsl_builds.h). The reason goes to dsload.log, stderr,
    <log dir>/dsload_status.json (for the launcher) and, in a normal (not -batchmode) start, one system notice. */
-static char status_why[512];
+static char status_why[2048];
 static void json_esc(char *out, size_t n, const char *s) {
     size_t k = 0;
     for (; s && *s && k + 7 < n; s++) {
@@ -144,7 +144,7 @@ static void json_esc(char *out, size_t n, const char *s) {
 }
 static void write_status(int active, const char *reason, const char *uuid, const char *found, const char *pinned) {
     if (!logdir[0]) return;
-    char known[512], w[600], e[1100];
+    char known[512], w[4200], e[5200];
     snprintf(known, sizeof known, "%s", dsl_os_build_list());
     json_esc(w, sizeof w, status_why);
     snprintf(e, sizeof e, "{\"loader\":\"%s\",\"api\":\"%s\",\"active\":%s,\"reason\":\"%s\",\"uuid\":\"%s\",\"found_build\":\"%s\",\"pinned_build\":\"%s\",\"loader_builds\":[%s],\"message\":\"%s\"}\n",
@@ -152,8 +152,21 @@ static void write_status(int active, const char *reason, const char *uuid, const
     char path[1200]; snprintf(path, sizeof path, "%s/dsload_status.json", logdir);
     write_file(path, e);
 }
+/* mods off this session: the notice also says which worlds the Load list will not show (dsl_saves.c). Windows: no
+   save-folder redirect, the game lists its own saves, the modded worlds are hidden; Mac copy: the game saves are. */
+static void hidden_note(void) {
+    char n[900];
+#ifdef _WIN32
+    dsl_saves_off_note(1, n, sizeof n);
+#else
+    dsl_saves_off_note(0, n, sizeof n);
+#endif
+    size_t k = strlen(status_why);
+    if (n[0]) snprintf(status_why + k, sizeof status_why - k, "%s%s", k ? "\n\n" : "", n);
+}
 static void build_refused(const char *reason, const char *uuid, const char *found, const char *pinned) {
     dsl_build_id = NULL;
+    hidden_note();
     dsl_log("GAME BUILD CHECK FAILED (%s): %s", reason, status_why);
     dsl_log("no mod starts, no hook and no code patch is written; the game runs unmodded");
     fprintf(stderr, "dsload: %s\n", status_why);
@@ -649,6 +662,12 @@ static void write_modset(void) {
     dsl_log("mod set written to %s (check: %s, %d difference(s))", path, !sp ? "no session" : (diffs ? "differs" : "ok"), diffs);
 }
 
+int dsl_module_syms(const char *name, void **out, int max) {
+    int k = 0;
+    for (int i = 0; i < norder && k < max; i++) if (ORDER[i]->state == 1 && ORDER[i]->h) { void *f = dsl_os_dlsym(ORDER[i]->h, name); if (f) out[k++] = f; }
+    return k;
+}
+
 void dsl_world_install(void **modules, int n);
 static void world_install(void) {
     void *hs[MAXP]; int k = 0;
@@ -684,6 +703,7 @@ static void mods_off(const char *reason, const char *why) {
     int n = 0;
     for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) { dsl_unhook_owner(ORDER[i]->idx); ORDER[i]->state = 2; n++; }
     snprintf(status_why, sizeof status_why, "%s", why);
+    hidden_note();
     dsl_log("START CONDITION FAILED (%s): %s", reason, status_why);
     dsl_log("%d module(s) off this session; no module hook, the game runs unmodded", n);
     write_status(0, reason, NULL, dsl_build_id, NULL);
@@ -707,7 +727,15 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
     if (dsl_soft_wanted()) any = 1;                                  /* B of a soft restart, even with no code mod */
     if (any) want_init = 1;                                          /* soft restart (dsl_soft.c) needs il2cpp names */
     if (!any) return 0;
-    if (guard_check("_codepatch", loader_sig, "runtime code patching")) { dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started"); return -1; }
+    if (guard_check("_codepatch", loader_sig, "runtime code patching")) {
+        dsl_codepatch_ok = 0; dsl_log("code patching off this session: modules not started");
+        snprintf(status_why, sizeof status_why, "%s", TR("The game stopped while the mod loader was starting last time, so mods stay off "
+                                                         "until the mod loader is updated."));
+        size_t k = strlen(status_why); hidden_note();                 /* a notice only when worlds are hidden (before: silent) */
+        if (strlen(status_why) > k && !dsl_os_batchmode() && !getenv("DSL_NO_ALERT")) dsl_os_notice(TR("Dungeon Settlers: mods are off"), status_why);
+        if (strlen(status_why) > k) dsl_log("crash guard: %s", status_why);
+        return -1;
+    }
     if (dsl_engine_init()) return -1;
     dsl_engine_batch(1);                                             /* until the early starts are done: none of GameAssembly runs */
     if (dsl_core_prereq) {

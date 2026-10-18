@@ -29,6 +29,9 @@
 // mod.json "scope": "gameplay" (default: every multiplayer player needs it) or "client" (only this player).
 // A module may export `int dsl_world_check_skip(void)`: 1 = the world check (mods per world) lets the current load
 // through (multiplayer guest loading the host's world).
+// A module that hides world rows of the stock Load list itself may export `int dsl_loadlist_hidden(int *kind)`: the
+// number of world rows it hides in the open list now; *kind 1 = multiplayer worlds, 2 = single-player worlds, else 0.
+// The loader writes one line under the list ("5 multiplayer worlds are hidden ...") so a player knows they are not lost.
 //
 // Log: <log dir>/dsload.log (DSL_LOG_DIR, else ~/Library/Application Support/CanOpener/Dungeon Settlers).
 #pragma once

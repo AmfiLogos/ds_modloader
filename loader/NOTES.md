@@ -511,3 +511,29 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
 - Packaging: `modules/scan_saves.py` fails a build when a save or player file is inside (folders Saves / profiles /
   instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,
   `start/win/build_win.sh` (kit), `start/win/installer/make_installer.sh`. The released packages checked: none has one.
+
+## Hidden worlds: a count, never a silent gap (owner 2026-10-18; branch hiddenworlds)
+- Owner: a player whose worlds are not in the Load list must see that they are hidden, not lost: a line with how many
+  and why. Every case where worlds are on disk but not listed:
+  - Load list, mods on (`dsl_rows.c hidden_apply`, one wrapped text line, rebuilt with the list). Top, where the game
+    saves would be: the game-saves hooks off this session (`dsl_saves.c`: names missing / a hook refused;
+    `DSL_TEST_SAVES_OFF=1` in tests) "N of your game worlds are not listed ..."; a game save the game could not read
+    (`TryQuarantineCorruptSaveFile` keeps it in the game folder, so it is not listed) "N game saves could not be read
+    ...". Bottom: world rows a filter hides. Kind from the module that hides them: a module may export
+    `int dsl_loadlist_hidden(int *kind)` (dsl_sdk.h; multiplayer's list filter, ds_multiplayer branch hiddenworlds):
+    "N multiplayer worlds are hidden. Tick the box under the list to show them." (single-player on Your save); the
+    loader's own filter toggles, or a module without the export: "N worlds are hidden by a filter under the list."
+  - Mods off this session (unknown game build, launcher pin of another build, mapped image differs, the Windows
+    save-folder redirect failed, the crash guard): no hook is written, so no line in the list. The start notice
+    ("Dungeon Settlers: mods are off", and dsload_status.json "message") gets the count: Windows (no redirect, the game
+    lists its own folder) "N modded worlds are not in the Load list this session. They are not lost ..."; Mac copy (the
+    modded folder is listed) "N of your game worlds are not in the Load list ...". The crash guard had no notice: it now
+    shows one when worlds are hidden.
+  - Counted per world (distinct CampaignGuid: autosave name, else the header), `mp_*` temporary saves and files with no
+    readable header left out, worlds listed from the other folder left out (`dsl_saves_hidden_worlds`).
+  - Not a hidden world: a modded file named like a game save (the game's save of that world is listed); `mp_*` files.
+    Not reachable: the normal game (no loader) never lists modded-only worlds; the group header "Modded saves: only in
+    Dungeon Settlers Modded" says so in the modded game.
+- Tests: `test/saves_hidden/run.sh` (host; the Windows and Mac branches of the notice count: 3 checks);
+  `test/l1_hidden_test.py` (copy Y, hidden): M multiplayer filter + unreadable game save, EN and DE, box ticked = line
+  gone; F hooks off; B other build (status message); G crash guard: 19 + 2 checks, screenshots M_en / M_de / F_en / F_de.
