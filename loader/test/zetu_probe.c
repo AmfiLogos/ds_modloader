@@ -94,7 +94,7 @@ static void u8(Obj s, char *o, size_t cap) { int n = s ? AT(s, 0x10, int32_t) : 
 static void tree(Obj t, int d, int maxd) {
     void *kt = H->find_class("UnityEngine", "Transform"), *kr = H->find_class("UnityEngine", "RectTransform"), *kc = H->find_class("UnityEngine", "Component");
     void *ko = H->find_class("UnityEngine", "Object"), *kg = H->find_class("UnityEngine", "GameObject");
-    void *(*ocls)(Obj) = H->il2cpp_fn("il2cpp_object_get_class"); int (*isa)(void *, void *) = H->il2cpp_fn("il2cpp_class_is_assignable_from");
+    void *(*ocls)(Obj) = H->il2cpp_fn("il2cpp_object_get_class"); uint8_t (*isa)(void *, void *) = H->il2cpp_fn("il2cpp_class_is_assignable_from");
     const char *(*cname)(void *) = H->il2cpp_fn("il2cpp_class_get_name");
     static void *m_name, *m_go, *m_self, *m_amin, *m_amax, *m_piv, *m_pos, *m_size, *m_scale, *m_count, *m_child, *m_comps;
     if (!m_name) { m_name = msig(ko, "get_name", 0); m_go = msig(kc, "get_gameObject", 0); m_self = msig(kg, "get_activeSelf", 0);
