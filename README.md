@@ -107,28 +107,48 @@ For mod makers: declare the settings in `mod.json` ("settings") and read them wi
 
 ## Where your saves are
 
-The modded game plays on its own copy of your saves. On its first start it copies your normal saves once (it only
-reads them). After that the two sets are separate. Progress in the modded game does not change your normal saves,
-and modded saves do not show in the normal game's Load list.
+Your normal saves are played in place. The modded game lists the worlds of your normal game's save folder and
+loads them from there. When you save, it writes back to that same folder. So the same world goes on in both games.
+There is no copy and no import step.
 
-To bring in a world later, click "Import a save" on the title screen (under Mods). It shows the worlds of your
-normal saves one at a time. Click Import to copy that world into the modded saves, or "Next world". The normal
-save does not change. If the modded saves already have that world with other progress, it asks first (Replace or
-Keep mine). When you replace it, the old modded copy goes to `data/Mods/cloud_backups/`.
+- Mac: `~/Library/Application Support/CanOpener/Dungeon Settlers/Saves`
+- Windows: `%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\Saves`
 
-The modded saves are in the `data/Saves` folder of:
+Worlds that exist only in the modded game (worlds you start or host there, and multiplayer worlds) stay in the
+modded game's own folder, `data/Saves`. The normal game never lists them. Both kinds of worlds show in one Load list
+in the modded game.
+
+The modded game's own folder is `data` in:
 
 - Mac: `~/Library/Application Support/DSModLauncher/profiles/modded`
 - Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded` (or the folder you chose in the installer)
 
 Uninstalling keeps this folder.
 
-Steam Cloud backup: the mod loader also copies the modded saves to your own Steam Cloud, as files named
-`dsmodded_<save file>`. It uploads only while plenty of space stays free for the game's own cloud saves (at least
-1 GB, or 20 times what the game uses, whichever is bigger). If space is short, it pauses and says so in the Import
-window. On a new computer, the modded game downloads the saves it does not have. If one save changed on two
-computers, the newest one wins and the other copy goes to `data/Mods/cloud_backups/`. When you delete a world in
-the modded game, its cloud copy goes too. The game's own cloud saves never change.
+Some mods change a world in a way that the game without mods cannot read. When such a mod is on (mod.json
+`"save_dependent": true`) and you load a normal save, the game asks first. It names the mods, and you choose Load or
+Cancel. It asks once per world and mod set. Some of these mods also make a dated copy of that world's save files
+first, in `data/Mods/save_backups/`. The warning then names that folder.
+
+When you delete a normal save in the modded game, a second question asks if you want to delete it in the game
+without mods too. Cancel deletes nothing.
+
+Older versions (before v0.1.13) copied your normal saves into `data/Saves` on the first start. If such a copy has
+the same name as a normal save, it is moved to `data/Mods/save_copies/` and never deleted. If you played the copy, a
+notice on the title screen says which file is newer and where the copy is kept.
+
+Mod data: each mod has its own folder, `data/ModData/<mod id>/`. Mods keep their settings and progress files there.
+A mod update or turning a mod off or on does not change it. In multiplayer, a mod can mark some of these files as
+gameplay files (mod.json `"sync"`). A guest then plays with the host's copy of those files. The guest's own files
+are put aside during the session and come back after it. If the game closes during a session, they come back at the
+next start. For mod makers: `loader/NOTES.md`, "Mod data folder + multiplayer sync".
+
+Steam Cloud backup: the mod loader copies the modded-only saves (`data/Saves`) to your own Steam Cloud, as files
+named `dsmodded_<save file>`. It uploads only while plenty of space stays free for the game's own cloud saves (at
+least 1 GB, or 20 times what the game uses, whichever is bigger). If space is short, it pauses. On a new computer,
+the modded game downloads the saves it does not have. If one save changed on two computers, the newest one wins and
+the other copy goes to `data/Mods/cloud_backups/`. When you delete a world in the modded game, its cloud copy goes
+too. The game's own cloud saves never change. Multiplayer temporary saves are never uploaded.
 
 ## Known limits
 
