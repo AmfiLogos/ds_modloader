@@ -11,7 +11,15 @@ Checks: refusal + box, X downloaded (only official release URLs in requests.log,
 at the host's version, the guest's mod-set lines equal the host's, rejoin without any command from the test, time from
 the click to the rejoin, 0 desyncs (mp desyncs, DESYNC / FULL-STATE / deep lines, det tick_errors, fp.log equal).
 
-  hostmods_pair.py [--play 240]
+  hostmods_pair.py [--play 240] [--settings]
+
+--settings: both copies also run the test mod settings-demo (loader/test/settings/demo: the only mod in this repo that
+declares gameplay settings; gcd-cdr and hell-difficulty declare none). The host runs its gameplay setting gold_mult at
+7 (default 1, data/Mods/settings.json), the guest at the default. Extra checks: the host's lines carry
+settings-demo/gold_mult@7; after the click and the soft restart the guest's settings file (data/Mods/settings.json,
+committed from pending.json by the new process) holds 7 and the new process runs with it (the demo's "at load" line);
+the guest's mod-set lines (settings lines included) equal the host's. Every run also checks that the box names the
+missing mod by its display name (mod.json "name"), never by its raw id.
 
 Inputs (phase 2 builds them; nothing is published):
   HM_BUILD     loader build folder: dsload.dylib + mods/multiplayer (build.sh with MP_PIN / MP_REPO = the hostmods
@@ -19,7 +27,7 @@ Inputs (phase 2 builds them; nothing is published):
   HM_PACKAGES  folder with gcd-cdr-<v>.zip + hell-difficulty-<v>.zip (modules/package_mods.sh). Missing: Mac-only
                zips are made from HM_BUILD/mods/<id> (same layout: one folder <id>/).
   HM_SRC_APP   a ready hidden test copy to clone (make_instance.sh output). Default ~/ds_launcher/.../instances/Z.
-  HM_SHOTS     where the two screenshots go (default the run folder).
+  HM_SHOTS     where the two screenshots go (default the run folder); HM_SHOT_PREFIX a prefix for their names.
 Copies: HMH (host) and HMG (guest) in ../test_env/instances (own bundle ids, background-only, windows staged far
 off every display, DSL_NOTCH=0, muted, nice 5). A guard kills them if a window shows on a display or one becomes
 frontmost. Lease: ~/ds_multiplayer/rig/rig.py (lane hostmods; refused while rig/release.lock exists); the host
@@ -43,6 +51,10 @@ OFFICIAL = {'multiplayer': 'AmfiLogos/ds_multiplayer', 'custom-modes': 'AmfiLogo
 STAGE = '-20000,-20000'
 SAVE = os.path.join(lrig.SEED_DATA, 'Saves', 'MoonlightBrigade__AutoSave_41e9c1bb8790492cbdc10f4dcad22179_0.json')
 B = dict(MULTIPLAYER=1, JOIN_ADDR=14, CONNECT=15)
+SETTINGS = '--settings' in sys.argv
+S_ID, S_SET, S_HOST = 'settings-demo', 'gold_mult', 7                  # --settings: the shared mod, its setting, the host's value
+S_SRC = os.path.join(HERE, 'settings', 'demo')
+SHOT_PREFIX = os.environ.get('HM_SHOT_PREFIX', '')
 PLAY = int(sys.argv[sys.argv.index('--play') + 1]) if '--play' in sys.argv else 240
 BUILD = os.environ.get('HM_BUILD', os.path.join(L, 'build'))
 OUT = os.path.join(L, 'test_env', 'hostmods', time.strftime('%Y%m%d-%H%M%S')); os.makedirs(OUT, exist_ok=True)
@@ -158,6 +170,16 @@ def packages():
                     if not f.startswith('.'):
                         p = os.path.join(r, f); zf.write(p, os.path.join(i, os.path.relpath(p, src)))
         res[i] = zp
+    if SETTINGS:                                                 # the test mod: built here, never on the release server
+        d = os.path.join(OUT, 'pkg', 'src', S_ID); os.makedirs(d, exist_ok=True)
+        subprocess.run(['clang', '-arch', 'arm64', '-O2', '-Wall', '-mmacosx-version-min=12.0', '-I' + os.path.join(L, 'sdk'), '-dynamiclib',
+                        '-install_name', f'@rpath/{S_ID}.dylib', '-o', os.path.join(d, f'{S_ID}.dylib'), os.path.join(S_SRC, 'settings_demo.c')], check=True)
+        shutil.copy2(os.path.join(S_SRC, 'mod.json'), os.path.join(d, 'mod.json'))
+        zp = os.path.join(OUT, 'pkg', f'{S_ID}-{mod_version(d)}.zip')
+        with zipfile.ZipFile(zp, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for f in ('mod.json', f'{S_ID}.dylib'):
+                zf.write(os.path.join(d, f), os.path.join(S_ID, f))
+        res[S_ID] = zp
     info['packages'] = {i: os.path.basename(z) for i, z in res.items()}
     return res
 
@@ -171,6 +193,8 @@ def relserver(pk):
     """official releases of X and Y on a local stand-in for the GitHub API (never the real one)"""
     rd = os.path.join(OUT, 'rel')
     for i, z in pk.items():
+        if i not in OFFICIAL:
+            continue
         v = zip_version(z, i); td = os.path.join(rd, REPO, f'{i}-v{v}'); os.makedirs(td, exist_ok=True)
         shutil.copy2(z, os.path.join(td, f'{i}-{v}.zip'))
     s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()
@@ -281,7 +305,7 @@ def order_move(x, guid, cell):
 
 def shot(x, name):
     """the whole frame the player sees (backbuffer: game + every UI layer) of the hidden copy"""
-    p = os.path.join(SHOTS, name)
+    p = os.path.join(SHOTS, SHOT_PREFIX + name)
     try:
         r = c(x, cmd='mpm_shot', path=p, how='backbuffer')
     except Exception as e:
@@ -289,6 +313,13 @@ def shot(x, name):
     ok = os.path.exists(p) and os.path.getsize(p) > 1000
     log(x, 'screenshot', p, 'ok' if ok else f'MISSING {r}')
     return p if ok else None
+
+
+def settings_file(x):
+    try:
+        return json.load(open(os.path.join(lrig.idir(x), 'data', 'Mods', 'settings.json')))
+    except Exception:
+        return None
 
 
 def session_lines(x):
@@ -311,8 +342,15 @@ def fp_map(x, t0):
 def run(port, api, rel, pk):
     xv = zip_version(pk[X_ID], X_ID); yv = zip_version(pk[Y_ID], Y_ID)
     info.update(host_versions={X_ID: xv, Y_ID: yv}, port=port, release_api=api)
-    kit(H, pk, [X_ID, Y_ID], ['multiplayer', X_ID, Y_ID])
-    gk = kit(G, pk, [Y_ID], ['multiplayer'])                     # X not installed, Y installed but off
+    S = [S_ID] if SETTINGS else []
+    kit(H, pk, [X_ID, Y_ID] + S, ['multiplayer', X_ID, Y_ID] + S)
+    gk = kit(G, pk, [Y_ID] + S, ['multiplayer'] + S)             # X not installed, Y installed but off (S on, default values)
+    s_def = next(e['default'] for e in json.load(open(os.path.join(S_SRC, 'mod.json')))['settings'] if e['id'] == S_SET) if SETTINGS else None
+    s_line = f'{S_ID}/{S_SET}@{S_HOST}'
+    if SETTINGS:
+        json.dump({S_ID: {S_SET: S_HOST}}, open(os.path.join(lrig.idir(H), 'data', 'Mods', 'settings.json'), 'w'))
+        info['setting'] = {'mod': S_ID, 'setting': S_SET, 'host': S_HOST, 'guest_before': s_def}
+    x_name = json.load(open(os.path.join(BUILD, 'mods', X_ID, 'mod.json'), encoding='utf-8'))['name']
     json.dump({'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True, 'full_check_steps': 1800},
               open(os.path.join(lrig.idir(H), 'mp.json'), 'w'))   # the guest has none: it joins through the menu
 
@@ -326,13 +364,18 @@ def run(port, api, rel, pk):
     hl = session_lines(H)
     info['host_lines'] = hl
     check('host runs X and Y', hl and any(l.startswith(f'{X_ID}@{xv}') for l in hl) and any(l.startswith(f'{Y_ID}@{yv}') for l in hl), hl)
+    if SETTINGS:
+        check(f'host runs {S_ID} with {S_SET} = {S_HOST} (default {s_def})', S_HOST != s_def and s_line in (hl or []), hl)
 
     start(G, api, {'DSMP_HOSTMODS_TEST': '1'})
     lrig.wait_for(G, lambda s: s.get('scene') == 1 and not s.get('busy'), 'title guest', timeout=1500)
     time.sleep(3)
     gl0 = session_lines(G)
-    check('guest before: X not installed, Y installed and off', not os.path.exists(os.path.join(gk, 'loader', 'mods', X_ID))
-          and os.path.exists(os.path.join(gk, 'loader', 'mods', Y_ID)) and not gl0, f'guest lines {gl0}')
+    s_ok = (not gl0) if not SETTINGS else (gl0 is not None and f'{S_ID}/{S_SET}@{s_def}' in gl0 and all(l.startswith(S_ID) for l in gl0)
+                                            and (settings_file(G) or {}).get(S_ID, {}).get(S_SET) in (None, s_def))
+    check('guest before: X not installed, Y installed and off' + (f', {S_ID} on at {S_SET} = {s_def}' if SETTINGS else ''),
+          not os.path.exists(os.path.join(gk, 'loader', 'mods', X_ID)) and os.path.exists(os.path.join(gk, 'loader', 'mods', Y_ID)) and s_ok,
+          f'guest lines {gl0}; settings file {settings_file(G)}')
     a_pid = pids(G)[0]
     rpos = fsize(G, 'rig.log')
     for b in ('MULTIPLAYER', 'JOIN_ADDR'):
@@ -348,6 +391,8 @@ def run(port, api, rel, pk):
     gtxt = flog(G, 'rig.log', rpos)
     refusal = [l for l in gtxt.splitlines() if 'modset refusal' in l or 'REJ_MODSET' in l]
     check('guest refused (MODSET), the box shows the host mods', bool(refusal) and (X_ID in box or 'Global cooldown' in box), f'refusal {refusal[-1:]}; box {box}')
+    boxtext = box.split('[button')[0]
+    check(f'the box names the missing mod by its display name ("{x_name}"), never by its id', x_name in boxtext and not re.search(r'(?<![\w/-])%s(?![\w/-])' % re.escape(X_ID), boxtext), box)
 
     # the test hook clicks 2 s after the box shows; from here on the test sends NOTHING to the guest until it rejoined.
     # Click time = the loader's "hostmods: get:" line (dsl_hostmods_get started), else box + 2 s.
@@ -376,7 +421,14 @@ def run(port, api, rel, pk):
     act = json.load(open(os.path.join(lrig.idir(G), 'data', 'Mods', 'active.json'))).get('enabled', [])
     gl = session_lines(G)
     info['guest_lines'] = gl
-    check('guest runs X and Y now: active set and mod-set lines equal to the host', X_ID in act and Y_ID in act and gl == hl, f'enabled {act}; guest lines {gl}')
+    check('guest runs X and Y now: active set and mod-set lines equal to the host' + (' (settings lines included)' if SETTINGS else ''),
+          X_ID in act and Y_ID in act and gl == hl and (not SETTINGS or (S_ID in act and s_line in (gl or []))), f'enabled {act}; guest lines {gl}')
+    if SETTINGS:
+        sf = settings_file(G); info['guest_settings_file'] = sf
+        at_load = [l for l in (flog(G, 'dsload.log')).splitlines() if 'settings-demo at load:' in l]
+        info['guest_settings_demo_at_load'] = at_load[-2:]
+        check(f"guest's settings file holds the host's value ({S_SET} = {S_HOST}) and the new process runs with it",
+              (sf or {}).get(S_ID, {}).get(S_SET) == S_HOST and at_load and f'{S_SET}={S_HOST} ' in at_load[-1], f'settings.json {sf}; {at_load[-1:]}')
 
     req = open(os.path.join(rel, 'requests.log')).read().splitlines() if os.path.exists(os.path.join(rel, 'requests.log')) else []
     info['requests'] = req
