@@ -638,6 +638,11 @@ int dsl_apply_mods(const char *const *ids, int n, char *why, size_t cap) {
     char w[300] = ""; if (!why) { why = w; cap = sizeof w; }
     return apply_ids(ids, n, NULL, why, cap);
 }
+/* the same with env lines for the new process ("Get the host's mods": DSMP_REJOIN=...) */
+int dsl_apply_mods_env(const char *const *ids, int n, const char *env, char *why, size_t cap) {
+    char w[300] = ""; if (!why) { why = w; cap = sizeof w; }
+    return apply_ids(ids, n, env, why, cap);
+}
 /* B of a soft restart started from pending.json: once on screen, pending.json becomes active.json */
 static void commit_pending(void) {
     static int done; if (done || dsl_soft_wanted()) return; done = 1;
@@ -946,6 +951,7 @@ void dsl_frame_hook(void) {
     test_frame();
     dsl_rows_frame();
     dsl_update_frame();
+    dsl_hostmods_frame();
     if (dsl_win_frame) dsl_win_frame();
     dsl_progress_frame();
 }

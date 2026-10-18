@@ -1,0 +1,80 @@
+#!/bin/zsh
+# "Get the host's mods" safety test (loader side, no game): the real dsl_hostmods.c + dsl_update.c + Mac install code
+# against a local release server (relserver.py). The breaks it catches: a mod that is not one of ours is downloaded; a
+# download with a wrong sha256 is installed; a failed fix (no release for the host's older version, Apply refused)
+# leaves the guest's mods changed; the plan names the wrong action for a missing / off / older / newer / extra mod.
+# usage: test/update/getmods_test.sh   (output in a new temp folder)
+set -u; cd "${0:A:h}"; H="$PWD"; L="${H:h:h}"
+OUT=$(mktemp -d "${TMPDIR:-/tmp}/getmods_test.XXXXXX"); R=$OUT/root; REL=$OUT/rel; M=$R/loader/mods
+mkdir -p $M $REL $OUT/zips
+fails=0; pass=0
+check() { if eval "$2"; then print "PASS $1"; pass=$((pass+1)); else print "FAIL $1"; fails=$((fails+1)); fi }
+nice -n 19 clang -arch arm64 -O1 -Wall -Wno-unused-function -I$L/src -o $OUT/t getmods_test.c $L/src/dsl_hostmods.c $L/src/dsl_update.c \
+  $L/src/dsl_json.c $L/start/mac/dsl_update_mac.c || exit 1
+
+modjson() { print -r -- "{\"id\":\"$1\",\"name\":\"$1 name\",\"version\":\"$2\",\"scope\":\"${3:-gameplay}\"}"; }
+inst() { mkdir -p $M/$1; modjson $1 $2 ${3:-gameplay} > $M/$1/mod.json; }
+# release <repo> <id> <ver> [BAD_SHA]: tag <id>-v<ver>, asset <id>-<ver>.zip holding <id>/mod.json
+release() {
+  local s=$OUT/zips/$2-$3; mkdir -p $s/$2; modjson $2 $3 > $s/$2/mod.json
+  local d=$REL/$1/$2-v$3; mkdir -p $d; (cd $s && zip -qr $d/$2-$3.zip $2); [[ -n ${4:-} ]] && touch $d/$4
+}
+inst hell-difficulty 0.1.4; inst custom-modes 0.2.0; inst foo 1.0.0; inst multiplayer 0.1.13; inst comfy 1.0.0 client
+release AmfiLogos/ds_modloader gcd-cdr 0.1.4
+release AmfiLogos/ds_modloader gcd-cdr 0.1.5 BAD_SHA
+release AmfiLogos/ds_modloader gcd-cdr 0.1.6
+release AmfiLogos/ds_custommodes custom-modes 0.2.0
+mkdir -p $REL/evil/evil/evil-v1.0.0; print x > $REL/evil/evil/evil-v1.0.0/evil-1.0.0.zip
+
+PORT=$((20000 + RANDOM % 20000))
+python3 $H/relserver.py $REL $PORT & SRV=$!
+trap 'kill $SRV 2>/dev/null' EXIT
+for i in {1..50}; do curl -s -o /dev/null http://127.0.0.1:$PORT/repos/x/y/releases && break; sleep 0.1; done
+[[ -f $REL/requests.log ]] && mv $REL/requests.log $OUT/probe.log    # the readiness probe is not a loader request
+export DSML_ROOT=$R DSL_UPDATE=0 DSL_UPDATE_API=http://127.0.0.1:$PORT HM_ON=",custom-modes,foo,multiplayer,comfy," HM_EN=",custom-modes,foo,multiplayer,comfy,hell-difficulty,"
+host() { print -r -- "$1" > $OUT/host.txt; }
+ver() { sed -n 's/.*"version":"\([^"]*\)".*/\1/p' $M/$1/mod.json 2>/dev/null; }
+reqs() { cat $REL/requests.log 2>/dev/null; }
+
+# 1 plan: every kind of row; a mod that is not ours = not_official, button off
+host $'gcd-cdr@0.1.4:aa\nhell-difficulty@0.1.4\ncustom-modes@0.1.9\nevil@1.0.0\nmultiplayer@0.1.13'
+p=$($OUT/t plan $OUT/host.txt 0 2>/dev/null)
+act() { print -r -- "$p" | python3 -c "import json,sys; d=json.loads(sys.stdin.read().split('\n',1)[1]); print({r['id']:r['action'] for r in d['rows']}.get('$1'), d['can_fix'])"; }
+check "plan: missing official mod = download" '[[ $(act gcd-cdr) == "download 0" ]]'
+check "plan: installed but off = turn_on" '[[ $(act hell-difficulty) == "turn_on 0" ]]'
+check "plan: mine newer than the host = host_older" '[[ $(act custom-modes) == "host_older 0" ]]'
+check "plan: not one of ours = not_official, can_fix 0" '[[ $(act evil) == "not_official 0" ]]'
+check "plan: my extra gameplay mod = turn_off; multiplayer and client mods never rows" '[[ $(act foo) == "turn_off 0" && $(act multiplayer) == "None 0" && $(act comfy) == "None 0" ]]'
+host $'hell-difficulty@0.1.5\ncustom-modes@0.2.0\nfoo@1.0.0'
+p=$($OUT/t plan $OUT/host.txt 0 2>/dev/null); check "plan: mine older = update, equal and on = same, button on" '[[ $(act hell-difficulty) == "update 1" && $(act custom-modes) == "same 1" ]]'
+
+# 2 get with a mod that is not ours: refused before any request
+host $'gcd-cdr@0.1.4\nevil@1.0.0'
+r=$($OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "not official: refused, nothing requested, nothing installed" '[[ "$r" == "GET -1 "* ]] && [[ -z "$(reqs)" ]] && [[ ! -e $M/gcd-cdr && ! -e $M/evil ]]'
+
+# 3 the host's older version has no release: fails, nothing installed (gcd-cdr was downloaded first but not installed)
+host $'gcd-cdr@0.1.4\nhell-difficulty@0.1.4\ncustom-modes@0.1.9'
+r=$($OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "host older, no release: failed, says the host should update, mods unchanged" '[[ "$r" == *"STATE -1"* && "$r" == *"The host should update it"* && ! -e $M/gcd-cdr && $(ver custom-modes) == 0.2.0 && "$r" != *APPLY* ]]'
+
+# 4 wrong sha256: never installed, never kept under the asset name
+host $'gcd-cdr@0.1.5'
+r=$($OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "wrong sha256: failed, not installed, no .zip kept" '[[ "$r" == *"STATE -1"* && ! -e $M/gcd-cdr && ! -e $R/update/hostmods/dl/gcd-cdr-0.1.5.zip && "$r" != *APPLY* ]]'
+
+# 5 the fix: download + install + Apply with the host's ids + my client mods + multiplayer + the env line
+host $'gcd-cdr@0.1.4\nhell-difficulty@0.1.4\ncustom-modes@0.2.0'
+r=$($OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "fix: installed at the host's version, Apply = host ids + client + multiplayer, foo off, env passed" \
+  '[[ "$r" == *"STATE 3"* && $(ver gcd-cdr) == 0.1.4 && "$r" == *"APPLY gcd-cdr,hell-difficulty,custom-modes,"* && "$r" == *multiplayer* && "$r" == *comfy* && "$r" != *foo* && "$r" == *"ENV DSMP_REJOIN=ip|10.0.0.2|7777"* ]]'
+check "only official release URLs were requested" '! reqs | grep -v -E "^GET /(repos/AmfiLogos/(ds_modloader|ds_custommodes)/releases|dl/AmfiLogos/(ds_modloader|ds_custommodes)/[a-z-]+-v[0-9.]+/[a-z-]+-[0-9.]+\.zip)[? ]" | grep -q .'
+
+# 6 Apply refused after the install: rolled back (gcd-cdr back to 0.1.4)
+export HM_ON=",custom-modes,gcd-cdr,hell-difficulty,multiplayer,comfy,"
+host $'gcd-cdr@0.1.6\nhell-difficulty@0.1.4\ncustom-modes@0.2.0'
+r=$(HM_APPLY_REFUSE=1 $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "Apply refused: install rolled back, the old version is back" '[[ "$r" == *"STATE -1"* && $(ver gcd-cdr) == 0.1.4 ]]'
+
+print "== $pass passed, $fails failed (output $OUT)"
+exit $fails

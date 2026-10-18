@@ -62,6 +62,19 @@ const char *json_str(const JNode *obj, const char *key);  /* NULL if missing / n
 /* auto-update (dsl_update.c) */
 void dsl_update_start(void);                 /* after the modules' init: check thread */
 void dsl_update_frame(void);                 /* every frame (title corner, confirm, the starter's notice) */
+/* dsl_update.c helpers for "Get the host's mods" (any thread) */
+const char *dsl_update_mod_repo(const char *id);   /* the official repo of a mod id (MOD_REPOS); NULL = not an official mod */
+int dsl_update_ready(void);                        /* 1 = ROOT/update known (downloads possible in this start) */
+const char *dsl_update_dir(void);                  /* ROOT/update ("" = unknown) */
+int dsl_update_vcmp(const char *a, const char *b); /* "0.1.10" > "0.1.9": -1 / 0 / 1 */
+/* exact official release: tag "<id>-v<ver>", asset "<id>-<ver>.zip" + its sha256. 0 found, 1 none, -1 no answer / not official */
+int dsl_update_find_mod_release(const char *id, const char *ver, char *url, size_t ucap, char *asset, size_t acap, char sha[65]);
+int dsl_update_fetch(const char *url, const char *asset, const char *sha, const char *sub, char *out, size_t n);   /* ROOT/update/<sub>/<asset>, sha256 checked; 0 = ok */
+/* "Get the host's mods" (dsl_hostmods.c; its exports dsl_hostmods_plan / _get / _state are for the multiplayer mod) */
+void dsl_hostmods_frame(void);               /* main thread, every frame (dsl_reg.c) */
+/* dsl_reg.c */
+int dsl_apply_mods_env(const char *const *ids, int n, const char *env, char *why, size_t cap);   /* Apply + env lines for the new process */
+void dsl_mods_rescan(void);                  /* read the mods folder again (a mod installed while the game runs) */
 /* soft restart (dsl_soft.c) */
 void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is edited */
 void dsl_soft_install(void);                 /* after il2cpp_init */

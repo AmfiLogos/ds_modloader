@@ -109,10 +109,10 @@ static void settings_save(void) {
 }
 
 /* ------------------------------------------------------------------ GitHub (thread) */
-static JNode *releases(const char *repo, const char *tag_for_file) {
+static JNode *releases_n(const char *repo, const char *tag_for_file, int per_page) {
     const char *api = getenv("DSL_UPDATE_API"); if (!api || !*api) api = "https://api.github.com";
     char url[600], f[1200], cache[1100];
-    snprintf(url, sizeof url, "%s/repos/%s/releases?per_page=15", api, repo);
+    snprintf(url, sizeof url, "%s/repos/%s/releases?per_page=%d", api, repo, per_page);
     upath(cache, sizeof cache, "cache"); dsl_uos_mkdirs(cache);
     snprintf(f, sizeof f, "%s/%s.json", cache, tag_for_file);
     if (dsl_uos_fetch(url, f)) { dsl_log("update: %s: no answer (network or rate limit); next start tries again", repo); return NULL; }
@@ -120,8 +120,9 @@ static JNode *releases(const char *repo, const char *tag_for_file) {
     if (!j || j->t != JN_ARR) { dsl_log("update: %s: unexpected answer", repo); json_free(j); return NULL; }
     return j;
 }
+static JNode *releases(const char *repo, const char *tag_for_file) { return releases_n(repo, tag_for_file, 15); }
 /* the sha256 of an asset: GitHub's "digest" or a "<name>.sha256" asset of the same release */
-static int asset_sha(JNode *rel, JNode *asset, char out[65]) {
+static int asset_sha_f(JNode *rel, JNode *asset, char out[65], const char *tmp) {
     const char *d = json_str(asset, "digest");
     if (d && !strncmp(d, "sha256:", 7) && strlen(d + 7) == 64) { snprintf(out, 65, "%s", d + 7); return 0; }
     const char *nm = json_str(asset, "name"); if (!nm) return -1;
@@ -130,7 +131,7 @@ static int asset_sha(JNode *rel, JNode *asset, char out[65]) {
     for (JNode *a = as ? as->child : NULL; a; a = a->next) {
         const char *n2 = json_str(a, "name"), *u = json_str(a, "browser_download_url");
         if (!n2 || !u || strcmp(n2, want)) continue;
-        char f[1200]; upath(f, sizeof f, "cache/sha.txt");
+        char f[1200]; upath(f, sizeof f, tmp);
         if (dsl_uos_fetch(u, f)) return -1;
         char *b = slurp_(f, 4096); int ok = 0;
         if (b) { size_t k = 0; while (k < 64 && ((b[k] >= '0' && b[k] <= '9') || (b[k] >= 'a' && b[k] <= 'f') || (b[k] >= 'A' && b[k] <= 'F'))) k++;
@@ -139,6 +140,7 @@ static int asset_sha(JNode *rel, JNode *asset, char out[65]) {
     }
     return -1;
 }
+static int asset_sha(JNode *rel, JNode *asset, char out[65]) { return asset_sha_f(rel, asset, out, "cache/sha.txt"); }
 static int usable(JNode *rel) {
     JNode *d = json_get(rel, "draft"), *p = json_get(rel, "prerelease");
     return !(d && d->t == JN_BOOL && d->b) && !(p && p->t == JN_BOOL && p->b);
@@ -214,8 +216,8 @@ static void check_mods(void) {
     }
 }
 /* download one file to ROOT/update/dl/<asset>, sha256 checked; 0 = ok */
-static int download(const char *url, const char *asset, const char *sha, char *out, size_t n) {
-    char dl[1100], part[1300]; upath(dl, sizeof dl, "dl"); dsl_uos_mkdirs(dl);
+static int download_to(const char *url, const char *asset, const char *sha, const char *sub, char *out, size_t n) {
+    char dl[1100], part[1300]; upath(dl, sizeof dl, sub); dsl_uos_mkdirs(dl);
     snprintf(out, n, "%s/%s", dl, asset); snprintf(part, sizeof part, "%s.part", out);
     if (dsl_uos_exists(out)) { char h[65]; if (!dsl_uos_sha256(out, h) && !strcmp(h, sha)) return 0; }
     if (dsl_uos_fetch(url, part)) { dsl_log("update: download of %s failed; next start tries again", asset); return -1; }
@@ -227,6 +229,43 @@ static int download(const char *url, const char *asset, const char *sha, char *o
     dsl_log("update: %s downloaded, sha256 ok", asset);
     return 0;
 }
+static int download(const char *url, const char *asset, const char *sha, char *out, size_t n) { return download_to(url, asset, sha, "dl", out, n); }
+
+/* ------------------------------------------------------------------ for "Get the host's mods" (dsl_hostmods.c, any thread) */
+const char *dsl_update_mod_repo(const char *id) {
+    for (size_t k = 0; id && k < sizeof MOD_REPOS / sizeof MOD_REPOS[0]; k++) if (!strcmp(MOD_REPOS[k].id, id)) return MOD_REPOS[k].repo;
+    return NULL;
+}
+int dsl_update_ready(void) { return udir[0] != 0; }
+/* the exact official release of a mod version: tag "<id>-v<ver>" with the asset "<id>-<ver>.zip" and its sha256 (GitHub
+   "digest" or "<asset>.sha256"). 0 = found, 1 = no such release (or no sha256), -1 = no answer / not an official id */
+int dsl_update_find_mod_release(const char *id, const char *ver, char *url, size_t ucap, char *asset, size_t acap, char sha[65]) {
+    const char *repo = dsl_update_mod_repo(id); if (!repo || !udir[0] || !ver || !*ver) return -1;
+    char cf[200]; snprintf(cf, sizeof cf, "hostmods_%s", repo); for (char *c = cf; *c; c++) if (*c == '/') *c = '_';
+    JNode *rs = releases_n(repo, cf, 100); if (!rs) return -1;
+    char want_tag[160], want_asset[160]; snprintf(want_tag, sizeof want_tag, "%s-v%s", id, ver); snprintf(want_asset, sizeof want_asset, "%s-%s.zip", id, ver);
+    int r = 1;
+    for (JNode *rel = rs->child; rel && r == 1; rel = rel->next) {
+        const char *tag = json_str(rel, "tag_name"); if (!tag || strcmp(tag, want_tag) || !usable(rel)) continue;
+        JNode *as = json_get(rel, "assets");
+        for (JNode *a = as ? as->child : NULL; a; a = a->next) {
+            const char *n = json_str(a, "name"), *u = json_str(a, "browser_download_url");
+            if (!n || !u || strcmp(n, want_asset)) continue;
+            char s[65]; if (asset_sha_f(rel, a, s, "cache/hostmods_sha.txt")) { dsl_log("update: %s %s: %s has no sha256: not used", id, ver, n); break; }
+            snprintf(url, ucap, "%s", u); snprintf(asset, acap, "%s", n); memcpy(sha, s, 65); r = 0; break;
+        }
+    }
+    json_free(rs);
+    if (r == 1) dsl_log("update: %s %s: no release %s with %s in %s", id, ver, want_tag, want_asset, repo);
+    return r;
+}
+/* download into ROOT/update/<sub>/<asset>, sha256 checked (a wrong one is never kept under the asset's name); 0 = ok */
+int dsl_update_fetch(const char *url, const char *asset, const char *sha, const char *sub, char *out, size_t n) {
+    if (!udir[0]) return -1;
+    return download_to(url, asset, sha, sub, out, n);
+}
+const char *dsl_update_dir(void) { return udir; }
+int dsl_update_vcmp(const char *a, const char *b) { return vcmp(a, b); }
 /* what the starter installs at the next start (start/dsl_update_start.c reads it) */
 static void ready_write(void) {
     char b[8192]; size_t k = 0; int c = consent || S.dl_wanted;
