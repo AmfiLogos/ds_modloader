@@ -13,10 +13,10 @@
 // 2. "max_units" (int 4..8, default 4): units on one expedition. The game's value is the static int
 //    Refactor.SystemVar.Campaign.<PlayerPartyMax>k__BackingField, set by Campaign.Init from GameSystemTable row
 //    GAMESYSTEM_Campaign_PlayerPartyMax (4.0). Every reader inlines the static (no getter call), so Campaign.Init is
-//    hooked and the static set to the setting after it. Readers that index fixed 4-panel prefabs (the Inventory,
-//    Status, Skill and Summary windows of selected units) run with the stock value (party_stock_enter/leave), so they
-//    show 4 units at most as before instead of an index error; the expedition risk "fewer units than the maximum"
-//    keeps the stock threshold. The expedition planning screens grow to the setting in zetu_ui.c.
+//    hooked and the static set to the setting after it. Every reader then uses the setting: the expedition risk
+//    "fewer units than the maximum" (ExpeditionPlanSummaryCalculator.Calculate) included. The screens built with 4
+//    panels / portraits (expedition planning, the Inventory / Status / Skill windows of selected units, the result
+//    screen) grow to the setting in zetu_ui.c.
 #include "dsl_sdk.h"
 #include "zetu_settings.h"
 #include <stdint.h>
@@ -48,38 +48,16 @@ static uint8_t my_bypass(void *self, void *key, const void *mi) {
 static void *k_campaign, *f_party;
 static void (*fs_get)(void *field, void *out), (*fs_set)(void *field, void *in);
 static void (*orig_campaign_init)(const void *mi);
-static int party_stock = 4, party_depth;
+static int party_stock = 4;                             /* the table value (the count text "/4" of zetu_ui.c) */
 
 static int party_get(void) { int32_t v = 0; fs_get(f_party, &v); return v; }
 static void party_put(int v) { int32_t x = v; fs_set(f_party, &x); }
-/* a reader built for the stock count runs: the stock value until it returns (main thread; nests) */
-static void party_stock_enter(void) { if (party_depth++ == 0) party_put(party_stock); }
-static void party_stock_leave(void) { if (--party_depth == 0) party_put(s_max_units); }
-
 static void my_campaign_init(const void *mi) {
     orig_campaign_init(mi);
     int v = party_get();
     if (v > 0 && v != s_max_units) party_stock = v;
     party_put(s_max_units);
     H->log(ME, "Campaign.Init: PlayerPartyMax %d (table) -> %d", v, s_max_units);
-}
-
-/* wrappers: the same body for each window method, by argument count */
-#define WRAP0(name) static void (*o_##name)(void *, const void *); \
-    static void w_##name(void *a, const void *mi) { party_stock_enter(); o_##name(a, mi); party_stock_leave(); }
-#define WRAP1(name, T) static void (*o_##name)(void *, T, const void *); \
-    static void w_##name(void *a, T b, const void *mi) { party_stock_enter(); o_##name(a, b, mi); party_stock_leave(); }
-WRAP0(inv_set_unit_ui)
-WRAP1(status_refresh, void *)
-WRAP0(status_clear)
-WRAP1(skill_refresh, void *)
-WRAP1(summary_refresh, int32_t)
-/* Calculate returns ExpeditionPlanSummaryData, a 24-byte struct: returned through memory (arm64 x8, Win64 hidden
-   first argument), so the wrapper returns the same struct type and the compiler passes the result address on */
-typedef struct { void *rows, *risk_messages, *risks; } plan_summary;
-static plan_summary (*o_risk_calc)(void *, void *, void *, void *, const void *);
-static plan_summary w_risk_calc(void *self, void *sel, void *all, void *slots, const void *mi) {
-    party_stock_enter(); plan_summary r = o_risk_calc(self, sel, all, slots, mi); party_stock_leave(); return r;
 }
 
 static void *nested_class(const char *ns, const char *outer, const char *name) {
@@ -157,14 +135,6 @@ static int party_init(void) {
     }
     cinit(k_campaign);
     if (H->hook(ME, init, (void *)my_campaign_init, (void **)&orig_campaign_init)) return 11;
-    const char *ui = "Refactor.UI";
-    if (hook_named(ui, "EntityInventoryPresenter", "SetUnitUI", 0, (void *)w_inv_set_unit_ui, (void **)&o_inv_set_unit_ui)
-        || hook_named(ui, "EntityStatusUIPresenter", "RefreshSelectedEntityUI", 1, (void *)w_status_refresh, (void **)&o_status_refresh)
-        || hook_named(ui, "EntityStatusUIPresenter", "ClearShowingUnits", 0, (void *)w_status_clear, (void **)&o_status_clear)
-        || hook_named(ui, "EntitySkillUIPresenter", "RefreshSelectedEntityUI", 1, (void *)w_skill_refresh, (void **)&o_skill_refresh)
-        || hook_named(ui, "EntitySummaryUIPresenter", "RefreshSummary", 1, (void *)w_summary_refresh, (void **)&o_summary_refresh)
-        || hook_named(ui, "ExpeditionPlanSummaryCalculator", "Calculate", 3, (void *)w_risk_calc, (void **)&o_risk_calc))
-        return 12;
     int v = party_get();                               /* Campaign.Init may have run already (tables loaded) */
     if (v > 0) { if (v != s_max_units) party_stock = v; party_put(s_max_units); }
     H->log(ME, "units in the dungeon: %d (game value now %d)", s_max_units, v);

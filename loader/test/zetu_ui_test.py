@@ -4,9 +4,10 @@
 Never the owner's game, saves or prefs: the seed save (2026-10-11 backup, 7 units) is loaded from a copy in <out>.
 
   zetu_ui_test.py run [out]          the whole proof (below); exit 1 on a failed check
+  zetu_ui_test.py run4 [out]         max_units 4: the module changes nothing, a stock 4-unit expedition works
   zetu_ui_test.py up [out]           lease + start + load the save, then hold until `down` (manual look)
   zetu_ui_test.py cmd '<json>'       rig socket command to the running copy
-  zetu_ui_test.py probe '<line>'     zetu-probe request (recruit | select_all | toggle N | result)
+  zetu_ui_test.py probe '<line>'     zetu-probe request (recruit | select_all | toggle N | result | risks | tree C d)
   zetu_ui_test.py down
 
 Real breaks the run catches (owner rule: 8 units work without UI overlap or crashes):
@@ -14,7 +15,8 @@ Real breaks the run catches (owner rule: 8 units work without UI overlap or cras
  2  the supplies step has a panel per selected unit (8), inside the 4 stock panels' row, none overlapping
  3  the bottom portraits of the region step: 8 shown, none overlapping; the count text says "/8"
  4  the 8 units arrive in the dungeon
- 5  Inventory / Status / Skill windows with all 8 selected: no exception in player.log
+ 5  Inventory / Status / Skill windows with all 8 selected: 8 panels each, inside the screen, no exception
+ 7  the risk "Insufficient units selected" uses the setting: shown for 4 of 8, not for 8
  6  the result screen lists the 8 units (portraits shown, none overlapping)
 Shots: <out>/*.png, also copied to $ZETU_SHOTS when set."""
 import json, os, re, shutil, subprocess, sys, time
@@ -68,6 +70,10 @@ def shot(out, name):
     if ok and os.environ.get('ZETU_SHOTS'):
         os.makedirs(os.environ['ZETU_SHOTS'], exist_ok=True); shutil.copy2(p, os.path.join(os.environ['ZETU_SHOTS'], name + '.png'))
     return p if ok else ''
+def risks():
+    mark = len(dlog()); probe('risks')
+    return [l.split('risk row ', 1)[1] for l in dlog()[mark:].splitlines() if 'risk row ' in l]
+LOW = 'Insufficient units selected'
 def units(m):
     u = cmd({'cmd': 'list_units', 'map': m}).get('units') or []
     return [x for x in u if x.get('faction') == 1 and not x.get('dead')]
@@ -93,7 +99,7 @@ def disk_free_gb():
     s = os.statvfs(H); return s.f_bavail * s.f_frsize / 1e9
 
 
-def up(out):
+def up(out, mx=8):
     """mods of this tree + the probe; profile with zetu-suite max_units 8; copy Q started hidden; the seed save loaded"""
     if r.alive(r.read_pid(X)): raise SystemExit('copy Q already running')
     if disk_free_gb() < 30: raise SystemExit('less than 30 GB free disk')
@@ -108,7 +114,7 @@ def up(out):
                'game_builds': ['25846389'], 'platforms': {'mac-arm64': {'entry': 'zetu-probe.dylib'}}}, open(os.path.join(pd, 'mod.json'), 'w'), indent=1)
     en = ['multiplayer', 'zetu-suite', 'zetu-probe']
     prof = os.path.join(out, 'profile.json')
-    json.dump({'enabled': en, 'order': en, 'settings': {'zetu-suite': {'max_units': 8}}}, open(prof, 'w'))
+    json.dump({'enabled': en, 'order': en, 'settings': {'zetu-suite': {'max_units': mx}}}, open(prof, 'w'))
     for p in ('mp.json', 'dsload.log', 'player.log', 'zetu_probe_req.txt', os.path.join('data', 'Saves'), os.path.join('data', 'SaveHeaderCache.json'),
               os.path.join('data', 'Mods', 'worlds.json'), os.path.join('data', 'Mods', 'save_backups')):
         aside(os.path.join(I, p), out)
@@ -122,8 +128,9 @@ def up(out):
     r.start(X, window=True)
     r.wait_for(X, lambda s: s.get('scene') == 1 and not s.get('busy'), 'title', timeout=900)
     L = dlog()
-    check('setting read: max units 8', 'max units in the dungeon 8' in L, [l for l in L.splitlines() if 'zetu' in l][-5:])
-    check('zetu UI ready', 'zetu-suite' in L and 'expedition UI' in L, [l for l in L.splitlines() if 'zetu-suite' in l][-6:])
+    check('setting read: max units %d' % mx, 'max units in the dungeon %d' % mx in L, [l for l in L.splitlines() if 'zetu' in l][-5:])
+    if mx != 4: check('zetu UI ready', 'zetu-suite' in L and 'expedition UI' in L, [l for l in L.splitlines() if 'zetu-suite' in l][-6:])
+    else: check('max 4: the module changes nothing (no party hook, no UI)', 'Campaign.Init' not in L and 'expedition UI' not in L, [l for l in L.splitlines() if 'zetu-suite' in l][-6:])
     check('probe ready', 'zetu-probe: ready' in L)
     src = os.path.join(out, 'save_in', os.path.basename(SEED)); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(SEED, src)
     mark = len(dlog())
@@ -176,9 +183,18 @@ def run(out):
         base = units(0); log('base units', len(base))
     check('8 player units at the base', len(base) >= 8, len(base))
     g8 = [u['guid'] for u in base[:8]]
+    # ---- a party of 4 with max 8: the game's "Insufficient units selected" risk (its threshold = the setting)
+    log('go', str(teams(action='go'))[:60]); time.sleep(3)
+    teams(action='stock_select', units=','.join(g8[:4])); time.sleep(2)
+    teams(action='stock_next'); time.sleep(3)
+    rk = risks(); S['risks_4'] = rk
+    shot(out, 'expedition_risk_4of8')
+    check('7: 4 of max 8 selected: the low unit count risk shows (Current 4 / Recommended 8)',
+          any(LOW in x and '4' in x and '8' in x for x in rk), rk)
+    teams(action='stock_close'); time.sleep(2)
     # ---- expedition window, region step: 8 selected
-    log('go', teams(action='go')); time.sleep(3)
-    log('select', teams(action='stock_select', units=','.join(g8))); time.sleep(2)
+    log('go', str(teams(action='go'))[:60]); time.sleep(3)
+    teams(action='stock_select', units=','.join(g8)); time.sleep(2)
     L = dlog()
     m = re.findall(r'zetu-suite.*expedition: (\d+) selected', L)
     shot(out, 'expedition_8_select')
@@ -187,7 +203,7 @@ def run(out):
     check('3: portraits 8 in one row, no overlap', re.search(r'portraits: 8 \(4 stock \+ 4 copies\).*, no overlap', L), S['select_line'])
     check('3: count text says (8/8)', re.search(r"count text now '[^']*\(8/8\)'", L), S['select_line'])
     # ---- supplies step
-    log('next', teams(action='stock_next')); time.sleep(3)
+    teams(action='stock_next'); time.sleep(3)
     L = dlog()
     shot(out, 'expedition_8_supplies')
     S['supplies_line'] = [l for l in L.splitlines() if 'zetu-suite' in l and 'supplies' in l][-3:]
@@ -196,6 +212,8 @@ def run(out):
     check('2: supplies step: 8 panels in one row, no overlap', re.search(r'supplies: 8 unit panels .*, no overlap', L), S['supplies_line'])
     check('2: the window is at the supplies step (no crash)', st.get('state') == 1, st)
     check('2: each of the 8 units has its own panel (GetPanelOwner 0..7)', len({p for p in (st.get('panels') or []) if p}) == 8, st.get('panels'))
+    rk = risks(); S['risks_8'] = rk
+    check('7: 8 of max 8 selected: no low unit count risk', not any(LOW in x for x in rk), rk)
     # ---- into the dungeon
     log('accept', teams(action='stock_accept'))
     wait_map(1, 180); time.sleep(8)
@@ -205,9 +223,16 @@ def run(out):
     p0 = len(plog())
     log('probe', probe('select_all')); time.sleep(2)
     shot(out, 'dungeon_8_units')
-    for t, n in ((8, 'inventory'), (6, 'status'), (7, 'skill')):
+    for t, n, view in ((8, 'inventory', 'EntityInventoryUI'), (6, 'status', 'EntityStatusUI'), (7, 'skill', 'EntitySkillUI')):
+        mark = len(dlog())
         log('probe', probe('toggle %d' % t)); time.sleep(2.5)
         shot(out, 'dungeon_8_' + n)
+        L = dlog()
+        fit = re.findall(view + r': (\d+) units shown, row scale ([\d.]+), x (-?\d+)\.\.(-?\d+) of (\d+) px', L)
+        S['fit_' + n] = fit[-1] if fit else None
+        check(f'5: {n} window: 8 panels (4 stock + 4 copies)', re.search(view + r': 8 panels \(4 stock \+ 4 copies\)', L), [l for l in L.splitlines() if view in l][-3:])
+        check(f'5: {n} window shows the 8 selected units inside the screen',
+              fit and fit[-1][0] == '8' and int(fit[-1][2]) >= 0 and int(fit[-1][3]) <= int(fit[-1][4]), fit[-1:] or L[mark:][-300:])
         log('probe', probe('toggle %d' % t)); time.sleep(1)
     P = plog()[p0:]
     exc = [l for l in P.splitlines() if 'Exception' in l]
@@ -225,9 +250,33 @@ def run(out):
     return S, g0
 
 
+def run4(out):
+    """max_units 4: the module does nothing; a stock 4-unit expedition still works"""
+    S = {}
+    g0 = up(out, 4)
+    cmd({'cmd': 'set_speed', 'speed': 1})
+    if units(1):
+        d = units(1); cmd({'cmd': 'trn_changemap', 'from': 1, 'to': 0, 'guids': ','.join(u['guid'] for u in d)}); wait_map(0, 120); time.sleep(3)
+    base = units(0); g4 = [u['guid'] for u in base[:4]]
+    teams(action='go'); time.sleep(3)
+    teams(action='stock_select', units=','.join(g4 + [u['guid'] for u in base[4:6]])); time.sleep(2)   # 6 clicked: the game keeps 4
+    st = teams(action='state').get('stock') or {}
+    check('max 4: the game caps the party at 4', st.get('units') == 4, st.get('units'))
+    teams(action='stock_next'); time.sleep(3)
+    shot(out, 'expedition_4_stock_supplies')
+    st = teams(action='state').get('stock') or {}
+    check('max 4: supplies step with the 4 stock panels', st.get('state') == 1 and len({p for p in (st.get('panels') or []) if p}) == 4, st)
+    teams(action='stock_accept'); wait_map(1, 180); time.sleep(8)
+    check('max 4: 4 units in the dungeon', len(units(1)) == 4, len(units(1)))
+    probe('select_all'); time.sleep(2); probe('toggle 8'); time.sleep(2.5); shot(out, 'dungeon_4_stock_inventory'); probe('toggle 8')
+    S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
+    check('max 4: no exception in player.log', not S['exceptions'], S['exceptions'][:4])
+    return S, g0
+
+
 def main():
     a = sys.argv[1:] or ['run']
-    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'up') else '~/ds_launcher/loader/test_env/l1_out/zetu_ui')
+    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'run4', 'up') else '~/ds_launcher/loader/test_env/l1_out/zetu_ui')
     if a[0] == 'cmd': print(json.dumps(cmd(json.loads(a[1]), 120))); return
     if a[0] == 'probe': print(probe(a[1])); return
     if a[0] == 'req': request(json.loads(a[1])); return
@@ -247,6 +296,8 @@ def main():
             t0 = time.time()
             while not os.path.exists(STOPF) and time.time() - t0 < 3 * 3600 and r.alive(r.read_pid(X)): time.sleep(2)
             if os.path.exists(STOPF): aside(STOPF, out)
+        elif a[0] == 'run4':
+            S, g0 = run4(out)
         else:
             S, g0 = run(out)
     except Exception as e:
