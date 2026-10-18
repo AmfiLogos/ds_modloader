@@ -9,6 +9,7 @@
 //    bypass for its "you need X, continue anyway?" text and the tooltip's red line. Here HasEquipBypass answers yes
 //    for every "Equipment_*" key. Prerequisites, levels, skill points, ammo (arrows) and the weapon passives
 //    (Healing Touch, Two-Hand Grip, Shield Handling) stay stock: they do not go through this method.
+//    A cast with an EMPTY main hand skips only the durability cost of that cast (section 1b: nothing to wear).
 // 2. "max_units" (int 4..8, default 4): units on one expedition. The game's value is the static int
 //    Refactor.SystemVar.Campaign.<PlayerPartyMax>k__BackingField, set by Campaign.Init from GameSystemTable row
 //    GAMESYSTEM_Campaign_PlayerPartyMax (4.0). Every reader inlines the static (no getter call), so Campaign.Init is
@@ -96,6 +97,49 @@ static int hook_named(const char *ns, const char *cls, const char *m, int argc, 
     return r;
 }
 
+/* ------------------------------------------------------------------ 1b. empty main hand: no durability action
+   A skill with a durability cost (SkillTable DurabilityCost / ProperDurabilityEquip) wears the item in that slot:
+   Refactor.Combat.DurabilityCondition.<OnSuccessCondition>d__2.MoveNext yields Execution.AddStatus(<item in the slot>,
+   Durability, -cost). With the weapon requirement gone a unit can cast with an EMPTY main hand: the item is null, the
+   yielded StatusExecutionData has Target null and the game's FX (StatusResultFX.HandleFX) throws a
+   NullReferenceException at every such cast. Here that one yield is dropped (nothing to wear); with an item in the
+   slot nothing changes. Depends only on game state (same result on host and guests). */
+static uint8_t (*orig_dur_next)(void *it, const void *mi);
+static int32_t off_state = -1, off_current = -1, off_target = -1;
+static void *k_status_exec;
+static void *(*obj_class)(void *);
+static uint8_t (*is_subclass)(void *, void *, uint8_t);
+static int nohand_n;
+static uint8_t my_dur_next(void *it, const void *mi) {
+    uint8_t r = orig_dur_next(it, mi);
+    if (!r) return r;
+    void *cur = *(void **)((char *)it + off_current);
+    if (!cur) return r;
+    void *k = obj_class(cur);
+    if ((k == k_status_exec || is_subclass(k, k_status_exec, 0)) && !*(void **)((char *)cur + off_target)) {
+        *(void **)((char *)it + off_current) = NULL;
+        *(int32_t *)((char *)it + off_state) = -1;              /* finished, as after its single yield */
+        if (++nohand_n <= 5) H->log(ME, "durability cost with an empty slot skipped (#%d)", nohand_n);
+        return 0;
+    }
+    return r;
+}
+static int nohand_init(void) {
+    void *it = nested_class("Refactor.Combat", "DurabilityCondition", "<OnSuccessCondition>d__2");
+    k_status_exec = H->find_class("Refactor.Combat", "StatusExecutionData");
+    *(void **)&obj_class = H->il2cpp_fn("il2cpp_object_get_class");
+    *(void **)&is_subclass = H->il2cpp_fn("il2cpp_class_is_subclass_of");
+    void *mi = it ? H->find_method(it, "MoveNext", 0) : NULL;
+    void *fn = mi ? H->method_address(mi) : NULL;
+    if (it) { off_state = H->field_offset(it, "<>1__state"); off_current = H->field_offset(it, "<>2__current"); }
+    if (k_status_exec) off_target = H->field_offset(k_status_exec, "<Target>k__BackingField");
+    if (!fn || !k_status_exec || !obj_class || !is_subclass || off_state <= 0 || off_current <= 0 || off_target <= 0) {
+        H->log(ME, "DurabilityCondition iterator not found (class %p MoveNext %p, offsets %d %d %d)", it, fn, off_state, off_current, off_target);
+        return 3;
+    }
+    return H->hook(ME, fn, (void *)my_dur_next, (void **)&orig_dur_next) ? 4 : 0;
+}
+
 #include "zetu_ui.c"
 
 static int party_init(void) {
@@ -137,6 +181,7 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     host->log(self, "settings: skills without weapon requirement %s, max units in the dungeon %d",
               s_free_skills ? "on" : "off", s_max_units);
     if (s_free_skills && hook_named("Refactor", "SkillReader", "HasEquipBypass", 1, (void *)my_bypass, (void **)&orig_bypass)) return 2;
+    if (s_free_skills) { int r = nohand_init(); if (r) return r; }
     if (s_max_units != 4) { int r = party_init(); if (r) return r; }   /* 4 = the stock table value: nothing to change */
     return 0;
 }
