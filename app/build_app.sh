@@ -85,6 +85,12 @@ cat > "$C/Info.plist" <<PLIST
 </plist>
 PLIST
 plutil -lint "$C/Info.plist" >/dev/null
+# Local Network alert text (macOS 15+): the game runs in this app's process (execv), same text as its copy
+while IFS=$'\t' read -r lang text; do
+  [[ $lang == en ]] && plutil -replace NSLocalNetworkUsageDescription -string "$text" "$C/Info.plist"
+  mkdir -p "$C/Resources/$lang.lproj"
+  print -r -- "\"NSLocalNetworkUsageDescription\" = \"$text\";" > "$C/Resources/$lang.lproj/InfoPlist.strings"
+done < "$REPO/core/src/lan_usage.tsv"
 
 # 3. ad-hoc signatures inside-out
 xattr -cr "$TMP"

@@ -4,6 +4,9 @@
 //!     the stub starts (bundle id com.CanOpener.Dungeon-Settlers.Modded, the app icon, ad-hoc signed).
 //!     stdout: "BUILD <id>" and "PLAY <path>" as the last two lines. Already present = printed at once.
 //!     Error: last line "ERROR <message for the player>", exit 1.
+//!   dsml-helper ident --app <play copy>
+//!     Gives a copy made before copy_mac::own_identity (Local Network privacy) its own identity, in place, and
+//!     signs it again. stdout: "IDENT <COPY_IDENT>" when done (also when nothing had to change).
 //! Steam's install is only READ. Replaced folders are moved to <ROOT>/retired, never deleted.
 use anyhow::{anyhow, bail, Context, Result};
 use dsml_core::copy_mac::{self, CopyOptions};
@@ -29,6 +32,8 @@ struct PlayMarker {
     build: String,
     bundle_id: String,
     icon_sha256: String,
+    #[serde(default)]
+    ident: u32,
     created: u64,
 }
 
@@ -77,7 +82,7 @@ fn icon_sha(icon: Option<&Path>) -> Result<String> {
 fn play_is_complete(paths: &Paths, build: &str, icon: Option<&Path>) -> bool {
     let Ok(b) = std::fs::read(marker_path(paths, build)) else { return false };
     let Ok(m) = serde_json::from_slice::<PlayMarker>(&b) else { return false };
-    m.build == build && m.bundle_id == BUNDLE_ID && Some(m.icon_sha256) == icon_sha(icon).ok()
+    m.build == build && m.bundle_id == BUNDLE_ID && m.ident == copy_mac::COPY_IDENT && Some(m.icon_sha256) == icon_sha(icon).ok()
         && play_app(paths, build).join(copy_mac::GAME_EXE).exists()
         && paths.game_dir(build).join("base.json").exists()
 }
@@ -102,18 +107,44 @@ fn build_play(paths: &Paths, build: &str, icon: Option<&Path>) -> Result<PathBuf
         std::fs::copy(i, &dst)?;
         run(Command::new("/usr/bin/plutil").args(["-replace", "CFBundleIconFile", "-string", "AppIcon"]).arg(&pl))?;
     }
+    copy_mac::own_identity(&app, BUNDLE_ID)?;
     run(Command::new("/usr/bin/xattr").arg("-cr").arg(&app))?;
-    // the game binary loses Steam's hardened runtime so DYLD_INSERT_LIBRARIES can load the loader
-    run(Command::new("/usr/bin/codesign").args(["-f", "-s", "-"]).arg(c.join("MacOS/Dungeon Settlers")))?;
-    run(Command::new("/usr/bin/nice").args(["-n", "10", "/usr/bin/codesign", "-f", "-s", "-"]).arg(&app))?;
-    run(Command::new("/usr/bin/codesign").arg("-v").arg(&app)).context("signature check of the new copy")?;
+    sign(&app)?;
 
     let pd = gd.join(PLAY_DIR);
     if pd.exists() { paths.retire(&pd, &format!("{build}-{PLAY_DIR}"))?; }
     std::fs::rename(&tmp, &pd)?;
-    let m = PlayMarker { build: build.into(), bundle_id: BUNDLE_ID.into(), icon_sha256: icon_sha(icon)?, created: now_secs() };
+    let m = PlayMarker { build: build.into(), bundle_id: BUNDLE_ID.into(), icon_sha256: icon_sha(icon)?,
+                         ident: copy_mac::COPY_IDENT, created: now_secs() };
     write_atomic(&marker_path(paths, build), &serde_json::to_vec_pretty(&m)?)?;
     Ok(play_app(paths, build))
+}
+
+/// The game binary loses Steam's hardened runtime so DYLD_INSERT_LIBRARIES can load the loader.
+fn sign(app: &Path) -> Result<()> {
+    run(Command::new("/usr/bin/codesign").args(["-f", "-s", "-"]).arg(app.join(copy_mac::GAME_EXE)))?;
+    run(Command::new("/usr/bin/nice").args(["-n", "10", "/usr/bin/codesign", "-f", "-s", "-"]).arg(app))?;
+    run(Command::new("/usr/bin/codesign").arg("-v").arg(app)).context("signature check of the new copy")?;
+    Ok(())
+}
+
+/// `ident`: a pinned copy the stub keeps (copy.json) gets its own identity in place; its marker follows.
+fn ident(app: &Path) -> Result<()> {
+    let pl = plist::Value::from_file(app.join("Contents/Info.plist")).context("read the copy's Info.plist")?;
+    let id = pl.as_dictionary().and_then(|d| d.get("CFBundleIdentifier")).and_then(|v| v.as_string())
+        .ok_or_else(|| anyhow!("the copy has no bundle id"))?.to_string();
+    let changed = copy_mac::own_identity(app, &id)?;
+    // also when a former run changed the copy but could not sign it
+    if changed || !Command::new("/usr/bin/codesign").arg("-v").arg(app).output().map(|o| o.status.success()).unwrap_or(false) {
+        sign(app)?;
+    }
+    let mp = app.parent().and_then(|d| d.parent()).map(|g| g.join(format!("{PLAY_DIR}.json")));
+    if let Some(mp) = mp.filter(|p| p.exists() && app.parent().map(|d| d.ends_with(PLAY_DIR)).unwrap_or(false)) {
+        if let Ok(mut m) = serde_json::from_slice::<PlayMarker>(&std::fs::read(&mp)?) {
+            if m.ident != copy_mac::COPY_IDENT { m.ident = copy_mac::COPY_IDENT; write_atomic(&mp, &serde_json::to_vec_pretty(&m)?)?; }
+        }
+    }
+    Ok(())
 }
 
 /// Folders with verified stock copies of resource files (a file is used only when it equals Steam's seal).
@@ -157,6 +188,17 @@ fn prepare(root: &Path, icon: Option<&Path>) -> Result<(String, PathBuf)> {
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
+    if a.first().map(String::as_str) == Some("ident") {
+        let Some(app) = a.get(2).filter(|_| a.get(1).map(String::as_str) == Some("--app")) else {
+            println!("ERROR usage: dsml-helper ident --app <play copy>");
+            std::process::exit(2);
+        };
+        match ident(Path::new(app)) {
+            Ok(()) => println!("IDENT {}", copy_mac::COPY_IDENT),
+            Err(e) => { eprintln!("dsml-helper: {e:#}"); println!("ERROR {}", format!("{e}").replace('\n', " ")); std::process::exit(1); }
+        }
+        return;
+    }
     let mut root: Option<PathBuf> = None;
     let mut icon: Option<PathBuf> = None;
     let mut i = 1;
