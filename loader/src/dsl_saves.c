@@ -25,6 +25,12 @@
 // game's notice box: which mods, Load / Cancel. Kept per world and mod set (worlds.json "save_warned", dsl_reg.c), so it
 // is asked once. Hooked at EventQueue.AddEvent(LoadCampaignRequested) (no loading screen yet); dsl_world.c asks the same
 // for loads that do not come through the queue.
+// Backup (owner, ZET-U 2026-10-18: "make a backup of the original save before the mod changes it ... with the date; tell
+// the player where"): opt-in per mod, mod.json "save_backup": true next to "save_dependent" (Hell difficulty: no backup).
+// The warning then names the folder, and its Load first makes byte copies of the world's game-save files (the loaded
+// file + every other game save of the same world guid) in <DSML_DATA>/Mods/save_backups/<YYYY-MM-DD_HHMM>_<world>/,
+// next to save_copies/ and never inside a Saves folder (the game lists Saves recursively). Copies, never a move. A copy
+// that fails = the world is NOT loaded, a notice says why. Asked once per world and mod set, so copied once too.
 // Env: DSML_GAME_SAVES (none = this file is off: one save folder as before), DSML_DATA.
 #include "dsl_internal.h"
 #include "dsl_menu.h"
@@ -34,8 +40,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <time.h>
+#ifdef _WIN32
+#include <sys/utime.h>
+#else
+#include <utime.h>
+#endif
 
 typedef void *Obj;
 #define AT(o, off, T) (*(T *)((char *)(o) + (off)))
@@ -45,10 +57,10 @@ typedef void *Obj;
 #define SEP "/"
 #endif
 
-static char game_d[1100], mod_d[1100], copies_d[1200];
+static char game_d[1100], mod_d[1100], copies_d[1200], backups_d[1200];
 static int on;
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;   /* the game may save on a worker thread */
-int dsl_saves_listed, dsl_saves_routed, dsl_saves_kept_out, dsl_saves_warned;   /* tests / log */
+int dsl_saves_listed, dsl_saves_routed, dsl_saves_kept_out, dsl_saves_warned, dsl_saves_backed_up;   /* tests / log */
 
 /* ------------------------------------------------------------------ names */
 static int is_json(const char *n) { size_t l = strlen(n); return l > 5 && !strcasecmp(n + l - 5, ".json"); }
@@ -262,7 +274,7 @@ static uint8_t my_quar(Obj path, Obj why, const void *mi) {
 static char differ[8][64], differ_path[8][1600]; static int differ_newer[8]; static int ndiffer; static int differ_told;
 static int same_bytes(const char *a, const char *b) {
     FILE *x = fopen(a, "rb"), *y = fopen(b, "rb"); int same = x && y;
-    static char p[65536], q[65536];                      /* start only (main thread) */
+    static char p[65536], q[65536];                      /* main thread only (start, the warning's Load) */
     while (same) {
         size_t n = fread(p, 1, sizeof p, x), m = fread(q, 1, sizeof q, y);
         if (n != m || memcmp(p, q, n)) same = 0;
@@ -301,6 +313,7 @@ const char *dsl_world_warned(const char *guid);                                 
 int dsl_world_set_differs(const char *guid);
 void dsl_world_set_warned(const char *guid, const char *key);
 const char *dsl_mod_name(const char *id);
+int dsl_running_save_backup(void);
 static void *k_loadreq; static int32_t off_campaign = -1;
 static void (*o_add)(Obj self, Obj ev, const void *mi);
 static void (*ctor_load)(Obj, Obj, const void *);
@@ -308,6 +321,8 @@ static Obj (*obj_new)(void *klass);
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
 static uintptr_t h_queue;
 static char w_name[300], w_guid[40], w_key[512]; static int w_pending, w_frames, w_open, w_pass;
+static char w_bdir[1600]; static int w_backup;           /* the backup folder named in the question (save_backup mods) */
+static char f_text[1024]; static int f_frames;            /* the backup failed: its notice, a few frames after the box closed */
 /* 1 = this load needs the question first (a game save, a save_dependent mod runs, not asked for this world and set) */
 static int needs_warning(const char *name, char *guid, char *key, size_t kcap) {
     if (!on || !dsl_saves_is_game(name)) return 0;
@@ -342,8 +357,92 @@ static void requeue(void) {
     Obj e = obj_new(k_loadreq); ctor_load(e, str_new(w_name), NULL);
     w_pass = 1; o_add(q, e, NULL); w_pass = 0;
 }
+/* ---- the backup (a running mod with "save_backup") */
+/* <backups_d>/<YYYY-MM-DD_HHMM>_<world name>: the clan name of the save's header (else the save name), file-safe on Mac
+   and Windows (letters, digits, '-', UTF-8 kept; anything else '_') */
+static void backup_dir_for(const char *name, char *out, size_t cap) {
+    char p[1500], g[40], clan[64] = "", safe[56]; size_t k = 0;
+    snprintf(p, sizeof p, "%s" SEP "%s.json", game_d, name);
+    file_header(p, g, clan);
+    const unsigned char *c = (const unsigned char *)(clan[0] ? clan : name);
+    for (; *c && k + 1 < sizeof safe; c++) {
+        int ok = (*c >= '0' && *c <= '9') || ((*c | 32) >= 'a' && (*c | 32) <= 'z') || *c == '-' || *c >= 0x80;
+        if (!ok && (!k || safe[k - 1] == '_')) continue;              /* no leading or double '_' */
+        safe[k++] = ok ? (char)*c : '_';
+    }
+    while (k && safe[k - 1] == '_') k--;
+    safe[k] = 0; dsi_utf8_fix_end(safe);
+    if (!safe[0]) snprintf(safe, sizeof safe, "world");
+    char ts[32]; time_t t = time(NULL); strftime(ts, sizeof ts, "%Y-%m-%d_%H%M", localtime(&t));
+    snprintf(out, cap, "%s" SEP "%s_%s", backups_d, ts, safe);
+}
+/* 1 = path is dir or inside it (either separator, any case) */
+static int inside(const char *path, const char *dir) {
+    size_t n = strlen(dir); if (!n) return 0;
+    for (size_t i = 0; i < n; i++) {
+        char a = path[i], b = dir[i]; if (!a) return 0;
+        if (a == '\\') a = '/'; if (b == '\\') b = '/';
+        if (a != b && !((a | 32) == (b | 32) && (a | 32) >= 'a' && (a | 32) <= 'z')) return 0;
+    }
+    return !path[n] || path[n] == '/' || path[n] == '\\';
+}
+/* one byte copy, then read back and compared; the source's file times kept. 0 = ok, else why */
+static int copy_file(const char *src, const char *dst, char *why, size_t wcap) {
+    FILE *in = fopen(src, "rb"); if (!in) { snprintf(why, wcap, "%s: %s", src, strerror(errno)); return -1; }
+    FILE *out = fopen(dst, "wb"); if (!out) { snprintf(why, wcap, "%s: %s", dst, strerror(errno)); fclose(in); return -1; }
+    enum { BUF = 1 << 20 }; char *b = malloc(BUF); int bad = !b; size_t n;
+    if (!b) snprintf(why, wcap, "out of memory");
+    while (!bad && (n = fread(b, 1, BUF, in)) > 0)
+        if (fwrite(b, 1, n, out) != n) { bad = 1; snprintf(why, wcap, "%s: %s", dst, strerror(errno)); }
+    if (!bad && ferror(in)) { bad = 1; snprintf(why, wcap, "%s: read error", src); }
+    free(b); fclose(in);
+    if (fclose(out) && !bad) { bad = 1; snprintf(why, wcap, "%s: %s", dst, strerror(errno)); }
+    if (bad) return -1;
+    struct stat st;
+    if (!stat(src, &st)) { struct utimbuf u = { st.st_atime, st.st_mtime }; utime(dst, &u); }
+    if (!same_bytes(src, dst)) { snprintf(why, wcap, "%s: the copy differs from the save file", dst); return -1; }
+    return 0;
+}
+/* the world's game-save files (the loaded one first + every other one with its guid) copied into a new folder.
+   0 = ok (*nf files in dir), else why */
+static int backup_world(const char *name, const char *guid, char *dir, size_t dcap, int *nf, char *why, size_t wcap) {
+    static char files[MAXG][256]; int n = 0; *nf = 0;
+    pthread_mutex_lock(&mu);
+    scan_game_locked();
+    int have = g_find(name) != NULL;
+    if (have) snprintf(files[n++], 256, "%s", g_find(name)->name);
+    for (int i = 0; i < ng && n < MAXG; i++)
+        if (strcasecmp(G[i].name, name) && guid[0] && strncmp(guid, "save:", 5) && !strcasecmp(G[i].guid, guid)) snprintf(files[n++], 256, "%s", G[i].name);
+    pthread_mutex_unlock(&mu);
+    if (!have) { snprintf(why, wcap, "%s.json is not in %s", name, game_d); return -1; }
+    if (inside(dir, game_d) || inside(dir, mod_d)) { snprintf(why, wcap, "%s is inside a Saves folder", dir); return -1; }
+    char mods[1200]; snprintf(mods, sizeof mods, "%s", backups_d);
+    char *e = mods + strlen(mods); while (e > mods && e[-1] != '/' && e[-1] != '\\') e--; if (e > mods) e[-1] = 0;
+    mkdir(mods, 0755); mkdir(backups_d, 0755);
+    struct stat st; char base[1600]; snprintf(base, sizeof base, "%s", dir);
+    for (int k = 2; !stat(dir, &st) && k < 100; k++) snprintf(dir, dcap, "%s_%d", base, k);   /* never into an older copy */
+    if (mkdir(dir, 0755)) { snprintf(why, wcap, "%s: %s", dir, strerror(errno)); return -1; }
+    for (int i = 0; i < n; i++) {
+        char src[1500], dst[1900];
+        snprintf(src, sizeof src, "%s" SEP "%s.json", game_d, files[i]); snprintf(dst, sizeof dst, "%s" SEP "%s.json", dir, files[i]);
+        if (copy_file(src, dst, why, wcap)) return -1;
+        (*nf)++;
+    }
+    return 0;
+}
 static void on_load(void *ud, DSLObj w) {
     (void)ud; (void)w; w_open = 0;
+    if (w_backup) {
+        char why[1800] = ""; int nf = 0;
+        if (backup_world(w_name, w_guid, w_bdir, sizeof w_bdir, &nf, why, sizeof why)) {
+            dsl_log("saves: backup of %s FAILED (%d file(s) copied to %s): %s: NOT loaded", w_name, nf, w_bdir, why);
+            snprintf(f_text, sizeof f_text, TR("This world was not loaded: its save files could not be copied first.\n\n%s"), why);
+            dsi_utf8_fix_end(f_text); f_frames = 3;                   /* after the question's box closed */
+            return;                                                    /* not loaded, not marked as answered: asked again */
+        }
+        dsl_saves_backed_up++;
+        dsl_log("saves: backup of %s (world %s): %d file(s) copied to %s", w_name, w_guid, nf, w_bdir);
+    }
     dsl_world_set_warned(w_guid, w_key); dsl_saves_warned++;
     dsl_log("saves: warning answered Load for %s (world %s, mods %s)", w_name, w_guid, w_key);
     requeue();
@@ -359,12 +458,30 @@ static void ask(void) {
         if (!i) snprintf(list, sizeof list, "%s", nm);
         else { snprintf(t, sizeof t, TR("%s, %s"), list, nm); snprintf(list, sizeof list, "%s", t); }
     }
-    snprintf(b, sizeof b, TRN("This world is one of your game saves. This mod changes what the world saves: %s.\n\n"
-                              "If you play it now, the world may break when you load it later in the game without the mod loader.",
-                              "This world is one of your game saves. These mods change what the world saves: %s.\n\n"
-                              "If you play it now, the world may break when you load it later in the game without the mod loader.", i), list);
+    w_backup = dsl_running_save_backup();
+    char shown[2400] = "";                  /* the folder as shown: a zero-width space after each separator, so the box
+                                               wraps the long path at a folder name, never in the middle of a word */
+    if (w_backup) {          /* shorter warning + the folder: the stock box is a fixed 520 x 109 (longer text runs over its buttons) */
+        backup_dir_for(w_name, w_bdir, sizeof w_bdir);
+        size_t o = 0;
+        for (const char *c = w_bdir; *c && o + 4 < sizeof shown; c++) {
+            shown[o++] = *c;
+            if (*c == '/' || *c == '\\') { shown[o++] = (char)0xE2; shown[o++] = (char)0x80; shown[o++] = (char)0x8B; }
+        }
+        shown[o] = 0;
+        snprintf(b, sizeof b, TRN("This world is one of your game saves. This mod changes what it saves: %s. "
+                                  "It may break later in the game without the mod loader.\n\n"
+                                  "Load first keeps a copy of its save files in:\n%s",
+                                  "This world is one of your game saves. These mods change what it saves: %s. "
+                                  "It may break later in the game without the mod loader.\n\n"
+                                  "Load first keeps a copy of its save files in:\n%s", i), list, shown);
+    } else
+        snprintf(b, sizeof b, TRN("This world is one of your game saves. This mod changes what the world saves: %s.\n\n"
+                                  "If you play it now, the world may break when you load it later in the game without the mod loader.",
+                                  "This world is one of your game saves. These mods change what the world saves: %s.\n\n"
+                                  "If you play it now, the world may break when you load it later in the game without the mod loader.", i), list);
     dsi_utf8_fix_end(b);
-    dsl_log("saves: warning shown for %s (world %s, mods %s)", w_name, w_guid, w_key);
+    dsl_log("saves: warning shown for %s (world %s, mods %s)%s%s", w_name, w_guid, w_key, w_backup ? ", backup to " : "", w_backup ? w_bdir : "");
     u->notice(b, TR("Load"), TR("Cancel"), on_load, on_cancel, NULL);
 }
 static void my_add(Obj self, Obj ev, const void *mi) {
@@ -503,6 +620,7 @@ void dsl_saves_frame(void) {
     if (!on) return;
     test_frame();
     if (w_pending && --w_frames <= 0) ask();
+    if (f_frames && !--f_frames) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(f_text, TR("OK"), NULL, NULL, NULL, NULL); }
     if (ndiffer && !differ_told && dsl_reg_scene() == 1 && dsl_soft_title_idle()) {
         const DSLUi *u = dsl_ui_kit(); if (!u) return;
         differ_told = 1;
@@ -551,6 +669,7 @@ void dsl_saves_install(void) {
     size_t gl = strlen(game_d); while (gl > 1 && (game_d[gl - 1] == '/' || game_d[gl - 1] == '\\')) game_d[--gl] = 0;
     snprintf(mod_d, sizeof mod_d, "%s" SEP "Saves", d);
     snprintf(copies_d, sizeof copies_d, "%s" SEP "Mods" SEP "save_copies", d);
+    snprintf(backups_d, sizeof backups_d, "%s" SEP "Mods" SEP "save_backups", d);
     struct stat st;
     if (stat(game_d, &st) || !S_ISDIR(st.st_mode)) { dsl_log("saves: the game's save folder %s is not there: modded saves only", game_d); return; }
     str_new = dsl_ga_sym("il2cpp_string_new"); arr_new = dsl_ga_sym("il2cpp_array_new"); arr_len = dsl_ga_sym("il2cpp_array_length");
