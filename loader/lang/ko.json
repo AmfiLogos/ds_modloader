@@ -169,6 +169,7 @@
  "Settings: %s": "설정: %s",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "Steam을 시작할 수 없습니다. Steam을 설치하고 실행한 뒤 로그인하고, Dungeon Settlers Modded를 다시 여십시오.",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam이 준비되지 않았습니다. Steam을 실행하고 로그인한 뒤 Dungeon Settlers Modded를 다시 여십시오.",
+ "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "Steam을 기다리는 중입니다. Steam에서 로그인을 요청하면 로그인하십시오. 그 후 게임이 시작됩니다.",
  "Step %d of %d · %s": "%d/%d 단계 · %s",
  "Switch mods on or off, then Apply.": "모드를 켜거나 끈 뒤 적용을 누르십시오.",
  "Switch mods on or off, then Save. The world loads with these mods.": "모드를 켜거나 끈 뒤 저장을 누르십시오. 월드는 이 모드와 함께 불러와집니다.",

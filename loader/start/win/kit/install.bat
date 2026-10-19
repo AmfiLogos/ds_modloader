@@ -22,6 +22,7 @@ call :lang "files\Dungeon Settlers Modded.exe" "files\lang"
 call files\find_game.bat %1
 if defined GAME goto found
 call :say B_NOT_FOUND
+call :checked
 call :say B_FIND_1
 call :say B_FIND_2
 call :say B_FIND_3
@@ -216,6 +217,7 @@ exit /b 1
 rem ---- texts: English here; files\lang\setup_<code>.bat has the other languages (made from setup_lang\<code>.json)
 :texts
 set "B_NOT_FOUND=The game folder was not found automatically."
+set "B_CHECKED=Folders checked:"
 set "B_FIND_1=1. Open Steam. Right-click Dungeon Settlers. Click Manage, then Browse local files."
 set "B_FIND_2=2. Click the address bar at the top of that folder window. Press Ctrl+C."
 set "B_FIND_3=3. Click this window. Press Ctrl+V, then press Enter."
@@ -274,6 +276,15 @@ setlocal EnableDelayedExpansion
 set "T=!%~1!"
 if not "%~2"=="" set "T=!T:@1=%~2!"
 echo  !T!
+endlocal
+exit /b 0
+
+rem :checked: the folders find_game.bat looked in (FG_SEEN), one a line; "-" when it found no Steam folder at all
+:checked
+call :say B_CHECKED
+setlocal EnableDelayedExpansion
+if not defined FG_SEEN echo    -
+for %%p in (!FG_SEEN!) do echo    %%~p
 endlocal
 exit /b 0
 

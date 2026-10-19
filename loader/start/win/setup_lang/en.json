@@ -23,6 +23,7 @@
   "S_UN_LEFT": "Some files could not be removed. Close the game, then uninstall again.",
   "S_UN_DONE": "{NAME} is removed. Steam's game was never changed.\nYour modded saves stay in {INSTDIR}\\profiles. You can delete that folder if you do not need them.",
   "B_NOT_FOUND": "The game folder was not found automatically.",
+  "B_CHECKED": "Folders checked:",
   "B_FIND_1": "1. Open Steam. Right-click Dungeon Settlers. Click Manage, then Browse local files.",
   "B_FIND_2": "2. Click the address bar at the top of that folder window. Press Ctrl+C.",
   "B_FIND_3": "3. Click this window. Press Ctrl+V, then press Enter.",
