@@ -39,6 +39,12 @@ skills_without_weapon = true
 max_units = 4
 ```
 
+## BepInEx console
+
+The plugin switches BepInEx's console window off: it sets `Enabled = false` under `[Logging.Console]` in
+`BepInEx/config/BepInEx.cfg` (the next starts open no console) and closes the console of the current start.
+BepInEx's log file `BepInEx/LogOutput.log` stays on.
+
 ## Your saves
 
 This mod changes what a world saves (for example 8 units in a dungeon). Such a world may break later in the game

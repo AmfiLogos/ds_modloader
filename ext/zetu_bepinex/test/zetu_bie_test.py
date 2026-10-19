@@ -4,7 +4,8 @@ One rig lease (~/ds_multiplayer/rig), the test copy cap first. Never the owner's
 (2026-10-11 backup, 7 units) is loaded from copies in <out>.
 
   zetu_bie_test.py run [out]      max_units 8: the whole proof below; exit 1 on a failed check
-  zetu_bie_test.py fresh [out]    no config file: BepInEx writes it with the defaults, the plugin changes no party size
+  zetu_bie_test.py fresh [out]    no config file: BepInEx writes it with the defaults, the plugin changes no party size;
+                                  BepInEx.cfg console on before: the plugin turns it off, the log file stays on
   zetu_bie_test.py disable [out]  the mod loader with its own zetu-suite module in the same game: this plugin stays off
   zetu_bie_test.py cmd '<json>' | probe '<line>'   to the running copy
 
@@ -369,8 +370,16 @@ def run(out):
 def fresh(out):
     """no config: BepInEx writes amfi.zetu-suite.cfg with the defaults; max 4 = no party patch"""
     install(out, None, probe_on=False)
+    bc = os.path.join(BIE, 'BepInEx', 'config', 'BepInEx.cfg')            # the player's file as BepInEx writes it: console on
+    t = open(bc).read(); i = t.index('[Logging.Console]'); j = t.index('\nEnabled = ', i)
+    open(bc, 'w').write(t[:j] + '\nEnabled = true' + t[t.index('\n', j + 1):])
     g0 = start(window=False); title(600)
     L = blog(); S = {'start': zl(L)[:8]}
+    t = open(bc).read(); con = t[t.index('[Logging.Console]'):t.index('[Logging.Disk]')]; disk = t[t.index('[Logging.Disk]'):]
+    S['console'] = [l for l in L.splitlines() if 'BepInEx console' in l]
+    check('console: plugin turns BepInEx\'s console off (BepInEx.cfg), disk log stays on and is written',
+          '\nEnabled = false' in con and re.search(r'\nEnabled = true', disk.split('\n[', 1)[0]) and 'BepInEx console: closed, off in BepInEx.cfg' in L
+          and 'Chainloader startup complete' in L, S['console'])
     c = os.path.join(BIE, 'BepInEx', 'config', 'amfi.zetu-suite.cfg')
     txt = open(c).read() if os.path.exists(c) else ''
     S['cfg'] = [l for l in txt.splitlines() if '=' in l and not l.startswith('#')]

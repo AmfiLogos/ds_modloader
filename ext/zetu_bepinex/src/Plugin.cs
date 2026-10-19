@@ -6,8 +6,10 @@
 // Settings: BepInEx/config/amfi.zetu-suite.cfg, read at game start. A save loaded with the plugin on asks first and keeps
 // a dated copy of the world's save files (SaveWarning.cs). When the mod loader's own zetu-suite module is in the process,
 // this plugin does nothing (one log line): the loader's module has the same patches.
+// BepInEx's console window is turned off at every start (ConsoleOff); its log file BepInEx/LogOutput.log stays on.
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using BepInEx;
@@ -30,6 +32,7 @@ namespace ZetuSuite
         public override void Load()
         {
             L = Log;
+            ConsoleOff();
             var skills = Config.Bind("Gameplay", "skills_without_weapon", true,
                 "Skills without weapon requirement: a unit can use the skills of a skill tree without holding that tree's weapon. " +
                 "Prerequisite skills, level requirements and skill point costs stay the same.");
@@ -49,6 +52,28 @@ namespace ZetuSuite
             if (SkillsWithoutWeapon) Weapon.Install();
             if (MaxUnits != 4) Party.Install();               // 4 = the stock table value: nothing to change
             SaveWarning.Install(Path.Combine(Paths.BepInExRootPath, "ZetuSuite"));
+        }
+
+        // ---------------------------------------------------------------- no BepInEx console window (owner rule)
+        // BepInEx's own setting [Logging.Console] Enabled = false, saved in BepInEx/config/BepInEx.cfg: the next starts open
+        // no console. The console this start opened (BepInEx opens it before any plugin) is closed now: its log listener
+        // out, and on Windows the window freed (BepInEx cannot detach a Unix console: there the listener only, so no
+        // more console output). Disk logging ([Logging.Disk], BepInEx/LogOutput.log) stays as it is.
+        static void ConsoleOff()
+        {
+            try
+            {
+                bool was = ConsoleManager.ConfigConsoleEnabled.Value;
+                if (was) { ConsoleManager.ConfigConsoleEnabled.Value = false; ConfigFile.CoreConfig.Save(); }
+                var cl = Logger.Listeners.OfType<ConsoleLogListener>().ToList();
+                foreach (var c in cl) { Logger.Listeners.Remove(c); c.Dispose(); }
+                bool win = OperatingSystem.IsWindows() && ConsoleManager.ConsoleActive;
+                if (win) ConsoleManager.DetachConsole();
+                L.LogInfo(was || cl.Count > 0 || win
+                    ? $"BepInEx console: {(cl.Count > 0 || win ? "closed" : "not open")}, off in {Path.GetFileName(ConfigFile.CoreConfig.ConfigFilePath)} for the next starts; the log file stays on"
+                    : $"BepInEx console: off ({Path.GetFileName(ConfigFile.CoreConfig.ConfigFilePath)}); the log file stays on");
+            }
+            catch (Exception e) { L.LogWarning("BepInEx console: could not turn it off: " + e.Message); }
         }
 
         // ---------------------------------------------------------------- the mod loader's module in this process

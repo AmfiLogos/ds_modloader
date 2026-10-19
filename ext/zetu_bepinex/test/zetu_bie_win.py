@@ -9,6 +9,9 @@ Cloud); -logFile keeps Player.log there too. Throwaway saves only (fresh world g
 userdata\\<id>\\2798330 are hashed before and compared after (owner_backup.py).
 
   zetu_bie_win.py run [out]     the checks below; the VM must already run (started visibly by the caller)
+  zetu_bie_win.py console [out] C: the BepInEx console window (owner rule: never): two starts, BepInEx.cfg console on
+                                before the first; the window BepInEx opens is closed by the plugin, the second start opens
+                                none, LogOutput.log is written both times
 
 Real breaks the run catches (Windows: the 1-byte bool ABI class of the v0.1.15 ZET-U hang, x64 Harmony patches):
  L  the plugin loads with plain be.788 and every part is patched (no part OFF)
@@ -32,7 +35,7 @@ SEED_GUID = 'f816ebc6-195c-432c-9fff-754b75ee3738'
 WK = r'C:\dsm\zetubie'; GAME = WK + r'\game'; DATA = WK + r'\data'
 STEAM_GAME = r'C:\Program Files (x86)\Steam\steamapps\common\Dungeon Settlers'
 BLOG = GAME + r'\BepInEx\LogOutput.log'
-checks = []; w = None; PID = None
+checks = []; w = None; PID = None; out_dir = None; BK = None
 
 
 def log(*a): print(time.strftime('%H:%M:%S'), *a, flush=True)
@@ -283,15 +286,83 @@ def main_run(out):
     return S
 
 
+CONSOLE_HOSTS = ('conhost.exe', 'openconsole.exe', 'windowsterminal.exe')
+def console_windows(base):
+    """visible windows of a console: a BepInEx title, or a console host process that was not there before the start"""
+    hits = []
+    for p in w.a('ps').get('procs', []):
+        for v in p.get('windows', []):
+            t = v.get('title', '')
+            if 'BepInEx' in t or (p.get('name', '').lower() in CONSOLE_HOSTS and p.get('pid') not in base): hits.append(f"{p.get('name')} {p.get('pid')}: {t}")
+    return hits
+def set_console(on):
+    """BepInEx.cfg [Logging.Console] Enabled = on (the player's file as BepInEx writes it); every other line kept"""
+    c = GAME + r'\BepInEx\config\BepInEx.cfg'; t = w.text(c) or ''
+    i = t.find('[Logging.Console]')
+    if i < 0: t += '\n[Logging.Console]\n\nEnabled = %s\n' % ('true' if on else 'false')
+    else:
+        j = t.find('\n[', i + 1); j = len(t) if j < 0 else j
+        sec = re.sub(r'(?m)^Enabled = \w+', 'Enabled = %s' % ('true' if on else 'false'), t[i:j]) if re.search(r'(?m)^Enabled = ', t[i:j]) \
+            else t[i:j].replace('[Logging.Console]', '[Logging.Console]\nEnabled = %s' % ('true' if on else 'false'), 1)
+        t = t[:i] + sec + t[j:]
+    w.write(c, t)
+def console_cfg():
+    t = w.text(GAME + r'\BepInEx\config\BepInEx.cfg') or ''; i = t.find('[Logging.Console]'); j = t.find('\n[', i + 1)
+    con = t[i:j if j > 0 else len(t)] if i >= 0 else ''; k = t.find('[Logging.Disk]'); m = t.find('\n[', k + 1)
+    disk = t[k:m if m > 0 else len(t)] if k >= 0 else ''
+    return re.findall(r'(?m)^Enabled = (\w+)', con), re.findall(r'(?m)^Enabled = (\w+)', disk)
+def watch_start(tag, after=10, timeout=600):
+    """start the copy (windowed, test data), poll the console windows until BepInEx's chainloader is done + after s, kill"""
+    global PID
+    if not w.screen_mode_ok(): raise SystemExit('screen mode is not windowed (3): not started')
+    if w.procs(): raise SystemExit('another DungeonSettlers.exe runs in the VM (another lane): not started')
+    park = WK + r'\old\console_' + time.strftime('%Y%m%d-%H%M%S')
+    if w.exists(BLOG): w.move(BLOG, park + r'\LogOutput.log')
+    base = {p.get('pid') for p in w.a('ps').get('procs', []) if p.get('name', '').lower() in CONSOLE_HOSTS}
+    env = [f'ZETU_TEST_DATA={DATA}', f'DSRIG_DIR={WK}', 'SteamAppId=2798330', 'SteamGameId=2798330']
+    PID = w.a('run', exe=GAME + r'\DungeonSettlers.exe', args=f'-logFile "{WK}\\player.log"', cwd=GAME, env=env, show=True, wait_ms=0).get('pid')
+    log(tag, 'game pid', PID)
+    seen, t0, done = [], time.time(), None
+    while time.time() - t0 < timeout:
+        for h in console_windows(base):
+            if h not in seen: seen.append(h); log(tag, 'console window:', h)
+        if done is None and 'Chainloader startup complete' in blog(): done = time.time()
+        if done and time.time() - done > after: break
+        if not w.procs(): break
+        time.sleep(0.3)
+    last = console_windows(base); L = blog()
+    w.get(BLOG, os.path.join(out_dir, f'LogOutput_{tag}.log'))
+    w.a('kill', pid=PID); PID = None; time.sleep(3)
+    return {'seen': seen, 'after': last, 'ready': done is not None, 'log_lines': L.count('\n'),
+            'console_line': [l for l in L.splitlines() if 'BepInEx console' in l]}
+def console_run(out):
+    global BK
+    S = {}
+    log('owner data backup'); BK = S['owner_backup'] = OB.backup(w)
+    setup(out); set_console(True)
+    S['cfg_before'] = console_cfg()
+    a = S['start1'] = watch_start('start1')
+    check('C: start 1 (BepInEx.cfg console on): the window BepInEx opened is seen, so the watch works', a['seen'], a)
+    check('C: start 1: the plugin closed it (no console window once the plugins are loaded)', a['ready'] and not a['after'], a)
+    S['cfg_after1'] = console_cfg()
+    check('C: start 1: BepInEx.cfg now says console off, disk log on', S['cfg_after1'] == (['false'], ['true']), S['cfg_after1'])
+    check('C: start 1: LogOutput.log written, with the plugin\'s line', a['log_lines'] > 10 and any('closed, off in BepInEx.cfg' in l for l in a['console_line']), a['console_line'])
+    b = S['start2'] = watch_start('start2')
+    check('C: start 2: no console window at any time', b['ready'] and not b['seen'], b)
+    check('C: start 2: LogOutput.log written', b['log_lines'] > 10 and any('BepInEx console: off' in l for l in b['console_line']), b['console_line'])
+    return S
+
+
 def main():
     global w
     a = sys.argv[1:] or ['run']
     out = os.path.expanduser(a[1] if len(a) > 1 else '~/ds_zetubie/out/win')
     os.makedirs(out, exist_ok=True)
+    global out_dir; out_dir = out
     w = W.Win(); w.up()
     S = {}
     try:
-        S = main_run(out)
+        S = console_run(out) if a[0] == 'console' else main_run(out)
     except BaseException as e:
         import traceback; traceback.print_exc()
         check('run finished', False, repr(e))
@@ -302,8 +373,8 @@ def main():
         for p, n in ((BLOG, 'LogOutput.log'), (WK + r'\player.log', 'player.log')):
             try: w.get(p, os.path.join(out, n))
             except Exception as e: log('log', n, e)
-        if S.get('owner_backup'):
-            c = OB.compare(w, S['owner_backup']); S['owner_compare'] = c
+        if S.get('owner_backup') or BK:
+            c = OB.compare(w, S.get('owner_backup') or BK); S['owner_compare'] = c
             check('O: the owner\'s LocalLow + Steam userdata files unchanged, no pending cloud upload', not c['diff'] and not c['remotecache_syncstate3'], c)
         S['checks'] = checks; json.dump(S, open(os.path.join(out, 'summary.json'), 'w'), indent=1)
     fails = [c for c in checks if not c['ok']]
