@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "d3a011347861a4313a108144a05c7a2d365a134d",
- "cm_pin": "582de3959dd08303bba7dceae4ab30b225ade861",
+ "mp_pin": "95e197c66d809c201858e6e237a527e5ef5009ca",
+ "cm_pin": "62317704807971ba35ff869025f7b7d11fd329b3",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -448,20 +448,6 @@
    "label": "Application.get_persistentDataPath",
    "source": "ds_modloader:loader/start/win/dsl_start_win.c",
    "key": "loader|dsl_start_win.c|my_pdp|Application.get_persistentDataPath"
-  },
-  {
-   "owner": "loader",
-   "kind": "detour",
-   "method": "Refactor.Main.StoreRuntimeHandler$$Start",
-   "platforms": {
-    "win-x64": {
-     "rva": "0xa3f240"
-    }
-   },
-   "active": "Windows start unless DSL_STEAM=1 (Steam check off)",
-   "label": "StoreRuntimeHandler.Start (Steam check off)",
-   "source": "ds_modloader:loader/start/win/dsl_start_win.c",
-   "key": "loader|dsl_start_win.c|my_store_start|StoreRuntimeHandler.Start (Steam check off)"
   },
   {
    "owner": "multiplayer",
@@ -4153,11 +4139,10 @@
   {
    "owner": "multiplayer",
    "kind": "detour",
-   "method": "inside Edgar.Legacy.Utils.PerformanceAnalysis.PerformanceAnalyzer$$PrintHeader+0xe8",
+   "method": "Refactor.UI.FactionManagementPresenter$$WorldRefreshed",
    "platforms": {
     "win-x64": {
-     "rva": "0xef58e8",
-     "inside": "Edgar.Legacy.Utils.PerformanceAnalysis.PerformanceAnalyzer$$PrintHeader+0xe8"
+     "rva": "0xbf2d70"
     }
    },
    "active": "always (module loaded)",
