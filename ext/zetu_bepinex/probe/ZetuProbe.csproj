@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TEST ONLY (never shipped): drives the game for test/zetu_bie_test.py. Refs: ../Directory.Build.props -->
+  <PropertyGroup><AssemblyName>ZetuProbe</AssemblyName><RootNamespace>ZetuProbe</RootNamespace><Version>0.0.1</Version></PropertyGroup>
+</Project>

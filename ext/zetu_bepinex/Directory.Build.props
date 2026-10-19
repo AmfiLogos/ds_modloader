@@ -1,0 +1,39 @@
+<Project>
+  <!-- ZET-U Mod Suite for BepInEx 6 IL2CPP (be.788). Reference DLLs are not in git:
+       ZETU_BIE_LIB  = BepInEx be.788 core DLLs (BepInEx.Core, BepInEx.Unity.IL2CPP, 0Harmony, Il2CppInterop.*)
+       ZETU_INTEROP  = the interop folder a BepInEx install generated for game build 25846389 (BepInEx/interop) -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Lib Condition="'$(Lib)' == '' and '$(ZETU_BIE_LIB)' != ''">$(ZETU_BIE_LIB)/</Lib>
+    <Lib Condition="'$(Lib)' == ''">$(HOME)/ds_multiplayer/ext/bepinex_bridge/lib/</Lib>
+    <Interop Condition="'$(Interop)' == '' and '$(ZETU_INTEROP)' != ''">$(ZETU_INTEROP)/</Interop>
+    <Interop Condition="'$(Interop)' == ''">$(HOME)/ds_multiplayer/ext/bepinexmac/inst.noindex/bie/BepInEx/interop/</Interop>
+    <!-- same bytes from any checkout, and no build path (user name) inside what ships -->
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildThisFileDirectory)=/src/</PathMap>
+    <DebugType>embedded</DebugType>
+    <EnableSourceLink>false</EnableSourceLink>
+    <EmbedUntrackedSources>false</EmbedUntrackedSources>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(Lib)BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(Lib)BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.Common"><HintPath>$(Lib)BepInEx.Unity.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(Lib)0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(Lib)Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Common"><HintPath>$(Lib)Il2CppInterop.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(Interop)Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(Interop)Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Interop)UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(Interop)UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(Interop)UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(Interop)Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
