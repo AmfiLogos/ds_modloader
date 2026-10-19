@@ -5,8 +5,8 @@
 # A player puts the zip (or the unzipped <id> folder) into the mods folder; the starter unpacks it on the next start.
 #
 #   package_mods.sh [mods_all dir] [out dir]
-# Release assets: multiplayer -> ds_multiplayer, custom-modes -> ds_custommodes, gcd-cdr + hell-difficulty -> ds_modloader,
-# and hooks.json + hooks.tsv (the hook list, docs/) -> ds_modloader.
+# Release assets: multiplayer + dsmp-bridge -> ds_multiplayer, custom-modes -> ds_custommodes, gcd-cdr + hell-difficulty
+# (+ zetu-suite) -> ds_modloader, and hooks.json + hooks.tsv (the hook list, docs/) -> ds_modloader.
 set -e; cd "${0:A:h}"; L=${PWD:h}
 SRC=${1:-$L/build/mods_all}; OUT=${2:-$L/build/packages}
 zsh ./build_mods.sh --check $SRC >/dev/null || { zsh ./build_mods.sh --check $SRC; echo "package_mods: $SRC is not a good built set" >&2; exit 1; }
@@ -28,6 +28,7 @@ for d in $SRC/mac/*(/); do
   case $id in
     multiplayer) git -C ${MP_REPO:-$HOME/ds_multiplayer} show "$(head -1 $L/mp_pin.txt):LICENSE" > $ST/licenses/LICENSE.txt
                  git -C ${MP_REPO:-$HOME/ds_multiplayer} show "$(head -1 $L/mp_pin.txt):src/net/LICENSE.rwmt-Multiplayer.txt" > $ST/licenses/LICENSE.rwmt-Multiplayer.txt ;;
+    dsmp-bridge) git -C ${MP_REPO:-$HOME/ds_multiplayer} show "$(head -1 $L/mp_pin.txt):LICENSE" > $ST/licenses/LICENSE.txt ;;   # source: ds_multiplayer ext/bepinex_bridge
     custom-modes) git -C ${CM_REPO:-$HOME/ds_custommodes} show "$(head -1 $L/cm_pin.txt):LICENSE" > $ST/licenses/LICENSE.txt ;;
     *) cp $L/../licenses/LICENSE.txt $ST/licenses/ ;;
   esac

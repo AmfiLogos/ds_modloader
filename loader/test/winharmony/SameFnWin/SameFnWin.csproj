@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TEST ONLY: Windows side of the same-function test (loader/test/winharmony/winharmony_test.py).
+       BieDir = the BepInEx folder of the pinned Windows zip be.788 (stage.sh unpacks it into build/bie788). -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>SameFnWin</AssemblyName>
+    <Nullable>disable</Nullable>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <PathMap>$(MSBuildProjectDirectory)=/src</PathMap>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(BieDir)/core/BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/0Harmony.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(BieDir)/core/Il2CppInterop.Runtime.dll" Private="false" />
+  </ItemGroup>
+</Project>

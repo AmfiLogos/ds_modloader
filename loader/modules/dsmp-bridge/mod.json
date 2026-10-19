@@ -1,0 +1,11 @@
+{
+ "id": "dsmp-bridge",
+ "name": "DSMP Bridge",
+ "version": "set by build_bridge.sh from the pinned DsmpBridge.csproj",
+ "author": "AmfiLogos",
+ "kind": "bepinex",
+ "scope": "gameplay",
+ "hidden": true,
+ "description": "Library for BepInEx mods: the multiplayer session, actions that run on every player's game, a random that is the same for every player, and chat lines. Installed with the mods that need it.",
+ "platforms": {}
+}
