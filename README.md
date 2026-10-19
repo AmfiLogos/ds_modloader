@@ -105,6 +105,25 @@ Some mods have settings. In the Mods window, click Settings next to the mod.
 For mod makers: declare the settings in `mod.json` ("settings") and read them with `dsl_get_bool` / `dsl_get_int` /
 `dsl_get_choice` (`loader/sdk/dsl_sdk.h`, API 5; the format is described there, above `settings_get_bool`).
 
+## Hook list
+
+For other mod makers (BepInEx, MelonLoader, patch audits): [docs/hooks.json](docs/hooks.json) lists every native
+hook and code patch that the loader and the official mods (multiplayer, custom-modes, gcd-cdr, hell-difficulty,
+zetu-suite) put into GameAssembly, for game build 25846389 on Mac (arm64) and Windows (x64).
+[docs/hooks.tsv](docs/hooks.tsv) is the same list as a table. Each loader release has both files attached.
+
+Each entry gives the owner, the Il2Cpp name of the hooked method (`Namespace.Class$$Method`, as Il2CppDumper names
+it), the offset in `GameAssembly.dylib` / `GameAssembly.dll`, the kind (detour or in-place patch), when it is
+installed (always, a mod setting, or a test-only switch), and the name the loader log prints
+(`<label>: hooked <rva> for <owner>` in `dsload.log`). The top of the JSON file explains every field.
+
+- The list is made from the sources by `tools/hooks/hooklist.py gen` (it needs the Il2CppDumper dumps of the game
+  build). Sites that the script cannot follow by itself are in `tools/hooks/sites.tsv`.
+- Every loader build runs `tools/hooks/hooklist.py check`: it fails when the sources hook something that
+  `docs/hooks.json` does not list. Then run `gen` and commit both files.
+- Not in the list: hooks outside GameAssembly (the Mac window and focus handling in `loader/start/mac`, the Windows
+  window hooks of hidden test copies in `loader/start/win/dsl_soft_win.c`).
+
 ## Where your saves are
 
 Your normal saves are played in place. The modded game lists the worlds of your normal game's save folder and
