@@ -46,6 +46,7 @@ static const struct { const char *id, *repo; } MOD_REPOS[] = {
     { "multiplayer", "AmfiLogos/ds_multiplayer" }, { "custom-modes", "AmfiLogos/ds_custommodes" },
     { "gcd-cdr", "AmfiLogos/ds_modloader" }, { "hell-difficulty", "AmfiLogos/ds_modloader" },
     { "zetu-suite", "AmfiLogos/ds_modloader" },
+    { "dsmp-bridge", "AmfiLogos/ds_multiplayer" },     /* hidden library for BepInEx mods: installed with the mods that need it */
 };
 
 typedef struct { char id[64], name[128], have[32], repo[128], ver[32], url[1024], sha[65], asset[160], file[1100]; } ModUp;
