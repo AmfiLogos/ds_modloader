@@ -10,8 +10,8 @@ check() { if eval "$2"; then print "PASS $1"; pass=$((pass+1)); else print "FAIL
 CC=(nice -n 19 clang -arch arm64 -mmacosx-version-min=12.0)
 $CC -O0 -dynamiclib -install_name @rpath/GameAssembly.dylib -o $FW/GameAssembly.dylib $T/fake_ga.c || exit 1
 print "" > $OUT/gen/test_builds.inc                                     # no known build: the fake GameAssembly is "new"
-$CC -O2 -I$OUT/gen -I$L/src -dynamiclib -framework CoreFoundation -framework CoreGraphics -install_name @rpath/dsload.dylib -o $FW/dsload.dylib \
-  $L/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_update,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_crash,dsl_scrub,dsl_scrub_names}.c $L/start/mac/dsl_start_mac.c $L/start/mac/dsl_update_mac.c $L/start/mac/dsl_soft_mac.c $L/start/mac/dsl_quiet_mac.c $L/start/mac/dsl_bie_mac.c $L/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -lobjc -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang 2>&1 | grep -v "duplicate libraries" ; [[ -f $FW/dsload.dylib ]] || exit 1
+$CC -O2 -DDSL_SIGN_DEV_KEY -I$OUT/gen -I$L/src -dynamiclib -framework CoreFoundation -framework CoreGraphics -install_name @rpath/dsload.dylib -o $FW/dsload.dylib \
+  $L/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_update,dsl_sig,dsl_sig_mc,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_crash,dsl_scrub,dsl_scrub_names}.c $L/start/mac/dsl_start_mac.c $L/start/mac/dsl_update_mac.c $L/start/mac/dsl_soft_mac.c $L/start/mac/dsl_quiet_mac.c $L/start/mac/dsl_bie_mac.c $L/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -lobjc -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang 2>&1 | grep -v "duplicate libraries" ; [[ -f $FW/dsload.dylib ]] || exit 1
 $CC -O0 $T/host.c -o $OUT/host $FW/GameAssembly.dylib -Wl,-rpath,$FW || exit 1
 for f in $FW/*.dylib $OUT/host; do codesign -f -s - $f 2>/dev/null; done
 
@@ -20,7 +20,8 @@ print 0.1.3 > $R/loader/RELEASE
 REPO=$(sed -n 's/^#define KIT_REPO "\(.*\)"/\1/p' $L/src/dsl_update.c)
 mkdir -p $OUT/srv/$REPO/v0.1.4; head -c 4096 /dev/urandom > $OUT/srv/$REPO/v0.1.4/Dungeon-Settlers-Modded-Mac.zip
 PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
-python3 -I $H/relserver.py $OUT/srv $PORT >/dev/null 2>&1 & SRV=$!
+$CC -O2 -o $OUT/dsl_sign ${L:h}/tools/release_sign/dsl_sign.c $L/src/dsl_sig.c $L/src/dsl_sig_mc.c || exit 1   # releases signed with the dev key
+DSL_SIGN_TOOL=$OUT/dsl_sign python3 -I $H/relserver.py $OUT/srv $PORT >/dev/null 2>&1 & SRV=$!
 trap "kill $SRV 2>/dev/null" EXIT
 sleep 0.5
 

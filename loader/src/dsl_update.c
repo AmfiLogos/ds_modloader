@@ -6,8 +6,11 @@
 // every installed mod's own repo (tag <id>-v0.1.N, asset <id>-0.1.N.zip, the packages of loader/modules/package_mods.sh).
 // research/version_table.md (ds_multiplayer): each component has its own number. Newer than the installed release
 // (RELEASE file) / the mod.json version, not rolled back before (ROOT/update/bad.txt).
-// Every download is checked against its sha256: the asset's GitHub "digest", else a "<asset>.sha256" asset; none = no
-// install. Network failure, rate limit, bad JSON: silent (log line), next start tries again.
+// Every download is checked against its sha256 from the release's SIGNED manifest (owner 2026-10-18: signed updates):
+// release-manifest.json + .sig, ed25519 by a key in dsl_sig.c, naming the same repo, tag, id and version (manifest_load).
+// GitHub's own "digest" is not trusted any more (whoever holds the GitHub account could change both). No manifest, a bad
+// signature or any mismatch = no install (log line). Network failure, rate limit, bad JSON: silent (log line), next start
+// tries again.
 // Title corner (top right, only at the title while its menu shows): "Auto-update mod loader" switch (default on; ROOT/update/
 // settings.json, per machine) and one short line or an "Update to 0.1.N" button.
 //   On:  download while the game runs (sha256 checked), then ROOT/update/ready.txt; the next start installs it in the
@@ -125,48 +128,81 @@ static JNode *releases_n(const char *repo, const char *tag_for_file, int per_pag
     return j;
 }
 static JNode *releases(const char *repo, const char *tag_for_file) { return releases_n(repo, tag_for_file, 15); }
-/* the sha256 of an asset: GitHub's "digest" or a "<name>.sha256" asset of the same release */
-static int asset_sha_f(JNode *rel, JNode *asset, char out[65], const char *tmp) {
-    const char *d = json_str(asset, "digest");
-    if (d && !strncmp(d, "sha256:", 7) && strlen(d + 7) == 64) { snprintf(out, 65, "%s", d + 7); return 0; }
-    const char *nm = json_str(asset, "name"); if (!nm) return -1;
-    char want[200]; snprintf(want, sizeof want, "%s.sha256", nm);
+/* the release's signed manifest (tools/release_sign/sign_release.sh): release-manifest.json + release-manifest.json.sig
+   (base64 ed25519 signature of the exact bytes) by a trusted key (dsl_sig.c), and it names this repo, this release's tag,
+   id ("kit" or the mod id) and version ver, the tag's own number: an old signed manifest put under another tag, repo or
+   mod is refused. NULL = not usable (logged): nothing of this release is installed. tmp = file stem in ROOT/update/cache
+   (each thread its own). */
+#define MANIFEST "release-manifest.json"
+static JNode *manifest_load(JNode *rel, const char *repo, const char *id, const char *ver, const char *tmp) {
+    const char *tag = json_str(rel, "tag_name"), *mu_ = NULL, *su = NULL;
     JNode *as = json_get(rel, "assets");
     for (JNode *a = as ? as->child : NULL; a; a = a->next) {
-        const char *n2 = json_str(a, "name"), *u = json_str(a, "browser_download_url");
-        if (!n2 || !u || strcmp(n2, want)) continue;
-        char f[1200]; upath(f, sizeof f, tmp);
-        if (dsl_uos_fetch(u, f)) return -1;
-        char *b = slurp_(f, 4096); int ok = 0;
-        if (b) { size_t k = 0; while (k < 64 && ((b[k] >= '0' && b[k] <= '9') || (b[k] >= 'a' && b[k] <= 'f') || (b[k] >= 'A' && b[k] <= 'F'))) k++;
-                 if (k == 64) { for (int i = 0; i < 64; i++) out[i] = (char)(b[i] >= 'A' && b[i] <= 'F' ? b[i] + 32 : b[i]); out[64] = 0; ok = 1; } }
-        free(b); return ok ? 0 : -1;
+        const char *n = json_str(a, "name"), *u = json_str(a, "browser_download_url"); if (!n || !u) continue;
+        if (!strcmp(n, MANIFEST)) mu_ = u; else if (!strcmp(n, MANIFEST ".sig")) su = u;
+    }
+    if (!tag || !mu_ || !su) { dsl_log("update: %s %s: no signed manifest: not installed", repo, tag ? tag : "?"); return NULL; }
+    char mf[1200], sf[1200], t[200];
+    snprintf(t, sizeof t, "cache/%s.json", tmp); upath(mf, sizeof mf, t);
+    snprintf(t, sizeof t, "cache/%s.sig", tmp); upath(sf, sizeof sf, t);
+    if (dsl_uos_fetch(mu_, mf) || dsl_uos_fetch(su, sf)) { dsl_log("update: %s %s: manifest download failed; next start tries again", repo, tag); return NULL; }
+    char *m = NULL, *sg = slurp_(sf, 400); size_t n = 0;
+    FILE *f = fopen(mf, "rb");
+    if (f) { m = malloc((64 << 10) + 1); n = m ? fread(m, 1, 64 << 10, f) : 0; if (m) m[n] = 0; fclose(f); }
+    int key = m && sg ? dsl_sig_check(m, n, sg) : -1;
+    free(sg);
+    if (key < 0) { dsl_log("update: %s %s: the manifest signature is NOT valid: not installed", repo, tag); free(m); return NULL; }
+    JNode *j = json_parse(m); free(m);
+    JNode *fmt = json_get(j, "format");
+    const char *mr = json_str(j, "repo"), *mt = json_str(j, "tag"), *mi = json_str(j, "id"), *mv = json_str(j, "version");
+    char tv[32]; vclean(tag, tv, sizeof tv);
+    if (!fmt || fmt->t != JN_NUM || fmt->num != 1 || !mr || strcmp(mr, repo) || !mt || strcmp(mt, tag) || !mi || strcmp(mi, id)
+        || !mv || strcmp(mv, ver) || strcmp(tv, ver)) {
+        dsl_log("update: %s %s: signed manifest is for %s %s %s %s, not %s %s %s %s: not installed", repo, tag, mr ? mr : "?",
+                mt ? mt : "?", mi ? mi : "?", mv ? mv : "?", repo, tag, id, ver);
+        json_free(j); return NULL;
+    }
+    dsl_log("update: %s %s: manifest signed by trusted key %d", repo, tag, key);
+    return j;
+}
+/* the sha256 of asset in a checked manifest; it must be listed for this OS ("any" = every OS). 0 = ok */
+static int manifest_sha(JNode *m, const char *asset, char out[65]) {
+    JNode *fs = json_get(m, "files");
+    for (JNode *e = fs && fs->t == JN_ARR ? fs->child : NULL; e; e = e->next) {
+        const char *n = json_str(e, "name"), *p = json_str(e, "platform"), *h = json_str(e, "sha256");
+        if (!n || strcmp(n, asset) || !p || (strcmp(p, "any") && strcmp(p, dsl_uos_platform())) || !h || strlen(h) != 64) continue;
+        size_t k = 0; while (k < 64 && ((h[k] >= '0' && h[k] <= '9') || (h[k] >= 'a' && h[k] <= 'f'))) k++;
+        if (k == 64) { memcpy(out, h, 65); return 0; }
     }
     return -1;
 }
-static int asset_sha(JNode *rel, JNode *asset, char out[65]) { return asset_sha_f(rel, asset, out, "cache/sha.txt"); }
 static int usable(JNode *rel) {
     JNode *d = json_get(rel, "draft"), *p = json_get(rel, "prerelease");
     return !(d && d->t == JN_BOOL && d->b) && !(p && p->t == JN_BOOL && p->b);
 }
 static void check_kit(void) {
     JNode *rs = releases(KIT_REPO, "kit"); if (!rs) return;
-    char best[32] = "", url[1024] = "", sha[65] = "", an[160] = "";
-    for (JNode *r = rs->child; r; r = r->next) {
+    char best[32] = "", url[1024] = "", sha[65] = "", an[160] = ""; JNode *br = NULL;
+    for (JNode *r = rs->child; r; r = r->next) {               /* the newest release above the installed one (never lower) */
         const char *tag = json_str(r, "tag_name"); if (!tag || !usable(r) || tag[0] != 'v' || tag[1] < '0' || tag[1] > '9') continue;
         char v[32]; vclean(tag, v, sizeof v);
         if (vcmp(v, S.have) <= 0 || (best[0] && vcmp(v, best) <= 0)) continue;
         char key[64]; snprintf(key, sizeof key, "kit %s", v); if (is_bad(key)) continue;
-        JNode *as = json_get(r, "assets");
-        for (JNode *a = as ? as->child : NULL; a; a = a->next) {
-            const char *n = json_str(a, "name"), *u = json_str(a, "browser_download_url");
-            if (!n || !u || !dsl_uos_kit_asset(n)) continue;
-            char s[65]; if (asset_sha(r, a, s)) { dsl_log("update: kit %s: %s has no sha256, skipped", tag, n); continue; }
-            snprintf(best, sizeof best, "%s", v); snprintf(url, sizeof url, "%s", u); snprintf(sha, sizeof sha, "%s", s); snprintf(an, sizeof an, "%s", n);
-            break;
-        }
+        JNode *as = json_get(r, "assets"); int has = 0;
+        for (JNode *a = as ? as->child : NULL; a && !has; a = a->next) has = json_str(a, "name") && dsl_uos_kit_asset(json_str(a, "name"));
+        if (has) { snprintf(best, sizeof best, "%s", v); br = r; }
     }
-    json_free(rs);
+    JNode *m = br ? manifest_load(br, KIT_REPO, "kit", best, "kit_manifest") : NULL;   /* then its signed manifest */
+    JNode *as = m ? json_get(br, "assets") : NULL;
+    for (JNode *a = as ? as->child : NULL; a; a = a->next) {
+        const char *n = json_str(a, "name"), *u = json_str(a, "browser_download_url");
+        if (!n || !u || !dsl_uos_kit_asset(n)) continue;
+        if (manifest_sha(m, n, sha)) { dsl_log("update: kit %s: %s is not in its signed manifest, skipped", best, n); continue; }
+        snprintf(url, sizeof url, "%s", u); snprintf(an, sizeof an, "%s", n);
+        break;
+    }
+    if (!url[0]) best[0] = 0;
+    json_free(m); json_free(rs);
     pthread_mutex_lock(&mu);
     if (best[0]) { snprintf(S.kit_ver, sizeof S.kit_ver, "%s", best); snprintf(S.kit_url, sizeof S.kit_url, "%s", url);
                    snprintf(S.kit_sha, sizeof S.kit_sha, "%s", sha); snprintf(S.kit_asset, sizeof S.kit_asset, "%s", an); }
@@ -186,7 +222,7 @@ static void check_mods(void) {
             ModUp *u = &S.mods[m]; if (strcmp(u->repo, repo)) continue;
             /* the newest valid release of the mod (tag "<id>-v<version>", asset "<id>-<version>.zip"; old bundle-v0.1.x
                releases hold mod zips of the old numbers, multiplayer-0.10.0.zip ..., that must never count) */
-            char top[32] = "", url[1024] = "", sha[65] = "", an[160] = ""; int own = 0;
+            char top[32] = "", url[1024] = "", sha[65] = "", an[160] = ""; int own = 0; JNode *tr = NULL;
             size_t il = strlen(u->id);
             for (JNode *r = rs->child; r; r = r->next) {
                 if (!usable(r)) continue;
@@ -202,13 +238,21 @@ static void check_mods(void) {
                     if (!vcmp(v, u->have)) own = 1;
                     if (top[0] && vcmp(v, top) <= 0) continue;
                     char key[128]; snprintf(key, sizeof key, "%s %s", u->id, v); if (is_bad(key)) continue;
-                    char s[65]; if (asset_sha(r, a, s)) { dsl_log("update: %s: %s has no sha256, skipped", u->id, n); continue; }
-                    snprintf(top, sizeof top, "%s", v); snprintf(url, sizeof url, "%s", url_); snprintf(sha, sizeof sha, "%s", s); snprintf(an, sizeof an, "%s", n);
+                    snprintf(top, sizeof top, "%s", v); snprintf(url, sizeof url, "%s", url_); snprintf(an, sizeof an, "%s", n); tr = r;
                 }
             }
             /* newer: the normal update. Repair: the installed version has no release of its own and is above every valid
-               one (an old bundle-era build the updater of v0.1.7-v0.1.9 installed): back to the newest valid release */
-            int newer = top[0] && vcmp(top, u->have) > 0, repair = top[0] && !own && vcmp(u->have, top) > 0;
+               one (an old bundle-era build the updater of v0.1.7-v0.1.9 installed, multiplayer 0.10.0 ...): back to the
+               newest valid release. Only when the first two numbers differ (0.10.x vs 0.1.x): a release deleted on GitHub
+               must never make the loader go back to an older signed version (signed updates: never lower) */
+            long hv[6], tv[6]; vparse(u->have, hv); vparse(top, tv);
+            int newer = top[0] && vcmp(top, u->have) > 0, repair = top[0] && !own && vcmp(u->have, top) > 0 && (hv[0] != tv[0] || hv[1] != tv[1]);
+            if (newer || repair) {                               /* only that release's signed manifest is fetched */
+                char tmp[200]; snprintf(tmp, sizeof tmp, "mod_manifest_%s", u->id);
+                JNode *m = manifest_load(tr, repo, u->id, top, tmp);
+                if (!m || manifest_sha(m, an, sha)) { if (m) dsl_log("update: %s %s: %s is not in its signed manifest", u->id, top, an); newer = repair = 0; }
+                json_free(m);
+            }
             pthread_mutex_lock(&mu);
             if (newer || repair) { snprintf(u->ver, sizeof u->ver, "%s", top); snprintf(u->url, sizeof u->url, "%s", url);
                                    snprintf(u->sha, sizeof u->sha, "%s", sha); snprintf(u->asset, sizeof u->asset, "%s", an); }
@@ -241,8 +285,8 @@ const char *dsl_update_mod_repo(const char *id) {
     return NULL;
 }
 int dsl_update_ready(void) { return udir[0] != 0; }
-/* the exact official release of a mod version: tag "<id>-v<ver>" with the asset "<id>-<ver>.zip" and its sha256 (GitHub
-   "digest" or "<asset>.sha256"). 0 = found, 1 = no such release (or no sha256), -1 = no answer / not an official id */
+/* the exact official release of a mod version: tag "<id>-v<ver>" with the asset "<id>-<ver>.zip" and its sha256 from the
+   release's signed manifest. 0 = found, 1 = no such release (or no valid signed manifest), -1 = no answer / not an official id */
 int dsl_update_find_mod_release(const char *id, const char *ver, char *url, size_t ucap, char *asset, size_t acap, char sha[65]) {
     const char *repo = dsl_update_mod_repo(id); if (!repo || !udir[0] || !ver || !*ver) return -1;
     char cf[200]; snprintf(cf, sizeof cf, "hostmods_%s", repo); for (char *c = cf; *c; c++) if (*c == '/') *c = '_';
@@ -255,7 +299,10 @@ int dsl_update_find_mod_release(const char *id, const char *ver, char *url, size
         for (JNode *a = as ? as->child : NULL; a; a = a->next) {
             const char *n = json_str(a, "name"), *u = json_str(a, "browser_download_url");
             if (!n || !u || strcmp(n, want_asset)) continue;
-            char s[65]; if (asset_sha_f(rel, a, s, "cache/hostmods_sha.txt")) { dsl_log("update: %s %s: %s has no sha256: not used", id, ver, n); break; }
+            /* the exact version the host runs, signed: it may be older than the guest's own (the player's click) */
+            JNode *m = manifest_load(rel, repo, id, ver, "hostmods_manifest"); char s[65];
+            int ok = m && !manifest_sha(m, n, s); json_free(m);
+            if (!ok) { dsl_log("update: %s %s: %s has no valid signed manifest: not used", id, ver, n); break; }
             snprintf(url, ucap, "%s", u); snprintf(asset, acap, "%s", n); memcpy(sha, s, 65); r = 0; break;
         }
     }
@@ -437,8 +484,9 @@ void dsl_update_start(void) {
     if (S.have[0]) setenv("DSML_RELEASE", S.have, 1);            /* the multiplayer mod names it when the mod sets differ */
     { const char *e = getenv("DSML_UPDATE"); if (e && *e) snprintf(confirm_label, sizeof confirm_label, "%s", e); }
     enabled = !kit_only;                                   /* kit only: no title corner (no frame call either) */
-    dsl_log("update: release %s, auto-update %s, ROOT %s%s%s", S.have[0] ? S.have : "unknown", auto_on ? "on" : "off", root,
-            confirm_label[0] ? " (this start runs a new update)" : "", kit_only ? "; kit only (mods are off this start)" : "");
+    dsl_log("update: release %s, auto-update %s, ROOT %s%s%s%s", S.have[0] ? S.have : "unknown", auto_on ? "on" : "off", root,
+            confirm_label[0] ? " (this start runs a new update)" : "", kit_only ? "; kit only (mods are off this start)" : "",
+            dsl_sig_dev() ? "; TEST BUILD: trusts the public dev signing key" : "");
     if (kit_only) confirm_pending();
     if (off && !strcmp(off, "0")) { dsl_log("update: DSL_UPDATE=0: no check"); return; }
     if (dsl_soft_wanted()) return;                         /* B of a soft restart: A checked already */

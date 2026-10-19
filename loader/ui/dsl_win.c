@@ -252,7 +252,6 @@ static void del_ok(void *ud, DSLObj w) {
     (void)ud; (void)w;
     if (dsl_group_delete(del_name)) snprintf(m_note, sizeof m_note, "%s", TR("The group could not be deleted."));
     else dsl_log("win: group %s deleted", del_name);
-    if (!is_open || cur != 0 || !m_glist) return;                      /* the game's notice outlives the window (Esc closed it) */
     groups_build(); mods_sync();
 }
 static void del_click(void *ud, DSLObj w) {
@@ -656,10 +655,6 @@ static void tab_close(void) {
     if (cur < 0) return;
     if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->close) t->close(t->ud); }
     U->destroy(w_body); w_body = NULL;
-    /* everything below died with w_body: no pointer to it stays (a later call would touch a freed object) */
-    for (int i = 0; i < nmods; i++) mods[i].row = mods[i].warn = NULL;
-    m_status = m_apply = m_undo = m_save = m_field = m_fsave = m_fcancel = m_glist = m_gmark = m_gnone = st_note = NULL;
-    memset(g_row, 0, sizeof g_row); memset(g_del, 0, sizeof g_del); ng_rows = 0; memset(st, 0, sizeof st); nst = 0;
     for (int k = 0; k < nreg; k++) if (strncmp(reg[k].name, "tab:", 4) && strcmp(reg[k].name, "close")) reg[k].w = NULL;
     cur = -1;
 }
@@ -732,7 +727,7 @@ static void build(void) {
 static void destroy_all(void) {
     tab_close();
     U->destroy(w_win); U->destroy(w_back);
-    w_win = w_back = w_mark = NULL; memset(w_tab, 0, sizeof w_tab); memset(w_slogel, 0, sizeof w_slogel); slogel_shown = -1;
+    w_win = w_back = w_mark = NULL; memset(w_tab, 0, sizeof w_tab);
     unreg_all();
     is_open = 0;
 }

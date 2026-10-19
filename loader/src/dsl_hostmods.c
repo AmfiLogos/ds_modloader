@@ -1,7 +1,7 @@
 // dsl_hostmods.c - "Get the host's mods" (v0.1.14). The multiplayer mod's join was refused with DSNET_REJ_MODSET: it asks
 // for a plan (dsl_hostmods_plan: the host's gameplay mods next to the guest's installed ones), shows it, and on the
 // button calls dsl_hostmods_get. Then, on a thread: every missing / older / newer / other-files mod is downloaded ONLY
-// from our official releases (dsl_update.c: tag "<id>-v<ver>", asset "<id>-<ver>.zip", sha256 required; DSL_UPDATE_API
+// from our official releases (dsl_update.c: tag "<id>-v<ver>", asset "<id>-<ver>.zip", signed sha256; DSL_UPDATE_API
 // for tests), never from the host and never for an id that is not in MOD_REPOS; installed with dsl_uos_mod_install
 // (moves recorded, old folder into a backup). On the main thread (dsl_hostmods_frame): the mods folder read again, the
 // host's gameplay settings taken (one adapter, settings_*), and the normal Apply (pending.json + soft restart) with the
