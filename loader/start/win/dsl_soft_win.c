@@ -3,7 +3,7 @@
 // B hidden: user32 ShowWindow / SetWindowPos / SetForegroundWindow / CreateWindowExW are hooked (MinHook, outside the
 // game code, so not through the engine) and keep every window of the process invisible and in the background until
 // the swap. Swap: A allows B into the foreground (AllowSetForegroundWindow), B moves its window onto A's rectangle and
-// shows it, A hides its windows and quits.
+// shows it (without the WS_EX_NOACTIVATE it was created with), A hides its windows and quits.
 // Main-thread tick: a thread timer (SetTimer without a window) of the thread that loaded us = Unity's main thread;
 // its WM_TIMER runs in Unity's own message loop, between frames.
 #include "dsl_internal.h"
@@ -78,10 +78,16 @@ static BOOL WINAPI my_setpos(HWND h, HWND after, int x, int y, int cx, int cy, U
     return o_setpos(h, after, x, y, cx, cy, f);
 }
 static BOOL WINAPI my_fg(HWND h) { if (hidden && ours(h)) return TRUE; return o_fg(h); }
+/* windows made WS_EX_NOACTIVATE while hidden: the flag goes again at the swap (a WS_EX_NOACTIVATE window has no taskbar
+   button, and Task Manager then lists the game under background processes; player report 2026-10-19) */
+static HWND noact[32]; static int n_noact;
 static HWND WINAPI my_create(DWORD ex, LPCWSTR cls, LPCWSTR name, DWORD st, int x, int y, int w, int h, HWND parent, HMENU m, HINSTANCE i, LPVOID p) {
+    int add = hidden && !parent && !(ex & WS_EX_NOACTIVATE);
     if (hidden && !parent) { st &= ~(DWORD)WS_VISIBLE; ex |= WS_EX_NOACTIVATE; }
     if (stage_on && !parent) { x = (int)stage_x; y = (int)stage_y; }
-    return o_create(ex, cls, name, st, x, y, w, h, parent, m, i, p);
+    HWND r = o_create(ex, cls, name, st, x, y, w, h, parent, m, i, p);
+    if (r && add && n_noact < 32) noact[n_noact++] = r;
+    return r;
 }
 static int hook_api(const wchar_t *mod, const char *fn, void *repl, void **orig) {
     MH_STATUS s = MH_CreateHookApi(mod, fn, repl, orig);
@@ -246,6 +252,13 @@ int dsl_sos_pid_alive(long pid) {
 void dsl_sos_yield(void) { if (child.dwProcessId) AllowSetForegroundWindow(child.dwProcessId); }
 void dsl_sos_show(const double *fr, int activate) {
     hidden = 0;
+    for (int i = 0; i < n_noact; i++) {                       /* before the show: the taskbar button comes with it */
+        if (!IsWindow(noact[i])) continue;
+        LONG_PTR ex = GetWindowLongPtrW(noact[i], GWL_EXSTYLE);
+        if (ex & WS_EX_NOACTIVATE) SetWindowLongPtrW(noact[i], GWL_EXSTYLE, ex & ~(LONG_PTR)WS_EX_NOACTIVATE);
+    }
+    if (n_noact) dsl_log("soft: B: no-activate style taken off %d window(s)", n_noact);
+    n_noact = 0;
     HWND h = game_window(); if (!h) { dsl_log("soft: B: no game window to show"); return; }
     BOOL (WINAPI *sp)(HWND, HWND, int, int, int, int, UINT) = o_setpos ? o_setpos : SetWindowPos;
     if (fr && fr[2] > 0 && !stage_on) sp(h, NULL, (int)fr[0], (int)fr[1], (int)fr[2], (int)fr[3], SWP_NOZORDER | SWP_NOACTIVATE);
