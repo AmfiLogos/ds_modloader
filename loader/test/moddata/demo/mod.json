@@ -1,0 +1,6 @@
+{
+ "id": "sync-demo", "name": "Sync demo", "version": "1.0.0", "kind": "code", "api": 3, "game_builds": ["25846389"],
+ "scope": "gameplay",
+ "description": "Test mod: keeps campaign files in its data folder and declares them as multiplayer sync files.",
+ "sync": ["campaign/*.json"]
+}

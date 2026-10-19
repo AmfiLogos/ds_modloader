@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_LOADER_VERSION "3.1.0"         /* internal loader API number: mods' "requires": ["loader>=x"]. Never shown */
+#define DSL_LOADER_VERSION "3.2.0"         /* internal loader API number: mods' "requires": ["loader>=x"]. Never shown */
 #ifndef DSL_RELEASE                          /* the release number players see (repo file RELEASE, set by the builds) */
 #define DSL_RELEASE "dev"
 #endif
@@ -156,4 +156,13 @@ void dsl_settings_rescan(void);                          /* mods folder changed 
 int dsl_settings_lines(const char *mod, char *out, size_t cap);   /* "<mod>/<id>@<value>" lines of its gameplay settings */
 int dsl_settings_profile_member(char *out, size_t cap);  /* "settings":{...} for pending.json (0 = no gameplay setting) */
 void dsl_settings_commit(void);                          /* B on screen: the Apply's gameplay values -> settings.json */
+/* dsl_moddata.c: a data folder per mod (SDK API 6) + its multiplayer sync (exports dsl_moddata_pack / _copy / _apply /
+   _session_end / _fingerprint are for the multiplayer mod) */
+void dsl_moddata_host(struct DSLHost *h);                /* fills the API 6 host field */
+void dsl_moddata_start(void);                            /* dsl_core_start: an unfinished guest session undone, env */
+void dsl_moddata_after_init(void);                       /* mods known: folders + moddata.json */
+void dsl_moddata_rescan(void);                           /* mods folder changed */
+const char *dsl_moddata_root(void);                      /* <data>/ModData (UTF-8) */
+int dsl_moddata_fingerprint(char out[65]);               /* data fingerprint of this copy; returns the sync mod count */
+const char *dsl_moddata_fp_start(void);                 /* that fingerprint after the modules' init ("" = not computed) */
 #define MAXP_REG 32

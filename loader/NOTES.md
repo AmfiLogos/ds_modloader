@@ -599,3 +599,46 @@ One rule, `src/dsl_deps.h` (header only), used by the loader core (`dsl_main.c`)
   loader decides again in the game with the build known (a BepInEx mod already started then keeps running).
 - Host test: `test/run_tests.sh` (bie-core 0.4.0 too old for a BepInEx mod, a code mod, an optional user).
 
+## Mod data folder + multiplayer sync (v0.1.16, lane moddata, 2026-10-18)
+Owner: give each mod its own data folder that survives mod updates, and let multiplayer send it to guests on join.
+First user: a BepInEx mod (Delvers) that keeps settings and campaign markers next to the saves.
+- Folder: `<data>/ModData/<mod id>/`, `<data>` = the modded game's save folder = `Application.persistentDataPath`
+  (Mac `<profile>/data`, Windows `ROOT\profiles\modded\data`). It is outside the mods folder: a mod update (the old
+  mod folder is moved to a backup) and turning a mod off / on never touch it. Files a mod writes into its own mod folder
+  (`module_dir`) are still lost on an update: use this folder instead.
+- Native modules: SDK API 6, `DSLHost.mod_data_dir(self)` / wrapper `dsl_mod_data_dir(host, self)` (NULL from an
+  older loader). DSL_LOADER_VERSION 3.2.0 (a mod that needs it: `"requires": ["loader>=3.2"]`).
+- .NET / BepInEx / MelonLoader mods (no C SDK): environment variable `DSML_MOD_DATA` = `<data>/ModData` (set by the
+  loader before any runtime starts), else `Path.Combine(Application.persistentDataPath, "ModData")`; then `<id>` =
+  the id in the mod's mod.json. `<data>/ModData/moddata.json` (rewritten at each start and session change):
+  `{"format": 1, "dir", "session": "none" | "guest", "mods": {"<id>": {"dir", "sync": [patterns]}}}`.
+  C#: `var dir = Path.Combine(Environment.GetEnvironmentVariable("DSML_MOD_DATA") ?? Path.Combine(Application.persistentDataPath, "ModData"), "<id>");`
+- mod.json `"sync": ["campaign/*.json", "markers/**"]`: files of that folder that are gameplay (every multiplayer
+  player needs the same). Relative, `/` only; `*` and `?` inside one name, `**` = any number of folders. Names: A-Z a-z
+  0-9 `. _ -` and inner spaces, not starting with `.`, no Windows device names (con, nul, com1 ...), no program files
+  (.dll .exe .dylib .so .bat .cmd .sh .ps1 .js .py ...). Links are never followed. Only running gameplay-scope mods
+  sync. Bad patterns are skipped with a log line.
+- Multiplayer (block `MDAT` in the join point save, ds_multiplayer `src/mp_moddata.c`):
+  host: every sync file of every such mod, at each join point (so files changed during play reach a later joiner).
+  Limit per mod: 1 MB and 256 files; over = only the list is sent, the log says `over the limit`, and guests are
+  refused ("the mod X has more data files than can be sent").
+  guest: the loader checks the whole block first (mod runs here with "sync", every name safe AND inside this copy's
+  own patterns, sha256 of each file, the list against the host's fingerprint). Then it puts its own matching files
+  aside (`<data>/ModData/.mp_stash/<id>/`), writes the host's, reads its folder again and compares the data
+  fingerprint (sha256 of the sorted `<id>/<path>@<sha256>` lines) with the host's. Any failure: the save does not load,
+  the join ends with "Could not join: ..." (translated), the own files are back at once. Non-sync files of the folder
+  (local settings) are never touched. Back on the title with no session, the files of the session go and the own
+  files come back; a game that ended inside a session gets them back at its next start (before any mod loads). The
+  marker `.mp_stash/session.json` (phase stashing / playing / back) makes each step safe to redo after a crash.
+  Nothing outside ModData is ever written; nothing received is ever run.
+- Fingerprint: the data lines are checked at the join (above), not in the HELLO mod-set hash: a guest's own files are
+  expected to differ before the transfer, so a HELLO check would refuse every guest. The data fingerprint at start is
+  also in `dsload_modset.json` `"data_fingerprint"` (`000...` = no sync file).
+- A mod reads its sync files when a world loads (the guest's files change right before the host's world loads).
+- Code: `src/dsl_moddata.c` (pure C). Exports for the multiplayer mod (dlsym; Windows: baselib.dll): `dsl_moddata_pack`
+  / `_copy` (host), `dsl_moddata_apply` (guest; 0 ok, 1 too big, 2 bad block, 3 write failed, 4 differs after the copy),
+  `dsl_moddata_session_end`.
+- Tests: `test/moddata/run.sh` (host test: data kept when the mod folder is replaced, guest gets exactly the host's sync
+  files and gets its own back after the session and after a crash, hostile paths / links / damaged / short / client-mod
+  / over-limit blocks refused with the guest's files unchanged). `test/moddata/moddata_pair.py` (hidden Mac pair through
+  the rig: host + guest with the test mod `test/moddata/demo`, files during and after the session, 30 s of play).

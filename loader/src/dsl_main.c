@@ -641,7 +641,8 @@ static void write_modset(void) {
     }
     sb(&b, "],\"provided\":[");
     for (int i = 0; i < nprovided; i++) sb(&b, "%s\"%s\"", i ? "," : "", provided[i]);
-    sb(&b, "],\"check\":\"%s\",\"differences\":%d,\"world_refusals\":0}", !sess ? "no session" : (lines ? (diffs ? "differs" : "ok") : "no modset_lines"), diffs);
+    sb(&b, "],\"data_fingerprint\":\"%s\"", dsl_moddata_fp_start());          /* mod data sync files at start (dsl_moddata.c) */
+    sb(&b, ",\"check\":\"%s\",\"differences\":%d,\"world_refusals\":0}", !sess ? "no session" : (lines ? (diffs ? "differs" : "ok") : "no modset_lines"), diffs);
     json_free(sess);
     modset_json = b.p;
     char path[1200]; snprintf(path, sizeof path, "%s/dsload_modset.json", logdir);
@@ -825,6 +826,8 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     snprintf(profile_path, sizeof profile_path, "%s", (pf && *pf) ? pf : "");
     if (!profile_path[0]) snprintf(profile_path, sizeof profile_path, "%s/profile.json", modsdir);
     dsl_lang_early();                                                /* the notices below speak the game's language */
+    dsl_moddata_start();                                             /* before any module / .NET runtime: env DSML_MOD_DATA,
+                                                                        own files back after a game that died as a guest */
     dsl_build_id = build;
     const char *pin = launcher_pin();
     if (!dsl_build_id) {
@@ -859,6 +862,7 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
         .patch_rva = h_patch_rva, .gameplay_mods = h_gameplay_mods, .soft_restart = dsl_soft_apply };
     dsl_reg_host(&host);
     dsl_settings_host(&host); dsl_settings_init();                    /* mod settings: readable from dsl_module_load on */
+    dsl_moddata_host(&host);                                         /* data folder per mod (API 6) */
     scan_mods(dsl_build_id);
     if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();

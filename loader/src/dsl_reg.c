@@ -187,7 +187,7 @@ void dsl_mods_rescan(void) {
         for (int l = 0; l < DSI_LANGS; l++) { free(MT[i].name[l]); free(MT[i].shortn[l]); free(MT[i].desc[l]); } }
     memset(MI, 0, sizeof MI); memset(MI_short, 0, sizeof MI_short); memset(MT, 0, sizeof MT); nmi = 0; mods_scanned = 0;
     mods_scan();
-    dsl_settings_rescan();
+    dsl_settings_rescan(); dsl_moddata_rescan();
     dsl_log("reg: mods folder read again: %d installed mod(s)", nmi);
 }
 /* the short name of a mod for the world rows: mod.json "short_name", else the name cut at a word before 16 columns.
@@ -1039,6 +1039,7 @@ void dsl_reg_after_init(void) {
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
             run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());
+    dsl_moddata_after_init();                                          /* data folder per mod + moddata.json */
     dsl_update_start();
     dsl_crash_start();
 }
