@@ -7,8 +7,10 @@
 //             game opens, with a small progress window (start/dsl_update_start.c); DSML_UPDATE=<label> tells the game
 //   PROFILE = ROOT\profiles\modded (DSRIG_DIR, DSL_LOG_DIR, logs), DATA = PROFILE\data (the game's save folder,
 //             redirected there by the proxy)
-// Steps: Steam not running -> steam.exe -silent, wait up to 90 s for a signed-in user; no Steam or no signed-in user =
-// a notice and no game start (owner 2026-10-18: "require Steam, like Mac"; the game's own Steam check always runs) ->
+// Steps: Steam not running -> steam.exe -silent; wait for a signed-in user (after 3 s a small window "Waiting for Steam"
+// with Cancel; while Steam runs, its sign-in may take the player up to 15 min; Steam that does not come up in 90 s, or is
+// gone for 30 s, = no Steam); no Steam, no signed-in user = a notice and no game start; Cancel = no game start (owner
+// 2026-10-18: "require Steam, like Mac"; the game's own Steam check always runs) ->
 // first start: COPY the normal game's saves (read only, never overwrite) -> environment -> start
 // ROOT\game\DungeonSettlers.exe -> exit. Test builds only (build_win.sh DSL_TEST_NOSTEAM=1, never shipped):
 // DSMODDED_NO_STEAM=1 skips the Steam wait and sets DSL_STEAM=0 (the proxy of that build turns the game's check off).
@@ -93,7 +95,8 @@ static void steam_notice(const char *text) {
     if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0)) msgbox("Dungeon Settlers Modded", "%s", text);
     else logf_("dialog (DSL_NO_ALERT, not shown): %s", text);
 }
-/* 1 = a signed-in Steam user, the game may start; 0 = no Steam (notice shown): the game does not start */
+static void uw_open_wait(const char *text); static void uw_close(void); static volatile LONG uw_cancel;   /* the window below */
+/* 1 = a signed-in Steam user, the game may start; 0 = no Steam (notice shown) or the player cancelled: no game start */
 static int ensure_steam(void) {
     if (steam_user()) { logf_("steam: running, user signed in"); return 1; }
     if (!steam_running()) {
@@ -115,11 +118,25 @@ static int ensure_steam(void) {
             return 0;
         }
     }
-    for (int i = 0; i < 180; i++) {                       /* 90 s */
-        if (steam_user()) { logf_("steam: user signed in after %.1f s", i / 2.0); return 1; }
-        Sleep(500);
+    /* while Steam runs with nobody signed in (its sign-in window is open), wait for the player: the starter's window says
+       so, its Cancel (or close box) stops the wait. Steam not running: 90 s to come up, 30 s once it ran (its self-update
+       starts it again). At most 15 min in all. */
+    DWORD t0 = GetTickCount(), up = t0; int seen = 0, shown = 0;
+    for (;;) {
+        DWORD now = GetTickCount();
+        if (steam_user()) { if (shown) uw_close(); logf_("steam: user signed in after %.1f s", (now - t0) / 1000.0); return 1; }
+        if (steam_running()) { seen = 1; up = now; }
+        else if (now - up >= (seen ? 30000u : 90000u)) { logf_(seen ? "steam: Steam exited before a user signed in" : "steam: Steam did not start in 90 s"); break; }
+        if (!shown && now - t0 >= 3000) {
+            uw_open_wait(TR("Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that."));
+            shown = 1; logf_("steam: no signed-in user yet: waiting (window shown)");
+        }
+        if (uw_cancel) { uw_close(); logf_("steam: the player cancelled the wait: the game does not start"); return 0; }
+        if (now - t0 >= 15 * 60000u) { logf_("steam: no signed-in user after 15 min"); break; }
+        Sleep(250);
     }
-    logf_("steam: no signed-in user after 90 s: the game does not start");
+    if (shown) uw_close();
+    logf_("steam: no signed-in user: the game does not start");
     steam_notice(TR("Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again."));
     return 0;
 }
@@ -443,17 +460,23 @@ static int starter_running(void) {
 #define WM_UPD_PROGRESS (WM_APP + 1)
 #define WM_UPD_CLOSE (WM_APP + 2)
 static HWND uw_hwnd; static HANDLE uw_thread, uw_ready; static volatile LONG uw_pct; static wchar_t uw_title[300]; static HFONT uw_font;
+static int uw_wait;   /* the same window while ensure_steam waits for the Steam sign-in: text, no bar, Cancel sets uw_cancel */
 static LRESULT CALLBACK uw_proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     switch (m) {
     case WM_UPD_PROGRESS: InvalidateRect(h, NULL, FALSE); return 0;
     case WM_UPD_CLOSE: DestroyWindow(h); return 0;
-    case WM_CLOSE: return 0;                               /* the install is not stopped halfway */
+    case WM_COMMAND: if (uw_wait && LOWORD(wp) == IDCANCEL) InterlockedExchange(&uw_cancel, 1); return 0;
+    case WM_CLOSE: if (uw_wait) InterlockedExchange(&uw_cancel, 1); return 0;   /* the install is not stopped halfway */
     case WM_DESTROY: PostQuitMessage(0); return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
         FillRect(dc, &rc, GetSysColorBrush(COLOR_BTNFACE));
         HGDIOBJ of = SelectObject(dc, uw_font ? (HGDIOBJ)uw_font : GetStockObject(DEFAULT_GUI_FONT));
         SetBkMode(dc, TRANSPARENT); SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+        if (uw_wait) {
+            RECT tr = { 20, 14, rc.right - 20, 78 }; DrawTextW(dc, uw_title, -1, &tr, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
+            SelectObject(dc, of); EndPaint(h, &ps); return 0;
+        }
         RECT tr = { 20, 16, rc.right - 20, 44 }; DrawTextW(dc, uw_title, -1, &tr, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         RECT bar = { 20, 54, rc.right - 20, 74 }; LONG pct = uw_pct; if (pct < 0) pct = 0; if (pct > 100) pct = 100;
         HBRUSH bg = CreateSolidBrush(RGB(255, 255, 255)), fg = CreateSolidBrush(RGB(6, 176, 37)), fr = CreateSolidBrush(RGB(160, 160, 160));
@@ -480,6 +503,12 @@ static DWORD WINAPI uw_main(LPVOID arg) {
     int w = r.right - r.left, hh = r.bottom - r.top, x = -32000, y = -32000;
     if (!hidden && SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) { x = wa.left + (wa.right - wa.left - w) / 2; y = wa.top + (wa.bottom - wa.top - hh) / 2; }
     uw_hwnd = CreateWindowExW(0, wc.lpszClassName, L"Dungeon Settlers Modded", st, x, y, w, hh, NULL, NULL, wc.hInstance, NULL);
+    if (uw_hwnd && uw_wait) {
+        wchar_t wc8[100]; if (!MultiByteToWideChar(CP_UTF8, 0, TR("Cancel"), -1, wc8, 100)) wcscpy(wc8, L"Cancel");
+        HWND b = CreateWindowExW(0, L"BUTTON", wc8, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 440 - 20 - 110, 84, 110, 28,
+                                 uw_hwnd, (HMENU)(INT_PTR)IDCANCEL, wc.hInstance, NULL);
+        if (b && uw_font) SendMessageW(b, WM_SETFONT, (WPARAM)uw_font, TRUE);
+    }
     if (!uw_hwnd) logf_("update window: not created (%lu)", GetLastError());
     else if (!hidden) { ShowWindow(uw_hwnd, SW_SHOWNORMAL); UpdateWindow(uw_hwnd); SetForegroundWindow(uw_hwnd); }
     else logf_("update window: made hidden (DSL_UPDATE_WINDOW=hidden)");
@@ -498,6 +527,7 @@ static void uw_open(const char *title) {
     uw_thread = CreateThread(NULL, 0, uw_main, NULL, 0, NULL);
     if (uw_thread && uw_ready) WaitForSingleObject(uw_ready, 5000);
 }
+static void uw_open_wait(const char *text) { uw_wait = 1; InterlockedExchange(&uw_cancel, 0); uw_open(text); }
 static void uw_progress(int pct) {
     InterlockedExchange(&uw_pct, pct);
     if (uw_hwnd) PostMessageW(uw_hwnd, WM_UPD_PROGRESS, (WPARAM)pct, 0);
@@ -508,6 +538,7 @@ static void uw_close(void) {
     if (WaitForSingleObject(uw_thread, 5000) != WAIT_OBJECT_0) logf_("update window: thread did not end in 5 s");
     CloseHandle(uw_thread); uw_thread = NULL;
     if (uw_ready) { CloseHandle(uw_ready); uw_ready = NULL; }
+    uw_wait = 0;
 }
 static const DslUpdWin upd_win = { uw_open, uw_progress, uw_close };
 

@@ -22,6 +22,7 @@
   "S_UN_LEFT": "部分文件无法删除。请关闭游戏，然后重新卸载。",
   "S_UN_DONE": "{NAME} 已删除。Steam 中的游戏从未被更改。\n你的模组存档仍保留在 {INSTDIR}\\profiles 中。如果不需要，可以删除该文件夹。",
   "B_NOT_FOUND": "未能自动找到游戏文件夹。",
+  "B_CHECKED": "已检查的文件夹：",
   "B_FIND_1": "1. 打开 Steam。右键点击 Dungeon Settlers。依次点击“管理”、“浏览本地文件”。",
   "B_FIND_2": "2. 点击该文件夹窗口顶部的地址栏。按 Ctrl+C。",
   "B_FIND_3": "3. 点击此窗口。按 Ctrl+V，然后按 Enter。",

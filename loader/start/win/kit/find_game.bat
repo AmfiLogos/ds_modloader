@@ -1,8 +1,11 @@
 @echo off
 rem Finds the Steam folder of Dungeon Settlers and sets GAME (empty if not found).
 rem Called by install.bat and uninstall.bat. Usage: call find_game.bat [folder]
+rem FG_SEEN: the Steam folders that exist and were looked in (quoted, one each), for install.bat's "not found" message
 set "GAME="
 set "STEAM="
+set "FG_SEEN="
+if not "%~1"=="" set "FG_SEEN="%~f1""
 if not "%~1"=="" (
   if exist "%~1\DungeonSettlers.exe" set "GAME=%~f1"
   goto :eof
@@ -36,5 +39,15 @@ goto :eof
 
 :try
 if defined GAME goto :eof
+if exist "%~1\steamapps\" call :seen "%~1"
 if exist "%~1\steamapps\common\Dungeon Settlers\DungeonSettlers.exe" set "GAME=%~1\steamapps\common\Dungeon Settlers"
+goto :eof
+
+rem :seen <folder>: add it to FG_SEEN once (cmd's :x=y replace ignores case)
+:seen
+setlocal EnableDelayedExpansion
+set "S=.!FG_SEEN!"
+set "T=!S:"%~1"=!"
+if not "!T!"=="!S!" (endlocal & goto :eof)
+endlocal & set "FG_SEEN=%FG_SEEN% "%~1""
 goto :eof

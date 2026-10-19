@@ -22,6 +22,7 @@
   "S_UN_LEFT": "No se pudieron eliminar algunos archivos. Cierra el juego y vuelve a desinstalar.",
   "S_UN_DONE": "{NAME} se ha eliminado. El juego de Steam nunca se modificó.\nTus partidas con mods siguen en {INSTDIR}\\profiles. Puedes borrar esa carpeta si no las necesitas.",
   "B_NOT_FOUND": "No se encontró la carpeta del juego automáticamente.",
+  "B_CHECKED": "Carpetas revisadas:",
   "B_FIND_1": "1. Abre Steam. Haz clic derecho en Dungeon Settlers. Haz clic en Administrar y luego en Ver archivos locales.",
   "B_FIND_2": "2. Haz clic en la barra de direcciones, arriba en esa ventana de carpeta. Pulsa Ctrl+C.",
   "B_FIND_3": "3. Haz clic en esta ventana. Pulsa Ctrl+V y luego Enter.",

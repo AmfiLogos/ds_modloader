@@ -22,6 +22,7 @@
   "S_UN_LEFT": "Alguns arquivos não puderam ser removidos. Feche o jogo e desinstale de novo.",
   "S_UN_DONE": "O {NAME} foi removido. O jogo da Steam nunca foi alterado.\nSeus salvamentos modificados continuam em {INSTDIR}\\profiles. Você pode apagar essa pasta se não precisar deles.",
   "B_NOT_FOUND": "A pasta do jogo não foi encontrada automaticamente.",
+  "B_CHECKED": "Pastas verificadas:",
   "B_FIND_1": "1. Abra a Steam. Clique com o botão direito em Dungeon Settlers. Clique em Gerenciar e depois em Explorar arquivos locais.",
   "B_FIND_2": "2. Clique na barra de endereço no topo dessa janela de pasta. Pressione Ctrl+C.",
   "B_FIND_3": "3. Clique nesta janela. Pressione Ctrl+V e depois Enter.",

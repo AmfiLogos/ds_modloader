@@ -169,6 +169,7 @@
  "Settings: %s": "设置：%s",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "无法启动 Steam。请安装 Steam，启动并登录，然后重新打开 Dungeon Settlers Modded。",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam 未能就绪。请启动 Steam 并登录，然后重新打开 Dungeon Settlers Modded。",
+ "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "正在等待 Steam。如果 Steam 要求登录，请登录。之后游戏会启动。",
  "Step %d of %d · %s": "第 %d 步，共 %d 步 · %s",
  "Switch mods on or off, then Apply.": "开启或关闭模组，然后点击“应用”。",
  "Switch mods on or off, then Save. The world loads with these mods.": "开启或关闭模组，然后点击“保存”。此世界将使用这些模组加载。",
