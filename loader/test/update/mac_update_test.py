@@ -214,7 +214,7 @@ if 'off' in TESTS:
         shown = r.wait(f'update: corner button "Update to {NEW}" shown', 240)
         time.sleep(3)
         reqs = open(os.path.join(r.srv, 'requests.log')).read() if os.path.exists(os.path.join(r.srv, 'requests.log')) else ''
-        check('off: button shown, nothing downloaded', shown and '/dl/' not in reqs, reqs.replace('\n', ' | ')[:200])
+        check('off: button shown, nothing downloaded', shown and not [l for l in reqs.splitlines() if '/dl/' in l and '/release-manifest.json' not in l], reqs.replace('\n', ' | ')[:200])   # the signed manifest (v0.1.16) may be read; no kit file
         open(os.path.join(r.u, 'test_click'), 'w').close()
         got = r.wait(f'update: corner line: {NEW} installs the next time you start the game.', 120)
         check('off: click -> downloaded, marked, one line; nothing installed now', got and 'CONSENT\t1' in r.ufile('ready.txt')

@@ -183,6 +183,9 @@ def start(x):
            'DSML_DATA': os.path.join(I, 'data'), 'DSL_UPDATE_API': 'http://127.0.0.1:9',
            'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0', 'DSMP_TEST': '1'}
     env.update(lrig.soft_test_env())
+    env.update(lrig.ctl_env())                                  # test control channel (v0.1.16: off without DSRIG_CTL)
+    os.makedirs(os.path.join(k, 'crash'), exist_ok=True)       # the crash-report question answered: it would sit on the title
+    with open(os.path.join(k, 'crash', 'consent.json'), 'w') as f: f.write('{"consent":"no"}\n')
     args = [exe(x), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)

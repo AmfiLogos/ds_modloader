@@ -435,11 +435,11 @@ def run(port, api, rel, pk):
 
     req = open(os.path.join(rel, 'requests.log')).read().splitlines() if os.path.exists(os.path.join(rel, 'requests.log')) else []
     info['requests'] = req
-    ok_re = re.compile(r'^GET (/repos/(%s)/releases(\?[^ ]*)?|/dl/(%s)/([a-z0-9-]+)-v([0-9.]+)/\5-\6\.zip) \d{3}$'
+    ok_re = re.compile(r'^GET (/repos/(%s)/releases(\?[^ ]*)?|/dl/(%s)/([a-z0-9-]+)-v([0-9.]+)/(\5-\6\.zip|release-manifest\.json(\.sig)?)) \d{3}$'   # + the signed manifest (v0.1.16)
                        % ('|'.join(map(re.escape, set(OFFICIAL.values()))), '|'.join(map(re.escape, set(OFFICIAL.values())))))
     bad = [l for l in req if not ok_re.match(l) or ('/dl/' in l and OFFICIAL.get(ok_re.match(l).group(5)) != ok_re.match(l).group(4))]
     xdl = [l for l in req if f'/dl/{REPO}/{X_ID}-v{xv}/{X_ID}-{xv}.zip 200' in l]
-    ydl = [l for l in req if f'/dl/{REPO}/{Y_ID}-' in l]
+    ydl = [l for l in req if f'/dl/{REPO}/{Y_ID}-' in l and l.split()[1].endswith('.zip')]   # Y's zip (its manifest may be read)
     check('downloads: only official release URLs, X fetched once, Y not fetched again', not bad and len(xdl) == 1 and not ydl,
           f'{len(req)} requests, bad {bad[:3]}, X downloads {xdl}, Y downloads {ydl}')
 
