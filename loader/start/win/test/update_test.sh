@@ -19,7 +19,7 @@
 #      uninstall list), the player's own mod stays
 # Kits of another RELEASE = the same kit with files\RELEASE changed (all that DSM_RELEASE changes in build_win.sh).
 set -u; T="${0:A:h}"; L="${T:h:h:h}"; D=${DSMP_ROOT:-~/ds_multiplayer}; W=$D/win
-KIT=${KIT:-$L/build/win/kit}
+KIT=${KIT:-$L/build/win_test/kit}; export DSMODDED_NO_STEAM=1   # wine has no Steam: the TEST build (DSL_TEST_NOSTEAM=1 build_win.sh)
 C=~/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin
 DRV=~/"Library/Application Support/CrossOver/Bottles/DSMP/drive_c"
 R="$DRV/users/crossover/AppData/Local/Dungeon Settlers Modded"; P="$R/profiles/modded"; U="$R/update"

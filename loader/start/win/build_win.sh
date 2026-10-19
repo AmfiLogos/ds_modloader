@@ -6,18 +6,22 @@
 # Mods (built in their own repos) are put into kit/files/mods/<id>/ by MODS="<dir> <dir> ..." (each a module folder
 # with mod.json and its .dll), e.g. MODS=~/ds_multiplayer/win/build/mods/multiplayer.
 # DSMP_ROOT: a ds_multiplayer checkout (MinHook in win/third_party, the game's baselib.dll in win/25846389).
+# DSL_TEST_NOSTEAM=1: a TEST build into loader/build/win_test (never shipped): the starter's DSMODDED_NO_STEAM=1 and the
+# proxy's DSL_STEAM=0 turn the game's Steam check off (Wine, the VM's no-Steam runs). A release build (loader/build/win)
+# fails when any binary of its kit has such a path (steam_gate.py; owner 2026-10-18: "require Steam, like Mac").
 set -e; cd "${0:A:h}"; W="$PWD"; L="${W:h:h}"
 B=~/tools/llvm-mingw/bin; TC=$B/x86_64-w64-mingw32-clang
 D=${DSMP_ROOT:-~/ds_multiplayer}; MH=$D/win/third_party/minhook
 GAME=${DSL_WIN_GAME:-~/ds_multiplayer/win/25846389}             # read-only copies of the Windows game files
-O=$L/build/win; OBJ=$O/obj; mkdir -p $OBJ $O/old
+O=$L/build/win; NS=(); [[ ${DSL_TEST_NOSTEAM:-} == 1 ]] && { O=$L/build/win_test; NS=(-DDSL_TEST_NOSTEAM); echo "TEST build (DSL_TEST_NOSTEAM): $O, never ship it"; }
+OBJ=$O/obj; mkdir -p $OBJ $O/old
 olds=($OBJ/*.o(N)); (( ${#olds} )) && mv -f $olds $O/old/
 
 python3 gen_def.py $GAME/baselib.dll $O/baselib_exports.def
 PM=(-ffile-prefix-map=$HOME=/src)                               # no build path (user name) in what ships (gate G12)
 PM+=(-ffile-prefix-map=$L=/loader -ffile-prefix-map=${D:A}=/mp)  # any build folder: the same debug info, so the same .buildid hash
 # links: -Wl,--no-insert-timestamp = no build time in the PE headers (the same bytes from every build)
-CF=($PM -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -DDSL_RELEASE=\"$(head -1 $L/../RELEASE)\" -I$L/src -I$L/sdk -I$MH/include)
+CF=($PM $NS -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -DDSL_RELEASE=\"$(head -1 $L/../RELEASE)\" -I$L/src -I$L/sdk -I$MH/include)
 # MelonLoader guard plugin (kind "melon" mods): its DLL is embedded into bie_win.c (starter + baselib.dll)
 MLG=${ML_GUARD_DLL:-$D/ext/melon/plugin/DSMelonGuard/bin/Release/net6.0/DSMelonGuard.dll}; MLGF=()
 if [[ -f $MLG ]]; then
@@ -37,7 +41,7 @@ echo "built $O/baselib.dll"
 $B/x86_64-w64-mingw32-windres ds_modded_win.rc -O coff -o $OBJ/ds_modded_res.res.o
 ZL=$D/win/third_party/zlib; ZO=(); mkdir -p $OBJ/zl
 for f in $ZL/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC $PM -O2 -w -c $f -o $OBJ/zl/${f:t:r}.o; ZO+=($OBJ/zl/${f:t:r}.o); done
-nice -n 19 $TC $PM -Wl,--no-insert-timestamp -O2 -Wall -municode -mwindows -I$L/src -Icompat -I$ZL $MLGF ds_modded_win.c bie_win.c compat/dsl_u8_win.c ../dsl_update_start.c dsl_update_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
+nice -n 19 $TC $PM $NS -Wl,--no-insert-timestamp -O2 -Wall -municode -mwindows -I$L/src -Icompat -I$ZL $MLGF ds_modded_win.c bie_win.c compat/dsl_u8_win.c ../dsl_update_start.c dsl_update_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
 mv -f "$O/Dungeon Settlers Modded.exe.tmp" "$O/Dungeon Settlers Modded.exe"
 echo "built $O/Dungeon Settlers Modded.exe"
 
@@ -61,9 +65,10 @@ for m in ${=MODS}; do cp -R $m $K/files/mods/; done
 for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt $K/files/RELEASE $K/files/lang/*.bat; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
 echo "kit $K: $(ls $K/files/mods | tr '\n' ' ')"
 python3 $L/modules/scan_saves.py $K || { echo "build_win: player data inside the kit (a save or a player file in MODS?)" >&2; exit 1; }   # owner 2026-10-16: no saves in what ships
+if (( ! ${#NS} )); then python3 $W/steam_gate.py $K || { echo "build_win: a release binary can turn the game's Steam check off" >&2; exit 1; }; fi
 
 # the friend zip: one folder "Dungeon Settlers Modded" inside
-Z="$O/Dungeon Settlers Modded - Windows.zip"; [[ -f "$Z" ]] && mv "$Z" "$O/old/$(date +%Y%m%d-%H%M%S) ${Z:t}"
+Z="$O/Dungeon Settlers Modded - Windows.zip"; (( ${#NS} )) && Z="$O/Dungeon Settlers Modded - Windows TEST.zip"; [[ -f "$Z" ]] && mv "$Z" "$O/old/$(date +%Y%m%d-%H%M%S) ${Z:t}"
 ST=$O/zipstage; [[ -d $ST ]] && mv $ST $O/old/zipstage-$(date +%Y%m%d-%H%M%S)
 mkdir -p $ST && cp -R $K "$ST/Dungeon Settlers Modded"
 (cd $ST && zip -qrX "$Z" "Dungeon Settlers Modded")

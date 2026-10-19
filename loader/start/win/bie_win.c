@@ -5,6 +5,8 @@
 // written for it (id = folder name, scope gameplay: every multiplayer player needs it).
 // Per start (bie_prepare, for the profile the game starts with):
 //   - no enabled BepInEx mod: DOORSTOP_DISABLE=1 for the game process (Doorstop, if installed, does nothing);
+//   - a BepInEx mod whose mod.json requires / optional / conflicts fail (src/dsl_deps.h, the loader's own rule) is not
+//     run; the Mods window says why;
 //   - else: BepInEx be.788 (pinned sha256) is in the game copy (downloaded once into <ROOT>\cache, unpacked), the copy's
 //     BepInEx\plugins\<id>\ holds exactly the enabled BepInEx mods (others moved out to BepInEx\plugins_off\), and
 //     DOORSTOP_DISABLE is not set.
@@ -16,6 +18,7 @@
 // BepInEx and melon mods keeps the BepInEx ones (DSL_ML_REASON says why the melon ones are off).
 #include "bie_win.h"
 #include "dsl_internal.h"
+#include "dsl_deps.h"
 #include "zlib.h"
 #include <windows.h>
 #include <urlmon.h>
@@ -241,12 +244,6 @@ static void wrap_loose(const char *mods) {          /* a plugin folder dropped i
     } while (FindNextFileA(h, &fd));
     FindClose(h);
 }
-static int is_kind(const char *mods, const char *id, const char *kind) {
-    char mj[1400]; snprintf(mj, sizeof mj, "%s\\%s\\mod.json", mods, id);
-    char *t = slurp(mj, NULL); JNode *m = t ? json_parse(t) : NULL; free(t);
-    const char *k = json_str(m, "kind"); int r = k && !strcmp(k, kind);
-    json_free(m); return r;
-}
 /* copy a mod folder (without its mod.json) into dst */
 static int copy_tree(const char *src, const char *dst) {
     mkdirs(dst);
@@ -353,22 +350,37 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
     char mods[1200]; snprintf(mods, sizeof mods, "%s\\mods", root);
     wrap_loose(mods);
     char *pt = profile ? slurp(profile, NULL) : NULL; JNode *prof = pt ? json_parse(pt) : NULL; free(pt);
-    JNode *en = json_get(prof, "enabled");
+    JNode *en = json_get(prof, "enabled"), *ord = json_get(prof, "order"), *prov = json_get(prof, "provided");
     char want[64][128], mwant[64][128]; int nw = 0, nm = 0;
+    /* every installed mod for the dependency rule (src/dsl_deps.h), in folder order like the loader */
+    enum { MD = 160 }; static DslDep dep[MD]; JNode *mfs[MD]; int nd = 0, nmf = 0;
+    char names[MD][128]; int nn = 0;
     char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", mods);
     WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
     if (h != INVALID_HANDLE_VALUE) {
-        do {
-            if (fd.cFileName[0] == '.' || !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || nw >= 64 || nm >= 64) continue;
-            int b = is_kind(mods, fd.cFileName, "bepinex"), m = !b && is_kind(mods, fd.cFileName, "melon");
-            if (!b && !m) continue;
-            int on = 1;                                       /* no profile = every installed mod on (the loader's rule) */
-            if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, fd.cFileName)) on = 1; }
-            if (on && b) snprintf(want[nw++], 128, "%s", fd.cFileName);
-            if (on && m) snprintf(mwant[nm++], 128, "%s", fd.cFileName);
-        } while (FindNextFileA(h, &fd));
+        do { if (fd.cFileName[0] != '.' && (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && nn < MD) snprintf(names[nn++], 128, "%s", fd.cFileName); }
+        while (FindNextFileA(h, &fd));
         FindClose(h);
     }
+    qsort(names, (size_t)nn, 128, (int (*)(const void *, const void *))strcmp);
+    for (int k = 0; k < nn; k++) {
+        char mj[1400]; snprintf(mj, sizeof mj, "%s\\%s\\mod.json", mods, names[k]);
+        char *t = slurp(mj, NULL); JNode *m = t ? json_parse(t) : NULL; free(t);
+        const char *id = json_str(m, "id");
+        if (!id || _stricmp(id, names[k]) || !dsl_dep_add(dep, &nd, MD, id, m, en, ord, k)) { json_free(m); continue; }   /* folder names: any case */
+        mfs[nmf++] = m;
+    }
+    if (prov && prov->t == JN_ARR) for (JNode *c = prov->child; c; c = c->next)
+        if (c->t == JN_STR) { DslDep *x = dsl_dep_add(dep, &nd, MD, c->str, NULL, NULL, NULL, 0); if (x) x->fixed = x->on = 1; }
+    dsl_deps_resolve(dep, nd, DSL_LOADER_VERSION, NULL);
+    for (int i = 0; i < nd && nw < 64 && nm < 64; i++) {
+        int b = !strcmp(dep[i].kind, "bepinex"), m = !strcmp(dep[i].kind, "melon");
+        if ((!b && !m) || !dep[i].on) continue;               /* no profile = every installed mod on (the loader's rule) */
+        if (!dep[i].ok) { char t[400]; lg("bepinex: %s is not run: %s", dep[i].id, dsl_dep_text(&dep[i], t, sizeof t)); continue; }
+        if (b) snprintf(want[nw++], 128, "%s", dep[i].id);
+        if (m) snprintf(mwant[nm++], 128, "%s", dep[i].id);
+    }
+    for (int i = 0; i < nmf; i++) json_free(mfs[i]);
     json_free(prof);
     /* MelonLoader mods: one .NET host per start (BepInEx wins), installed at first use, off through its setting file */
     char mwhy[600] = "";

@@ -249,10 +249,16 @@
  "Your mods could not be changed: %s": "모드를 변경하지 못했습니다: %s",
  "Your world opens when this is done.": "이 작업이 끝나면 월드가 열립니다.",
  "applying the mods took too long": "모드 적용이 너무 오래 걸렸습니다",
+ "cannot run together with %s": "%s와(과) 함께 실행할 수 없습니다",
  "did not load": "불러오지 못함",
  "it crashed while starting": "시작 중 비정상 종료됨",
  "mods are being applied": "모드를 적용하는 중입니다",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "지금은 모드를 적용할 수 없습니다(게임을 불러오는 중이거나 모드를 적용하는 중)",
+ "needs %s, but version %s is installed": "%s이(가) 필요하지만 설치된 버전은 %s입니다",
+ "needs %s, which cannot run": "%s이(가) 필요하지만 그 모드를 실행할 수 없습니다",
+ "needs %s, which is not installed": "%s이(가) 필요하지만 설치되어 있지 않습니다",
+ "needs %s, which is turned off": "%s이(가) 필요하지만 꺼져 있습니다",
+ "needs a newer version of Dungeon Settlers Modded": "더 새로운 버전의 Dungeon Settlers Modded가 필요합니다",
  "no write access to the app's folder": "앱 폴더에 쓸 권한이 없음",
  "none": "없음",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "불러오지 않음: 다른 모드가 필요하거나, 다른 모드와 충돌하거나, 지난번에 비정상 종료되었습니다",
@@ -284,5 +290,6 @@
  "the new mods stopped before they were ready": "새 모드가 준비되기 전에 멈췄습니다",
  "this update needs the installer (new game version)": "이 업데이트에는 설치 프로그램이 필요함(새 게임 버전)",
  "this world": "이 월드",
- "unknown error": "알 수 없는 오류"
+ "unknown error": "알 수 없는 오류",
+ "works only with %s, but version %s is installed": "%s에서만 작동하지만 설치된 버전은 %s입니다"
 }

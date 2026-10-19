@@ -265,10 +265,16 @@
  "Your mods could not be changed: %s": "No se pudieron cambiar tus mods: %s",
  "Your world opens when this is done.": "Tu mundo se abre cuando esto termine.",
  "applying the mods took too long": "aplicar los mods tardó demasiado",
+ "cannot run together with %s": "no puede funcionar junto con %s",
  "did not load": "no se cargó",
  "it crashed while starting": "falló al iniciarse",
  "mods are being applied": "se están aplicando mods",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "los mods no se pueden aplicar ahora (el juego está cargando o se están aplicando mods)",
+ "needs %s, but version %s is installed": "necesita %s, pero está instalada la versión %s",
+ "needs %s, which cannot run": "necesita %s, que no puede funcionar",
+ "needs %s, which is not installed": "necesita %s, que no está instalado",
+ "needs %s, which is turned off": "necesita %s, que está desactivado",
+ "needs a newer version of Dungeon Settlers Modded": "necesita una versión más reciente de Dungeon Settlers Modded",
  "no write access to the app's folder": "sin permiso de escritura en la carpeta de la app",
  "none": "ninguno",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "no cargado: necesita otro mod, entra en conflicto con uno o falló la última vez",
@@ -300,5 +306,6 @@
  "the new mods stopped before they were ready": "los mods nuevos se detuvieron antes de estar listos",
  "this update needs the installer (new game version)": "esta actualización necesita el instalador (nueva versión del juego)",
  "this world": "este mundo",
- "unknown error": "error desconocido"
+ "unknown error": "error desconocido",
+ "works only with %s, but version %s is installed": "solo funciona con %s, pero está instalada la versión %s"
 }

@@ -129,6 +129,12 @@ check "BepInEx installed" test -f "$B/libdoorstop.dylib" -a -f "$B/dotnet/libcor
 check "no quarantine on BepInEx" sh -c "! xattr -lr '$B' | grep -q quarantine"
 check "DYLD: dsload then Doorstop" grep -qxF "ENV DYLD_INSERT_LIBRARIES=$ROOT/loader/dsload.dylib:$B/libdoorstop.dylib" "$T/dry_bie.txt"
 check "plugin folder" grep -qxF "ENV BEPINEX_PLUGIN_DIRS=$ROOT/loader/mods/fake-bie" "$T/dry_bie.txt"
+# a BepInEx mod that needs a newer fake-bie (loader/src/dsl_deps.h) stays enabled but is not run
+mkdir -p "$ROOT/loader/mods/fake-bie2"; print -r -- '{"id":"fake-bie2","version":"1.0.0","kind":"bepinex","requires":["fake-bie>=2.0.0"],"platforms":{"any":{"files":{}}}}' > "$ROOT/loader/mods/fake-bie2/mod.json"
+print -r -- '{"enabled":["multiplayer","fake-bie","fake-bie2"],"order":["multiplayer","fake-bie","fake-bie2"]}' > "$D/Mods/active.json"
+OUTR=$(stub 2>&1); print -r -- "$OUTR" > "$T/dry_bie_req.txt"
+check "unmet requirement: that BepInEx mod is not run" grep -qxF "ENV BEPINEX_PLUGIN_DIRS=$ROOT/loader/mods/fake-bie" "$T/dry_bie_req.txt"
+mv "$ROOT/loader/mods/fake-bie2" "$T/fake-bie2-out"
 check "Doorstop target" grep -qxF "ENV DOORSTOP_TARGET_ASSEMBLY=$B/BepInEx/core/BepInEx.Unity.IL2CPP.dll" "$T/dry_bie.txt"
 check "first-start notice" sh -c "tail -c +$mo '$ML' | grep -q 'Preparing mods (first start)'"
 echo "bepinex first launch with download: $(python3 -c "print(f'{$t1-$t0:.1f}')") s"

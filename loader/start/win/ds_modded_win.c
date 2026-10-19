@@ -7,9 +7,11 @@
 //             game opens, with a small progress window (start/dsl_update_start.c); DSML_UPDATE=<label> tells the game
 //   PROFILE = ROOT\profiles\modded (DSRIG_DIR, DSL_LOG_DIR, logs), DATA = PROFILE\data (the game's save folder,
 //             redirected there by the proxy)
-// Steps: Steam not running -> steam.exe -silent, wait up to 90 s for a signed-in user (the game starts in every case;
-// DSL_STEAM=0 tells the proxy to turn the game's Steam check off) -> first start: COPY the normal game's saves (read
-// only, never overwrite) -> environment -> start ROOT\game\DungeonSettlers.exe -> exit.
+// Steps: Steam not running -> steam.exe -silent, wait up to 90 s for a signed-in user; no Steam or no signed-in user =
+// a notice and no game start (owner 2026-10-18: "require Steam, like Mac"; the game's own Steam check always runs) ->
+// first start: COPY the normal game's saves (read only, never overwrite) -> environment -> start
+// ROOT\game\DungeonSettlers.exe -> exit. Test builds only (build_win.sh DSL_TEST_NOSTEAM=1, never shipped):
+// DSMODDED_NO_STEAM=1 skips the Steam wait and sets DSL_STEAM=0 (the proxy of that build turns the game's check off).
 // First start (no DATA\Mods\active.json yet): the default mod profile = every mod in ROOT\mods except those whose mod.json
 // says "default_on": false (Hell difficulty ships off by default, PLAN_V13 section 7). The Mods window owns the file after.
 // Log: PROFILE\starter.log. --dry: print the environment and the command line instead of starting the game.
@@ -86,6 +88,12 @@ static int steam_running(void) {
     return alive;
 }
 static int steam_user(void) { return steam_running() && reg_dword(L"Software\\Valve\\Steam\\ActiveProcess", L"ActiveUser") != 0; }
+/* the Mac stub's notice (app/stub/ds_modded.c ensure_steam, same texts); DSL_NO_ALERT (tests): logged only */
+static void steam_notice(const char *text) {
+    if (!GetEnvironmentVariableW(L"DSL_NO_ALERT", NULL, 0)) msgbox("Dungeon Settlers Modded", "%s", text);
+    else logf_("dialog (DSL_NO_ALERT, not shown): %s", text);
+}
+/* 1 = a signed-in Steam user, the game may start; 0 = no Steam (notice shown): the game does not start */
 static int ensure_steam(void) {
     if (steam_user()) { logf_("steam: running, user signed in"); return 1; }
     if (!steam_running()) {
@@ -93,19 +101,26 @@ static int ensure_steam(void) {
         if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamExe", RRF_RT_REG_SZ, NULL, sp, &n) != ERROR_SUCCESS) {
             n = sizeof sp;
             if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath", RRF_RT_REG_SZ, NULL, sp, &n) != ERROR_SUCCESS) {
-                logf_("steam: not installed (no SteamPath): the game starts without Steam"); return 0;
+                logf_("steam: not installed (no SteamPath): the game does not start");
+                steam_notice(TR("Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again."));
+                return 0;
             }
             wcsncat(sp, L"\\steam.exe", MAX_PATH - wcslen(sp) - 1);
         }
         for (wchar_t *p = sp; *p; p++) if (*p == L'/') *p = L'\\';
         HINSTANCE r = ShellExecuteW(NULL, L"open", sp, L"-silent", NULL, SW_SHOWMINNOACTIVE);
         logf_("steam: started %ls -silent (%lld)", sp, (long long)(INT_PTR)r);
+        if ((INT_PTR)r <= 32) {
+            steam_notice(TR("Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again."));
+            return 0;
+        }
     }
     for (int i = 0; i < 180; i++) {                       /* 90 s */
         if (steam_user()) { logf_("steam: user signed in after %.1f s", i / 2.0); return 1; }
         Sleep(500);
     }
-    logf_("steam: no signed-in user after 90 s: the game starts without Steam");
+    logf_("steam: no signed-in user after 90 s: the game does not start");
+    steam_notice(TR("Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again."));
     return 0;
 }
 
@@ -667,7 +682,18 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, LPWSTR cmd, int show) {
     copy_saves();
     install_packages();
     default_profile();
-    int steam = dry ? steam_user() : ensure_steam();
+    int steam, nosteam = 0;
+#ifdef DSL_TEST_NOSTEAM
+    nosteam = GetEnvironmentVariableW(L"DSMODDED_NO_STEAM", NULL, 0) != 0;                     /* test build only */
+#endif
+    if (nosteam) { steam = 0; logf_("steam: DSMODDED_NO_STEAM (test build): not checked, DSL_STEAM=0"); }
+    else if (dry) steam = steam_user();
+    else if (!(steam = ensure_steam())) return 1;                                           /* notice shown */
+    {   /* the game's SteamRuntime.Start asks Steam to restart it from Steam's own folder unless steam_appid.txt is in its
+           working folder (install.bat writes it; written again when gone) */
+        wchar_t ap[MAX_PATH]; _snwprintf(ap, MAX_PATH, L"%ls\\steam_appid.txt", game);
+        if (!exists(ap)) { FILE *f = _wfopen(ap, L"wb"); if (f) { fputs("2798330\r\n", f); fclose(f); logf_("steam_appid.txt written"); } }
+    }
 
     /* BepInEx plugins of the profile the game starts with (bie_win.c): Doorstop on only when one is enabled */
     char r8[MAX_PATH * 3], g8[MAX_PATH * 3], p8[MAX_PATH * 3], why[600];

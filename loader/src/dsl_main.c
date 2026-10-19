@@ -15,6 +15,7 @@
 #include "../sdk/dsl_sdk.h"
 #include "dsl_bie.h"
 #include "dsl_ml.h"
+#include "dsl_deps.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +45,7 @@ struct DSLPlugin {
     char id[64], version[32], dir[1100], file[1200], sig[64], ndir[1100];
     int idx, state;                       /* 0 listed, 1 active, 2 failed, 3 skipped */
     int api, order_key, ordered, gameplay;
+    int fit;                              /* loadable here (build, platform, files, table) before the dependency rule */
     void *h;
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
@@ -55,6 +57,9 @@ static struct DSLPlugin *ORDER[MAXP];
 static int norder;
 static DSLHost host;
 static char provided[64][64]; static int nprovided;   /* enabled non-code mods (data / patch / builtin) */
+/* every installed mod for the dependency rule (dsl_deps.h): this process's verdict, the Mods window's reasons */
+#define MAXD (MAXP * 2 + 64)
+static DslDep DEPS[MAXD]; static int ndeps;
 
 /* ------------------------------------------------------------------ log */
 void dsl_log(const char *fmt, ...) {
@@ -256,6 +261,13 @@ const char *dsl_profile_file(void) { return profile_path; }
 const char *dsl_log_dir(void) { return logdir; }
 int dsl_plugin_index(DSLPlugin *self) { return self ? self->idx : -1; }
 const char *dsl_plugin_name(DSLPlugin *self) { return self ? self->id : "loader"; }
+/* the dependency reason (dsl_deps.h text, current language) of a switched-on mod this process does not run; 0 = none */
+int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
+    DslDep *x = dsl_dep_find(DEPS, ndeps, id);
+    if (!x || !x->on || x->ok || x->why == DSL_DEP_OK) return 0;
+    dsl_dep_text(x, out, cap);
+    return 1;
+}
 int dsl_mod_state(const char *id, const char **why) {
     struct DSLPlugin *p = find_mod_early(id);
     if (why) *why = !p ? TR_NOOP("not loaded: not made for this game version or this computer") : p->state == 2 ? TR_NOOP("it crashed while starting")
@@ -264,46 +276,41 @@ int dsl_mod_state(const char *id, const char **why) {
 }
 
 /* ------------------------------------------------------------------ manifests */
-static int vcmp(const char *a, const char *b) {          /* dotted numeric compare */
-    while (*a || *b) {
-        long x = strtol(a, (char**)&a, 10), y = strtol(b, (char**)&b, 10);
-        if (x != y) return x < y ? -1 : 1;
-        if (*a == '.') a++;
-        if (*b == '.') b++;
-        if (!isdigit((unsigned char)*a) && !isdigit((unsigned char)*b)) break;
-    }
-    return 0;
-}
-/* "id", "id>=1.2", "id<2", "id=1.0.0" -> id + op + version */
-static void split_req(const char *s, char *id, size_t n, char *op, char *ver) {
-    size_t i = 0;
-    while (s[i] && !strchr("<>=!", s[i]) && i + 1 < n) { id[i] = s[i]; i++; }
-    id[i] = 0;
-    while (i > 0 && id[i - 1] == ' ') id[--i] = 0;
-    op[0] = 0; ver[0] = 0;
-    const char *p = s + strlen(id);
-    while (*p == ' ') p++;
-    int k = 0; while (*p && strchr("<>=!", *p) && k < 2) op[k++] = *p++;
-    op[k] = 0;
-    while (*p == ' ') p++;
-    snprintf(ver, 32, "%s", p);
-}
-static int ver_ok(const char *have, const char *op, const char *want) {
-    if (!op[0]) return 1;
-    int c = vcmp(have, want);
-    if (!strcmp(op, ">=")) return c >= 0;
-    if (!strcmp(op, ">")) return c > 0;
-    if (!strcmp(op, "<=")) return c <= 0;
-    if (!strcmp(op, "<")) return c < 0;
-    if (!strcmp(op, "=") || !strcmp(op, "==")) return c == 0;
-    if (!strcmp(op, "!=")) return c != 0;
-    return 0;
-}
+#define split_req dsl_dep_split                       /* dsl_deps.h: the one rule for every part */
 static struct DSLPlugin *find_mod(const char *id) {
     for (int i = 0; i < np; i++) if (!strcmp(P[i].id, id)) return &P[i];
     return NULL;
 }
 static int is_provided(const char *id) { for (int i = 0; i < nprovided; i++) if (!strcmp(provided[i], id)) return 1; return 0; }
+/* the dependency rule for a set the Mods window is about to start (ids in profile order): ok[i] for ids[i]. Every
+   installed mod's mod.json is read again (a mod package may have arrived while the game runs); a code module that
+   cannot load here (build, platform, files) counts as off; the launcher's own mods stay. */
+void dsl_deps_for_set(const char *const *ids, int n, int *ok) {
+    static DslDep D[MAXD]; int nd = 0;
+    JNode *keep[MAXD]; int nk = 0;
+    DIR *d = opendir(modsdir);
+    char names[MAXD][256]; int nn = 0;
+    struct dirent *e;
+    while (d && (e = readdir(d)) && nn < MAXD) if (e->d_name[0] != '.') snprintf(names[nn++], 256, "%s", e->d_name);
+    if (d) closedir(d);
+    qsort(names, (size_t)nn, 256, (int (*)(const void*, const void*))strcmp);
+    for (int k = 0; k < nn && nk < MAXD; k++) {
+        char mp[1400]; snprintf(mp, sizeof mp, "%s/%s/mod.json", modsdir, names[k]);
+        char *t = read_file(mp, 1 << 20); JNode *m = t ? json_parse(t) : NULL; free(t);
+        const char *id = json_str(m, "id");
+        DslDep *x = id && !strcmp(id, names[k]) ? dsl_dep_add(D, &nd, MAXD, id, m, NULL, NULL, k) : NULL;
+        if (!x) { json_free(m); continue; }
+        keep[nk++] = m;
+        x->on = 0;
+        for (int i = 0; i < n; i++) if (!strcmp(ids[i], id)) { x->on = 1; x->order = i; }
+        struct DSLPlugin *p = find_mod(id);
+        if (p && !p->fit) x->on = 0;
+    }
+    for (int i = 0; i < ndeps; i++) if (DEPS[i].fixed) { DslDep *x = dsl_dep_add(D, &nd, MAXD, DEPS[i].id, NULL, NULL, NULL, 0); if (x) x->fixed = x->on = 1; }
+    dsl_deps_resolve(D, nd, DSL_LOADER_VERSION, NULL);
+    for (int i = 0; i < n; i++) { DslDep *x = dsl_dep_find(D, nd, ids[i]); ok[i] = !x || x->ok; }
+    for (int i = 0; i < nk; i++) json_free(keep[i]);
+}
 
 static int str_in(const JNode *arr, const char *s) {
     if (!arr) return -1;
@@ -345,8 +352,7 @@ static void scan_mods(const char *build) {
     if (prof_txt && !prof) dsl_log("profile %s: not valid JSON: every installed mod is enabled", profile_path);
     if (!prof) dsl_log("no profile (%s): every installed mod is enabled", profile_path);
     JNode *enabled = json_get(prof, "enabled"), *order = json_get(prof, "order"), *prov = json_get(prof, "provided");
-    if (prov && prov->t == JN_ARR) for (JNode *c = prov->child; c && nprovided < 64; c = c->next)
-        if (c->t == JN_STR) snprintf(provided[nprovided++], 64, "%s", c->str);
+    JNode *keep[MAXD]; int nkeep = 0;                           /* non-code mod.json trees, alive until the rule ran */
 
     DIR *d = opendir(modsdir);
     if (!d) { dsl_log("mods folder %s not found: no modules", modsdir); json_free(prof); return; }
@@ -364,10 +370,12 @@ static void scan_mods(const char *build) {
         const char *id = json_str(m, "id"), *kind = json_str(m, "kind");
         if (!kind) kind = json_str(m, "type");
         if (!id || strcmp(id, names[k])) { dsl_log("%s: mod.json id '%s' does not match the folder: skipped", names[k], id ? id : ""); json_free(m); continue; }
-        if (enabled && str_in(enabled, id) == 0) { dsl_log("%s: not enabled in the profile", id); json_free(m); continue; }
-        if (!kind || strcmp(kind, "code")) {                       /* data / patch / builtin: applied to the copy by the launcher */
-            if (nprovided < 64 && !is_provided(id)) snprintf(provided[nprovided++], 64, "%s", id);
-            json_free(m); continue;
+        DslDep *dp = dsl_dep_add(DEPS, &ndeps, MAXD, id, m, enabled, order, k);
+        if (enabled && str_in(enabled, id) == 0) { dsl_log("%s: not enabled in the profile", id); if (dp) dp->mf = NULL; json_free(m); continue; }
+        if (!kind || strcmp(kind, "code")) {                       /* data / patch / builtin: applied to the copy by the launcher;
+                                                                       bepinex / melon: run by the OS start part */
+            if (dp && nkeep < MAXD) keep[nkeep++] = m; else { if (dp) dp->mf = NULL; json_free(m); }
+            continue;
         }
         struct DSLPlugin *p = &P[np]; memset(p, 0, sizeof *p);
         snprintf(p->id, sizeof p->id, "%s", id); snprintf(p->dir, sizeof p->dir, "%s", dir);
@@ -406,57 +414,36 @@ static void scan_mods(const char *build) {
             if (load_table(p, rel)) { p->state = 3; continue; }
         }
     }
+    /* the launcher's own mods (profile "provided"): any version */
+    if (prov && prov->t == JN_ARR) for (JNode *c = prov->child; c; c = c->next) if (c->t == JN_STR) {
+        DslDep *x = dsl_dep_add(DEPS, &ndeps, MAXD, c->str, NULL, NULL, NULL, 0);
+        if (x) x->fixed = x->on = 1;
+        if (nprovided < 64 && !is_provided(c->str)) snprintf(provided[nprovided++], 64, "%s", c->str);
+    }
     json_free(prof);
-
-    /* conflicts (both directions; the one later in the profile order is dropped) */
-    for (int i = 0; i < np; i++) {
-        if (P[i].state != 0) continue;
-        JNode *cf = json_get(P[i].mf, "conflicts");
-        if (!cf || cf->t != JN_ARR) continue;
-        for (JNode *c = cf->child; c; c = c->next) {
-            if (c->t != JN_STR) continue;
-            char cid[64], op[3], ver[32]; split_req(c->str, cid, sizeof cid, op, ver);
-            struct DSLPlugin *o = find_mod(cid);
-            int hit = (o && o->state == 0 && ver_ok(o->version, op, ver)) || (!o && is_provided(cid));
-            if (!hit) continue;
-            struct DSLPlugin *drop = (o && o->order_key < P[i].order_key) ? &P[i] : (o ? o : &P[i]);
-            drop->state = 3;
-            dsl_log("CONFLICT: %s and %s cannot run together; %s is not loaded", P[i].id, cid, drop->id);
-            if (drop == &P[i]) break;
-        }
-    }
-    /* requires: repeat until stable (a dropped module can break another's requirement) */
-    for (int changed = 1; changed; ) {
-        changed = 0;
-        for (int i = 0; i < np; i++) {
-            if (P[i].state != 0) continue;
-            JNode *rq = json_get(P[i].mf, "requires");
-            if (!rq || rq->t != JN_ARR) continue;
-            for (JNode *c = rq->child; c; c = c->next) {
-                if (c->t != JN_STR) continue;
-                char rid[64], op[3], ver[32]; split_req(c->str, rid, sizeof rid, op, ver);
-                const char *why = NULL;
-                if (!strcmp(rid, "loader")) { if (!ver_ok(DSL_LOADER_VERSION, op, ver)) why = "loader version"; }
-                else {
-                    struct DSLPlugin *o = find_mod(rid);
-                    if (o) { if (o->state != 0) why = "is not loaded"; else if (!ver_ok(o->version, op, ver)) why = "wrong version"; }
-                    else if (!is_provided(rid)) why = "is not installed / enabled";
-                }
-                if (why) { P[i].state = 3; changed = 1; dsl_log("%s: needs %s, which %s: not loaded", P[i].id, c->str, why); break; }
-            }
-        }
-    }
+    /* requires / optional / conflicts of code modules and BepInEx plugins (dsl_deps.h; the starters decided the
+       BepInEx set the same way): a code module that cannot load counts as off */
+    for (int i = 0; i < np; i++) { P[i].fit = P[i].state == 0; DslDep *x = dsl_dep_find(DEPS, ndeps, P[i].id); if (x) x->on = x->on && P[i].fit; }
+    dsl_deps_resolve(DEPS, ndeps, DSL_LOADER_VERSION, dsl_log);
+    for (int i = 0; i < np; i++) { DslDep *x = dsl_dep_find(DEPS, ndeps, P[i].id); if (x && P[i].state == 0 && !x->ok) P[i].state = 3; }
+    for (int i = 0; i < ndeps; i++)                             /* after the launcher's ones: the enabled non-code mods that run */
+        if (!DEPS[i].fixed && DEPS[i].ok && strcmp(DEPS[i].kind, "code") && nprovided < 64 && !is_provided(DEPS[i].id))
+            snprintf(provided[nprovided++], 64, "%s", DEPS[i].id);
+    for (int i = 0; i < ndeps; i++) { int code = !strcmp(DEPS[i].kind, "code"); if (!code) DEPS[i].mf = NULL; }   /* freed below */
+    for (int i = 0; i < nkeep; i++) json_free(keep[i]);
     /* order: dependencies first, ties by profile order (Kahn) */
     for (;;) {
         struct DSLPlugin *best = NULL;
         for (int i = 0; i < np; i++) {
             if (P[i].state != 0 || P[i].ordered) continue;
             int ready = 1;
-            JNode *rq = json_get(P[i].mf, "requires");
-            if (rq && rq->t == JN_ARR) for (JNode *c = rq->child; c; c = c->next) {
-                char rid[64], op[3], ver[32]; if (c->t != JN_STR) continue; split_req(c->str, rid, sizeof rid, op, ver);
-                struct DSLPlugin *o = find_mod(rid);
-                if (o && o->state == 0 && !o->ordered) ready = 0;
+            for (int opt = 0; opt < 2; opt++) {                    /* an optional one, when it loads, goes first too */
+                JNode *rq = json_get(P[i].mf, opt ? "optional" : "requires");
+                if (rq && rq->t == JN_ARR) for (JNode *c = rq->child; c; c = c->next) {
+                    char rid[64], op[3], ver[32]; if (c->t != JN_STR) continue; split_req(c->str, rid, sizeof rid, op, ver);
+                    struct DSLPlugin *o = find_mod(rid);
+                    if (o && o->state == 0 && !o->ordered) ready = 0;
+                }
             }
             if (ready && (!best || P[i].order_key < best->order_key)) best = &P[i];
         }

@@ -23,7 +23,8 @@ R=${P:h:h}
 if [[ -d $R && ! -f $R/dsmodded_install.txt && ! -f "$R/Dungeon Settlers Modded.exe" ]]; then
   mkdir -p ${R:h}/old_winstart && mv $R ${R:h}/old_winstart/$(date +%Y%m%d-%H%M%S) && print "moved aside: $R (not an install of ours)"
 fi
-python3 $W/wloader.py install $L/build/win/kit | tail -1
+export DSMODDED_NO_STEAM=1                           # wine has no Steam: the TEST build (DSL_TEST_NOSTEAM=1 build_win.sh)
+python3 $W/wloader.py install $L/build/win_test/kit | tail -1
 check "install: starter and game copy in place" '[[ -f "$R/Dungeon Settlers Modded.exe" && -f $R/game/GameAssembly.dll ]]'
 (( fails )) && { print "== $fails failed (install)"; exit 1; }
 run() {  # run <case> <env...>: one start, until the title (control port) or 80 s after mods-off

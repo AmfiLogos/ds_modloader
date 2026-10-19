@@ -265,10 +265,16 @@
  "Your mods could not be changed: %s": "Vos mods n'ont pas pu être modifiés : %s",
  "Your world opens when this is done.": "Votre monde s'ouvrira une fois ceci terminé.",
  "applying the mods took too long": "l'application des mods a pris trop de temps",
+ "cannot run together with %s": "ne peut pas fonctionner avec %s",
  "did not load": "n'a pas été chargé",
  "it crashed while starting": "il a planté au démarrage",
  "mods are being applied": "des mods sont en cours d'application",
  "mods cannot be applied right now (the game is loading, or mods are being applied)": "les mods ne peuvent pas être appliqués maintenant (le jeu charge, ou des mods sont en cours d'application)",
+ "needs %s, but version %s is installed": "a besoin de %s, mais la version %s est installée",
+ "needs %s, which cannot run": "a besoin de %s, qui ne peut pas fonctionner",
+ "needs %s, which is not installed": "a besoin de %s, qui n'est pas installé",
+ "needs %s, which is turned off": "a besoin de %s, qui est désactivé",
+ "needs a newer version of Dungeon Settlers Modded": "a besoin d'une version plus récente de Dungeon Settlers Modded",
  "no write access to the app's folder": "pas d'accès en écriture au dossier de l'application",
  "none": "aucun",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "non chargé : il a besoin d'un autre mod, entre en conflit avec un mod, ou a planté la fois précédente",
@@ -300,5 +306,6 @@
  "the new mods stopped before they were ready": "les nouveaux mods se sont arrêtés avant d'être prêts",
  "this update needs the installer (new game version)": "cette mise à jour nécessite le programme d'installation (nouvelle version du jeu)",
  "this world": "ce monde",
- "unknown error": "erreur inconnue"
+ "unknown error": "erreur inconnue",
+ "works only with %s, but version %s is installed": "fonctionne seulement avec %s, mais la version %s est installée"
 }

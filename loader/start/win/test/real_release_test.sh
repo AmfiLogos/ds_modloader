@@ -4,6 +4,7 @@
 # KIT (default build/win/kit) is installed fresh with files\RELEASE = 0.1.6.99 (REAL_OLD) into the default folder (what was
 # there goes aside). Checks: Off = the corner button "Update to <version>" and nothing downloaded; On = background download
 # with sha256 ok, then the next launch installs it (starter.log) and the game reaches the title with it ("confirmed").
+# Since 0.1.16 a release starter needs a signed-in Steam (no DSMODDED_NO_STEAM in release builds): run it where Steam is.
 set -u; V=${1:?version}; T="${0:A:h}"; L="${T:h:h:h}"; D=${DSMP_ROOT:-~/ds_multiplayer}; W=$D/win
 KIT=${KIT:-$L/build/win/kit}; OLDV=${REAL_OLD:-0.1.6.99}
 C=~/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin

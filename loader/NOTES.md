@@ -30,7 +30,7 @@ until its file changes (`<log dir>/dsload_state/<id>.disabled`).
 installed for `requires`), `api` (1 or 2), `game_builds` (list) or `game_build` (string), `"*"` = any,
 `platforms.mac-arm64.entry` (default `<id>.dylib`), `platforms.mac-arm64.files` {name: sha256} (checked),
 `tables` (or `hooks`): {build: {"mac-arm64": "rva/<build>_mac.tsv"}} with lines `name<TAB>0xRVA` (a module with
-tables but none for this build is refused), `requires` / `conflicts`: `"id"`, `"id>=1.2"`, `"loader>=2.0.0"`.
+tables but none for this build is refused), `requires` / `optional` / `conflicts`: see "Dependencies" below.
 Profile `<mods>/profile.json` (or `DSL_PROFILE`): `enabled`, `order`, `provided` (ids applied outside the loader,
 e.g. `notch-fix`). No profile = every installed mod enabled.
 Conflict: the module later in the profile order is dropped and both names are logged.
@@ -572,3 +572,30 @@ Owner: "add a way to adjust mod settings in the modloader". First user: ZET-U Mo
 - Mods window: a Settings button on rows of mods with settings (not in the world-bound mode); the Settings page shares
   the bottom bar (status lists the gameplay drafts, Undo changes drops them, Apply applies switches + settings).
   Rig proof: `test/settings/ui_settings_test.py <out>` (copy T, lease, cap, hidden).
+
+## Dependencies (v0.1.16, lane starter, 2026-10-18): `requires`, `optional`, `conflicts`
+One rule, `src/dsl_deps.h` (header only), used by the loader core (`dsl_main.c`), the Mods window's Apply
+(`dsl_reg.c` prepare), the Windows starter and soft restart (`start/win/bie_win.c` bie_prepare) and the Mac stub
+(`app/stub/ds_modded.c` kind_dirs). Checked kinds: `code` and `bepinex`. Other kinds (`data` / `patch` / `builtin`,
+`melon`) are never switched off by it, but count as mods others need.
+```json
+"requires":  ["Core>=0.5.0", "loader>=3.0.0"],
+"optional":  ["Extras>=1.2"],
+"conflicts": ["OldCore<0.5"]
+```
+- Entry: `"id"` or `"id<op><version>"`, op `>=`, `>`, `<=`, `<`, `=` (`==`), `!=`; dotted numbers. `loader` = the
+  loader's internal API (`DSL_LOADER_VERSION`), in `requires` only.
+- `requires`: the mod runs only when each named mod is installed, switched on, can run itself and its version fits.
+- `optional` (new): the named mod may be missing or off; when it is on, its version must fit, else this mod does not
+  run. A code module's optional mod that loads is loaded first (load order).
+- `conflicts`: never runs with the named mod (when its version fits): the one later in the profile order is off; a mod
+  the launcher provides (profile `provided`, any version) is never the one switched off.
+- Repeated until stable: a mod switched off by the rule can switch off the mods that need it.
+- Where the player sees it: the mod stays enabled in the profile (it runs as soon as its requirement is met), is not
+  run, and the Mods window says why ("Not running: needs Core >= 0.5.0, but version 0.4.0 is installed"; 7 reasons,
+  10 languages). Its BepInEx folder is not copied (Windows) / not in `BEPINEX_PLUGIN_DIRS` (Mac), and it is not in the
+  mod set (`dsload_modset.json` "bepinex").
+- The starters do not know which code modules fit the game build: they count an enabled code module as running. The
+  loader decides again in the game with the build known (a BepInEx mod already started then keeps running).
+- Host test: `test/run_tests.sh` (bie-core 0.4.0 too old for a BepInEx mod, a code mod, an optional user).
+

@@ -145,6 +145,8 @@ const char *dsl_log_dir(void);
 int dsl_plugin_index(struct DSLPlugin *self);
 const char *dsl_plugin_name(struct DSLPlugin *self);
 int dsl_mod_state(const char *id, const char **why);     /* 1 running, 2 failed, 3 skipped, 0 listed / unknown */
+int dsl_mod_dep_text(const char *id, char *out, size_t cap);   /* a dependency reason (dsl_deps.h), 0 = none */
+void dsl_deps_for_set(const char *const *ids, int n, int *ok);   /* the dependency rule for a set to start */
 int dsl_soft_shot(const char *png_path);                 /* test: full frame incl. UI */
 void *dsl_soft_mainflow(void);                           /* dsl_soft.c: the live MainFlow or NULL */
 /* dsl_settings.c: mod settings (SDK API 5) */
