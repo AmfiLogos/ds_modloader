@@ -151,6 +151,62 @@ def start(timeout=900):
     raise SystemExit('no title in %d s' % timeout)
 
 
+# the weapon skills cast in step S (seed units; keys seen asking Equipment_Greatsword / Equipment_FireStaff on Mac runs 7-11).
+# Water skills (SummonBubbling, WaterDive: the stock game throws NullReferenceException when ordered so) and
+# EmergencyEscape (no target) are never cast.
+WEAPON_CASTS = {'477ad25a-7c22-43f5-be28-db055895297e': ['SKILL_WhirlwindSlash', 'SKILL_Slay'],                      # Greatsword
+                '137a4264-054d-4b21-81f2-a69d349a3bd0': ['SKILL_FireMissile', 'SKILL_Incinerate', 'SKILL_Explosion'],  # FireStaff
+                '92be08ca-b7de-497a-a4ea-9aac4be0b603': ['SKILL_Incinerate', 'SKILL_Explosion', 'SKILL_BlazingEcho']}   # FireStaff
+def running():
+    """the game runs (not paused); a window's speed lock / PopupTimeLock is released, the result screen never opened"""
+    sp = ''.join(probe('speed'))
+    if 'speed: Pause' in sp or 'lock 1' in sp:
+        if 'lock 1' in sp: probe('speed_unlock')
+        if 'PopupTimeLock=1' in sp: probe('speed_clear')
+        probe('set_speed 1'); time.sleep(1); sp = ''.join(probe('speed'))
+    return 'speed: Normal' in sp, sp
+
+
+def weapon_step(S, out):
+    """S: weapons off, then only Greatsword / FireStaff skills, by live units next to their target, while the game runs.
+    Pass: the bypass asked and answered yes, and at least 2 casts with an empty hand (durability cost skipped)."""
+    mark = len(blog()); p0 = len(plog())
+    uq = probe('unequip_all 1'); S['unequip'] = uq; time.sleep(2)
+    S['casts'] = []; S['paused'] = []
+    empty = lambda: blog()[mark:].count('durability cost with an empty slot skipped')
+    for r in range(20):
+        if empty() >= 2: break
+        alive = units_in(1)
+        todo = [(g, ks[r % len(ks)]) for g, ks in WEAPON_CASTS.items() if g in alive]
+        if not todo: S['casts'].append('no weapon-skill unit alive in the dungeon'); break
+        ok, sp = running()
+        if not ok: S['paused'].append(sp[-120:]); time.sleep(2); continue
+        g0, k0 = todo[0]                                        # walk next to the target first (an order out of range waits)
+        S['casts'] += probe('approach 1')[:1]
+        for _ in range(10):
+            d = re.findall(r'distance (\d+)', ''.join(probe(f'cast 1 {g0} {k0}')[:1]))
+            if d and int(d[0]) <= 3: break
+            time.sleep(3)
+        for g, k in todo:
+            ok, sp = running()
+            if not ok: S['paused'].append(sp[-120:]); continue
+            S['casts'] += probe(f'cast 1 {g} {k}')[:1]
+        for _ in range(6):
+            if empty() >= 2: break
+            time.sleep(1)
+    L = blog()[mark:]
+    S['weapon_lines'] = [l for l in L.splitlines() if 'weapon requirement skipped' in l or 'durability cost' in l][:8]
+    S['bypass'] = probe('bypass'); S['empty_casts'] = empty()
+    check('S: weapons taken off (the game\'s unequip)', uq and re.search(r'unequip_all 1: [1-9] units', uq[0]), uq)
+    check('S: the game asks for a skill without its weapon and gets yes', 'weapon requirement skipped' in L and re.search(r'bypass: yes [1-9]', ''.join(S['bypass'])), S['weapon_lines'] + S['bypass'])
+    check('S: at least 2 weapon skills cast with an empty hand (durability cost skipped)', empty() >= 2, [empty()] + S['paused'][:3])
+    sc = probe('scene', 10)
+    check('S: the game still answers (no hang)', bool(sc), sc)
+    exc = [l for l in plog()[p0:].splitlines() if 'Exception' in l]
+    check('S: no exception while they cast without weapons', not exc, exc[:4])
+    shot(out, 'win_dungeon_no_weapons')
+
+
 def main_run(out):
     S = {}
     log('owner data backup'); t_bk = OB.backup(w); S['owner_backup'] = t_bk
@@ -202,6 +258,8 @@ def main_run(out):
     time.sleep(10)
     pp = probe('party'); S['party'] = pp
     check('P: the game\'s party cap reads 8', pp and 'PlayerPartyMax 8' in pp[0], pp)
+    # ---- S first, while the seed units are fresh (no window opened yet)
+    weapon_step(S, out)
     # ---- 5: the three windows
     p0 = len(plog())
     probe('select_all'); time.sleep(2)
@@ -216,41 +274,6 @@ def main_run(out):
         probe('toggle %d' % t); time.sleep(1)
     exc = [l for l in plog()[p0:].splitlines() if 'Exception' in l]
     check('5: the three windows: no exception', not exc, exc[:4])
-    # ---- S: weapons off
-    mark = len(blog()); p0 = len(plog())
-    uq = probe('unequip_all 1'); S['unequip'] = uq
-    S['speed_before'] = probe('speed')
-    if 'lock 1' in ''.join(S['speed_before']): probe('speed_unlock')
-    if 'PopupTimeLock=1' in ''.join(probe('speed')): probe('speed_clear')
-    probe('set_speed 1'); time.sleep(2); S['speed_cast'] = probe('speed')
-    done = lambda: 'durability cost with an empty slot skipped' in blog()[mark:] and 'weapon requirement skipped' in blog()[mark:]
-    S['casts'] = []; sk = seed_skills()                   # one skill per unit per round (a new order replaces the last)
-    for r in range(12):
-        alive = units_in(1)
-        todo = [(g, ks[r % len(ks)]) for g, ks in sk.items() if g in alive and ks]
-        if not todo: S['casts'].append('no seed unit alive in the dungeon'); break
-        if r % 4 == 0:
-            S['casts'] += probe('approach 1')[:1]
-            for _ in range(10):
-                d = re.findall(r'distance (\d+)', ''.join(probe('cast 1 %s %s' % todo[0])[:1]))
-                if done() or (d and int(d[0]) <= 3): break
-                time.sleep(3)
-        for g, k in todo: S['casts'] += probe(f'cast 1 {g} {k}')[:1]
-        for _ in range(8):
-            if done(): break
-            time.sleep(1)
-        if done(): break
-    L = blog()[mark:]
-    S['weapon_lines'] = [l for l in L.splitlines() if 'weapon requirement skipped' in l or 'durability cost' in l][:8]
-    S['bypass'] = probe('bypass')
-    check('S: weapons taken off (the game\'s unequip)', uq and re.search(r'unequip_all 1: [1-9] units', uq[0]), uq)
-    check('S: the game asks for a skill without its weapon and gets yes', 'weapon requirement skipped' in L, S['weapon_lines'])
-    check('S: a weapon skill cast with an empty hand (durability cost skipped)', 'durability cost with an empty slot skipped' in L, S['weapon_lines'])
-    sc = probe('scene', 10)
-    check('S: the game still answers (no hang)', bool(sc), sc)
-    exc = [l for l in plog()[p0:].splitlines() if 'Exception' in l]
-    check('S: no exception while they cast without weapons', not exc, exc[:4])
-    shot(out, 'win_dungeon_no_weapons')
     # ---- W: asked once per world
     mark = len(blog())
     probe('load ' + saves['Load'][1]); time.sleep(20)
