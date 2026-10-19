@@ -116,8 +116,14 @@ def setup(out):
     w.put(os.path.join(BUILD, 'plugin', 'ZetuSuite.dll'), GAME + r'\BepInEx\plugins\ZetuSuite\ZetuSuite.dll')
     w.put(os.path.join(BUILD, 'probe', 'ZetuProbe.dll'), GAME + r'\BepInEx\plugins\ZetuProbe\ZetuProbe.dll')
     w.write(GAME + r'\BepInEx\config\amfi.zetu-suite.cfg', '[Gameplay]\n\nskills_without_weapon = true\n\nmax_units = 8\n')
-    us = w.read(r'%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\UserSetting.json')[0]   # read only
-    w.write(DATA + r'\UserSetting.json', us)
+    us = json.loads(w.read(r'%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\UserSetting.json')[0].decode('utf-8-sig'))   # read only
+    g = us['GraphicSettingData']                               # VMWARE.md rule 3: windowed 1728x1000, never full screen
+    g['SaveCurrentScreenType'] = 1
+    for a_, b_ in (('ResolutionWidth', 'ResolutionHeight'), ('WindowedResolutionWidth', 'WindowedResolutionHeight')): g[a_], g[b_] = 1728, 1000
+    for k in list(us.get('SoundSettingData', {})):             # owner: no sound in tests
+        if k.endswith('Percent'): us['SoundSettingData'][k] = 0.0
+        if k.endswith('Mute'): us['SoundSettingData'][k] = True
+    w.write(DATA + r'\UserSetting.json', json.dumps(us, indent=1))
     saves = {}
     for tag in ('Cancel', 'Load'):
         p, name, g = fresh_world(out, tag)
