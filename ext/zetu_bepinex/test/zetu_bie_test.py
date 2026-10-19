@@ -98,31 +98,37 @@ def wait_map(m, limit=120):
     return status()
 
 
+# EmergencyEscape: no target. WaterDive: the stock game throws NullReferenceException in its MoveRoutine / AttackRoutine
+# when ordered this way, with the weapons ON and the bypass never asked (2026-10-19, out/hold4): not this plugin's.
+SKIP_SKILLS = ('SKILL_EmergencyEscape', 'SKILL_WaterDive')
 def seed_skills():
-    """the seed save's player units and their active skills (SkillComponent ActiveSkills), EmergencyEscape left out"""
+    """the seed save's player units and their active skills (SkillComponent ActiveSkills), SKIP_SKILLS left out"""
     d = json.load(open(SEED, encoding='utf-8')); ec = d['EntityComponentSaveData']['EntityComponents']; out = {}
     for g in d['PlayerUnitsSaveData']['SkillTrees']:
         comps = ec.get(g); comps = comps if isinstance(comps, list) else (comps or {}).get('Components', [])
         for c in comps:
             a = c.get('Data', {}).get('ActiveSkills')
-            if a: out[g] = [k for k in a if k != 'SKILL_EmergencyEscape']
+            if a: out[g] = [k for k in a if k not in SKIP_SKILLS]
     return out
-def casts(done, rounds=6):
-    """the player's own skill order (UseSkillTargetRequested) of every seed unit in the dungeon, each of its skills, on the
-    nearest hostile, after the units walked there (a skill order out of range waits); until done()"""
+def casts(done, rounds=12):
+    """the player's own skill order (UseSkillTargetRequested) of every seed unit in the dungeon on the nearest hostile,
+    after the units walked there (an order out of range waits); one skill per unit per round (a new order replaces the
+    last), the next of its skills each round; until done()"""
     sent = []; sk = seed_skills()
-    for _ in range(rounds):
+    for r in range(rounds):
         alive = {u['guid'] for u in units(1)}
-        todo = [(g, k) for g, ks in sk.items() if g in alive for k in ks]
+        todo = [(g, ks[r % len(ks)]) for g, ks in sk.items() if g in alive and ks]
         if not todo: sent.append('no seed unit alive in the dungeon'); break
-        sent += probe('approach 1')[:1]
-        for _ in range(10):
-            d = re.findall(r'distance (\d+)', ''.join(probe('cast 1 %s %s' % todo[0])[:1]))
-            if done() or (d and int(d[0]) <= 3): break
-            time.sleep(3)
-        for g, k in todo:
+        if r % 4 == 0:
+            sent += probe('approach 1')[:1]
+            for _ in range(10):
+                d = re.findall(r'distance (\d+)', ''.join(probe('cast 1 %s %s' % todo[0])[:1]))
+                if done() or (d and int(d[0]) <= 3): break
+                time.sleep(3)
+        for g, k in todo: sent += probe(f'cast 1 {g} {k}')[:1]
+        for _ in range(8):
             if done(): return sent
-            sent += probe(f'cast 1 {g} {k}')[:1]; time.sleep(2)
+            time.sleep(1)
     return sent
 
 

@@ -32,7 +32,7 @@ SEED_GUID = 'f816ebc6-195c-432c-9fff-754b75ee3738'
 WK = r'C:\dsm\zetubie'; GAME = WK + r'\game'; DATA = WK + r'\data'
 STEAM_GAME = r'C:\Program Files (x86)\Steam\steamapps\common\Dungeon Settlers'
 BLOG = GAME + r'\BepInEx\LogOutput.log'
-checks = []; w = None
+checks = []; w = None; PID = None
 
 
 def log(*a): print(time.strftime('%H:%M:%S'), *a, flush=True)
@@ -65,14 +65,17 @@ def sha_guest(p):
     d, _ = w.read(p, max=64 << 20); return hashlib.sha256(d).hexdigest()
 
 
+# EmergencyEscape: no target. WaterDive: the stock game throws NullReferenceException in its MoveRoutine / AttackRoutine
+# when ordered this way, with the weapons ON and the bypass never asked (2026-10-19, out/hold4): not this plugin's.
+SKIP_SKILLS = ('SKILL_EmergencyEscape', 'SKILL_WaterDive')
 def seed_skills():
-    """the seed save's player units and their active skills (SkillComponent ActiveSkills), EmergencyEscape left out"""
+    """the seed save's player units and their active skills (SkillComponent ActiveSkills), SKIP_SKILLS left out"""
     d = json.load(open(SEED, encoding='utf-8')); ec = d['EntityComponentSaveData']['EntityComponents']; out = {}
     for g in d['PlayerUnitsSaveData']['SkillTrees']:
         comps = ec.get(g); comps = comps if isinstance(comps, list) else (comps or {}).get('Components', [])
         for c in comps:
             a = c.get('Data', {}).get('ActiveSkills')
-            if a: out[g] = [k for k in a if k != 'SKILL_EmergencyEscape']
+            if a: out[g] = [k for k in a if k not in SKIP_SKILLS]
     return out
 def units_in(m):
     """guids of the live player units on map m (probe 'units_list')"""
@@ -124,18 +127,20 @@ def setup(out):
 
 def start(timeout=900):
     if not w.screen_mode_ok(): raise SystemExit('screen mode is not windowed (3): not started')
-    w.kill_all()
+    if w.procs(): raise SystemExit('another DungeonSettlers.exe runs in the VM (another lane): not started')   # never killed by us
     env = [f'ZETU_TEST_DATA={DATA}', f'DSRIG_DIR={WK}', 'SteamAppId=2798330', 'SteamGameId=2798330']
     r = w.a('run', exe=GAME + r'\DungeonSettlers.exe', args=f'-logFile "{WK}\\player.log"', cwd=GAME, env=env, show=True, wait_ms=0)
-    log('game pid', r.get('pid'))
+    global PID; PID = r.get('pid'); log('game pid', PID)
     t0 = time.time()
     while time.time() - t0 < timeout:
         if 'Chainloader startup complete' in blog(): break
         if not w.procs(): raise SystemExit('the game ended before BepInEx was ready: ' + blog()[-400:])
         time.sleep(3)
-    while time.time() - t0 < timeout:
-        sc = probe('scene', 10)
-        if sc and 'mainflow True' in sc[0]: return sc[0]
+    ok = 0
+    while time.time() - t0 < timeout:                       # the title: MainFlow there in 3 answers in a row (the
+        sc = probe('scene', 10)                              # entry scene has one for a moment, then the title loads)
+        ok = ok + 1 if sc and 'mainflow True' in sc[0] else 0
+        if ok >= 3: return sc[0]
         time.sleep(3)
     raise SystemExit('no title in %d s' % timeout)
 
@@ -152,7 +157,9 @@ def main_run(out):
     shot(out, 'win_title')
     # ---- W: Cancel
     mark = len(blog())
-    probe('load ' + saves['Cancel'][1])
+    for _ in range(10):                                    # until the title's event queue takes it
+        if 'sent' in ''.join(probe('load ' + saves['Cancel'][1])): break
+        time.sleep(3)
     check('W: the warning shows before the load', wait_log('save warning: shown for', mark, 60), zl(blog()[mark:])[-4:])
     time.sleep(2)
     nt = probe('notice'); S['notice'] = nt
@@ -211,19 +218,21 @@ def main_run(out):
     if 'PopupTimeLock=1' in ''.join(probe('speed')): probe('speed_clear')
     probe('set_speed 1'); time.sleep(2); S['speed_cast'] = probe('speed')
     done = lambda: 'durability cost with an empty slot skipped' in blog()[mark:] and 'weapon requirement skipped' in blog()[mark:]
-    S['casts'] = []; sk = seed_skills()
-    for _ in range(6):
+    S['casts'] = []; sk = seed_skills()                   # one skill per unit per round (a new order replaces the last)
+    for r in range(12):
         alive = units_in(1)
-        todo = [(g, k) for g, ks in sk.items() if g in alive for k in ks]
+        todo = [(g, ks[r % len(ks)]) for g, ks in sk.items() if g in alive and ks]
         if not todo: S['casts'].append('no seed unit alive in the dungeon'); break
-        S['casts'] += probe('approach 1')[:1]
-        for _ in range(10):
-            d = re.findall(r'distance (\d+)', ''.join(probe('cast 1 %s %s' % todo[0])[:1]))
-            if done() or (d and int(d[0]) <= 3): break
-            time.sleep(3)
-        for g, k in todo:
+        if r % 4 == 0:
+            S['casts'] += probe('approach 1')[:1]
+            for _ in range(10):
+                d = re.findall(r'distance (\d+)', ''.join(probe('cast 1 %s %s' % todo[0])[:1]))
+                if done() or (d and int(d[0]) <= 3): break
+                time.sleep(3)
+        for g, k in todo: S['casts'] += probe(f'cast 1 {g} {k}')[:1]
+        for _ in range(8):
             if done(): break
-            S['casts'] += probe(f'cast 1 {g} {k}')[:1]; time.sleep(2)
+            time.sleep(1)
         if done(): break
     L = blog()[mark:]
     S['weapon_lines'] = [l for l in L.splitlines() if 'weapon requirement skipped' in l or 'durability cost' in l][:8]
@@ -258,7 +267,8 @@ def main():
         import traceback; traceback.print_exc()
         check('run finished', False, repr(e))
     finally:
-        try: w.kill_all()
+        try:
+            if PID: w.a('kill', pid=PID)                       # only our own copy
         except Exception as e: log('kill:', e)
         for p, n in ((BLOG, 'LogOutput.log'), (WK + r'\player.log', 'player.log')):
             try: w.get(p, os.path.join(out, n))

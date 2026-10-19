@@ -374,7 +374,7 @@ namespace ZetuSuite
             Rebuild(row);
             float sc = Scale(row);
             var c0 = Corners(p0); var ck = Corners(Tr(arr[k]));
-            if (!z.HaveTl) { z.TlX = c0[1].x; z.TlY = c0[1].y; z.HaveTl = true; z.LastS = sc; }   // the stock corner
+            if (!z.HaveTl) { z.TlX = c0[1].x; z.TlY = c0[1].y; z.HaveTl = true; z.LastS = float.NaN; }   // the stock corner; the first fit is logged
             float w1 = (ck[2].x - c0[0].x) / sc;                         // the shown panels' width at scale 1, in pixels
             float sw = Screen.width;
             float margin = z.TlX > 8 ? z.TlX : 8, avail = sw - z.TlX - margin;
