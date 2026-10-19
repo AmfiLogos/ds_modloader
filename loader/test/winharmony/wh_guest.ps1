@@ -7,6 +7,9 @@
 #                  game settings (windowed) into the profile's data folder. A kept game copy gets a fresh BepInEx.
 #   -Step start    -Ids a,b: writes the mod profile (data\Mods\active.json) and starts the starter (the real start path:
 #                  bie_prepare, Doorstop on or off, environment). Run it through runProgramInGuest -interactive.
+#   -Step procs    pids of the processes running from the test folder (game, crash handler, starter).
+#   -Step kill     stops them and waits until they are gone.
+#   -Step chain    runs stage\chain\chaintest.exe (no game; after setup) and returns its exit code and log lines.
 #   -Step collect  pings the multiplayer control port twice (frame counter, 3 s apart), copies the logs into one zip.
 param([string]$Step = '', [string]$Tag = '0', [string]$Ids = '', [switch]$Download)
 $ErrorActionPreference = 'Stop'
@@ -21,6 +24,8 @@ function Put-Out { $tmp = "$OUT\$Step-$Tag.json.tmp"; $r | ConvertTo-Json -Depth
 function Move-Old($p) { if (Test-Path -LiteralPath $p) { New-Item -ItemType Directory -Force -Path $OLD | Out-Null; Move-Item -LiteralPath $p -Destination "$OLD\$((Split-Path $p -Leaf))" -Force } }
 function Utc($p) { if (Test-Path -LiteralPath $p) { (Get-Item -LiteralPath $p).LastWriteTimeUtc.ToString('o') } else { $null } }
 function Games { @(Get-Process -Name DungeonSettlers -ErrorAction SilentlyContinue) }
+# the game, Unity's crash handler and the starter running from the test folder
+function Ours { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$ROOT\*" }) }
 function Reg-Mode { try { (Get-ItemProperty -Path $REG -Name $MODE).$MODE } catch { $null } }
 function Rig-Frames($port) {
     try {
@@ -129,6 +134,24 @@ try {
         if (Test-Path "$OUT\collect-$Tag.zip") { Move-Old "$OUT\collect-$Tag.zip" }
         Compress-Archive -Path "$d\*" -DestinationPath "$OUT\collect-$Tag.zip"
         $r.ok = $true
+    }
+    'procs' {
+        $r.pids = @(Ours | ForEach-Object Id); $r.ok = $true
+    }
+    'kill' {
+        $k = @(Ours); $r.killed = @($k | ForEach-Object { "$($_.Id) $($_.ProcessName)" })
+        $k | Stop-Process -Force -ErrorAction SilentlyContinue
+        for ($i = 0; $i -lt 30 -and @(Ours).Count; $i++) { Start-Sleep -Milliseconds 500 }
+        $r.left = @(Ours | ForEach-Object Id); $r.ok = -not $r.left.Count
+    }
+    'chain' {
+        # chaintest.exe (stage\chain, unpacked by setup): the loader's engine + BepInEx's Dobby detour, both orders, no game
+        $d = "$STAGE\chain"
+        if (-not (Test-Path "$d\chaintest.exe")) { throw "no $d\chaintest.exe (stage.zip without chain\)" }
+        $p = Start-Process -FilePath "$d\chaintest.exe" -WorkingDirectory $d -WindowStyle Hidden -PassThru -Wait
+        $r.exit = $p.ExitCode
+        $r.log = @(Get-Content -LiteralPath "$d\chaintest.log" -ErrorAction SilentlyContinue | ForEach-Object { [string]$_ })
+        $r.ok = ($p.ExitCode -eq 0)
     }
     default { throw "unknown step '$Step'" }
     }

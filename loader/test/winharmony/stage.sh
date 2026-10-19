@@ -4,6 +4,7 @@
 #                              of this checkout with MODS=$MP_MOD (a built multiplayer module folder: mod.json + multiplayer.dll)
 #   mods/samefn-bie/           SameFnWin.dll (SameFnWin/, built against the pinned BepInEx be.788 core) + mod.json kind bepinex
 #   cache/<zip>                the pinned BepInEx zip (sha256 of start/win/bie_win.c), seeded into the test install's cache
+#   chain/                     chaintest.exe (chaintest/: the engine + BepInEx's Dobby detour, both orders, no game) + dobby.dll
 # BIE_ZIP=<file>: a local copy of the pinned zip (else it is downloaded once into build/).
 set -e; cd "${0:A:h}"; H=$PWD; L=${H:h:h}; W=$L/start/win
 B=$H/build; mkdir -p $B/old
@@ -25,6 +26,13 @@ BD=$B/bie_$TAG; [[ -f $BD/BepInEx/core/BepInEx.Unity.IL2CPP.dll ]] || { mkdir -p
 nice -n 19 ~/.dotnet/dotnet build SameFnWin/SameFnWin.csproj -c Release -p:BieDir=$BD/BepInEx -o $B/plugin -nologo -v q
 DLL=$B/plugin/SameFnWin.dll
 
+# the chain test (no game): the loader's engine (this checkout) + MinHook + the pinned zip's dobby.dll
+TC=~/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang; MH=${DSMP_ROOT:-~/ds_multiplayer}/win/third_party/minhook
+mkdir -p $B/chain
+nice -n 19 $TC -ffile-prefix-map=$HOME=/src -O0 -Wall -I$L/src -I$L/sdk -I$MH/include -o $B/chain/chaintest.exe chaintest/chaintest.c \
+  $W/dsl_engine_win.c $MH/src/hook.c $MH/src/buffer.c $MH/src/trampoline.c $MH/src/hde/hde64.c -static
+cp $BD/BepInEx/core/dobby.dll $B/chain/
+
 # the kit
 if [[ -z $KIT ]]; then
   [[ -f $MP_MOD/multiplayer.dll && -f $MP_MOD/mod.json ]] || { echo "stage: set MP_MOD=<multiplayer module folder> (or KIT=<built kit>)" >&2; exit 1; }
@@ -35,7 +43,8 @@ fi
 [[ -f $KIT/files/mods/multiplayer/multiplayer.dll ]] || { echo "stage: the kit has no multiplayer module" >&2; exit 1; }
 
 S=$B/stage; [[ -d $S ]] && mv $S $B/old/stage-$(date +%Y%m%d-%H%M%S)
-mkdir -p $S/mods/samefn-bie $S/cache
+mkdir -p $S/mods/samefn-bie $S/cache $S/chain
+cp $B/chain/chaintest.exe $B/chain/dobby.dll $S/chain/
 cp -R $KIT $S/kit
 cp $DLL $S/mods/samefn-bie/
 cat > $S/mods/samefn-bie/mod.json <<EOF
@@ -51,6 +60,6 @@ cat > $S/mods/samefn-bie/mod.json <<EOF
 EOF
 cp $Z $S/cache/
 [[ -f $B/stage.zip ]] && mv $B/stage.zip $B/old/stage-$(date +%Y%m%d-%H%M%S).zip
-(cd $S && zip -qrX $B/stage.zip kit mods cache)
+(cd $S && zip -qrX $B/stage.zip kit mods cache chain)
 cp $H/wh_guest.ps1 $B/wh_guest.ps1
 echo "staged $B/stage.zip ($(du -h $B/stage.zip | cut -f1)): kit $(cat $KIT/files/RELEASE 2>/dev/null), build $(head -1 $KIT/files/BUILD.txt), mods: $(ls $S/kit/files/mods | tr '\n' ' ')+ samefn-bie, plugin sha256 $(sum $DLL | cut -c1-12)"

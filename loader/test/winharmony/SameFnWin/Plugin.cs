@@ -21,7 +21,7 @@ namespace SameFnWin;
 [BepInPlugin("dsml.samefn", "SameFn", "0.2.0")]
 public class Plugin : BasePlugin
 {
-    static ManualLogSource L; static long Calls; static string LogPath;
+    static ManualLogSource L; static long Calls; static string LogPath; static long Thunk;
 
     [DllImport("kernel32", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
 
@@ -59,7 +59,7 @@ public class Plugin : BasePlugin
         var t = Read(thunk, 40);
         bool ours = t.Take(7).SequenceEqual(new byte[] { 0x48, 0x8B, 0x05, 0x11, 0x00, 0x00, 0x00 });
         if (!ours) { W($"SAMEFN first: another hook (jump to {thunk:x}, not a dsload thunk: {Hex(t.Take(16).ToArray())})"); return 0; }
-        long tramp = BitConverter.ToInt64(t, 32);
+        Thunk = thunk; long tramp = BitConverter.ToInt64(t, 32);
         var tr = Read(tramp, 80); int ret = -1, copied = -1;
         for (int i = 0; i + 14 <= tr.Length; i++)
             if (tr[i] == 0xFF && tr[i + 1] == 0x25 && BitConverter.ToInt32(tr, i + 2) == 0)
@@ -101,6 +101,14 @@ public class Plugin : BasePlugin
         if (ret > 0)
             W($"SAMEFN overlap: harmony wrote up to site+{reach}, the dsload trampoline returns to site+{ret}: " +
               (ret < reach ? "INSIDE harmony's patch (the original code reached through dsload would run torn bytes)" : "after harmony's patch (sound)"));
+        // BepInEx follows E9 / FF 25 jumps before Dobby patches (INativeDetour.FollowExportThunks): with our hook first it
+        // lands on the dsload thunk, so Dobby's jump is there, not at the site
+        if (Thunk != 0)
+        {
+            var th = Read(Thunk, 8);
+            W($"SAMEFN harmony detour on: {(th[0] == 0xFF && th[1] == 0x25 ? "the dsload thunk" : "not the dsload thunk")} {Thunk:x} " +
+              $"({Hex(th)}; {Math.Abs(Thunk - ga) / (1 << 20)} MB from GameAssembly)");
+        }
     }
 
     static void Post() { if (++Calls % 600 == 1) W($"SAMEFN harmony postfix #{Calls}"); }

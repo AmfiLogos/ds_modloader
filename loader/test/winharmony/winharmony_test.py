@@ -3,6 +3,8 @@
 
 Question: on real Windows, does a BepInEx 6 IL2CPP (be.788) Harmony postfix on Refactor.Main.MainFlow.Update work
 together with the multiplayer module's hook on the same function (the loader's MinHook engine, start/win/dsl_engine_win.c)?
+  run 0  chaintest.exe (no game, seconds): the loader's engine + BepInEx's Dobby detour on one function, ours first and
+         BepInEx first: both run, no crash (chaintest/chaintest.c).
   run 1  mods multiplayer + samefn-bie (BepInEx plugin, Harmony postfix on MainFlow.Update), fresh BepInEx in the game
          copy: both hooks fire (multiplayer frame counter + Harmony postfix count), no "refused" line for that hook,
          the game runs and leaves no crash report. Recorded (INFO): which engine patched the function first, the
@@ -90,8 +92,27 @@ def ours(cmd):
     return '\\winharmony\\root\\' in cmd.lower()
 
 
+NSTEP = [0]
+
+
+def our_pids():
+    """pids of the game / crash handler / starter running from the test folder, seen in the guest (Get-Process .Path).
+    vmrun listProcessesInGuest did not show the test game's folder (VM 2026-10-18: "no game of ours runs" while it ran)."""
+    NSTEP[0] += 1
+    try:
+        return step('procs', f'{time.strftime("%H%M%S")}n{NSTEP[0]}', limit=60).get('pids') or []
+    except Exception as e:
+        log('procs step failed:', e); return None
+
+
 def kill_ours():
-    """our game, and whatever else runs from the test folder (Unity's crash handler, the starter)"""
+    """our game, and whatever else runs from the test folder (Unity's crash handler, the starter); waits until gone"""
+    NSTEP[0] += 1
+    try:
+        r = step('kill', f'{time.strftime("%H%M%S")}k{NSTEP[0]}', limit=90)
+        log(f"killed {r.get('killed')}, still running {r.get('left')}")
+    except Exception as e:
+        log('kill step failed:', e)
     for pid, cmd in procs():
         if ours(cmd):
             rc, o = vm('killProcessInGuest', str(pid), timeout=60)
@@ -136,13 +157,16 @@ def new_crashes(c, start_utc):
 
 
 def wait_log(guest_file, local, pred, limit, alive_after=90):
-    """poll one guest file until pred(text); stops early when no game of ours runs for alive_after s"""
+    """poll one guest file until pred(text) (run 1: the postfix lines = MainFlow.Update runs = the game reached its frame
+    loop; BepInEx's first start spends minutes generating interop assemblies before that); stops early when no game of
+    ours runs for alive_after s"""
     t0 = time.time(); seen = None; text = ''
     while time.time() - t0 < limit:
         time.sleep(10)
         if get(guest_file, local): text = read(local)
         if pred(text): return text, True
-        if any(ours(c) for _, c in games()): seen = time.time()
+        pids = our_pids()
+        if pids or pids is None: seen = time.time()
         elif time.time() - t0 > alive_after and (seen is None or time.time() - seen > 30):
             log('no game of ours runs'); return text, False
     return text, False
@@ -172,6 +196,12 @@ def main():
         if not s.get('ok'): return 1
         note('setup', {k: s.get(k) for k in ('reg_mode', 'usersetting_screen_type', 'kept_game_copy', 'game_build', 'mods')})
 
+        # ---- run 0: chaintest.exe (no game): the engine and BepInEx's Dobby detour on one function, both orders
+        ch = step('chain', tag + 'c', limit=120)
+        for l in ch.get('log') or []: print('  chaintest:', l, flush=True)
+        check('run 0: chaintest.exe, both orders (ours then BepInEx, BepInEx then ours) chain with no crash', ch.get('ok'), (ch.get('exit'), ch.get('why'), (ch.get('log') or [])[-3:]))
+        summary['chaintest'] = ch.get('log')
+
         # ---- run 1: multiplayer + samefn-bie
         st = step('start', tag + 'a', '-Ids multiplayer,samefn-bie', limit=60)
         check('run 1 started (prefs still mode 3)', st.get('ok'), st.get('why'))
@@ -188,6 +218,7 @@ def main():
         hk = [l for l in L.splitlines() if re.search(r'MainFlow\.Update: hooked 0x[0-9a-f]+ for multiplayer', l)]
         ref = [l for l in (L + '\n' + R).splitlines() if 'refused' in l and 'MainFlow.Update' in l]
         check('run 1: multiplayer hooks MainFlow.Update through the loader engine', hk, L[-600:])
+        note('run 1 engine thunk block (must be near GameAssembly)', lines(L, 'engine: MinHook'))
         check('run 1: no "refused" line for the MainFlow.Update hook', not ref and L, ref[:2])
         # known cause when this fails (2026-10-18): Doorstop sets DOORSTOP_DISABLE=TRUE inside the game process once its hooks
         # are in, and dsl_reg.c (Windows) reads that variable as "BepInEx is off" (the plugin logs the value it sees)
@@ -199,7 +230,7 @@ def main():
         check('run 1: multiplayer hook fires too (its frame counter moves)', f2 > f1 > 0, (f1, f2))
         check('run 1: game alive, no crash report', c.get('game_alive') and not new_crashes(c, st['start_utc']), (c.get('game_alive'), new_crashes(c, st['start_utc'])))
         summary.update(run1_frames=(f1, f2), run1_postfix_lines=np, run1_refused_lines_all=len(lines(L, 'refused')))
-        for k in ('SAMEFN site ', 'SAMEFN first:', 'SAMEFN site after', 'SAMEFN overlap', 'SAMEFN harmony patch FAILED', 'SAMEFN describe'):
+        for k in ('SAMEFN site ', 'SAMEFN first:', 'SAMEFN site after', 'SAMEFN overlap', 'SAMEFN harmony detour on', 'SAMEFN harmony patch FAILED', 'SAMEFN describe'):
             for l in lines(S, k): note('run 1 plugin', l)
         if hk: note('run 1 dsload hook line (time = when the loader wrote it)', hk[0])
         pt = lines(S, 'SAMEFN harmony patched')

@@ -154,8 +154,10 @@ static void mods_scan(void) {
         const char *why = NULL; int st = dsl_mod_state(id, &why);
         if (!strcmp(x->kind, "bepinex")) {                               /* BepInEx plugin: run by the OS start part */
 #ifdef _WIN32
-            const char *dd = getenv("DOORSTOP_DISABLE");                 /* start/win/bie_win.c (lane L3) */
-            int runs = on && !(dd && *dd);
+            /* the starter sets DOORSTOP_DISABLE=1 when no BepInEx mod is on (start/win/bie_win.c, lane L3). Doorstop itself
+               sets it to "TRUE" in the game process once its hooks are in (windows/entrypoint.c): that means it runs */
+            const char *dd = getenv("DOORSTOP_DISABLE");
+            int runs = on && !(dd && *dd && strcmp(dd, "TRUE"));
             const char *br = env_text("DSL_BIE_REASON");
             st = runs ? 1 : 0; why = runs ? "" : !on ? "off" : (br && *br) ? br : TR_NOOP("BepInEx did not start");   /* reasons: English keys, the Mods window translates */
 #else
