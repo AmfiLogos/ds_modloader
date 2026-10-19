@@ -117,5 +117,10 @@ $CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "nothing hooked, game runs, says why" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: The game was updated"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked && grep -q "\"active\":false,\"reason\":\"unknown_build\"" "$LOGD/dsload_status.json"'
 
+print "== T7 BepInEx.cfg: console off, disk log and player settings kept (src/dsl_bie_cfg.h)"
+$CC -O2 -Wall -I"$L/src" bie/cfg_console_test.c -o "$OUT/cfg_console_test" && "$OUT/cfg_console_test" bie/BepInEx.be788.cfg > "$OUT/cfg_console.txt"; rc=$?
+check "BepInEx.cfg console setting" '(( rc == 0 )) && grep -q PASS "$OUT/cfg_console.txt"'
+(( rc == 0 )) || cat "$OUT/cfg_console.txt"
+
 print "== $pass passed, $fails failed (output $OUT)"
 exit $fails

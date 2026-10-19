@@ -53,6 +53,7 @@ static void logf_(const char *fmt, ...) {
 
 /* the loader's auto-update parts built into this stub (they log through dsl_log) */
 #include "../../loader/src/dsl_internal.h"
+#include "../../loader/src/dsl_bie_cfg.h"      /* BepInEx.cfg: no BepInEx console */
 #include "../../loader/src/dsl_deps.h"         /* mod.json requires / optional / conflicts: the loader's rule */
 void dsl_log(const char *fmt, ...) {
     FILE *f = fopen(logpath, "a"); if (!f) return;
@@ -711,6 +712,8 @@ static int bepinex_launch(const char *root, const char *data, char *dyld, size_t
     snprintf(v, sizeof v, "%s/dotnet/libcoreclr.dylib", bdir); setenv("DOORSTOP_CLR_RUNTIME_CORECLR_PATH", v, 1);
     snprintf(v, sizeof v, "%s/dotnet", bdir); setenv("DOORSTOP_CLR_CORLIB_DIR", v, 1);
     setenv("BEPINEX_PLUGIN_DIRS", dirs, 1);
+    snprintf(v, sizeof v, "%s/BepInEx/config", bdir); mkdir(v, 0755); strlcat(v, "/BepInEx.cfg", sizeof v);
+    int c = dsl_bie_console_off(v); if (c) logf_("bepinex: console %s (%s)", c > 0 ? "turned off" : "setting NOT written", v);
     logf_("bepinex: %d plugin folder(s): %s", n, dirs);
     return n;
 }

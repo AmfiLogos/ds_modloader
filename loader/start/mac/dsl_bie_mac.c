@@ -6,6 +6,7 @@
 // First start per game build: <dir>/ds_ready_<build> is written once a BepInEx start reached the title.
 #include "../../src/dsl_internal.h"
 #include "../../src/dsl_bie.h"
+#include "../../src/dsl_bie_cfg.h"
 #include <spawn.h>
 #include <signal.h>
 #include <stdio.h>
@@ -45,6 +46,9 @@ int dsl_bie_env(const char *const *pd, int n, char *out, size_t cap) {
         k += (size_t)snprintf(out + k, cap - k, "\n");
     }
     if (!n) { snprintf(out + k, cap - k, "DOORSTOP_ENABLED=0\nBEPINEX_PLUGIN_DIRS=\nMELONLOADER_MOD_DIRS=\n"); return 0; }
+    char cf[1400]; snprintf(cf, sizeof cf, "%s/BepInEx/config", d); mkdir(cf, 0755);       /* no BepInEx console (src/dsl_bie_cfg.h) */
+    strlcat(cf, "/BepInEx.cfg", sizeof cf);
+    int c = dsl_bie_console_off(cf); if (c) dsl_log("bepinex: console %s (%s)", c > 0 ? "turned off" : "setting NOT written", cf);
     k += (size_t)snprintf(out + k, cap - k, "MELONLOADER_MOD_DIRS=\nDOORSTOP_ENABLED=1\nDOORSTOP_TARGET_ASSEMBLY=%s/BepInEx/core/BepInEx.Unity.IL2CPP.dll\n"
                           "DOORSTOP_CLR_RUNTIME_CORECLR_PATH=%s/dotnet/libcoreclr.dylib\nDOORSTOP_CLR_CORLIB_DIR=%s/dotnet\n"
                           "DOORSTOP_IGNORE_DISABLED_ENV=0\nBEPINEX_PLUGIN_DIRS=", d, d, d);

@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dsl_u8_names_win.h"                     /* last: paths and environment are UTF-8 (wide Windows calls) */
+#include "dsl_bie_cfg.h"                          /* after it: its fopen takes UTF-8 paths */
 
 #define BIE_URL  L"https://builds.bepinex.dev/projects/bepinex_be/788/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.788%2B5b766a3.zip"
 #define BIE_SHA  "f4cc496bd098a0df4164b81e3737297707f13a47c2478dba2f60eefab784817a"
@@ -399,6 +400,11 @@ int bie_prepare(const char *root, const char *game, const char *profile, int *an
     char plugins[1300], poff[1300]; snprintf(plugins, sizeof plugins, "%s\\BepInEx\\plugins", game); snprintf(poff, sizeof poff, "%s\\BepInEx\\plugins_off", game);
     if (nw && install(root, game, why, wn)) { *any = 0; clean_off(poff); lg("bepinex: OFF: %s", why); return -1; }
     sync_mods(mods, plugins, poff, want, nw, 0, "bepinex");
+    if (nw) {                                                    /* no BepInEx console window (src/dsl_bie_cfg.h) */
+        char cd[1300], cf[1400]; snprintf(cd, sizeof cd, "%s\\BepInEx\\config", game); mkdirs(cd); snprintf(cf, sizeof cf, "%s\\BepInEx.cfg", cd);
+        int c = dsl_bie_console_off(cf);
+        if (c) lg("bepinex: console window %s (%s)", c > 0 ? "turned off" : "setting NOT written", cf);
+    }
     lg("bepinex: %d plugin mod(s) on%s", nw, nw ? "" : " (Doorstop off for this start)");
     return 0;
 }
