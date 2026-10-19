@@ -23,6 +23,8 @@ DSRIG_BG=1 in the environment of `rig.py start` restores nice 19 + background Qo
 A guard process per copy kills it (by PID) if it ever shows a visible window or becomes frontmost.
 """
 import json, os, signal, socket, subprocess, sys, time, shutil, hashlib, glob
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path: sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ctl_token import token_line as ctl_token_line     # noqa: E402  test control channel token (first line)
 
 ROOT = os.path.expanduser('~/ds_multiplayer')            # read only here (prefs backup, tools)
 LROOT = os.path.expanduser('~/ds_launcher/loader')
@@ -467,7 +469,7 @@ def send(x, obj, timeout=90, connect_wait=60):
             if time.time() - t0 > connect_wait or not alive(read_pid(x)):
                 raise
             time.sleep(0.5)
-    s.sendall((json.dumps(obj) + '\n').encode())
+    s.sendall(ctl_token_line(idir(x)) + (json.dumps(obj) + '\n').encode())   # token first (ctl_token.py)
     buf = b''
     while not buf.endswith(b'\n'):
         k = s.recv(1 << 20)

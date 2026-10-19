@@ -57,6 +57,10 @@ fn front_pid() -> Option<u32> {
 fn ask(sock: &Path, cmd: &str) -> std::io::Result<String> {
     let mut s = std::os::unix::net::UnixStream::connect(sock)?;
     s.set_read_timeout(Some(Duration::from_secs(30)))?;
+    // test control channel guard (ds_multiplayer src/rig_sock.c): the token in <rig dir>/ctl.token goes first, bare
+    // (read after connecting; no file = a build before v0.1.16, nothing sent)
+    let tok = std::fs::read_to_string(sock.with_file_name("ctl.token")).unwrap_or_default();
+    if !tok.trim().is_empty() { s.write_all(format!("{}\n", tok.trim()).as_bytes())?; }
     s.write_all(format!("{{\"cmd\":\"{cmd}\"}}\n").as_bytes())?;
     let mut line = String::new();
     BufReader::new(s).read_line(&mut line)?;

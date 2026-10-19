@@ -15,6 +15,8 @@ DSL_LOG_DIR=<V> for every process (logs + softrestart/ stay in one place).
 import json, os, shutil, signal, subprocess, sys, threading, time, glob
 sys.path.insert(0, os.path.expanduser('~/ds_launcher/loader/test'))
 import lrig as r
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from ctl_token import token_line as ctl_token_line   # noqa: E402  ../ctl_token.py: token first line
 
 X = os.environ.get('V13_COPY', 'V'); I = r.idir(X)
 SDIR = os.path.join(I, 'softrestart'); RIGB = os.path.join(I, 'rigB'); MODS = os.path.join(I, 'data', 'Mods')
@@ -152,7 +154,7 @@ def start_a(profile, extra_env=None):
 def send(sock, obj, timeout=10):
     import socket
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(timeout)
-    s.connect(os.path.realpath(sock)); s.sendall((json.dumps(obj) + '\n').encode())
+    s.connect(os.path.realpath(sock)); s.sendall(ctl_token_line(os.path.dirname(sock)) + (json.dumps(obj) + '\n').encode())
     buf = b''
     while not buf.endswith(b'\n'):
         k = s.recv(1 << 20)

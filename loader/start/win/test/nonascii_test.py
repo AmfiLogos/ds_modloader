@@ -11,6 +11,8 @@
 usage: nonascii_test.py <kit dir> <mod folder>   (kit of build_win.sh with MODS=<multiplayer module>; mod folder = a
 Windows build of gcd-cdr, e.g. build_mods.sh output win/gcd-cdr)"""
 import json, os, re, shutil, signal, socket, subprocess, sys, time, zipfile
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'test'))
+from ctl_token import token_line as ctl_token_line   # noqa: E402  loader/test/ctl_token.py: token first line
 H = os.path.expanduser("~")
 C = f"{H}/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin"
 LOCAL = f"{H}/Library/Application Support/CrossOver/Bottles/DSMP/drive_c/users/crossover/AppData/Local"
@@ -46,7 +48,7 @@ def kill_ours():
         except OSError: pass
 def cmd(obj, port=PORT, timeout=10):
     s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
-    s.sendall(json.dumps(obj).encode() + b"\n"); buf = b""
+    s.sendall(ctl_token_line(P) + json.dumps(obj).encode() + b"\n"); buf = b""
     while not buf.endswith(b"\n"):
         d = s.recv(1 << 20)
         if not d: break

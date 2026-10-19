@@ -101,7 +101,7 @@ def gsend(obj, timeout=20):
         except (ConnectionRefusedError, FileNotFoundError):
             if time.time() - t0 > 120: raise
             time.sleep(0.5); s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(timeout)
-    s.sendall((json.dumps(obj) + '\n').encode()); b = b''
+    s.sendall(r.ctl_token_line(GROOT) + (json.dumps(obj) + '\n').encode()); b = b''   # token first (ctl_token.py)
     while not b.endswith(b'\n'):
         k = s.recv(1 << 20)
         if not k: break

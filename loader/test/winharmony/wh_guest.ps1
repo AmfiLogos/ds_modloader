@@ -31,7 +31,11 @@ function Rig-Frames($port) {
     try {
         $c = New-Object Net.Sockets.TcpClient; $c.ReceiveTimeout = 4000; $c.SendTimeout = 4000
         $c.Connect('127.0.0.1', [int]$port); $s = $c.GetStream()
-        $w = New-Object IO.StreamWriter($s); $w.NewLine = "`n"; $w.WriteLine('{"cmd":"ping"}'); $w.Flush()
+        $w = New-Object IO.StreamWriter($s); $w.NewLine = "`n"
+        # test control channel guard (ds_multiplayer src/rig_sock.c): the token in <profile>\ctl.token first, bare
+        $tok = (Get-Content "$PROF\ctl.token" -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($tok) { $w.WriteLine($tok.Trim()) }
+        $w.WriteLine('{"cmd":"ping"}'); $w.Flush()
         $l = (New-Object IO.StreamReader($s)).ReadLine(); $c.Close()
         if ($l -match '"frames":(\d+)') { return [int64]$Matches[1] }
     } catch { }
