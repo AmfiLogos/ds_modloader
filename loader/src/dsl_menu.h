@@ -14,6 +14,7 @@ const char *dsl_tab_owner(int i);               /* module id that added it */
 const DSLUi *dsl_ui_kit(void);                  /* NULL before il2cpp_init returned */
 void dsl_ui_field_number(DSLObj f, int max_chars);   /* a kit field takes digits only (TMP IntegerNumber), max_chars long */
 int dsl_ui_field_focused(DSLObj f);                 /* the kit field has the keyboard */
+void dsl_ui_field_multiline(DSLObj f, int max_chars);   /* a kit field takes many lines (Enter = new line), max_chars long */
 
 /* installed mods (every <mods>/<id>/mod.json seen at start, code or not) */
 typedef struct DSLModInfo {

@@ -136,6 +136,12 @@ static void queue_drop_all(void) {
 }
 int dsl_crash_consent(void) { return on ? consent : -2; }
 const char *dsl_crash_privacy_url(void) { return CR_HOST "/privacy"; }
+/* for the bug report window (dsl_bugrep.c): the crash folder, this install's random id ("" = crash reports not in this
+   start), the receiver and its public key */
+const char *dsl_crash_dir(void) { return on ? cdir : ""; }
+const char *dsl_crash_install(void) { return on ? install_id : ""; }
+const char *dsl_crash_receiver(void) { return CR_HOST; }
+const char *dsl_crash_key(void) { return CR_KEY; }
 void dsl_crash_set_consent(int yes) {
     if (!on) return;
     pthread_mutex_lock(&mu); consent = yes ? 1 : 0; pthread_mutex_unlock(&mu);

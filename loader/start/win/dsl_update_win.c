@@ -341,7 +341,9 @@ typedef HINTERNET (WINAPI *ReqW_t)(HINTERNET, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR
 typedef BOOL (WINAPI *SendW_t)(HINTERNET, LPCWSTR, DWORD, LPVOID, DWORD);
 static void u8w(const char *s, wchar_t *w, int n) { if (!MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n)) w[0] = 0; }
 static void wu8(const wchar_t *w, char *s, int n) { if (!WideCharToMultiByte(CP_UTF8, 0, w, -1, s, n, NULL, NULL)) s[0] = 0; }
-int dsl_uos_post(const char *url, const char *file, const char *const *headers, int nh) {
+static int post_impl(const char *url, const char *file, const char *const *headers, int nh, int *codep, char *resp, size_t rcap) {
+    if (codep) *codep = -1;
+    if (resp && rcap) resp[0] = 0;
     if (net_load()) return -1;
     HMODULE m = GetModuleHandleW(L"wininet.dll");
     ConnW_t conn = m ? (ConnW_t)(void *)GetProcAddress(m, "InternetConnectW") : NULL;
@@ -370,7 +372,10 @@ int dsl_uos_post(const char *url, const char *file, const char *const *headers, 
                                 INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI, 0) : NULL;
         if (r && snd(r, hdr, (DWORD)-1L, body, (DWORD)len)) {
             DWORD code = 0, cl = sizeof code;
-            if (i_query(r, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &cl, NULL) && code >= 200 && code < 300) ok = 0;
+            int got = i_query(r, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &code, &cl, NULL);
+            if (got && codep) *codep = (int)code;
+            if (got && resp && rcap > 1) { DWORD n = 0; size_t o = 0; while (o + 1 < rcap && i_read(r, resp + o, (DWORD)(rcap - 1 - o), &n) && n) o += n; resp[o] = 0; }
+            if (got && code >= 200 && code < 300) ok = 0;
             else dsl_log("crash: upload answered HTTP %lu", code);
         } else dsl_log("crash: upload: no connection (error %lu)", GetLastError());
         if (r) i_close(r);
@@ -379,6 +384,11 @@ int dsl_uos_post(const char *url, const char *file, const char *const *headers, 
     }
     free(body);
     return ok;
+}
+int dsl_uos_post(const char *url, const char *file, const char *const *headers, int nh) { return post_impl(url, file, headers, nh, NULL, NULL, 0); }
+/* bug reports (src/dsl_bugrep.c): the HTTP status (-1 = no answer) and the start of the answer's body */
+int dsl_uos_post_resp(const char *url, const char *file, const char *const *headers, int nh, char *resp, size_t rcap) {
+    int code = -1; post_impl(url, file, headers, nh, &code, resp, rcap); return code;
 }
 void dsl_uos_sysinfo(char *os, size_t on, char *cpu, size_t cn, char *plat, size_t pn) {
     HMODULE nt = GetModuleHandleW(L"ntdll.dll");

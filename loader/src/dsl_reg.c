@@ -14,6 +14,7 @@
 #include "dsl_menu.h"
 #include "dsl_bie.h"
 #include "dsl_ml.h"
+#include "dsl_bugrep.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1000,6 +1001,7 @@ void dsl_frame_hook(void) {
     dsl_rows_frame();
     dsl_update_frame();
     dsl_crash_frame();
+    dsl_bugrep_frame();
     dsl_hostmods_frame();
     if (dsl_win_frame) dsl_win_frame();
     dsl_progress_frame();
@@ -1031,6 +1033,7 @@ void dsl_reg_ready(DSLHost *h) {
     void *kmf = dsl_find_class("Refactor.Main", "MainFlow");
     if (kmf) { off_scene = dsl_field_offset(kmf, "_currentScene"); off_cd = dsl_field_offset(kmf, "_campaignData"); }
     if (h->ui && dsl_win_init) dsl_win_init();
+    if (h->ui) dsl_bugrep_install();                                   /* before the modules: the loader owns the Bug Report buttons */
     if (h->ui) dsl_ui_title_add("loader", TR("Mods"), 100, NULL, on_title_mods, NULL);   /* no hover card (owner 2026-10-16 #1) */
     dsl_log("reg: ready (data %s, kit %s, Mods window %s)", dsl_reg_data_dir(), h->ui ? "on" : "OFF", dsl_win_open ? "on" : "not built");
 }

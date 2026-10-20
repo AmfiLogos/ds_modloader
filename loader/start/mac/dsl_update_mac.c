@@ -189,6 +189,26 @@ int dsl_uos_post(const char *url, const char *file, const char *const *headers, 
     av[k++] = "--data-binary"; av[k++] = at; av[k++] = (char *)url; av[k] = NULL;
     return run(av);                                       /* curl -f: exit 22 on HTTP >= 400 */
 }
+/* bug reports (src/dsl_bugrep.c): the HTTP status (-1 = no answer) and the start of the answer's body */
+int dsl_uos_post_resp(const char *url, const char *file, const char *const *headers, int nh, char *resp, size_t rcap) {
+    char at[1200], ro[1200], ho[1200]; snprintf(at, sizeof at, "@%s", file); snprintf(ro, sizeof ro, "%s.resp", file); snprintf(ho, sizeof ho, "%s.head", file);
+    remove(ro); remove(ho);
+    char *av[48]; int k = 0;
+    const char *fixed[] = { "/usr/bin/curl", "-sS", "--max-time", "90", "--connect-timeout", "15", "-A", "DungeonSettlersModded", "-X", "POST" };
+    for (size_t i = 0; i < sizeof fixed / sizeof fixed[0]; i++) av[k++] = (char *)fixed[i];
+    for (int i = 0; i < nh && k < 38; i++) { av[k++] = "-H"; av[k++] = (char *)headers[i]; }
+    av[k++] = "-o"; av[k++] = ro; av[k++] = "-D"; av[k++] = ho;
+    av[k++] = "--data-binary"; av[k++] = at; av[k++] = (char *)url; av[k] = NULL;
+    int rr = run(av), code = -1;
+    if (resp && rcap) resp[0] = 0;
+    FILE *f = fopen(ho, "rb");
+    if (f) { char l[512]; while (fgets(l, sizeof l, f)) if (!strncmp(l, "HTTP/", 5)) { const char *s = strchr(l, ' '); if (s) code = atoi(s + 1); } fclose(f); }
+    f = resp && rcap ? fopen(ro, "rb") : NULL;
+    if (f) { size_t n = fread(resp, 1, rcap - 1, f); resp[n] = 0; fclose(f); }
+    remove(ro); remove(ho);
+    if (code <= 0 && rr) dsl_log("bugrep: upload: no answer from the receiver");
+    return code;
+}
 static void sc_str(const char *name, char *out, size_t n) { size_t l = n; out[0] = 0; if (sysctlbyname(name, out, &l, NULL, 0)) out[0] = 0; else out[n - 1] = 0; }
 void dsl_uos_sysinfo(char *os, size_t on, char *cpu, size_t cn, char *plat, size_t pn) {
     char v[64], b[64]; sc_str("kern.osproductversion", v, sizeof v); sc_str("kern.osversion", b, sizeof b);
