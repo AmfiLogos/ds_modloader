@@ -71,7 +71,7 @@ def require_hidden_copy(app):
         raise SystemExit(f'refused: {app} lacks LSBackgroundOnly/LSUIElement (rebuild it with make_instance.sh)')
 
 
-def start_a(enabled=('multiplayer',), extra_env=None):
+def start_a(enabled=('multiplayer',), extra_env=None, worlds=None):
     require_hidden_copy(os.path.join(I, 'DungeonSettlers.app'))
     r.prepare_data(X)
     os.makedirs(os.path.join(I, 'data', 'Saves'), exist_ok=True)
@@ -80,7 +80,7 @@ def start_a(enabled=('multiplayer',), extra_env=None):
     for f in glob.glob(os.path.join(MODS, '*.json')):
         os.makedirs(os.path.join(MODS, 'old'), exist_ok=True); os.replace(f, os.path.join(MODS, 'old', os.path.basename(f) + '.%d' % time.time()))
     json.dump({'enabled': list(enabled), 'order': list(enabled)}, open(os.path.join(MODS, 'active.json'), 'w'))
-    json.dump({'worlds': {GUID: 'gcd-cdr+multiplayer'}}, open(os.path.join(MODS, 'worlds.json'), 'w'))
+    json.dump({'worlds': worlds if worlds is not None else {GUID: 'gcd-cdr+multiplayer'}}, open(os.path.join(MODS, 'worlds.json'), 'w'))
     if os.path.exists(r.sockpath(X)):
         os.unlink(r.sockpath(X))
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'USER': os.environ.get('USER', ''),

@@ -78,6 +78,15 @@ r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session.json
 check "same mod set loads, other mod set refused with the launcher message" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1 text=This world uses other mods."* ]] && log | grep -q "world check: REFUSED save2 (world 22222222-2222-2222-2222-222222222222): the world.s mod set bbb, this copy aaa"'
 check "modset compared with the launcher lines (floor-logger sha differs, early-mod matches)" 'grep -q "\"check\":\"differs\"" "$LOGD/dsload_modset.json" && log | grep -q "mod set: floor-logger@1.0.0 file sha256" && ! log | grep -q "mod set: early-mod"'
 check "game still runs" '[[ "$r" == *"$EXPECT"* ]]'
+# launcher features (owner 2026-10-20): a world saved while Units Laboratory (official, no "category" in its released
+# mod.json) or a third-party "category": "feature" mod was on must load without them. Break caught: the world refused
+# with "This world uses other mods" because of a launcher feature.
+print "== T1c launcher features are not part of a world's mod set"
+mkdir -p "$M/lab-feature"; print -r -- '{"id":"lab-feature","version":"1.0.0","type":"data","category":"feature"}' > "$M/lab-feature/mod.json"
+print -r -- "{\"world\":null,\"modset\":\"aaa\",\"rule\":\"mods\",\"worlds\":{\"11111111-1111-1111-1111-111111111111\":\"aaa\",\"22222222-2222-2222-2222-222222222222\":\"aaa+custom-modes+lab-feature+multiplayer\"}}" > "$OUT/session_feat.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_feat.json" DSML_MODSET=aaa)
+check "world saved with launcher features loads without them" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: save2 (world 22222222-2222-2222-2222-222222222222) uses this mod set: allowed"'
+mv "$M/lab-feature" "$OUT/lab-feature.off"
 
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")

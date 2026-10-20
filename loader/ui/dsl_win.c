@@ -385,17 +385,33 @@ static size_t cols_at(const char *s, int cols) {
 static int has_wide(const char *s) { for (const unsigned char *p = (const unsigned char *)s; *p; p++) if (wide_at(p)) return 1; return 0; }
 static void settings_open(DSLObj root, float w, float h);
 static void bottom_bar(DSLObj root, float w, float h);
+/* a group heading in the mod list: title + one line on how the group works; returns its height */
+static float section_head(DSLObj list, float y, int feature) {
+    const char *t = feature ? TR("Launcher features") : TR("Game modification mods");
+    const char *d = feature ? TR("On or off for every world. They start from the title screen, never from a world.")
+                            : TR("Each world keeps its own set of these mods.");
+    float top = y ? 14 : 0, dw = m_lw - 56, dh = 20;
+    named(U->text(list, 12, y + top, dw, 28, t, 18, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, feature ? "section:features" : "section:game", NULL, NULL, t);
+    DSLObj dt = U->text(list, 12, y + top + 30, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
+    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, y + top + 30, dw, dh); } }
+    named(dt, 3, feature ? "section-desc:features" : "section-desc:game", NULL, NULL, d);
+    return top + 30 + dh + 10;
+}
 static void settings_click(void *ud, DSLObj w);
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
     snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0;
     if (!world_mode && nkeep < 0) { char fail[400]; int n = dsl_pkg_refresh(fail, sizeof fail); if (n || fail[0]) refresh_note(n, fail); }
-    for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
-        const DSLModInfo *m = dsl_mods_at(i);
-        if (!m || m->hidden) continue;
-        mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++;
-    }
+    /* game modification mods first, then launcher features (owner 2026-10-20: Multiplayer, Units Laboratory start from
+       the title, never from a world). A world's Mods tab shows only the game mods: features are not per world. */
+    int nfeat = 0;
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
+            const DSLModInfo *m = dsl_mods_at(i);
+            if (!m || m->hidden || (m->feature != 0) != pass || (pass && world_mode)) continue;
+            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++; nfeat += pass;
+        }
     if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
         const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
         for (int i = 0; i < nmods; i++) {
@@ -429,6 +445,7 @@ static void mods_open(DSLObj root, float w, float h) {
     for (int i = 0; i < nmods; i++, y += rh) {
         rh = 74;
         const DSLModInfo *m = mods[i].m;
+        if (!world_mode && nfeat && (i == 0 || (m->feature && !mods[i - 1].m->feature))) y += section_head(list, y, m->feature);
         char lb[160], nm[100];
         snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
         int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */

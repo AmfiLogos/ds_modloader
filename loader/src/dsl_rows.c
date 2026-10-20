@@ -216,11 +216,19 @@ static int cols_of(const char *s) {                                  /* display 
     int c = 0; for (const unsigned char *p = (const unsigned char *)s; *p; p++) if ((*p & 0xC0) != 0x80) c += *p >= 0xE0 ? 2 : 1;
     return c;
 }
+/* launcher features (owner 2026-10-20) are not the world's mods: not on the row; the card names the ones that are on in a
+   block of their own (owner v13 #5 wanted Multiplayer in the card) */
+static void features_card(char *all, size_t acap) {
+    const char *f[64]; int nf = dsl_features_on(f, 64); if (!nf) return;
+    strlcat(all, "\n\n<color=#A69085>", acap); strlcat(all, TR("Launcher features (every world):"), acap); strlcat(all, "</color>", acap);
+    for (int i = 0; i < nf; i++) { const char *nm = dsl_mod_name(f[i]); strlcat(all, "\n", acap); strlcat(all, nm ? nm : f[i], acap); }
+}
 static void world_texts(const char *guid, int maxc, char *line, size_t lcap, char *all, size_t acap) {
     int dsl_world_mods_all(const char *guid, const char **ids, int max);
     const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64);
     all[0] = 0; line[0] = 0;
-    if (!n) { snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), TR("none")); snprintf(all, acap, "%s", TR("No mods.")); return; }
+    if (!n) { snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), TR("none")); snprintf(all, acap, "%s", TR("No mods."));
+              features_card(all, acap); return; }
     int used = 6, k = 0;                                                  /* "Mods: " */
     char shown[600] = "";
     for (int i = 0; i < n; i++) {
@@ -236,12 +244,14 @@ static void world_texts(const char *guid, int maxc, char *line, size_t lcap, cha
     }
     if (k < n) { char pl[16]; snprintf(pl, sizeof pl, "  +%d", n - k); strlcat(shown, pl, sizeof shown); }
     snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), shown); dsi_utf8_fix_end(line);
+    features_card(all, acap);
 }
 /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent") gets one warning line at the card's end */
 static void world_warning(const char *guid, char *all, size_t acap) {
     int dsl_world_mods_all(const char *guid, const char **ids, int max);
     int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
     const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64); char wr[400];
+    n += dsl_features_on(ids + n, 64 - n);                                /* a feature's save warning still counts */
     if (dsl_save_warning(ids, n, wr, sizeof wr)) { strlcat(all, "\n\n<color=#EA9F3D>", acap); strlcat(all, wr, acap); strlcat(all, "</color>", acap); }
 }
 static void decorate(void) {

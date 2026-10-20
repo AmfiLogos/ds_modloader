@@ -692,3 +692,19 @@ function's first bytes before / after Harmony, which engine patched first, where
   running it logs "0 BepInEx plugin(s) running" (Wine run: yes) and the Mods window says the plugin did not start; the
   running mod-set key leaves the BepInEx mod out. Fixed (harmonyfix, v0.1.16): `dsl_reg.c` reads "TRUE" (Doorstop's
   own mark, `windows/entrypoint.c` after its hooks are in) as running; only the starter's "1" (or any other value) means off.
+
+## Launcher features vs game mods (owner 2026-10-20, branch featsplit)
+Owner: Multiplayer and Units Laboratory start from the title (Multiplayer button, Units Laboratory button), never from a
+world; they must not mix with the per-world mods.
+- mod.json `"category": "feature" | "game"` (default "game"). No "category": the official `multiplayer` and
+  `custom-modes` count as features (their released mod.json has none), everything else is a game mod.
+- A feature is never in a world's key: `key_of`, `key_norm` (stored keys and `DSML_MODSET` compare without features),
+  worlds.json keys are rewritten without them at start (`strip_mp`), flow K keeps the features that are on.
+  So a world saved with or without Units Laboratory loads with no "This world uses other mods".
+- Multiplayer: the HELLO mod-set lines (`set_lines`) are unchanged: a feature with `scope: gameplay` (Units Laboratory)
+  is still in the hash, so every player needs it; `scope: client` features are not. The multiplayer mod stays out (its
+  HELLO checks build + protocol). The notch fix is built into the Mac start part (always on, not in the Mods window).
+- Mods window: "Game modification mods" group, then "Launcher features" group (global switches + Apply as before).
+  A world's Mods tab ([Change]) lists only game mods. World rows: the line names only game mods; the hover card names
+  the features that are on in a block of their own.
+- Proof: host test T1c (fails on the old code: world refused); rig `test/featsplit_test.py` 13/13 on copy S.
