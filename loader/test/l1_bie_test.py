@@ -7,20 +7,47 @@
    on A's loading screen. B: both the dsload hook and the Harmony postfix fire; first-start marker written.
 2. From B, Apply without samefn-bie: C starts without Doorstop.
 Output: <out>/ (logs, frames, summary.json)."""
-import json, os, shutil, sys, threading, time, glob
+import glob, hashlib, json, os, shutil, subprocess, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import l1_test as t
 
-OUT = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/ds_launcher/loader/test_env/l1_out/bie')
+OUT = os.path.abspath(os.path.expanduser(sys.argv[1])) if len(sys.argv) > 1 else os.path.join(t.r.LROOT, 'test_env', 'l1_out', 'bie')
 t.OUT = OUT; os.makedirs(OUT, exist_ok=True)
 APP = os.path.join(t.I, 'DungeonSettlers.app'); MD = os.path.join(APP, 'Contents/Resources/mods')
-TM = os.path.expanduser('~/ds_launcher_l1core/loader/build/test_mods')
 # the repo's own installer and the BepInEx version it pins (an old worktree's script pointed at a deleted release)
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'app', 'bepinex', 'install_bepinex.sh')
 VER = next(l.split('=', 1)[1].strip() for l in open(SCRIPT) if l.startswith('VER='))
 BDIR = os.path.join(t.I, 'bepinex_test', time.strftime('%H%M%S'), 'mac-arm64', VER)
 ENV = {'DSML_BEPINEX_DIR': BDIR, 'DSML_BEPINEX_SCRIPT': SCRIPT,
        'DSML_DSLOAD': os.path.join(APP, 'Contents/Frameworks/dsload.dylib')}
+LDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))          # this checkout's loader/
+TM = os.path.join(LDIR, 'build', 'test_mods')     # samefn-bie is built here from test/bie/SameFn (was a removed worktree)
+
+
+def build_samefn():
+    """build test mod samefn-bie (SameFn.dll + mod.json kind bepinex) against the pinned BepInEx core; the core comes
+    from the repo's own installer into a shared cache (download once, sha256 checked). Rebuilt when the source changes."""
+    src = os.path.join(LDIR, 'test', 'bie', 'SameFn'); dst = os.path.join(TM, 'samefn-bie')
+    dll = os.path.join(dst, 'SameFn.dll')
+    newest = max(os.path.getmtime(os.path.join(src, f)) for f in os.listdir(src) if f.endswith(('.cs', '.csproj')))
+    if os.path.exists(dll) and os.path.exists(os.path.join(dst, 'mod.json')) and os.path.getmtime(dll) >= newest:
+        return
+    core = os.path.join(t.r.LROOT, 'test_env', 'bepinex_core', 'mac-arm64', VER)
+    o = subprocess.run(['zsh', SCRIPT, core], capture_output=True, text=True, timeout=900).stdout
+    if 'BEPINEX ' not in o:
+        raise RuntimeError(f'BepInEx core for the SameFn build: {o.strip()[-300:]}')
+    obj = os.path.join(TM, '.samefn_obj'); os.makedirs(dst, exist_ok=True)
+    p = subprocess.run(['nice', '-n', '19', os.path.expanduser('~/.dotnet/dotnet'), 'build', os.path.join(src, 'SameFn.csproj'),
+                        '-c', 'Release', f'-p:BieDir={core}/BepInEx', f'-p:BaseIntermediateOutputPath={obj}/', '-o', obj + '_out',
+                        '-nologo', '-v', 'q'], capture_output=True, text=True, timeout=600)
+    if p.returncode:
+        raise RuntimeError(f'SameFn build failed: {(p.stdout + p.stderr)[-600:]}')
+    shutil.copy2(os.path.join(obj + '_out', 'SameFn.dll'), dll + '.tmp'); os.replace(dll + '.tmp', dll)
+    h = hashlib.sha256(open(dll, 'rb').read()).hexdigest()
+    json.dump({'id': 'samefn-bie', 'name': 'SameFn test plugin', 'version': '0.2.0', 'kind': 'bepinex', 'scope': 'gameplay',
+               'platforms': {'any': {'files': {'SameFn.dll': h}}},
+               'description': 'TEST ONLY: Harmony postfix on MainFlow.Update (loader/test/l1_bie_test.py).'},
+              open(os.path.join(dst, 'mod.json'), 'w'), indent=1)
 
 
 def bie_log():
@@ -49,6 +76,7 @@ def count(text, key):
 
 
 def main():
+    build_samefn()
     for m in ('samefn-bie',):
         d = os.path.join(MD, m); os.makedirs(d, exist_ok=True)
         for f in os.listdir(os.path.join(TM, m)):

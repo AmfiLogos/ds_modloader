@@ -106,6 +106,10 @@ try {
         [IO.File]::WriteAllText("$DATA\Mods\active.json", "{`"enabled`":[$q],`"order`":[$q]}`n")
         $r.ids = $list
         $r.start_utc = (Get-Date).ToUniversalTime().ToString('o')
+        # the control channel opens only with DSRIG_PORT + DSRIG_CTL (v0.1.15 fix; the starter sets neither), as winbot's
+        # winrig.start_env/test_env: 'collect' reads the frame counter over it. Never the owner's Steam Cloud (VM = his account).
+        $env:DSRIG_PORT = '47811'; $env:DSRIG_CTL = '1'; $env:DSL_CLOUD = '0'; $env:DSL_UPDATE = '0'
+        $env:DSMODDED_NO_STEAM = '1'                 # honoured by a DSL_TEST_NOSTEAM kit only; a release kit ignores it
         $p = Start-Process -FilePath "$ROOT\Dungeon Settlers Modded.exe" -WorkingDirectory $ROOT -PassThru
         $r.starter_pid = $p.Id
         $r.ok = $true

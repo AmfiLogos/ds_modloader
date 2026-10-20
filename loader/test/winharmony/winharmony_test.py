@@ -58,12 +58,19 @@ def vm(*args, guest=True, timeout=85):
     """one vmrun call (passwords from the Keychain, never printed); (exit code, output)"""
     global AUTH
     if AUTH is None:
-        AUTH = (secret('-s', X), secret('-s', 'vmware-win-tester', '-a', 'jamesjackson'))
-    a = [V, '-T', 'fusion', '-vp', AUTH[0]] + (['-gu', 'jamesjackson', '-gp', AUTH[1]] if guest else [])
+        try:
+            vp = secret('-s', X)
+        except subprocess.CalledProcessError:
+            vp = ''                                        # the VM is no longer encrypted: no VM password
+        AUTH = (vp, secret('-s', 'vmware-win-tester', '-a', 'jamesjackson'))
+    a = [V, '-T', 'fusion'] + (['-vp', AUTH[0]] if AUTH[0] else []) + (['-gu', 'jamesjackson', '-gp', AUTH[1]] if guest else [])
     cmd = a + [args[0], X] + list(args[1:]) if args[0] != 'list' else [V, '-T', 'fusion', 'list']
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return p.returncode, (p.stdout + p.stderr).replace(AUTH[0], '***').replace(AUTH[1], '***')
+        o = p.stdout + p.stderr
+        for x in AUTH:
+            if x: o = o.replace(x, '***')
+        return p.returncode, o
     except subprocess.TimeoutExpired:
         return 124, 'vmrun timed out'
 
@@ -119,10 +126,18 @@ def kill_ours():
             log(f'killed pid {pid} ({cmd[:80]})' if rc == 0 else f'kill {pid} failed: {o.strip()}')
 
 
+def step_cmd(name, tag, args=''):
+    """program + one argument string for runProgramInGuest. Through cmd's start: vmrun hands the arguments to the
+    program as one quoted string (VM 2026-10-19: powershell started directly never ran the step); '& rem' takes the
+    stray end quote."""
+    return ('C:\\Windows\\System32\\cmd.exe',
+            f'/c start "" /min {PS} -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File {GH}\\wh_guest.ps1 '
+            f'-Step {name} -Tag {tag} {args}'.strip() + ' & rem')
+
+
 def step(name, tag, args='', limit=600):
     """run wh_guest.ps1 -Step name on the guest desktop (interactive, no wait), then poll for its JSON"""
-    rc, o = vm('runProgramInGuest', '-noWait', '-interactive', PS,
-               f'-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File {GH}\\wh_guest.ps1 -Step {name} -Tag {tag} {args}'.strip())
+    rc, o = vm('runProgramInGuest', '-noWait', '-interactive', *step_cmd(name, tag, args))
     if rc: raise RuntimeError(f'runProgramInGuest {name}: {o.strip()}')
     dst = os.path.join(OUT, f'{name}-{tag}.json'); t0 = time.time()
     while time.time() - t0 < limit:
