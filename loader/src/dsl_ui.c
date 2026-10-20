@@ -1460,8 +1460,13 @@ typedef struct { char owner[64], label[96], tip[600]; int order, seq; void (*cli
                  float icon; void (*fill)(void *, DSLObj, int); uintptr_t h_box; int shown; } TBE;
 static TBE tbs[TBMAX]; static int ntbs, tb_seq;
 static uintptr_t h_tview, h_tview_off; static int64_t tview_last = -1000, tview_fast_until;
+int dsl_reg_scene(void);                                              /* dsl_reg.c: MainFlow scene, 1 title, 2 world, -1 none */
 static Obj title_view(void) {
     Obj v = hget(h_tview); if (v) return v;
+    /* in a world there is no title menu: no search. FindObjectOfType walks every object of the scene; after a world load
+       (a new EventSystem) the fast window below searched up to 4 times a frame for 300 frames: ~22 fps for ~13 s after
+       every save load on the Windows VM (player report ZET-U, 2026-10-20) */
+    if (dsl_reg_scene() == 2) return NULL;
     Obj off = hget(h_tview_off);                                      /* seen while hidden: taken on the frame it shows */
     if (off && on_tree(off)) { hset(&h_tview, off); hfree(&h_tview_off); return off; }
     /* every frame before the first title and for a while after a scene change (a new EventSystem): the title found
