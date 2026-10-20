@@ -184,6 +184,11 @@ what you did. Attach the `.log` files from this folder (not the `data` folder, w
 Mac: `~/Library/Application Support/DSModLauncher/profiles/modded` (and `~/Library/Logs/DungeonSettlersModded.log`).
 Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.
 
+## Make a mod
+
+See [docs/MODDING.md](docs/MODDING.md): how to make a native (C), BepInEx or MelonLoader mod for this loader, and how
+the loader compares with BepInEx, MelonLoader and changing the game files (startup times measured).
+
 ## Build it yourself
 
 See [BUILDING.md](BUILDING.md). The license files that ship with each release are in [licenses/](licenses/).

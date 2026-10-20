@@ -715,3 +715,20 @@ world; they must not mix with the per-world mods.
   A world's Mods tab ([Change]) lists only game mods. World rows: the line names only game mods; the hover card names
   the features that are on in a block of their own.
 - Proof: host test T1c (fails on the old code: world refused); rig `test/featsplit_test.py` 13/13 on copy S.
+
+## Startup time: stock vs patched file vs loader vs BepInEx / MelonLoader (lane modguide, 2026-10-20)
+Mac M4 Max, one hidden copy (BT), 3 rounds round-robin, process start -> title ready (MainFlow scene Title + `_bootReady`,
+read by `test/boottime/boot_probe.c`; equals dsload's "boot done (title ready)" within 0.01 s). Script: `test/boottime/boot_compare.py`.
+| Case | Runs (s) | Median |
+|---|---|---|
+| stock (Steam-gate instruction only) | 10.52 11.27 9.96 | 10.5 |
+| patched GameAssembly file (Hell's 20 patches in the file), no loader | 11.64 12.16 11.30 | 11.6 (the +1 s = a cold read of the swapped file) |
+| loader, no mods, boot speed-up off | 11.96 12.13 11.84 | 12.0 |
+| loader, no mods | 2.04 2.49 2.86 | 2.5 |
+| loader, default mods | 3.50 2.49 3.08 | 3.1 |
+| + BepInEx mod, first start / next | 29.7 59.6 66.3 / 3.2 4.8 4.0 | 59.6 / 4.0 |
+| + MelonLoader mod, first start / next | 49.6 55.8 60.7 / 4.6 4.2 6.0 | 55.8 / 4.6 |
+Patching the file gives no speed: it starts like stock. The gain is the boot speed-up (no Unity splash wait, frames
+uncapped, loading priority High until the title); the loader itself costs at most ~1.4 s. Windows (older VM logs):
+default mods 7.0-10.3 s, BepInEx first start 286 s / next 16 s; stock and MelonLoader not measured there.
+Details and the comparison with BepInEx / MelonLoader: `../docs/MODDING.md`.
