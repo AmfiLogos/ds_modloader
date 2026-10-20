@@ -1574,9 +1574,9 @@ static Obj mp_title_button(Obj v, Obj col) {
     }
     return NULL;
 }
-/* every frame on the title: our clones exist for this view, sit last in the column (below the stock buttons and the
-   multiplayer clones, which are inserted after Load), in order, and show only while the stock buttons show (the
-   multiplayer pages hide the stock column) */
+/* every frame on the title: our clones exist for this view, sit in the column right below the stock Load button's
+   block (below the multiplayer clones, which are inserted after Load), in order, and show only while the stock buttons
+   show (the multiplayer pages hide the stock column) */
 static void title_frame(void) {
     if (!ntbs) return;
     Obj v = title_view(); if (!v || !on_tree(v) || f_tv_credit < 0) return;
@@ -1609,11 +1609,13 @@ static void title_frame(void) {
         if (on && !e->shown && !fresh && box && e->fill) e->fill(e->ud, (DSLObj)box, 0);
         e->shown = on;
     }
-    /* order (owner 2026-10-16 #2): right below the multiplayer module's "Multiplayer" button, then by order; without
-       it, last in the column as before. That button is found by its owner, not by its label (the label is translated):
-       when the module "multiplayer" runs, its title clones sit right after the stock Load button, "Multiplayer" first */
-    Obj mp = mp_title_button(v, col);
-    Obj prev = mp;
+    /* order (owner 2026-10-16 #2): right below the multiplayer module's "Multiplayer" button, then by order. That
+       button is found by its owner, not by its label (the label is translated): when the module "multiplayer" runs,
+       its title clones sit right after the stock Load button, "Multiplayer" first. Without it (owner 2026-10-20: the
+       same place whatever runs): right below the stock "Load Campaign" button, where Multiplayer's block would start.
+       Last in the column only when even the Load button is missing. */
+    Obj prev = mp_title_button(v, col);
+    if (!prev && f_tv_btn[2] >= 0) { Obj load = AT(v, f_tv_btn[2], Obj); if (isa(load, K.TitleButton)) prev = load; }
     for (int i = 0; i < ntbs; i++) {
         Obj b = hget(ord[i]->h_btn); if (!b) continue;
         if (!prev) { int want = n - ntbs + i; if (sibling(b) != want) set_sibling(b, want); continue; }
