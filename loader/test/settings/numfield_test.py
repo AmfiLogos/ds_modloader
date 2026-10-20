@@ -65,6 +65,8 @@ def saved():
 def open_page(tag):
     for _ in range(40):                                          # the kit's templates come with the title screen
         ui('open'); time.sleep(1.0); st = ui('state')
+        if st.get('open') and not ctl(st, 'settings:multiplayer') and ctl(st, 'tab-mods:launcher'):   # modtabs: Multiplayer is on the Launcher mods tab
+            ui('click', target='tab-mods:launcher'); time.sleep(1.0); st = ui('state')
         if st.get('open') and ctl(st, 'settings:multiplayer'): break
     ui('click', target='settings:multiplayer'); time.sleep(1.5)
     c = ctl(ui('state'), T)
