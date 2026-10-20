@@ -114,8 +114,30 @@ DSL_EXPORT int dsl_module_early(const DSLHost *host, DSLPlugin *self) {
    shipped delta, loaded instead of the stock one. A failure here turns the whole module off (the loader puts every
    patched byte back): Hell code without Hell tables would offer a difficulty the tables do not know. */
 #include "hell_data.c"
+
+/* Environment counts (player report 2026-10-20: a new game on combat Hell stayed on the loading screen, Mac and Windows).
+   EnvironmentAffectHelper.GetNewEnvironmet(difficulty) looks the difficulty up in _countByDifficulty, which has rows for
+   Easy..Downfall only: for 5 it logs "[EnvHelper] ... '5' ..." and returns an empty map, then
+   CampaignLoadingEventHandler.InitEnvironmentData throws KeyNotFoundException ('VeilSilence') and the load never ends
+   (same on return to the base: MapTransitionCommitService.RefreshBaseEnvironment). Hell uses the Downfall counts, as the
+   tooltip patch "env fallback CountDownfall" already shows. The difficulty is used only for that lookup. By name: the same
+   on Mac and Windows (direct callers on both, not inlined). */
+static void *(*o_getenv)(void *self, int32_t difficulty, const void *mi);
+static int env_swaps;
+static void *my_getenv(void *self, int32_t difficulty, const void *mi) {
+    if (difficulty == 5) {
+        if (++env_swaps <= 5) H->log(ME, "Hell environment: counts of Downfall for combat difficulty 5");
+        difficulty = 4;
+    }
+    return o_getenv(self, difficulty, mi);
+}
+
 DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     int r = hell_tables_init(host, self);
-    if (r) host->log(self, "Hell tables failed (%d): Hell OFF", r);
-    return r;
+    if (r) { host->log(self, "Hell tables failed (%d): Hell OFF", r); return r; }
+    if (host->hook_method(self, "Refactor.Main.Event", "EnvironmentAffectHelper", "GetNewEnvironmet", 1, (void *)my_getenv, (void **)&o_getenv)) {
+        host->log(self, "hook EnvironmentAffectHelper.GetNewEnvironmet refused: Hell OFF (a combat Hell game would not load)");
+        return 14;
+    }
+    return 0;
 }

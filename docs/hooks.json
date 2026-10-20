@@ -4757,6 +4757,23 @@
   {
    "owner": "hell-difficulty",
    "kind": "detour",
+   "method": "Refactor.Main.Event.EnvironmentAffectHelper$$GetNewEnvironmet",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xd569f0"
+    },
+    "win-x64": {
+     "rva": "0xa75140"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "hell-difficulty EnvironmentAffectHelper.GetNewEnvironmet",
+   "source": "ds_modloader:loader/modules/hell-difficulty/hell.c",
+   "key": "hell-difficulty|hell.c|my_getenv|"
+  },
+  {
+   "owner": "hell-difficulty",
+   "kind": "detour",
    "method": "UnityEngine.AssetBundle$$LoadFromFileAsync_Internal",
    "platforms": {
     "mac-arm64": {
