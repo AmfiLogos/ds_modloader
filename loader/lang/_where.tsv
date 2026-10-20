@@ -1,13 +1,13 @@
 "%d file is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.||%d files are not mods for Dungeon Settlers Modded. They were moved to the folder mods/.failed."	dsl_pkg.c:194
-"%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder."	dsl_rows.c:416
+"%d game save could not be read by the game, so it is not listed. The file stays in your save folder.||%d game saves could not be read by the game, so they are not listed. The files stay in your save folder."	dsl_rows.c:431
 "%d mod is ready. The new version installs the next time the game starts.||%d mods are ready. The new versions install the next time the game starts."	dsl_pkg.c:191
 "%d modded world is not in the Load list this session. It is not lost: it stays in the Dungeon Settlers Modded save folder and comes back when the mods are on again.||%d modded worlds are not in the Load list this session. They are not lost: they stay in the Dungeon Settlers Modded save folder and come back when the mods are on again."	dsl_saves.c:214
-"%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them."	dsl_rows.c:432
+"%d multiplayer world is hidden. Tick the box under the list to show it.||%d multiplayer worlds are hidden. Tick the box under the list to show them."	dsl_rows.c:447
 "%d of your game worlds is not in the Load list this session. It is not lost: play it in Dungeon Settlers, or here when the mods are on again.||%d of your game worlds are not in the Load list this session. They are not lost: play them in Dungeon Settlers, or here when the mods are on again."	dsl_saves.c:218
-"%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers."	dsl_rows.c:411
-"%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them."	dsl_rows.c:434
-"%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list."	dsl_rows.c:438
-"%s %s"	dsl_win.c:629
+"%d of your game worlds is not listed: the mod loader could not connect your game saves this session. It is safe in Dungeon Settlers.||%d of your game worlds are not listed: the mod loader could not connect your game saves this session. They are safe in Dungeon Settlers."	dsl_rows.c:426
+"%d single-player world is hidden. Tick the box under the list to show it.||%d single-player worlds are hidden. Tick the box under the list to show them."	dsl_rows.c:449
+"%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list."	dsl_rows.c:453
+"%s %s"	dsl_win.c:657
 "%s %s is not available for download. Your mods stay as they were."	dsl_hostmods.c:398
 "%s (not installed)"	dsl_reg.c:311 dsl_rows.c:236
 "%s and %s"	dsl_reg.c:240
@@ -26,34 +26,34 @@
 "%s is not a mod for Dungeon Settlers Modded. It was moved to the mods\\.failed folder. The game starts without it."	win/ds_modded_win.c:416
 "%s is ready. The new version installs the next time the game starts."	dsl_pkg.c:190
 "%s mods need the Dungeon Settlers Modded app"	dsl_reg.c:620
-"%s off"	dsl_win.c:211
-"%s on"	dsl_win.c:211
-"%s, %s"	dsl_reg.c:240 dsl_reg.c:312 dsl_saves.c:528 dsl_settings.c:398 dsl_win.c:212 dsl_win.c:217
+"%s off"	dsl_win.c:213
+"%s on"	dsl_win.c:213
+"%s, %s"	dsl_reg.c:240 dsl_reg.c:312 dsl_saves.c:528 dsl_settings.c:398 dsl_win.c:214 dsl_win.c:219
 "%s: %s"	dsl_settings.c:397
-"%s: the old modded copy is NEWER than your game save."	dsl_saves.c:708
-"%s: your game save is newer than the old modded copy."	dsl_saves.c:709
-"(and %d more)"	dsl_saves.c:713
-"After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day."	dsl_win.c:511
-"Almost done"	dsl_soft.c:581
-"Apply"	dsl_win.c:523
+"%s: the old modded copy is NEWER than your game save."	dsl_saves.c:747
+"%s: your game save is newer than the old modded copy."	dsl_saves.c:748
+"(and %d more)"	dsl_saves.c:752
+"After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day."	dsl_win.c:539
+"Almost done"	dsl_soft.c:605
+"Apply"	dsl_win.c:551
 "Applying mods"	dsl_progress.c:45 dsl_progress.c:58 dsl_progress.c:91
-"Applying mods..."	dsl_win.c:203
+"Applying mods..."	dsl_win.c:205
 "Auto-update mod loader"	dsl_update.c:442
-"Back"	dsl_win.c:624 dsl_win.c:624
+"Back"	dsl_win.c:652 dsl_win.c:652
 "BepInEx could not be installed (%s). The game starts without the BepInEx mods."	ds_modded.c:735
 "BepInEx did not start"	dsl_reg.c:168
 "BepInEx is not available in this start"	dsl_reg.c:172
 "BepInEx mods and MelonLoader mods cannot run together. Turn off the mods of one of them."	dsl_main.c:557
 "BepInEx mods and MelonLoader mods cannot run together: the MelonLoader mods are off this time."	win/bie_win.c:388
 "BepInEx plugin: not running in this start"	dsl_reg.c:172
-"Cancel"	dsl_reg.c:841 dsl_saves.c:554 dsl_saves.c:604 dsl_win.c:261 dsl_win.c:502 dsl_win.c:502 win/ds_modded_win.c:507
-"Change"	dsl_rows.c:273 dsl_rows.c:274 dsl_rows.c:474
-"Change the settings of this mod."	dsl_win.c:458
-"Changes: %s. Apply to use them."	dsl_win.c:220
-"Changes: %s. Save for this world to keep them."	dsl_win.c:220
-"Check the mods folder for new mods."	dsl_win.c:442
+"Cancel"	dsl_reg.c:841 dsl_saves.c:554 dsl_saves.c:622 dsl_win.c:263 dsl_win.c:530 dsl_win.c:530 win/ds_modded_win.c:507
+"Change"	dsl_rows.c:273 dsl_rows.c:274 dsl_rows.c:489
+"Change the settings of this mod."	dsl_win.c:485
+"Changes: %s. Apply to use them."	dsl_win.c:222
+"Changes: %s. Save for this world to keep them."	dsl_win.c:222
+"Check the mods folder for new mods."	dsl_win.c:465
 "Choose the mods this world loads with."	dsl_rows.c:274
-"Close (Esc)"	dsl_win.c:774
+"Close (Esc)"	dsl_win.c:803
 "Cloud backup failed for %d save at %s. It will try again in a moment.||Cloud backup failed for %d saves at %s. It will try again in a moment."	dsl_cloud.c:82
 "Cloud backup is off (DSL_CLOUD=0)."	dsl_cloud.c:77
 "Cloud backup is off: Steam Cloud is turned off for this game or this account."	dsl_cloud.c:74
@@ -63,13 +63,13 @@
 "Cloud backup paused: Steam Cloud is almost full, so %d save is only on this computer. The game's own saves get the space first.||Cloud backup paused: Steam Cloud is almost full, so %d saves are only on this computer. The game's own saves get the space first."	dsl_cloud.c:80
 "Cloud backup starts once Steam is ready."	dsl_cloud.c:72
 "Cloud backup: %d save in your Steam Cloud, checked at %s.||Cloud backup: %d saves in your Steam Cloud, checked at %s."	dsl_cloud.c:84
-"Default values"	dsl_win.c:622 dsl_win.c:622 dsl_win.c:623
-"Delete"	dsl_saves.c:604 dsl_win.c:261
-"Delete the group \"%s\"? The mods stay installed."	dsl_win.c:260
-"Delete this group"	dsl_win.c:281
-"Display"	dsl_win.c:670
-"Display settings change at once."	dsl_win.c:629 dsl_win.c:630
-"Done"	dsl_soft.c:500 dsl_soft.c:607
+"Default values"	dsl_win.c:650 dsl_win.c:650 dsl_win.c:651
+"Delete"	dsl_saves.c:622 dsl_win.c:263
+"Delete the group \"%s\"? The mods stay installed."	dsl_win.c:262
+"Delete this group"	dsl_win.c:283
+"Display"	dsl_win.c:698
+"Display settings change at once."	dsl_win.c:657 dsl_win.c:658
+"Done"	dsl_soft.c:524 dsl_soft.c:631
 "Downloading %s..."	dsl_update.c:471
 "Downloading mod updates..."	dsl_update.c:471
 "Dungeon Settlers Modded cannot create its folder in Application Support."	ds_modded.c:780
@@ -77,19 +77,19 @@
 "Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut."	win/ds_modded_win.c:563
 "Dungeon Settlers Modded: BepInEx mods are off this time"	win/ds_modded_win.c:738
 "Dungeon Settlers: mods are off"	dsl_main.c:180 dsl_main.c:699 dsl_main.c:723
-"Each world keeps its own set of these mods."	dsl_win.c:394
-"Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply."	dsl_win.c:367
-"Game modification mods"	dsl_win.c:392
-"Game saves: also in Dungeon Settlers"	dsl_rows.c:366
-"Gameplay"	dsl_win.c:670
-"Gameplay settings change only at the title screen."	dsl_win.c:627
-"Gameplay settings change when you click Apply. In multiplayer, every player needs the same values."	dsl_win.c:628
-"Go back to the title screen to change mods."	dsl_hostmods.c:346 dsl_reg.c:594 dsl_win.c:202
-"Group name"	dsl_win.c:500
-"Groups"	dsl_win.c:498
-"Installed mods"	dsl_win.c:436
-"Launcher features"	dsl_win.c:392
+"Each world keeps its own set of these mods."	dsl_win.c:395
+"Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply."	dsl_win.c:369
+"Game mods"	dsl_win.c:418
+"Game saves: also in Dungeon Settlers"	dsl_rows.c:381
+"Gameplay"	dsl_win.c:698
+"Gameplay settings change only at the title screen."	dsl_win.c:655
+"Gameplay settings change when you click Apply. In multiplayer, every player needs the same values."	dsl_win.c:656
+"Go back to the title screen to change mods."	dsl_hostmods.c:346 dsl_reg.c:594 dsl_win.c:204
+"Group name"	dsl_win.c:528
+"Groups"	dsl_win.c:526
+"Installed mods"	dsl_win.c:459
 "Launcher features (every world):"	dsl_rows.c:223
+"Launcher mods"	dsl_win.c:418
 "Load"	dsl_reg.c:841 dsl_saves.c:554
 "Loading %s"	dsl_reg.c:1053
 "Loading fonts"	dsl_soft.c:204
@@ -100,58 +100,60 @@
 "MelonLoader is not available in this start"	dsl_reg.c:178
 "MelonLoader mod: not running in this start"	dsl_reg.c:178
 "Mod updates install the next time you start the game."	dsl_update.c:473
-"Modded saves: only in Dungeon Settlers Modded"	dsl_rows.c:366
-"Mods"	dsl_reg.c:1010 dsl_reg.c:1032 dsl_win.c:778
+"Modded saves: only in Dungeon Settlers Modded"	dsl_rows.c:381
+"Mods"	dsl_reg.c:1010 dsl_reg.c:1032 dsl_win.c:807
 "Mods cannot be downloaded in this start."	dsl_hostmods.c:373
-"Mods cannot change now: %s"	dsl_win.c:205
-"Mods for %s"	dsl_win.c:436
+"Mods cannot change now: %s"	dsl_win.c:207
+"Mods for %s"	dsl_win.c:459
 "Mods for this world: %s"	dsl_reg.c:546
 "Mods of this world"	dsl_rows.c:272
 "Mods:"	dsl_rows.c:230 dsl_rows.c:246
 "Mods: %s"	dsl_reg.c:506
 "No"	dsl_crash.c:444
-"No groups yet. Set the switches, then save them as a group."	dsl_win.c:504
-"No mods are installed."	dsl_win.c:495
+"No game mods installed."	dsl_win.c:522
+"No groups yet. Set the switches, then save them as a group."	dsl_win.c:532
+"No launcher mods installed."	dsl_win.c:522
+"No mods are installed."	dsl_win.c:522
 "No mods."	dsl_rows.c:230
-"No mods: the game without mods."	dsl_win.c:278
-"Not running: %s"	dsl_win.c:463
-"OK"	dsl_reg.c:641 dsl_reg.c:827 dsl_reg.c:837 dsl_reg.c:839 dsl_reg.c:975 dsl_reg.c:979 dsl_saves.c:692 dsl_saves.c:716 dsl_ui.c:1367 mac/dsl_start_mac.c:68 ds_modded.c:83
+"No mods: the game without mods."	dsl_win.c:280
+"Not running: %s"	dsl_win.c:490
+"OK"	dsl_reg.c:641 dsl_reg.c:827 dsl_reg.c:837 dsl_reg.c:839 dsl_reg.c:975 dsl_reg.c:979 dsl_saves.c:731 dsl_saves.c:755 dsl_ui.c:1368 mac/dsl_start_mac.c:68 ds_modded.c:83
 "Off"	dsl_settings.c:407
 "On"	dsl_settings.c:407
-"On or off for every world. They start from the title screen, never from a world."	dsl_win.c:393
+"On or off for every world. They start from the title screen, never from a world."	dsl_win.c:394
 "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses."	dsl_crash.c:442
-"Open mods folder"	dsl_win.c:439 dsl_win.c:439 dsl_win.c:440
-"Open the privacy note in your browser."	dsl_win.c:513
-"Opening your world"	dsl_soft.c:563 dsl_soft.c:584
-"Preparing mods"	dsl_soft.c:457
+"Open mods folder"	dsl_win.c:462 dsl_win.c:462 dsl_win.c:463
+"Open the privacy note in your browser."	dsl_win.c:541
+"Opening your world"	dsl_soft.c:587 dsl_soft.c:608
+"Preparing mods"	dsl_soft.c:480
 "Preparing mods (first start)\nDownloading %s (%s). The new mods are applied when it is ready."	dsl_reg.c:640
 "Preparing mods (first start): %s prepares its files for this game version. This takes about 2 minutes, once."	dsl_reg.c:983
 "Preparing mods (first start): BepInEx prepares its files for this game version. About 2 minutes, once."	ds_modded.c:742
 "Preparing mods (first start): MelonLoader prepares its files for this game version. About 2 minutes, once."	ds_modded.c:712
 "Preparing mods (first start): downloading BepInEx (31 MB)."	ds_modded.c:730
 "Preparing mods (first start): downloading MelonLoader (52 MB)."	ds_modded.c:700
-"Privacy"	dsl_win.c:512 dsl_win.c:512 dsl_win.c:513
+"Privacy"	dsl_win.c:540 dsl_win.c:540 dsl_win.c:541
 "Privacy note: %s"	dsl_crash.c:440
-"Put the mod's .zip file in this folder. Click Refresh to add it to this list. Then turn it on and click Apply."	dsl_win.c:440
-"Puts every setting of this mod back to its default value."	dsl_win.c:623
-"Refresh"	dsl_win.c:441 dsl_win.c:441 dsl_win.c:442
-"Save"	dsl_win.c:501 dsl_win.c:501
-"Save for this world"	dsl_win.c:523
-"Save these mods as a group"	dsl_win.c:499 dsl_win.c:499
-"Saved. %s loads with these mods."	dsl_win.c:349
-"Saved. This world loads with these mods."	dsl_win.c:349
+"Put the mod's .zip file in this folder. Click Refresh to add it to this list. Then turn it on and click Apply."	dsl_win.c:463
+"Puts every setting of this mod back to its default value."	dsl_win.c:651
+"Refresh"	dsl_win.c:464 dsl_win.c:464 dsl_win.c:465
+"Save"	dsl_win.c:529 dsl_win.c:529
+"Save for this world"	dsl_win.c:551
+"Save these mods as a group"	dsl_win.c:527 dsl_win.c:527
+"Saved. %s loads with these mods."	dsl_win.c:351
+"Saved. This world loads with these mods."	dsl_win.c:351
 "Saves made with %s may not work without the mod loader."	dsl_reg.c:242
-"Send crash reports"	dsl_win.c:509 dsl_win.c:511
+"Send crash reports"	dsl_win.c:537 dsl_win.c:539
 "Send crash reports to help fix bugs?"	dsl_crash.c:441
-"Settings"	dsl_win.c:456 dsl_win.c:457
-"Settings: %s"	dsl_win.c:620
+"Settings"	dsl_win.c:483 dsl_win.c:484
+"Settings: %s"	dsl_win.c:648
 "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again."	win/ds_modded_win.c:108 win/ds_modded_win.c:117 ds_modded.c:597
 "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again."	win/ds_modded_win.c:140 ds_modded.c:621
 "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again."	ds_modded.c:617
 "Steam is running, but it does not answer. Quit Steam fully (Steam menu > Quit Steam), start it again and sign in, then open Dungeon Settlers Modded again."	ds_modded.c:619
 "Step %d of %d · %s"	dsl_progress.c:78
-"Switch mods on or off, then Apply."	dsl_win.c:207
-"Switch mods on or off, then Save. The world loads with these mods."	dsl_win.c:206
+"Switch mods on or off, then Apply."	dsl_win.c:209
+"Switch mods on or off, then Save. The world loads with these mods."	dsl_win.c:208
 "The %s download is damaged. Try again."	win/bie_win.c:158
 "The download failed. The game tries again next time."	dsl_update.c:474
 "The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log."	ds_modded.c:486
@@ -162,8 +164,8 @@
 "The game was updated. Mods stay off until they are updated for this game version. Auto-update is off: download the new version from github.com/AmfiLogos/ds_modloader/releases."	dsl_main.c:838
 "The game was updated. Mods stay off until they are updated for this game version. Dungeon Settlers Modded checks for that update each time you start it and installs it at the next start."	dsl_main.c:836
 "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded."	win/ds_modded_win.c:694
-"The group could not be deleted."	dsl_win.c:253
-"The group could not be saved."	dsl_win.c:303
+"The group could not be deleted."	dsl_win.c:255
+"The group could not be saved."	dsl_win.c:305
 "The host has an older %s (%s) that is not available for download. The host should update it."	dsl_hostmods.c:399
 "The host's %s is not the official release. Your mods stay as they were."	dsl_hostmods.c:402
 "The host's mod list could not be read."	dsl_hostmods.c:348
@@ -180,14 +182,14 @@
 "The mod update (%s) did not start. The old mods are back."	dsl_update_start.c:121
 "The mod update (%s) was cut off. Nothing changed."	dsl_update_start.c:120
 "The modded game copy is missing or incomplete.\nRun install.bat from the Dungeon Settlers Modded kit again."	win/ds_modded_win.c:708
-"The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted."	dsl_saves.c:699
+"The modded game now plays your game saves directly. %d old modded copy of a world was different from your game save. It was set aside, not deleted.||The modded game now plays your game saves directly. %d old modded copies of worlds were different from your game saves. They were set aside, not deleted."	dsl_saves.c:738
 "The mods could not be applied: %s"	dsl_reg.c:974
-"The mods did not change: %s"	dsl_win.c:354 dsl_win.c:700
-"The mods folder has no new mods."	dsl_win.c:375
-"The mods for this world could not be saved."	dsl_win.c:348
-"The old modded copies are in this folder:\n%s"	dsl_saves.c:705
-"The old modded copy is this file:\n%s"	dsl_saves.c:704
-"The setting could not be saved."	dsl_win.c:572
+"The mods did not change: %s"	dsl_win.c:356 dsl_win.c:728
+"The mods folder has no new mods."	dsl_win.c:377
+"The mods for this world could not be saved."	dsl_win.c:350
+"The old modded copies are in this folder:\n%s"	dsl_saves.c:744
+"The old modded copy is this file:\n%s"	dsl_saves.c:743
+"The setting could not be saved."	dsl_win.c:600
 "The update to %s could not be installed (%s). You still have %s."	dsl_update_start.c:203
 "The update to %s could not be installed (%s). You still have the old version."	dsl_update_start.c:204
 "The update to %s did not start. You have %s again."	dsl_update_start.c:122
@@ -196,21 +198,21 @@
 "The world cannot be loaded now: %s"	dsl_reg.c:826
 "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again."	ds_modded.c:180
 "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again."	dsl_main.c:846
-"This mod has no settings."	dsl_win.c:680
-"This save is also used by Dungeon Settlers without mods. Delete it there too?"	dsl_saves.c:604
+"This mod has no settings."	dsl_win.c:708
+"This save is also used by Dungeon Settlers without mods. Delete it there too?"	dsl_saves.c:622
 "This world is one of your game saves."	dsl_world.c:56
 "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s"	dsl_saves.c:541
 "This world is one of your game saves. This mod changes what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader.||This world is one of your game saves. These mods change what the world saves: %s.\n\nIf you play it now, the world may break when you load it later in the game without the mod loader."	dsl_saves.c:548
-"This world loads with these mods. The mods running now do not change."	dsl_win.c:526
+"This world loads with these mods. The mods running now do not change."	dsl_win.c:554
 "This world uses other mods."	dsl_world.c:18
 "This world uses other mods. Go back to the title screen to load it."	dsl_world.c:20
 "This world uses: %s.\nInstall the missing mods to load it."	dsl_reg.c:837
 "This world uses: %s.\nIt cannot be loaded now: %s"	dsl_reg.c:839
 "This world uses: %s.\nLoad it with them?"	dsl_reg.c:840
 "This world was not loaded: its save files could not be copied first.\n\n%s"	dsl_saves.c:508
-"Turns these mods on behind a loading screen and brings you back here."	dsl_win.c:527
-"Type a whole number from %d to %d."	dsl_win.c:591
-"Undo changes"	dsl_win.c:522 dsl_win.c:522
+"Turns these mods on behind a loading screen and brings you back here."	dsl_win.c:555
+"Type a whole number from %d to %d."	dsl_win.c:619
+"Undo changes"	dsl_win.c:550 dsl_win.c:550
 "Update"	dsl_update.c:444
 "Update mods"	dsl_update.c:463
 "Update to %s"	dsl_update.c:463
@@ -224,7 +226,7 @@
 "Your mods already match the host's."	dsl_hostmods.c:349
 "Your mods could not be changed: %s"	dsl_hostmods.c:403
 "Your world opens when this is done."	dsl_progress.c:100
-"applying the mods took too long"	dsl_soft.c:480
+"applying the mods took too long"	dsl_soft.c:504
 "cannot run together with %s"	dsl_deps.h:162
 "did not load"	dsl_reg.c:184
 "it crashed while starting"	dsl_main.c:273
@@ -253,18 +255,18 @@
 "the download holds no Dungeon Settlers Modded app"	mac/dsl_update_mac.c:130
 "the download holds no Dungeon Settlers Modded kit"	win/dsl_update_win.c:253 win/dsl_update_win.c:273
 "the download's version number is wrong"	win/dsl_update_win.c:281 mac/dsl_update_mac.c:134
-"the game did not allow the change"	dsl_win.c:354
+"the game did not allow the change"	dsl_win.c:356
 "the kit has no %s"	win/dsl_update_win.c:290
 "the mod %s could not be replaced"	win/dsl_update_win.c:333 mac/dsl_update_mac.c:177
 "the mod loader folder could not be replaced"	mac/dsl_update_mac.c:160
 "the mod settings could not be saved"	dsl_reg.c:605
-"the mods could not be applied."	dsl_win.c:700
+"the mods could not be applied."	dsl_win.c:728
 "the mods could not be replaced"	win/dsl_update_win.c:310 win/dsl_update_win.c:314
 "the new app's signature is broken"	mac/dsl_update_mac.c:138
 "the new mod loader could not be copied"	mac/dsl_update_mac.c:144
-"the new mods could not start"	dsl_soft.c:466
-"the new mods stopped before they were ready"	dsl_soft.c:479
+"the new mods could not start"	dsl_soft.c:489
+"the new mods stopped before they were ready"	dsl_soft.c:503
 "this update needs the installer (new game version)"	win/dsl_update_win.c:276
-"this world"	dsl_win.c:434
+"this world"	dsl_win.c:457
 "unknown error"	ds_modded.c:705 ds_modded.c:735
 "works only with %s, but version %s is installed"	dsl_deps.h:160

@@ -732,7 +732,11 @@ world; they must not mix with the per-world mods.
 - Multiplayer: the HELLO mod-set lines (`set_lines`) are unchanged: a feature with `scope: gameplay` (Units Laboratory)
   is still in the hash, so every player needs it; `scope: client` features are not. The multiplayer mod stays out (its
   HELLO checks build + protocol). The notch fix is built into the Mac start part (always on, not in the Mods window).
-- Mods window: "Game modification mods" group, then "Launcher features" group (global switches + Apply as before).
-  A world's Mods tab ([Change]) lists only game mods. World rows: the line names only game mods; the hover card names
+- Mods window (owner 2026-10-20, branch modtabs): two tabs in the window's tab strip, "Game mods" (opens first) and
+  "Launcher mods" (category feature), each listing only its mods with one line on how they work. One `mods[]` list
+  holds both tabs (rows of the other tab are NULL), so a switch changed on one tab stays when the other opens, the status
+  line lists every pending change, and Apply / Undo / groups act on both. A tab change keeps the switches like Settings
+  / Refresh (`keep_switches` + rebuild). A tab with no mods says "No launcher mods installed." / "No game mods installed.".
+  A world's Mods tab ([Change]) lists only game mods, with the old single "Mods" tab and no tabs of its own. World rows: the line names only game mods; the hover card names
   the features that are on in a block of their own.
 - Proof: host test T1c (fails on the old code: world refused); rig `test/featsplit_test.py` 13/13 on copy S.
