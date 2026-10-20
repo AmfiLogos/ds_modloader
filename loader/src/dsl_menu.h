@@ -21,9 +21,13 @@ typedef struct DSLModInfo {
     const char *reason;                          /* why not active ("" if active) */
     int hidden;                                  /* loader-internal (not shown as a switch) */
     const char *kind;                            /* mod.json "kind": "code" | "bepinex" | "data" ...; never NULL */
+    int feature;                                 /* mod.json "category": "feature" = launcher feature (on for every world,
+                                                    never in a world's mod set); "game" (default) = per world */
 } DSLModInfo;
 int dsl_mods_count(void);
 const DSLModInfo *dsl_mods_at(int i);
+int dsl_mod_is_feature(const char *id);                      /* launcher feature (mod.json "category": "feature") */
+int dsl_features_on(const char **ids, int max);              /* the launcher features that are on (every world) */
 
 /* groups (<data>/Mods/groups.json {"groups":[{"name","mods":[ids]}]}) */
 int dsl_groups_count(void);

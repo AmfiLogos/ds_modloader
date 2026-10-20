@@ -4,7 +4,7 @@
 //   - Apply = <data>/Mods/pending.json + soft restart (dsl_soft.c); the new process makes it active.json once it is on
 //     screen (commit only on success; a failed restart leaves active.json as it was)
 //   - mods per world: <data>/Mods/worlds.json {"modset": <running key>, "worlds": {guid: key}}; key = the sorted
-//     gameplay mod ids joined by "+" ("vanilla" if none). A world is registered with the running key the first time it
+//     gameplay mod ids joined by "+" ("vanilla" if none), launcher features left out (see dsl_mod_is_feature). A world is registered with the running key the first time it
 //     is open in this process; a world with another key: dsl_world.c refuses the load, then this file asks
 //     "This world uses: <names>. Load it with them?" and Load = soft restart straight into that save (flow K).
 // Everything here runs on the main thread (dsl_frame_hook from the kit's EventSystem.Update tick, or host calls made
@@ -51,6 +51,11 @@ static void jesc(char *out, size_t n, const char *s) {
     out[k] = 0;
 }
 static char *xstrdup(const char *s) { return strdup(s ? s : ""); }
+
+/* launcher features (owner 2026-10-20): mods started from the title (Multiplayer button, Units Laboratory), never from a
+   world. mod.json "category": "feature" | "game" (default "game"). The official ones whose released mod.json has no
+   "category" yet are named here, so worlds saved with them load without "This world uses other mods". */
+static int feature_builtin(const char *id) { return id && (!strcmp(id, "multiplayer") || !strcmp(id, "custom-modes")); }
 
 /* ------------------------------------------------------------------ paths */
 static char data_dir_s[1100];                           /* <game data>/Mods */
@@ -145,6 +150,7 @@ static void mods_scan(void) {
         const char *kd = json_str(m, "kind"); if (!kd) kd = json_str(m, "type");
         x->kind = xstrdup(kd ? kd : "code");
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
+        { const char *ca = json_str(m, "category"); x->feature = ca ? !strcmp(ca, "feature") : feature_builtin(id); }
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         JNode *sb = json_get(m, "save_backup"); MI_savebak[nmi - 1] = sb && sb->t == JN_BOOL && sb->b;
@@ -256,6 +262,8 @@ int dsl_running_save_backup(void) {
 const char *dsl_mod_name(const char *id) { const DSLModInfo *m = NULL; mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) m = &MI[i]; return m ? m->name : NULL; }
 const DSLModInfo *dsl_mods_at(int i) { mods_scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
 static const DSLModInfo *mod_by_id(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return &MI[i]; return NULL; }
+/* 1 = a launcher feature: on for every world, never in a world's key (installed: its mod.json; else the official list) */
+int dsl_mod_is_feature(const char *id) { const DSLModInfo *m = id ? mod_by_id(id) : NULL; return m ? m->feature : feature_builtin(id); }
 
 /* running gameplay key: sorted ids of the gameplay modules that run in this process. The multiplayer mod itself is
    not in it (its HELLO already checks build + protocol), so a world's key and the join check are the same with or
@@ -266,7 +274,7 @@ static int cmpstr(const void *a, const void *b) { return strcmp(*(const char *co
 static void key_of(const char *const *ids, int n, char *out, size_t cap) {
     const char *v[MAXM]; int k = 0;
     for (int i = 0; i < n && k < MAXM; i++) {
-        if (!strcmp(ids[i], "multiplayer")) continue;
+        if (dsl_mod_is_feature(ids[i])) continue;
         const DSLModInfo *m = mod_by_id(ids[i]); if (!m || !strcmp(m->scope, "gameplay")) v[k++] = ids[i];
     }
     qsort(v, (size_t)k, sizeof *v, cmpstr);
@@ -274,12 +282,12 @@ static void key_of(const char *const *ids, int n, char *out, size_t cap) {
     for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
     if (!k) snprintf(out, cap, "vanilla");
 }
-/* a stored key in today's form: sorted, without "multiplayer" (left out since l3-win 3dd9646; older worlds.json files
-   have it), "vanilla" when empty. Keeps worlds registered before that change working. */
+/* a stored key in today's form: sorted, without launcher features ("multiplayer" left out since l3-win 3dd9646, every
+   feature since 2026-10-20; older worlds.json files have them), "vanilla" when empty. Keeps those worlds working. */
 static void key_norm(const char *in, char *out, size_t cap) {
     char b[512]; snprintf(b, sizeof b, "%s", in ? in : ""); const char *v[MAXM]; int k = 0;
     for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && k < MAXM; t = strtok_r(NULL, "+", &sv))
-        if (*t && strcmp(t, "multiplayer") && strcmp(t, "vanilla")) v[k++] = t;
+        if (*t && !dsl_mod_is_feature(t) && strcmp(t, "vanilla")) v[k++] = t;
     qsort(v, (size_t)k, sizeof *v, cmpstr);
     out[0] = 0; for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
     if (!k) snprintf(out, cap, "vanilla");
@@ -334,11 +342,11 @@ static void jdump(const JNode *j, char **b, size_t *n, size_t *cap) {
 /* ------------------------------------------------------------------ worlds.json */
 static JNode *worlds_doc;
 static int worlds_migrated;
-/* world keys written before the multiplayer mod left the key ("multiplayer", "a+multiplayer"): same key without it */
+/* world keys written with a launcher feature in them ("multiplayer", "custom-modes+gcd-cdr"): same key without it */
 static void strip_mp(JNode *c) {
-    if (!c || c->t != JN_STR || !c->str || !strstr(c->str, "multiplayer")) return;
+    if (!c || c->t != JN_STR || !c->str) return;
     char out[512] = ""; char b[512]; snprintf(b, sizeof b, "%s", c->str);
-    for (char *t = strtok(b, "+"); t; t = strtok(NULL, "+")) if (strcmp(t, "multiplayer")) { if (out[0]) strlcat(out, "+", sizeof out); strlcat(out, t, sizeof out); }
+    for (char *t = strtok(b, "+"); t; t = strtok(NULL, "+")) if (!dsl_mod_is_feature(t)) { if (out[0]) strlcat(out, "+", sizeof out); strlcat(out, t, sizeof out); }
     if (!out[0]) snprintf(out, sizeof out, "vanilla");
     if (strcmp(out, c->str)) { free(c->str); c->str = strdup(out); worlds_migrated = 1; }
 }
@@ -507,15 +515,21 @@ int dsl_world_mods(const char *guid, const char **ids, int max) {
     for (char *sv = NULL, *t = strtok_r(world_ids_buf, "+", &sv); t && n < max; t = strtok_r(NULL, "+", &sv)) ids[n++] = t;
     return n;
 }
-/* every mod that is on when this world plays (owner v13 #5): its gameplay set, plus the mods the set leaves out
-   because they load with any world (multiplayer, client mods), when they are on */
+/* the game mods that are on when this world plays (owner v13 #5): its gameplay set, plus its client game mods that are
+   on. Launcher features are not world mods (owner 2026-10-20): dsl_features_on lists them. */
 int dsl_world_mods_all(const char *guid, const char **ids, int max) {
     int n = dsl_world_mods(guid, ids, max);
     for (int i = 0; i < nmi && n < max; i++) {
-        if (!MI[i].enabled || (strcmp(MI[i].id, "multiplayer") && strcmp(MI[i].scope, "client"))) continue;
+        if (!MI[i].enabled || MI[i].feature || strcmp(MI[i].scope, "client")) continue;
         int dup = 0; for (int j = 0; j < n; j++) dup |= !strcmp(ids[j], MI[i].id);
         if (!dup) ids[n++] = MI[i].id;
     }
+    return n;
+}
+/* the launcher features that are on (the same for every world) */
+int dsl_features_on(const char **ids, int max) {
+    int n = 0; mods_scan();
+    for (int i = 0; i < nmi && n < max; i++) if (MI[i].enabled && !MI[i].hidden && MI[i].feature) ids[n++] = MI[i].id;
     return n;
 }
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
@@ -799,9 +813,9 @@ void dsl_world_mismatch(const char *save_name, const char *guid, const char *key
 static void k_ok(void *ud, DSLObj w) {
     (void)ud; (void)w;
     const char *ids[MAXM]; int n = 0; char b[512]; snprintf(b, sizeof b, "%s", k_key);
-    if (strcmp(b, "vanilla")) for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && n < MAXM; t = strtok_r(NULL, "+", &sv)) if (strcmp(t, "multiplayer")) ids[n++] = t;
-    for (int i = 0; i < nmi && n < MAXM; i++)                           /* keep client mods and multiplayer (not in the key) */
-        if (MI[i].enabled && (!strcmp(MI[i].scope, "client") || !strcmp(MI[i].id, "multiplayer"))) {
+    if (strcmp(b, "vanilla")) for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && n < MAXM; t = strtok_r(NULL, "+", &sv)) if (!dsl_mod_is_feature(t)) ids[n++] = t;
+    for (int i = 0; i < nmi && n < MAXM; i++)                           /* keep client mods and launcher features (not in the key) */
+        if (MI[i].enabled && (!strcmp(MI[i].scope, "client") || MI[i].feature)) {
             int dup = 0; for (int j = 0; j < n; j++) dup |= !strcmp(ids[j], MI[i].id);
             if (!dup) ids[n++] = MI[i].id;
         }
