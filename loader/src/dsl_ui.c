@@ -1146,6 +1146,7 @@ static void tip_place_frame(void) {
 }
 static void tips_frame(void) {
     if (!ntips && !tip_shown) return;
+    if (dsl_soft_input_blocked()) { if (tip_shown) tip_hide(); return; }   /* a soft restart's loading screen covers the title */
     TipE *hit = NULL;
     V3 m = m_input_mouse ? CALL0(m_input_mouse, V3)(m_input_mouse) : (V3){ -1, -1, 0 };
     for (int i = ntips - 1; i >= 0; i--) {                            /* forget dead targets */
