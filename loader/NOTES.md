@@ -361,7 +361,9 @@ Helpers (opus): soft restart work in `test/soft/NOTES_v13.md` (branch loaderui-s
 ### What changed
 - Title (dsl_reg.c, dsl_ui.c): "Mods" has no hover card. The loader's title buttons sit right below the multiplayer
   module's "Multiplayer" button, by order (Mods 100, then other modules' buttons such as "Custom Modes"); without
-  "Multiplayer" they stay last in the column as before.
+  "Multiplayer" right below the stock "Load Campaign" button, the same place (2026-10-20, branch modspos: they were last
+  in the column, below Quit; test `test/l1_titlepos_test.py`, 4 cases: all on, multiplayer off, both off, Units
+  Laboratory off).
 - Hover cards (dsl_ui.c): the card's top-left = the panel's right edge (+8 px), level with the element's top. Panel =
   the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list). After layout, a card that
   leaves the screen on the right or was pushed back over the panel by the stock clamp moves outside the panel's left edge.
