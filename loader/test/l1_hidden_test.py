@@ -4,9 +4,11 @@ lost"). Test copy DSL_TEST_COPY (default Y; hidden, muted, staged off screen; ta
 ~/ds_multiplayer/rig/rig.py lease hiddenworlds --pid <this pid>). Own save folders only, as l1_saves_test.py: the game
 folder is <copy>/gameroot/data/Saves, the modded folder <copy>/data/Saves. The owner's saves and prefs: hash before/after.
 Real breaks this catches (each: the player thinks worlds are lost, or is told a wrong number):
- M  multiplayer + gcd-cdr, title Load list: the modded-only world tagged Multiplayer is hidden by the multiplayer list
-    filter -> bottom line "1 multiplayer world is hidden"; the box ticked -> the world shows, the line goes. A game save
-    the game cannot read stays in the game folder (never quarantined) -> top line "1 game save could not be read".
+ M  multiplayer + gcd-cdr + custom-modes, title Load list: the modded-only world tagged Multiplayer is hidden by the
+    multiplayer list filter -> bottom line "1 multiplayer world is hidden"; the box ticked -> the world shows, the line
+    goes. A game save the game cannot read stays in the game folder (never quarantined) -> top line "1 game save could
+    not be read". The box under the list must be SEEN in the frame (bright checkbox pixels): custom-modes' filter has no
+    toggle, and the loader's empty toggle strip covered the box with a dark bar (owner 2026-10-20, v0.1.17).
  F  the game-saves hooks off this session (DSL_TEST_SAVES_OFF=1, as names missing / a hook refused) -> top line
     "1 of your game worlds is not listed".
  B  mods off for this game build (launcher pin of another build): dsload_status.json message (the start notice) says the
@@ -58,8 +60,13 @@ def shot(name):
 
 
 def install():
-    """l1_saves_test.install + the loader's language files next to it (as the app ships them: <loader>/lang)"""
+    """l1_saves_test.install + custom-modes + the loader's language files next to it (as the app ships them: <loader>/lang)"""
     S.install()
+    md = os.path.join(I, 'DungeonSettlers.app', 'Contents', 'Resources', 'mods', 'custom-modes')
+    if os.path.exists(md): os.makedirs(os.path.join(I, 'old'), exist_ok=True); shutil.move(md, os.path.join(I, 'old', 'custom-modes.%d' % time.time()))
+    shutil.copytree(os.path.join(S.MODSRC, 'custom-modes'), md)
+    import subprocess
+    subprocess.run(['codesign', '-f', '-s', '-', os.path.join(I, 'DungeonSettlers.app', 'Contents', 'MacOS', 'Dungeon Settlers')], capture_output=True)
     lang = os.path.join(I, 'DungeonSettlers.app', 'Contents', 'Frameworks', 'lang'); os.makedirs(lang, exist_ok=True)
     for f in glob.glob(os.path.join(os.path.dirname(HERE), 'lang', '*.json')): shutil.copy2(f, lang)
 
@@ -76,6 +83,39 @@ def folders():
     open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
 
 
+def png_gray(path):
+    """8-bit RGB / RGBA non-interlaced PNG (the shot request writes these) -> (w, h, rows of gray values)"""
+    import struct, zlib
+    b = open(path, 'rb').read(); i = 8; idat = b''; w = h = ch = 0
+    while i < len(b):
+        n, t = struct.unpack('>I4s', b[i:i + 8]); d = b[i + 8:i + 8 + n]; i += 12 + n
+        if t == b'IHDR': w, h = struct.unpack('>II', d[:8]); ch = {2: 3, 6: 4}[d[9]]
+        elif t == b'IDAT': idat += d
+    raw = zlib.decompress(idat); st = w * ch; rows = []; prev = bytearray(st)
+    for y in range(h):
+        f = raw[y * (st + 1)]; cur = bytearray(raw[y * (st + 1) + 1:(y + 1) * (st + 1)])
+        for x in range(st):
+            a = cur[x - ch] if x >= ch else 0; up = prev[x]; c = prev[x - ch] if x >= ch else 0
+            if f == 1: cur[x] = (cur[x] + a) & 255
+            elif f == 2: cur[x] = (cur[x] + up) & 255
+            elif f == 3: cur[x] = (cur[x] + (a + up) // 2) & 255
+            elif f == 4:
+                pa, pb, pc = abs(up - c), abs(a - c), abs(a + up - 2 * c)
+                cur[x] = (cur[x] + (a if pa <= pb and pa <= pc else up if pb <= pc else c)) & 255
+        rows.append([(cur[x] * 299 + cur[x + 1] * 587 + cur[x + 2] * 114) // 1000 for x in range(0, st, ch)]); prev = cur
+    return w, h, rows
+
+
+def box_seen(name, lst):
+    """the toggle (box + label) is drawn: its rect in the frame has bright pixels. Covered by the dark strip: max ~44;
+    shown: 160+ (unticked box outline and label text)"""
+    p = os.path.join(OUT, name + '.png'); r = (lst or {}).get('box_rect'), (lst or {}).get('toggle_rect')
+    if not os.path.exists(p) or not r[0] or not r[1]: return False, f'no shot or no toggle rect {lst}'
+    w, h, g = png_gray(p); x0, x1 = int(r[0][0]), int(r[1][2]); y0, y1 = h - int(r[0][3]), h - int(r[0][1])   # the box's rows: the strip's border lies just outside them
+    mx = max(max(row[x0:x1]) for row in g[y0:y1])
+    return mx > 100, f'brightest pixel {mx} in x {x0}-{x1} y {y0}-{y1}'
+
+
 def lines_log(mark):
     return [l for l in T.dlog()[mark:].splitlines() if 'hidden-worlds lines' in l or 'saves: off' in l or 'could not read' in l]
 
@@ -89,7 +129,7 @@ def open_list():
 
 def run_m(code):
     with_lang(code); folders()
-    S.start_modded(('multiplayer', 'gcd-cdr'), worlds={})
+    S.start_modded(('multiplayer', 'gcd-cdr', 'custom-modes'), worlds={})
     mark = open_list()
     L = T.dlog()[mark:]
     check(f'M {code}: the multiplayer world is hidden by the list filter, the line says 1 multiplayer world',
@@ -97,6 +137,8 @@ def run_m(code):
     check(f'M {code}: the unreadable game save stays in the game folder and the top line says 1',
           os.path.exists(os.path.join(GSAVES, 'Broken save.json')) and 'unreadable 1)' in L, lines_log(0)[-4:])
     check(f'M {code}: screenshot', shot(f'M_{code}'))
+    ok, why = box_seen(f'M_{code}', r.send(X, {'cmd': 'mpm_list'}, timeout=20, connect_wait=0))
+    check(f'M {code}: the box under the list is visible (not covered by an empty dark strip)', ok, why)
     mark = len(T.dlog())
     st = r.send(X, {'cmd': 'mpm_list', 'flip': 1}, timeout=20, connect_wait=0); time.sleep(2.5)
     L = T.dlog()[mark:]
