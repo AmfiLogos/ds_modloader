@@ -548,6 +548,26 @@ static int update_step(int dry, int *code) {
     WideCharToMultiByte(CP_ACP, 0, root, -1, r8, sizeof r8, NULL, NULL);
     _putenv_s("DSML_ROOT", r8);                            /* dsl_uos_root() reads the CRT copy */
     wchar_t gexe[MAX_PATH]; _snwprintf(gexe, MAX_PATH, L"%ls\\game\\DungeonSettlers.exe", root);
+    /* "Restart and update now" (loader/src/dsl_update.c): the game started this starter and quits; DSML_RESTART_WAIT=<its
+       pid>. Wait up to 60 s until it ended, then install as at any start. Still running then: no second game. */
+    { wchar_t rw[32]; DWORD k = GetEnvironmentVariableW(L"DSML_RESTART_WAIT", rw, 32); DWORD wp = k && k < 32 ? (DWORD)wcstoul(rw, NULL, 10) : 0;
+      if (wp) {
+          SetEnvironmentVariableW(L"DSML_RESTART_WAIT", NULL);
+          {   /* ROOT\update\restart_ack = the waited pid: the game quits when it sees it */
+              wchar_t ak[MAX_PATH], at[MAX_PATH]; _snwprintf(ak, MAX_PATH, L"%ls\\update\\restart_ack", root); _snwprintf(at, MAX_PATH, L"%ls.tmp", ak);
+              FILE *f = _wfopen(at, L"wb"); if (f) { fprintf(f, "%lu\n", wp); fclose(f); }
+              if (!f || !MoveFileExW(at, ak, MOVEFILE_REPLACE_EXISTING)) logf_("update: restart: cannot write %ls", ak);
+          }
+          logf_("update: restart: waiting for the game (pid %lu) to end", wp);
+          HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, wp); DWORD w = h ? WaitForSingleObject(h, 60000) : WAIT_OBJECT_0;
+          if (h) CloseHandle(h);
+          for (int i = 0; i < 100 && w == WAIT_OBJECT_0 && game_runs(gexe); i++) Sleep(100);   /* the process list catches up */
+          if (w != WAIT_OBJECT_0 || game_runs(gexe)) {
+              logf_("update: restart: the game did not end in 60 s: nothing installed, no new game");
+              *code = 0; return 1;
+          }
+          logf_("update: restart: the game ended: the update installs now");
+      } }
     int other = starter_running(), running = other || game_runs(gexe);
     if (running) logf_("update: %s runs", other ? "another starter of this install" : "the game of this install");
     int kit = dsl_update_starter(r8, running, &upd_win, label, sizeof label);

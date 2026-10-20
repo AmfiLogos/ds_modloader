@@ -231,6 +231,41 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     dsl_log("soft: A: B started, pid %lu (%ls, profile %s)", child.dwProcessId, exe, profile);
     return 0;
 }
+/* "Restart and update now" (src/dsl_update.c): ROOT\Dungeon Settlers Modded.exe (ROOT = DSML_ROOT, the starter sets it)
+   with this game's start environment minus what the starter sets again (Doorstop's variables, DSML_UPDATE, the
+   soft-restart handoff, DSL_BIE_REASON) and DSML_RESTART_WAIT=<this pid>: the starter waits until this game ended,
+   installs the downloaded update (no file of the running game is moved), then starts the game. */
+static int starter_exe(wchar_t *out, size_t n) {
+    wchar_t r[MAX_PATH]; out[0] = 0;
+    DWORD k = GetEnvironmentVariableW(L"DSML_ROOT", r, MAX_PATH); if (!k || k >= MAX_PATH) return -1;
+    _snwprintf(out, n, L"%ls\\Dungeon Settlers Modded.exe", r); out[n - 1] = 0;
+    return GetFileAttributesW(out) == INVALID_FILE_ATTRIBUTES ? -1 : 0;
+}
+int dsl_sos_starter_known(void) { wchar_t e[MAX_PATH + 40]; return starter_exe(e, MAX_PATH + 40) == 0; }
+long dsl_sos_start_starter(void) {
+    wchar_t exe[MAX_PATH + 40], dir[MAX_PATH + 40];
+    if (starter_exe(exe, MAX_PATH + 40)) { dsl_log("update: restart: no starter in this start (DSML_ROOT)"); return -1; }
+    wcscpy(dir, exe); { wchar_t *sl = wcsrchr(dir, L'\\'); if (sl) *sl = 0; }
+    static const char *drop[] = { "DSML_UPDATE", "DSML_RESTART_WAIT", "DSL_SOFT_HANDOFF", "DSL_SOFT_EXE", "DSL_BIE_REASON" };
+    size_t cap = env0_len + 64, n = 0;
+    wchar_t *blk = malloc(cap * sizeof *blk); if (!blk) return -1;
+    for (const wchar_t *p = env0; p && *p; p += wcslen(p) + 1) {
+        int d = !bie_env_keep(p); for (size_t i = 0; i < sizeof drop / sizeof drop[0]; i++) if (env_key_is(p, drop[i])) d = 1;
+        if (d) continue;
+        size_t L = wcslen(p) + 1; memcpy(blk + n, p, L * sizeof *blk); n += L;
+    }
+    n += (size_t)swprintf(blk + n, cap - n - 1, L"DSML_RESTART_WAIT=%lu", GetCurrentProcessId()) + 1;
+    blk[n++] = 0;
+    wchar_t cmd[MAX_PATH + 64]; _snwprintf(cmd, MAX_PATH + 64, L"\"%ls\"", exe); cmd[MAX_PATH + 63] = 0;
+    STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
+    BOOL ok = CreateProcessW(exe, cmd, NULL, NULL, FALSE, CREATE_UNICODE_ENVIRONMENT, blk, dir, &si, &pi);
+    free(blk);
+    if (!ok) { dsl_log("update: restart: CreateProcess %ls failed (%lu)", exe, GetLastError()); return -1; }
+    AllowSetForegroundWindow(pi.dwProcessId);                /* the restarted game may come to the front */
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    dsl_log("update: restart: the starter %ls started, pid %lu (waits for pid %lu)", exe, pi.dwProcessId, GetCurrentProcessId());
+    return 0;
+}
 long dsl_sos_child_pid(void) { return (long)child.dwProcessId; }
 int dsl_sos_child_exited(void) {
     if (!child.hProcess) return 0;

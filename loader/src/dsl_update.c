@@ -12,10 +12,17 @@
 // signature or any mismatch = no install (log line). Network failure, rate limit, bad JSON: silent (log line), next start
 // tries again.
 // Title corner (top right, only at the title while its menu shows): "Auto-update mod loader" switch (default on; ROOT/update/
-// settings.json, per machine) and one short line or an "Update to 0.1.N" button.
+// settings.json, per machine), the version line, one short status line and one button under it (owner 2026-10-20):
+//   Found, not downloaded ("Update 0.1.N is available."): "Download update" downloads it now, in both modes.
 //   On:  download while the game runs (sha256 checked), then ROOT/update/ready.txt; the next start installs it in the
 //        starter before the game opens (start/dsl_update_start.c: a small window with a progress bar, no prompt).
-//   Off: no download; the button downloads and marks it (ready.txt CONSENT, want.txt): installed at the next start.
+//   Off: no download; "Download update" downloads and marks it (ready.txt CONSENT, want.txt).
+//   A failed download: the line says so and "Download update" tries again.
+//   Downloaded ("0.1.N installs the next time you start the game."): "Restart and update now" starts the starter
+//        (dsl_sos_start_starter: the Mac app's stub / the Windows starter, DSML_RESTART_WAIT=<this pid>) and quits this
+//        game; the starter waits until the game ended, installs as at any start (kit and mods before the game loads
+//        them), then starts the game. Only at the idle title (no world loaded, nothing to save), not while a multiplayer
+//        session is busy, and only when this start has a starter (DSML_APP / DSML_ROOT). It could not start: one line.
 // Nothing here moves an installed file. A start that runs a just-installed update has DSML_UPDATE=<label> (the
 // starter): at the title it confirms (ROOT/update/pending.txt -> update/old) and shows "Updated to 0.1.N"; an update
 // that never gets there is rolled back by the starter after a second try. ROOT/update/notice.txt (the starter's one
@@ -25,19 +32,24 @@
 // no mod, no hook and no title: the same kit check and download (ready.txt), no mod check, no title corner. A kit the
 // starter just installed is confirmed at that start (its loader does nothing more, so nothing of it can crash later).
 // Test only: DSL_UPDATE_API=<base URL> (a local release server instead of https://api.github.com), DSL_UPDATE=0 (off),
-// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on the corner button).
+// DSL_UPDATE_TEST=1 (ROOT/update/test_click = a click on "Download update", ROOT/update/test_restart = a click on
+// "Restart and update now").
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include "dsl_update_os.h"
+#include "dsl_soft_os.h"
 #include "../sdk/dsl_sdk.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 int dsl_reg_scene(void);                                   /* dsl_reg.c: 1 title, 2 world */
 int dsl_soft_wanted(void);
+void dsl_soft_prewarm_stop(void);
+int dsl_soft_prewarm_state(void);
 int dsl_ui_title_shown(void);                              /* dsl_ui.c: title menu column on screen */
 void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h);
 
@@ -411,70 +423,116 @@ static void title_results(void) {
 }
 
 /* ------------------------------------------------------------------ title corner */
-static uintptr_t c_tog, c_txt, c_btn, c_ver;               /* DSLObj kept as plain pointers (re-made when gone) */
-static int c_btn_on; static char c_last_line[600], c_btn_label[160]; static unsigned c_gen;
+static uintptr_t c_tog, c_txt, c_btn, c_ver, c_rbtn;       /* DSLObj kept as plain pointers (re-made when gone) */
+static int c_btn_on, c_rbtn_on; static char c_last_line[600], c_btn_label[160]; static unsigned c_gen;
+static int restarting, restart_failed;                     /* "Restart and update now": 1 waiting for the starter, 2 quitting / it failed */
+static time_t restart_t0;
 static void toggle_change(void *ud, DSLObj w) {
     (void)ud; const DSLUi *u = dsl_ui_kit(); if (!u) return;
     auto_on = u->toggle_get(w) != 0; settings_save();
     dsl_log("update: auto-update %s", auto_on ? "ON" : "OFF");
     if (auto_on && S.checked && any_update() && S.dl == 0 && !thread_on) start_dl();
 }
-static void button_click(void *ud, DSLObj w) {
+static void button_click(void *ud, DSLObj w) {             /* "Download update" */
     (void)ud; (void)w;
     char key[400], p[1200], t[500]; update_key(key, sizeof key); upath(p, sizeof p, "want.txt"); snprintf(t, sizeof t, "%s\n", key);
     if (write_file(p, t)) dsl_log("update: cannot write %s", p);
     pthread_mutex_lock(&mu); int st = S.dl; S.dl_wanted = 1; consent = 1; pthread_mutex_unlock(&mu);
-    dsl_log("update: \"%s\" clicked: installed at the next start", c_btn_label);
+    dsl_log("update: \"%s\" clicked (%s)", c_btn_label, st == 2 ? "downloaded already: marked" : "download now");
     if (st == 2) ready_write();                               /* downloaded while it was on: mark it */
     else if ((st == 0 || st == -1) && !thread_on) start_dl();
+}
+static int restart_ok(void) {                               /* the restart button may show (and act) now */
+    return !restarting && !restart_failed && !kit_only && dsl_reg_scene() == 1 && !dsl_soft_busy() && !dsl_busy_reason()
+           && dsl_sos_starter_known();
+}
+static void restart_click(void *ud, DSLObj w) {            /* "Restart and update now" */
+    (void)ud; (void)w;
+    pthread_mutex_lock(&mu); int st = S.dl; pthread_mutex_unlock(&mu);
+    if (st != 2 || !restart_ok()) { dsl_log("update: \"Restart and update now\" refused (download %d, scene %d, busy %s)", st, dsl_reg_scene(), dsl_busy_reason() ? dsl_busy_reason() : "no"); return; }
+    if (!auto_on && !(consent || S.dl_wanted)) { consent = 1; ready_write(); }   /* the click is the consent */
+    dsl_log("update: \"Restart and update now\" clicked: the starter installs the update, then starts the game");
+    char p[1200]; upath(p, sizeof p, "restart_ack");
+    if (dsl_uos_exists(p)) { char ts[32], q[1400]; stamp(ts, sizeof ts); snprintf(q, sizeof q, "%s/old/restart_ack-%s", udir, ts); dsl_uos_move(p, q); }
+    if (dsl_sos_start_starter()) { restart_failed = 1; return; }
+    restarting = 1; restart_t0 = time(NULL);                 /* restart_frame: quits when the starter answers */
+}
+/* the starter writes ROOT/update/restart_ack (this pid) once it waits for this game: then quit. No answer in 20 s: the
+   corner comes back with one line (the starter, if it starts later, finds this game still running and starts nothing) */
+static void restart_frame(void) {
+    if (restarting != 1) return;
+    char p[1200], *b; upath(p, sizeof p, "restart_ack");
+    long pid = (b = slurp_(p, 64)) ? atol(b) : 0; free(b);
+    if (pid == (long)getpid()) {
+        restarting = 2;
+        if (dsl_soft_prewarm_state()) dsl_soft_prewarm_stop();   /* a hidden prewarmed game never outlives this one */
+        void (*quit)(const void *) = (void (*)(const void *))dsl_find_method_address("UnityEngine", "Application", "Quit", 0);
+        dsl_log("update: restart: the starter waits: this game quits now (Application.Quit %s)", quit ? "found" : "not found: exit");
+        if (quit) quit(NULL); else exit(0);
+    } else if (time(NULL) - restart_t0 > 20) {
+        restarting = 0; restart_failed = 1;
+        dsl_log("update: restart: the starter did not answer in 20 s: this game goes on");
+    }
 }
 static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
     int show = dsl_ui_title_shown() && dsl_reg_scene() == 1 && dsl_soft_title_idle();   /* the idle title only: never under a loading screen */
-    DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn, ver = (DSLObj)c_ver;
+    DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn, ver = (DSLObj)c_ver, rbtn = (DSLObj)c_rbtn;
     if (tog && c_gen != dsi_generation()) {                 /* a language change: made again (label, the new language's font) */
-        u->destroy(tog); if (txt) u->destroy(txt); if (btn) u->destroy(btn); if (ver) u->destroy(ver);
-        c_tog = c_txt = c_btn = c_ver = 0; tog = txt = btn = ver = NULL; c_btn_label[0] = 0;
+        u->destroy(tog); if (txt) u->destroy(txt); if (btn) u->destroy(btn); if (ver) u->destroy(ver); if (rbtn) u->destroy(rbtn);
+        c_tog = c_txt = c_btn = c_ver = c_rbtn = 0; tog = txt = btn = ver = rbtn = NULL; c_btn_label[0] = 0;
     }
-    if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); if (ver) u->set_active(ver, 0); return; }
+    if (!show || restarting) {
+        if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); if (ver) u->set_active(ver, 0);
+        if (rbtn) u->set_active(rbtn, 0);
+        c_btn_on = c_rbtn_on = tog ? 0 : -1; return;
+    }
     if (!tog) {
         c_gen = dsi_generation();
         tog = u->toggle(NULL, 0, 0, 380, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
         txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
-        btn = u->button(NULL, 0, 0, 220, 40, TR("Update"), button_click, NULL);
-        if (!tog || !txt || !btn) return;
+        btn = u->button(NULL, 0, 0, 260, 40, TR("Download update"), button_click, NULL);
+        rbtn = u->button(NULL, 0, 0, 340, 40, TR("Restart and update now"), restart_click, NULL);
+        if (!tog || !txt || !btn || !rbtn) return;
         /* the installed kit release, so two players can see they have the same one (owner 2026-10-20). The product name
            is not translated. Unknown release (dev build, no RELEASE file): no line. */
         if (S.have[0]) { char v[96]; snprintf(v, sizeof v, "Dungeon Settlers Modded v%s", S.have); ver = u->text(NULL, 0, 0, 520, 24, v, 14, DSL_TXT_RIGHT, 0xD8CCB0D0); }
-        /* below the game's copyright line: switch, version, then the status line or the Update button */
+        /* below the game's copyright line: switch, version, the status line, then its button */
         dsl_ui_place_tr(tog, 24, 56, 380, 40); if (ver) dsl_ui_place_tr(ver, 24, 98, 520, 24);
-        dsl_ui_place_tr(txt, 24, 126, 520, 30); dsl_ui_place_tr(btn, 24, 126, 220, 40);
-        c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_ver = (uintptr_t)ver; c_last_line[0] = 0; c_btn_on = -1;
+        dsl_ui_place_tr(txt, 24, 126, 520, 30); dsl_ui_place_tr(btn, 24, 160, 260, 40); dsl_ui_place_tr(rbtn, 24, 160, 340, 40);
+        c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_ver = (uintptr_t)ver; c_rbtn = (uintptr_t)rbtn;
+        c_last_line[0] = 0; c_btn_on = c_rbtn_on = -1;
+        snprintf(c_btn_label, sizeof c_btn_label, "%s", TR("Download update"));
         if (ver) dsl_log("update: title version line: Dungeon Settlers Modded v%s", S.have);
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
     u->set_active(tog, 1); if (ver) u->set_active(ver, 1);
-    /* the button: Off, an update found, not clicked yet */
     pthread_mutex_lock(&mu);
     int st = S.dl, avail = S.checked && any_update(), clicked = consent || S.dl_wanted, rk = ready_kind; char kv[32];
     snprintf(kv, sizeof kv, "%s", S.kit_ver);
     pthread_mutex_unlock(&mu);
-    int want_btn = !auto_on && avail && !clicked && st != 1 && line_kind == LN_NONE;
-    char bl[160]; if (kv[0]) snprintf(bl, sizeof bl, TR("Update to %s"), kv); else snprintf(bl, sizeof bl, "%s", TR("Update mods"));
-    dsi_utf8_fix_end(bl);
-    if (want_btn && strcmp(bl, c_btn_label)) { snprintf(c_btn_label, sizeof c_btn_label, "%s", bl); u->set_text(btn, bl); }
-    if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", bl); }
+    int ready = st == 2 && (auto_on || clicked);              /* the next start installs it */
+    /* "Download update": found and not downloaded yet (or downloaded while Auto-update was on, then turned off), or the
+       download failed; never while it runs */
+    int want_btn = avail && line_kind == LN_NONE && !thread_on && (st == 0 || st == -1 || (st == 2 && !ready));
+    int want_r = avail && line_kind == LN_NONE && ready && restart_ok();
     char l[600] = "";
     if (line_kind == LN_NOTICE) snprintf(l, sizeof l, "%s", line_arg);
     else if (line_kind == LN_UPDATED) snprintf(l, sizeof l, TR("Updated to %s"), line_arg);
     else if (line_kind == LN_UPDATED_MODS) snprintf(l, sizeof l, TR("Updated: %s"), line_arg);
-    else if (st == 1 && clicked) { if (kv[0]) snprintf(l, sizeof l, TR("Downloading %s..."), kv); else snprintf(l, sizeof l, "%s", TR("Downloading mod updates...")); }
-    else if (st == 2 && (auto_on || clicked) && rk == 1) snprintf(l, sizeof l, TR("%s installs the next time you start the game."), kv);
-    else if (st == 2 && (auto_on || clicked) && rk == 2) snprintf(l, sizeof l, "%s", TR("Mod updates install the next time you start the game."));
-    else if (st == -1 && clicked) snprintf(l, sizeof l, "%s", TR("The download failed. The game tries again next time."));
+    else if (!avail) l[0] = 0;
+    else if (st == 1) { if (kv[0]) snprintf(l, sizeof l, TR("Downloading %s..."), kv); else snprintf(l, sizeof l, "%s", TR("Downloading mod updates...")); }
+    else if (ready && restart_failed) snprintf(l, sizeof l, "%s", TR("The game could not restart. The update installs the next time you start the game."));
+    else if (ready && rk == 1) snprintf(l, sizeof l, TR("%s installs the next time you start the game."), kv);
+    else if (ready && rk == 2) snprintf(l, sizeof l, "%s", TR("Mod updates install the next time you start the game."));
+    else if (st == -1) snprintf(l, sizeof l, "%s", TR("The download failed. The game tries again next time."));
+    else if (kv[0]) snprintf(l, sizeof l, TR("Update %s is available."), kv);
+    else snprintf(l, sizeof l, "%s", TR("Mod updates are available."));
     dsi_utf8_fix_end(l);
     if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
-    u->set_active(txt, l[0] != 0 && !want_btn);
+    u->set_active(txt, l[0] != 0);
+    if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", c_btn_label); }
+    if (want_r != c_rbtn_on) { u->set_active(rbtn, want_r); c_rbtn_on = want_r; if (want_r) dsl_log("update: corner button \"Restart and update now\" shown"); }
 }
 
 /* test (uikit-demo driver, dlsym): the corner's Auto-update switch, NULL before the title showed it */
@@ -526,8 +584,15 @@ void dsl_update_frame(void) {
     static int results_done;
     if (!results_done && dsl_reg_scene() == 1 && !dsl_soft_busy()) { results_done = 1; title_results(); }
     corner_frame();
-    { const char *t = getenv("DSL_UPDATE_TEST"); static int tick;                       /* test: click the button by file */
-      if (t && *t == '1' && ++tick % 30 == 0 && c_btn_on == 1) {
-          char p[1200]; upath(p, sizeof p, "test_click");
-          if (dsl_uos_exists(p)) { char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q); button_click(NULL, NULL); } } }
+    restart_frame();
+    { const char *t = getenv("DSL_UPDATE_TEST"); static int tick;                       /* test: click a button by file */
+      if (t && *t == '1' && ++tick % 30 == 0) {
+          static const char *f[2] = { "test_click", "test_restart" };
+          for (int i = 0; i < 2; i++) {
+              char p[1200]; upath(p, sizeof p, f[i]);
+              if ((i ? c_rbtn_on : c_btn_on) != 1 || !dsl_uos_exists(p)) continue;
+              char q[1300]; snprintf(q, sizeof q, "%s.done", p); remove(q); dsl_uos_move(p, q);
+              if (i) restart_click(NULL, NULL); else button_click(NULL, NULL);
+              break;
+          } } }
 }

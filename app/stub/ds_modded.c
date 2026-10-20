@@ -784,6 +784,22 @@ int main(int argc, char **argv) {
     { char up[PATH_MAX]; snprintf(up, sizeof up, "%s/update", root); mkdirs(up); }
     char lk[PATH_MAX]; snprintf(lk, sizeof lk, "%s/update/run.lock", root);
     int lfd = open(lk, O_RDWR | O_CREAT, 0644), running = lfd >= 0 && flock(lfd, LOCK_EX | LOCK_NB) != 0;
+    /* "Restart and update now" (loader/src/dsl_update.c): the game started this stub and quits; DSML_RESTART_WAIT=<its pid>.
+       Wait up to 60 s until it ended and the lock is free, then install as at any start. Still running then: no second
+       game, nothing installed (the old game did not quit). */
+    { const char *rw = getenv("DSML_RESTART_WAIT"); long wp = rw ? atol(rw) : 0;
+      if (wp > 0) {
+          unsetenv("DSML_RESTART_WAIT");
+          char ak[PATH_MAX], ab[32]; snprintf(ak, sizeof ak, "%s/update/restart_ack", root); snprintf(ab, sizeof ab, "%ld\n", wp);
+          if (write_atomic(ak, ab)) logf_("update: restart: cannot write %s", ak);   /* the game quits when it sees this */
+          logf_("update: restart: waiting for the game (pid %ld) to end", wp);
+          for (int i = 0; i < 600 && (running || dsl_uos_pid_alive(wp)); i++) {
+              usleep(100000);
+              if (running && lfd >= 0) running = flock(lfd, LOCK_EX | LOCK_NB) != 0;
+          }
+          if (running || dsl_uos_pid_alive(wp)) { logf_("update: restart: the game did not end in 60 s: nothing installed, no new game"); return 0; }
+          logf_("update: restart: the game ended: the update installs now");
+      } }
     if (running) { logf_("update: a game of this install runs"); close(lfd); lfd = -1; }
     DslUpdWin uw = { uw_open, uw_progress, uw_close };
     char ulabel[200];

@@ -216,7 +216,7 @@ extern void *objc_autoreleasePoolPush(void);
 extern void objc_autoreleasePoolPop(void *);
 static id nsstr(const char *s) { return MSG(id, Class, SEL, const char *)(objc_getClass("NSString"), SEL_("stringWithUTF8String:"), s); }
 static volatile pid_t ls_pid;
-static pid_t ls_launch(const char *exe, char **env, char **argv) {
+static pid_t ls_launch(const char *exe, char **env, char **argv, int activate, int no_wait) {
     char appp[1024]; snprintf(appp, sizeof appp, "%s", exe);
     char *m = strstr(appp, "/Contents/MacOS/"); if (!m) return -1;
     *m = 0;
@@ -225,7 +225,7 @@ static pid_t ls_launch(const char *exe, char **env, char **argv) {
     void *pool = objc_autoreleasePoolPush();
     id cfg = MSG(id, Class, SEL)(cf_c, SEL_("configuration"));
     MSG(void, id, SEL, BOOL)(cfg, SEL_("setCreatesNewApplicationInstance:"), YES);
-    MSG(void, id, SEL, BOOL)(cfg, SEL_("setActivates:"), NO);
+    MSG(void, id, SEL, BOOL)(cfg, SEL_("setActivates:"), activate ? YES : NO);
     MSG(void, id, SEL, BOOL)(cfg, SEL_("setAddsToRecentItems:"), NO);
     MSG(void, id, SEL, BOOL)(cfg, SEL_("setPromptsUserIfNeeded:"), NO);
     id args = MSG(id, Class, SEL)(objc_getClass("NSMutableArray"), SEL_("array"));
@@ -250,6 +250,7 @@ static pid_t ls_launch(const char *exe, char **env, char **argv) {
     };
     id ws = MSG(id, Class, SEL)(ws_c, SEL_("sharedWorkspace"));
     MSG(void, id, SEL, id, id, id)(ws, SEL_("openApplicationAtURL:configuration:completionHandler:"), url, cfg, (id)done);
+    if (no_wait) { objc_autoreleasePoolPop(pool); return 0; }   /* the answer comes when the app checks in: a stub never does */
     long w = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
     objc_autoreleasePoolPop(pool);
     if (w) { dsl_log("soft: A: LaunchServices gave no answer in 10 s"); return -1; }
@@ -284,7 +285,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     if (cwd0[0]) posix_spawn_file_actions_addchdir_np(&fa, cwd0);       /* B starts in A's start folder */
     const char *exe = exe0;                                               /* DSL_SOFT_EXE=<path>: the new set's own play copy */
     for (int i = 0; env[i]; i++) if (!strncmp(env[i], "DSL_SOFT_EXE=", 13) && env[i][13]) exe = env[i] + 13;
-    pid_t lp = ls_launch(exe, env, argv0);
+    pid_t lp = ls_launch(exe, env, argv0, 0, 0);
     if (lp > 0) {
         b_pid = lp; b_ls = 1;
         posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
@@ -299,6 +300,52 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     if (r) { dsl_log("soft: A: posix_spawn %s failed (%d)", exe, r); b_pid = 0; free(env); free(extra); free(ov); return -1; }
     dsl_log("soft: A: B started, pid %d (%s, profile %s)", b_pid, exe, profile);
     free(env); free(extra); free(ov);
+    return 0;
+}
+/* "Restart and update now" (src/dsl_update.c): the app's stub at $DSML_APP starts as a new app (LaunchServices, its own
+   launchd job), with this game's start environment minus what the stub sets again for each start (the injection list,
+   BepInEx / MelonLoader variables, DSML_UPDATE, the soft-restart handoff) and DSML_RESTART_WAIT=<this pid>: the stub
+   waits until this game ended (ROOT/update/run.lock free), installs the downloaded update, then starts the game.
+   Arguments: the game's own, without the stub's -logFile pair. */
+static int stub_exe(char *out, size_t n) {
+    const char *app = getenv("DSML_APP"); out[0] = 0;
+    if (!app || !*app || !objc_getClass("NSBundle")) return -1;
+    void *pool = objc_autoreleasePoolPush();
+    id b = MSG(id, Class, SEL, id)(objc_getClass("NSBundle"), SEL_("bundleWithPath:"), nsstr(app));
+    id e = b ? MSG(id, id, SEL)(b, SEL_("executablePath")) : nil;
+    const char *c = e ? MSG(const char *, id, SEL)(e, SEL_("UTF8String")) : NULL;
+    if (c) snprintf(out, n, "%s", c);
+    objc_autoreleasePoolPop(pool);
+    struct stat st; return out[0] && stat(out, &st) == 0 && (st.st_mode & S_IXUSR) ? 0 : -1;
+}
+int dsl_sos_starter_known(void) { char e[1100]; return stub_exe(e, sizeof e) == 0; }
+static int per_start_var(const char *v) {
+    static const char *pre[] = { "DYLD_", "DOORSTOP_", "BEPINEX_", "MELONLOADER_", "DSML_MELON_", "DSML_BEPINEX_", "DSML_UPDATE=",
+                                 "DSML_RESTART_WAIT=", "DSL_SOFT_HANDOFF=", "DSL_SOFT_CWD=", "DSL_SOFT_EXE=", "CFFIXED_USER_HOME=" };
+    for (size_t i = 0; i < sizeof pre / sizeof pre[0]; i++) if (!strncmp(v, pre[i], strlen(pre[i]))) return 1;
+    return 0;
+}
+long dsl_sos_start_starter(void) {
+    char exe[1100]; if (stub_exe(exe, sizeof exe)) { dsl_log("update: restart: no app stub in this start (DSML_APP)"); return -1; }
+    int n = 0; while (env0 && env0[n]) n++;
+    char **env = calloc((size_t)n + 2, sizeof *env); int k = 0;
+    for (int i = 0; i < n; i++) if (!per_start_var(env0[i])) env[k++] = env0[i];
+    char w[64]; snprintf(w, sizeof w, "DSML_RESTART_WAIT=%d", (int)getpid()); env[k++] = w; env[k] = NULL;
+    char **av = calloc((size_t)argc0 + 2, sizeof *av); int m = 0;
+    av[m++] = exe;
+    for (int i = 1; i < argc0; i++) {
+        if (!strcmp(argv0[i], "-logFile")) { i++; continue; }
+        if (!strncmp(argv0[i], "-psn_", 5)) continue;
+        av[m++] = argv0[i];
+    }
+    av[m] = NULL;
+    const char *na = getenv("DSL_SOFT_NOACTIVATE");
+    /* no wait for LaunchServices' answer: it comes only when the started app checks in with the window server, and the
+       stub never does (it becomes the game by execv). The stub answers with ROOT/update/restart_ack (src/dsl_update.c). */
+    pid_t p = ls_launch(exe, env, av, !(na && *na == '1') && !no_activate_g, 1);
+    free(env); free(av);
+    if (p < 0) { dsl_log("update: restart: LaunchServices could not start %s", exe); return -1; }
+    dsl_log("update: restart: the stub %s asked to start (waits for pid %d)", exe, (int)getpid());
     return 0;
 }
 /* killed children (a replaced prewarm B, a failed B) are reaped later without blocking the game's main thread */

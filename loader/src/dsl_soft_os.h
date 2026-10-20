@@ -24,3 +24,9 @@ void dsl_sos_frame_log(FILE *f);            /* one line part: the windows' state
 void dsl_sos_stage_check(void);             /* test stage: a window that left the stage -> invisible, moved back */
 void dsl_sos_timer(void (*tick)(void));     /* tick() ~60 times a second on the main thread, between frames */
 void dsl_sos_unsetenv(const char *name);
+/* the starter of this install (Mac: the app's stub at $DSML_APP, Windows: ROOT\Dungeon Settlers Modded.exe): 1 = known */
+int dsl_sos_starter_known(void);
+/* start it as a new process with this game's start environment (minus what the starter sets again each start) and
+   DSML_RESTART_WAIT=<this pid>: it writes ROOT/update/restart_ack (<this pid>), waits until this game ended, installs a
+   downloaded update, starts the game. 0 = asked to start, -1 = could not (src/dsl_update.c "Restart and update now"). */
+long dsl_sos_start_starter(void);
