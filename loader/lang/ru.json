@@ -275,6 +275,7 @@
  "This world uses: %s.\nLoad it with them?": "Этот мир использует: %s.\nЗагрузить с ними?",
  "This world was not loaded: its save files could not be copied first.\n\n%s": "Этот мир не загружен: не удалось сначала скопировать файлы его сохранения.\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "Включает эти моды за экраном загрузки и возвращает вас сюда.",
+ "Type a whole number from %d to %d.": "Введите целое число от %d до %d.",
  "Undo changes": "Отменить изменения",
  "Update": "Обновить",
  "Update mods": "Обновить моды",

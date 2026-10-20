@@ -259,6 +259,7 @@
  "This world uses: %s.\nLoad it with them?": "Diese Welt nutzt: %s.\nMit ihnen laden?",
  "This world was not loaded: its save files could not be copied first.\n\n%s": "Diese Welt wurde nicht geladen: Ihre Speicherdateien konnten vorher nicht kopiert werden.\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "Schaltet diese Mods hinter einem Ladebildschirm ein und bringt dich hierher zurück.",
+ "Type a whole number from %d to %d.": "Gib eine ganze Zahl von %d bis %d ein.",
  "Undo changes": "Änderungen verwerfen",
  "Update": "Aktualisieren",
  "Update mods": "Mods aktualisieren",

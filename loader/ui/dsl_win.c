@@ -136,7 +136,7 @@ static int typing(void) {                                             /* a text 
 }
 
 /* ---------------------------------------------------------------- test registry: named controls */
-typedef struct { char name[80]; DSLObj w; dsl_ui_cb cb; void *ud; int kind; char text[160]; } Reg;   /* kind 0 button, 1 toggle, 2 field, 3 text */
+typedef struct { char name[80]; DSLObj w; dsl_ui_cb cb; void *ud; int kind; char text[160]; } Reg;   /* kind 0 button, 1 toggle, 2 field, 3 text, 4 value row, 5 slider, 6 number field */
 #define NREG 256
 static Reg reg[NREG]; static int nreg;
 static DSLObj named(DSLObj w, int kind, const char *name, dsl_ui_cb cb, void *ud, const char *text) {
@@ -337,8 +337,10 @@ static void undo_click(void *ud, DSLObj w) {
     dsl_settings_undo(); settings_values();
     m_note[0] = 0; mods_sync(); draft();
 }
+static void num_commit_all(int quiet);
 static void apply_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
+    num_commit_all(1);
     if (!changed() || applying || read_only) return;
     const char *ids[NM]; int n = 0;
     for (int i = 0; i < nmods; i++) if (mods[i].on) ids[n++] = mods[i].m->id;
@@ -528,9 +530,11 @@ static void bottom_bar(DSLObj root, float w, float h) {
 /* ---------------------------------------------------------------- the Settings page of one mod (mod.json "settings")
    Opened by the mod's Settings button; it takes the place of the list in the Mods tab, with the same bottom bar (the
    switches the player changed stay). Gameplay settings are drafts until Apply (and only at the title); local ones are
-   saved and used at once. Toggle = the kit's switch, number = the game's own slider (else < value >), choice = < value >. */
+   saved and used at once. Toggle = the kit's switch, number = the game's own slider (else < value >), choice = < value >.
+   A number with mod.json "input": "number" (exact values in a wide range, e.g. a port) = a typed field: digits only,
+   taken on Enter or when the field loses the keyboard (also before Apply / Back / close); outside min..max = refused. */
 #define NSET 64
-static struct { DSLObj w; int type; } st[NSET]; static int nst;
+static struct { DSLObj w; int type, focused; } st[NSET]; static int nst;
 static DSLObj st_note;
 static void keep_switches(void) { nkeep = 0; for (int i = 0; i < nmods && nkeep < NM; i++) { snprintf(keep_ids[nkeep], 64, "%s", mods[i].m->id); keep_on[nkeep++] = mods[i].on; } }
 static void settings_click(void *ud, DSLObj w) {
@@ -539,7 +543,8 @@ static void settings_click(void *ud, DSLObj w) {
     dsl_log("win: Settings of %s", set_page);
     mods_tab_reload();
 }
-static void back_click(void *ud, DSLObj w) { (void)ud; (void)w; keep_switches(); set_page[0] = 0; mods_tab_reload(); }
+static void num_commit_all(int quiet);
+static void back_click(void *ud, DSLObj w) { (void)ud; (void)w; num_commit_all(1); keep_switches(); set_page[0] = 0; mods_tab_reload(); }
 static int st_enabled(int i) { const DSLSettingInfo *in = dsl_settings_at(set_page, i); return in && !applying && (!in->gameplay || !read_only); }
 /* the controls show the values (after Undo / Default values) */
 static void settings_values(void) {
@@ -549,6 +554,7 @@ static void settings_values(void) {
         if (!st[i].w) continue;
         if (st[i].type == 1) U->toggle_set(st[i].w, v);
         else if (st[i].type == 5) U->slider_set(st[i].w, v);
+        else if (st[i].type == 6) { char b[32]; snprintf(b, sizeof b, "%d", v); U->field_set(st[i].w, b); }
         else { const DSLSettingInfo *in = dsl_settings_at(set_page, i); U->value_set(st[i].w, in && in->type == DSL_SET_INT ? (v - in->min) / in->step : v); }
         char vt[200]; dsl_settings_value_label(set_page, i, v, vt, sizeof vt);
         for (int k = 0; k < nreg; k++) if (reg[k].w == st[i].w) snprintf(reg[k].text, sizeof reg[k].text, "%s", vt);
@@ -560,14 +566,43 @@ void settings_sync(void) {
 }
 static void set_change(void *ud, DSLObj w) {
     int i = (int)(intptr_t)ud; const DSLSettingInfo *in = dsl_settings_at(set_page, i); if (!in) return;
-    int v = st[i].type == 1 ? U->toggle_get(w) : st[i].type == 5 ? U->slider_get(w) : U->value_get(w);
+    int v = st[i].type == 1 ? U->toggle_get(w) : st[i].type == 5 ? U->slider_get(w) : st[i].type == 6 ? 0 : U->value_get(w);
     if (st[i].type == 4 && in->type == DSL_SET_INT) v = in->min + v * in->step;
+    if (st[i].type == 6) { char t[64]; U->field_get(w, t, sizeof t); if (dsl_settings_parse(set_page, i, t, &v)) return; }
     if (dsl_settings_set(set_page, i, v)) snprintf(m_note, sizeof m_note, "%s", TR("The setting could not be saved."));
     else m_note[0] = 0;
     char vt[200]; dsl_settings_value_label(set_page, i, dsl_settings_value(set_page, i), vt, sizeof vt);
     for (int k = 0; k < nreg; k++) if (reg[k].w == w) snprintf(reg[k].text, sizeof reg[k].text, "%s", vt);
     dsl_log("win: setting %s/%s -> %s (%s)", set_page, in->id, vt, in->gameplay ? "gameplay: waits for Apply" : "local: saved, live");
     mods_sync(); draft();
+}
+/* number field (type 6): the typed text becomes the value, or is refused (the field shows the value again) */
+static void num_commit(int i, int quiet) {
+    const DSLSettingInfo *in = dsl_settings_at(set_page, i); if (!in || i >= nst || st[i].type != 6 || !st[i].w) return;
+    char t[64]; U->field_get(st[i].w, t, sizeof t);
+    int cur = dsl_settings_value(set_page, i), v;
+    char ct[32]; snprintf(ct, sizeof ct, "%d", cur);
+    if (!strcmp(t, ct)) return;                                       /* nothing typed */
+    if (!st_enabled(i)) { U->field_set(st[i].w, ct); return; }
+    if (dsl_settings_parse(set_page, i, t, &v)) {
+        U->field_set(st[i].w, ct);
+        dsl_log("win: setting %s/%s: \"%s\" refused (%d..%d)", set_page, in->id, t, in->min, in->max);
+        if (quiet) return;
+        snprintf(m_note, sizeof m_note, TR("Type a whole number from %d to %d."), in->min, in->max); dsi_utf8_fix_end(m_note);
+        mods_sync(); return;
+    }
+    char b[32]; snprintf(b, sizeof b, "%d", v); U->field_set(st[i].w, b);
+    set_change((void *)(intptr_t)i, st[i].w);
+}
+static void num_submit(void *ud, DSLObj w) { (void)w; num_commit((int)(intptr_t)ud, 0); }
+static void num_commit_all(int quiet) { if (set_page[0]) for (int i = 0; i < nst; i++) if (st[i].type == 6) num_commit(i, quiet); }
+static void num_focus_frame(void) {                                    /* the field lost the keyboard: take what was typed */
+    if (!set_page[0]) return;
+    for (int i = 0; i < nst; i++) if (st[i].type == 6 && st[i].w) {
+        int f = dsl_ui_field_focused(st[i].w);
+        if (st[i].focused && !f) num_commit(i, 0);
+        st[i].focused = f;
+    }
 }
 static void defaults_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
@@ -608,6 +643,12 @@ static void settings_open(DSLObj root, float w, float h) {
         dsl_settings_value_label(set_page, i, v, vt, sizeof vt);
         DSLObj c = NULL; int kind = 4;
         if (in->type == DSL_SET_TOGGLE) { c = U->toggle(list, 0, y, rw, in->label, v, set_change, (void *)(intptr_t)i); kind = 1; }
+        else if (in->type == DSL_SET_INT && in->number && (c = U->field(list, rw - 200, y, 200, 40, "", vt, num_submit, (void *)(intptr_t)i))) {
+            int nd = 1; for (int m = in->max; m >= 10; m /= 10) nd++;
+            dsl_ui_field_number(c, nd);
+            U->text(list, 12, y, rw - 220, 40, in->label, 15, DSL_TXT_LEFT, SUB);
+            kind = 6;
+        }
         else if (in->type == DSL_SET_INT && has_slider && (c = U->slider(list, 0, y, rw, in->label, in->min, in->max, in->step, v, set_change, (void *)(intptr_t)i))) kind = 5;
         else {
             int cnt = in->type == DSL_SET_INT ? (in->max - in->min) / in->step + 1 : in->nchoices;
@@ -623,7 +664,7 @@ static void settings_open(DSLObj root, float w, float h) {
             free(vals);
         }
         st[nst].w = c; st[nst].type = kind; nst++;
-        named(c, kind, nm, set_change, (void *)(intptr_t)i, vt);
+        named(c, kind, nm, kind == 6 ? num_submit : set_change, (void *)(intptr_t)i, vt);
         y += in->type == DSL_SET_TOGGLE ? 40 : 48;
         /* help under the control, and which kind of setting it is (gold, right) */
         const char *kd = in->gameplay ? TR("Gameplay") : TR("Display");
@@ -813,6 +854,7 @@ void dsl_win_relang(void) {
 void dsl_win_close(void) {
     if (!is_open) return;
     if (!tab_can_close()) { dsl_log("win: the open tab does not close now"); return; }
+    num_commit_all(1);                                                 /* a typed local value (number field) is kept */
     if (!applying) { dsl_mods_draft(NULL, -1); dsl_settings_undo(); }   /* closed without Apply: the prewarmed game quits, drafts go */
     set_page[0] = 0;
     destroy_all();
@@ -834,6 +876,7 @@ static void test_answer(const char *seq, int ok, const char *msg, int dump) {
             if (!reg[i].w) continue;
             char t[200]; size_t j = 0; for (const char *c = reg[i].text; *c && j + 3 < sizeof t; c++) { if (*c == '"' || *c == '\\') t[j++] = '\\'; t[j++] = *c; } t[j] = 0;
             int on = reg[i].kind == 1 ? U->toggle_get(reg[i].w) : -1;
+            if (reg[i].kind == 6) { U->field_get(reg[i].w, reg[i].text, sizeof reg[i].text); j = 0; for (const char *c = reg[i].text; *c && j + 3 < sizeof t; c++) { if (*c == '"' || *c == '\\') t[j++] = '\\'; t[j++] = *c; } t[j] = 0; }
             o += (size_t)snprintf(out + o, sizeof out - o, "%s{\"name\":\"%s\",\"kind\":%d,\"text\":\"%s\",\"on\":%d}", k++ ? "," : "", reg[i].name, reg[i].kind, t, on);
         }
         o += (size_t)snprintf(out + o, sizeof out - o, "]");
@@ -872,6 +915,11 @@ static void test_frame(void) {
     else if (!strcmp(op, "shot")) { char sp[1300]; snprintf(sp, sizeof sp, "%s/%s.png", test_dir, json_str(j, "name") ? json_str(j, "name") : "shot"); ok = shot(sp) == 0; snprintf(msg, sizeof msg, "%s", sp); }
     else if (!strcmp(op, "click") || !strcmp(op, "type")) {
         if (!r) { ok = 0; snprintf(msg, sizeof msg, "no control %s", target ? target : ""); }
+        else if (!strcmp(op, "type") && json_get(j, "keys")) {          /* typed keys (TMP_InputField.ProcessEvent: its validation) */
+            int dsl_ui_test_type(DSLObj field, const char *chars);
+            U->field_set(r->w, ""); ok = dsl_ui_test_type(r->w, json_str(j, "text") ? json_str(j, "text") : "") >= 0;
+            U->field_get(r->w, r->text, sizeof r->text);
+        }
         else if (!strcmp(op, "type")) { U->field_set(r->w, json_str(j, "text") ? json_str(j, "text") : ""); snprintf(r->text, sizeof r->text, "%s", json_str(j, "text") ? json_str(j, "text") : ""); }
         else {
             if (r->kind == 1) U->toggle_set(r->w, !U->toggle_get(r->w));    /* the kit flips a toggle before its callback */
@@ -895,7 +943,7 @@ void dsl_win_frame(void) {
     if (is_open) {
         int f = (int)(now_s() * 6) % SLOGEL_FRAMES;                   /* Mud Slogel idle, 6 frames per second */
         if (f != slogel_shown && w_slogel[f]) { if (slogel_shown >= 0 && w_slogel[slogel_shown]) U->set_active(w_slogel[slogel_shown], 0); U->set_active(w_slogel[f], 1); slogel_shown = f; }
-        if (cur == 0) mods_update();
+        if (cur == 0) { mods_update(); num_focus_frame(); }
         else if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->update) t->update(t->ud); }
         if (esc_down() && !typing()) { if (naming) naming_show(0); else dsl_win_close(); }
     }

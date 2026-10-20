@@ -85,8 +85,13 @@ static Obj my_pdp(void *mi) {
     return F(0x6F9738, Obj (*)(const char *))(p);     /* il2cpp_string_new */
 }
 
+/* mod settings for the multiplayer sources (src/mpmenu.h mpm_host_port: "host_port"); found with RTLD_SELF like busy_poll,
+   so an older pinned tree without mp_setting_int_fn still links (it then keeps port 47777) */
+static int setting_int(const char *id, int dflt) { return dsl_get_int(H, ME, id, dflt); }
+
 DSL_EXPORT int dsl_module_load(const DSLHost *host, DSLPlugin *self) {
     H = host; ME = self;
+    { int (**fn)(const char *, int) = (int (**)(const char *, int))dlsym(RTLD_SELF, "mp_setting_int_fn"); if (fn) *fn = setting_int; }
     const char *d = getenv("DSRIG_DIR");
     if (!d || !*d) { host->log(self, "DSRIG_DIR not set: multiplayer inactive"); return 1; }
     snprintf(rig_dir, sizeof rig_dir, "%s", d);
