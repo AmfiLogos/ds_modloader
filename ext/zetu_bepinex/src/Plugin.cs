@@ -24,7 +24,7 @@ namespace ZetuSuite
     public class Plugin : BasePlugin
     {
         public const string Guid = "amfi.zetu-suite";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
         internal static ManualLogSource L;
         internal static bool SkillsWithoutWeapon;
         internal static int MaxUnits;

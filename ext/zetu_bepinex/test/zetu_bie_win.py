@@ -12,6 +12,12 @@ userdata\\<id>\\2798330 are hashed before and compared after (owner_backup.py).
   zetu_bie_win.py console [out] C: the BepInEx console window (owner rule: never): two starts, BepInEx.cfg console on
                                 before the first; the window BepInEx opens is closed by the plugin, the second start opens
                                 none, LogOutput.log is written both times
+  zetu_bie_win.py backup [out]  B: the player's report 2026-10-20 (Windows): a world with a manual save would not load,
+                                "save files could not be copied first ... X_1.json already exists". The game's save
+                                path as Unity spells it on Windows ('/', ZETU_TEST_DATA=C:/dsm/...), the folder listing
+                                with '\\'; one world = autosave + X.json + X_1.json, X_1 loaded; this minute's backup
+                                folders already taken; then a second world of the same clan in the same minute.
+                                Old DLL: FAILED "already exists", not loaded. Fixed DLL: each file copied once, loads.
 
 Real breaks the run catches (Windows: the 1-byte bool ABI class of the v0.1.15 ZET-U hang, x64 Harmony patches):
  L  the plugin loads with plain be.788 and every part is patched (no part OFF)
@@ -134,10 +140,10 @@ def setup(out):
     return saves
 
 
-def start(timeout=900):
+def start(timeout=900, data=DATA):
     if not w.screen_mode_ok(): raise SystemExit('screen mode is not windowed (3): not started')
     if w.procs(): raise SystemExit('another DungeonSettlers.exe runs in the VM (another lane): not started')   # never killed by us
-    env = [f'ZETU_TEST_DATA={DATA}', f'DSRIG_DIR={WK}', 'SteamAppId=2798330', 'SteamGameId=2798330']
+    env = [f'ZETU_TEST_DATA={data}', f'DSRIG_DIR={WK}', 'SteamAppId=2798330', 'SteamGameId=2798330']
     r = w.a('run', exe=GAME + r'\DungeonSettlers.exe', args=f'-logFile "{WK}\\player.log"', cwd=GAME, env=env, show=True, wait_ms=0)
     global PID; PID = r.get('pid'); log('game pid', PID)
     t0 = time.time()
@@ -353,6 +359,68 @@ def console_run(out):
     return S
 
 
+def guest_minute(dt=0):
+    r = run(r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', f'-NoProfile -Command "(Get-Date).AddSeconds({dt}).ToString(\'yyyy-MM-dd_HHmm\')"', 60)
+    return r.get('out', '').strip().splitlines()[-1].strip()
+def world_files(out, tag):
+    """one world, three save files: its autosave, the manual save X.json and X_1.json (the game's own names)"""
+    p, name, g = fresh_world(out, tag); s = open(p, encoding='utf-8').read(); fs = [(p, name)]
+    for n in (f'Zetu{tag}', f'Zetu{tag}_1'):
+        q = os.path.join(out, 'save_in', n + '.json')
+        open(q, 'w', encoding='utf-8').write(re.sub(r'("SaveName"\s*:\s*")[^"]*(")', lambda m: m.group(1) + n + m.group(2), s, count=1)); fs.append((q, n))
+    for q, n in fs: w.upload(q, DATA + '\\Saves\\' + n + '.json')
+    return fs, g
+def backup_load(S, key, fs, g, bk, taken):
+    """load X_1 of the world through the title's queue, answer Load; True = copied once each, same bytes, new folder"""
+    load = fs[-1][1]; mark = len(blog())
+    for _ in range(10):
+        if 'sent' in ''.join(probe('load ' + load)): break
+        time.sleep(3)
+    check(f'B {key}: the warning shows before the load', wait_log(f'save warning: shown for {load}', mark, 60), zl(blog()[mark:])[-4:])
+    time.sleep(2); probe('notice_ok')
+    t0 = time.time()
+    while time.time() - t0 < 60 and not re.search(r'save warning: (answered Load|backup of \S+ FAILED)', blog()[mark:]): time.sleep(1)
+    L = blog()[mark:]; S[key + '_log'] = [l for l in zl(L) if 'save warning' in l][-4:]
+    m = re.search(r'save warning: backup of \S+ \(world ([0-9a-f-]+)\): (\d+) file\(s\) copied to (.+)', L)
+    ok = False
+    if m:
+        d = m.group(3).strip(); ents = sorted(e['name'] if isinstance(e, dict) else str(e) for e in (w.a('ls', path=d).get('entries') or []))
+        S[key + '_backup'] = [d, ents]
+        ok = (m.group(1) == g and m.group(2) == '3' and d.lower() not in [t.lower() for t in taken] and d.lower().startswith(bk.lower() + '\\')
+              and ents == sorted(n + '.json' for _, n in fs)
+              and all(sha_guest(d + '\\' + n + '.json') == hashlib.sha256(open(q, 'rb').read()).hexdigest() for q, n in fs))
+    check(f'B {key}: Load: the 3 save files of the world copied once each (same bytes) into a new folder, no "already exists"', ok, S[key + '_log'])
+    return ok
+def backup_run(out):
+    S = {}
+    log('owner data backup'); S['owner_backup'] = OB.backup(w)
+    setup(out)
+    A, gA = world_files(out, 'BkA'); B, gB = world_files(out, 'BkB')
+    bk = GAME + r'\BepInEx\ZetuSuite\save_backups'; taken = []
+    S['title'] = start(data=DATA.replace('\\', '/'))        # as Unity's persistentDataPath on Windows: '/'
+    S['probe'] = [l for l in blog().splitlines() if 'persistentDataPath' in l][:1]
+    S['dll'] = [l for l in zl(blog()) if 'ZET-U Mod Suite 0.' in l][:1]
+    for dt in (0, 60, 120, 180):                              # this minute and the next ones: <ts>_Elven_Expedition (+ _2) taken
+        ts = guest_minute(dt)
+        for suf in ('', '_2'):
+            d = f'{bk}\\{ts}_Elven_Expedition{suf}'; w.write(d + '\\ZetuBkA_1.json', 'older copy'); taken.append(d)
+    done = lambda: plog().count('Load campaign complete')    # the game's own line, once per finished load
+    def loaded(n, key):
+        t0 = time.time()
+        while time.time() - t0 < 300 and done() < n: time.sleep(3)
+        u = probe('units', 10); S['units_' + key] = u
+        return done() >= n and u and re.search(r'Dungeon [1-9]', u[0]), [done(), u]
+    if backup_load(S, 'A', A, gA, bk, taken):
+        ok, d = loaded(1, 'A'); check('B A: then the world loads ("Load campaign complete")', ok, d)
+        backup_load(S, 'B', B, gB, bk, taken + [S['A_backup'][0]])
+        ok, d = loaded(2, 'B'); check('B B: the second world loads too (a second "Load campaign complete")', ok, d)
+    else:
+        time.sleep(8); shot(out, 'win_backup_failed')
+    check('B: the folders already there are untouched', all(w.text(d + '\\ZetuBkA_1.json') == 'older copy' for d in taken))
+    S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
+    return S
+
+
 def main():
     global w
     a = sys.argv[1:] or ['run']
@@ -362,7 +430,7 @@ def main():
     w = W.Win(); w.up()
     S = {}
     try:
-        S = console_run(out) if a[0] == 'console' else main_run(out)
+        S = {'console': console_run, 'backup': backup_run}.get(a[0], main_run)(out)
     except BaseException as e:
         import traceback; traceback.print_exc()
         check('run finished', False, repr(e))
