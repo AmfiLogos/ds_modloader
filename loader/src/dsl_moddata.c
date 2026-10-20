@@ -157,7 +157,7 @@ static void sync_scan(void) {
     if (nsm >= 0) return; nsm = 0;
     for (int i = 0; i < dsl_mods_count() && nsm < MD_MAX_MODS; i++) {
         const DSLModInfo *x = dsl_mods_at(i);
-        if (!x || x->active != 1 || strcmp(x->scope, "gameplay") || !strcmp(x->id, "multiplayer") || !dsl_moddata_id_ok(x->id)) continue;
+        if (!x || x->active != 1 || strcmp(x->scope, "gameplay") || x->feature || !strcmp(x->id, "multiplayer") || !dsl_moddata_id_ok(x->id)) continue;
         if (read_patterns(x->id, &SM[nsm])) nsm++;
     }
 }
