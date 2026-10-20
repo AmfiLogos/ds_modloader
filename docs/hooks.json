@@ -7,7 +7,7 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "caa4c7881523ba2e2bc2400fd7219c9505756f44",
+ "mp_pin": "1bf5bb4eb50452a50c63a9305faf8c336e1b2888",
  "cm_pin": "ba3052216677900e980347cee7bb050314c07c28",
  "fields": {
   "owner": "loader or the mod id",
@@ -798,23 +798,6 @@
    "label": "multiplayer QuitToTitleSceneRequested..ctor",
    "source": "ds_multiplayer:src/mp_game.c",
    "key": "multiplayer|mp_game.c|h_quit_ctor|QuitToTitleSceneRequested..ctor"
-  },
-  {
-   "owner": "multiplayer",
-   "kind": "detour",
-   "method": "Steamworks.NativeMethods$$SteamAPI_ManualDispatch_GetNextCallback",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0x1141aac"
-    },
-    "win-x64": {
-     "rva": "0xe5f7a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "multiplayer Steamworks ManualDispatch_GetNextCallback",
-   "source": "ds_multiplayer:src/mp_game.c",
-   "key": "multiplayer|mp_game.c|h_getnext|Steamworks ManualDispatch_GetNextCallback"
   },
   {
    "owner": "multiplayer",

@@ -44,7 +44,6 @@ multiplayer	detour	Refactor.Main.GameSpeedSetting$$AddPauseReason	0xd24848	0xa35
 multiplayer	detour	Refactor.Main.GameSpeedSetting$$RemovePauseReason	0xd249bc	0xa35e20	always (module loaded)	multiplayer GameSpeedSetting.RemovePauseReason	ds_multiplayer:src/mp_game.c
 multiplayer	detour	Refactor.Main.GameSpeedSetting$$SetSpeed	0xd24114	0xa35fb0	always (module loaded)	multiplayer GameSpeedSetting.SetSpeed	ds_multiplayer:src/mp_game.c
 multiplayer	detour	Refactor.Main.Event.QuitToTitleSceneRequested$$.ctor	0xd61e50	0x8e1990	always (module loaded)	multiplayer QuitToTitleSceneRequested..ctor	ds_multiplayer:src/mp_game.c
-multiplayer	detour	Steamworks.NativeMethods$$SteamAPI_ManualDispatch_GetNextCallback	0x1141aac	0xe5f7a0	always (module loaded)	multiplayer Steamworks ManualDispatch_GetNextCallback	ds_multiplayer:src/mp_game.c
 multiplayer	detour	Refactor.Main.Event.CampaignLoadingEventHandler.<WaitForDefaultTicks>d__102$$MoveNext	0xd7709c	0xa9ecb0	always (module loaded)	multiplayer WaitForDefaultTicks.MoveNext	ds_multiplayer:src/mp_game.c
 multiplayer	detour	Refactor.Main.Event.CampaignLoadingEventHandler.<WaitUntilGameStabilizes>d__103$$MoveNext	0xd772a0	0xa9ee10	always (module loaded)	multiplayer WaitUntilGameStabilizes.MoveNext	ds_multiplayer:src/mp_game.c
 multiplayer	detour	UnityEngine.GUIUtility$$get_systemCopyBuffer	0x518aea0	0x39f54b0	env DSMP_TEST, DSRIG_BATCH, DSRIG_HIDEWIN, DSRIG_SPACE (test copies / debugging only)	multiplayer mpmenu GUIUtility.get_systemCopyBuffer (test: file)	ds_multiplayer:src/mpmenu.c
