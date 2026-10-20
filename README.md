@@ -179,7 +179,7 @@ too. The game's own cloud saves never change. Multiplayer temporary saves are ne
 
 ## Report a bug
 
-Open an issue on this repo's Issues page. Say your system (Mac or Windows), the installer release (for example v0.1.16.1) and
+Open an issue on this repo's Issues page. Say your system (Mac or Windows), the installer release (for example v0.1.17) and
 what you did. Attach the `.log` files from this folder (not the `data` folder, which holds your saves):
 Mac: `~/Library/Application Support/DSModLauncher/profiles/modded` (and `~/Library/Logs/DungeonSettlersModded.log`).
 Windows: `%LOCALAPPDATA%\Dungeon Settlers Modded\profiles\modded`.

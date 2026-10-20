@@ -1,7 +1,8 @@
 {
  "id": "multiplayer",
  "name": "Multiplayer",
- "version": "0.1.13",
+ "version": "0.1.14",
+ "category": "feature",
  "author": "AmfiLogos",
  "kind": "code",
  "api": 2,
