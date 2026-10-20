@@ -501,8 +501,19 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   the box in de/ru/ja).
 - Delete (owner 2026-10-17, branch savesync2): a game save is the normal game's file too. After the game's own delete
   confirm, a game world (`SaveLoadView.CompleteDeleteConfirmation`, the world's delete button) or a game save
-  (`SaveLoadView.ConfirmRemove`) asks once more in the game's notice box: "This save is also used by Dungeon Settlers
-  without mods. Delete it there too?" Delete / Cancel (Cancel = the view's own "not confirmed", nothing deleted).
+  (its `RemoveFileRequested` event at `EventQueue.AddEvent`) asks once more in the game's notice box: "This save is also
+  used by Dungeon Settlers without mods. Delete it there too?" Delete / Cancel (Cancel = the view's own "not confirmed",
+  nothing deleted).
+  Fix 2026-10-20 (branch fixfoc-del; a Windows player: "Remove File" in Host a world did not delete as expected): the
+  old hook was on `SaveLoadView.ConfirmRemove`, but build 25846389 INLINES it into the stock box's Yes callback
+  (`<>c__DisplayClass57_0.<CheckRemoveSlot>b__0` builds UIInput SaveLoadUI_RemoveCampaign itself; Mac disassembly at
+  0x862040), so the question never showed on the player's path and the old rig test passed only because it called
+  ConfirmRemove directly. Every remove reaches the game as `RemoveFileRequested(name)` through `IEventQueue.AddEvent`
+  (`InputDispatcher.<Update>b__8_0`, an interface call: not inlinable) -> `InputEventHandler.OnEvent(RemoveFileRequested)`
+  -> `CampaignSaveLoader.Delete`. A game save's event is held (strong GC handle) and the question shows 3 frames later
+  from the frame tick (the kit reuses the game's CommonNoticeView that just closed); Delete puts the held event back in
+  the queue, Cancel drops it. Rig test `test/l1_savedel_test.py` clicks the save row + Remove File and the game's own box
+  (CommonNoticeView.OnClick_*) in Load Campaign and in Multiplayer > Host a world.
   Modded-only saves: the stock flow. Build 25846389 has the world's delete OFF (`CampaignSaveDeletionService.IsAvailable`
   returns false: no world delete button), so the save's remove is the delete players see; the world hooks wait for a
   build that turns it on (untested in the game until then). Before this, a game world's delete removed nothing: the stock

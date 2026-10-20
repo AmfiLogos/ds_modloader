@@ -15,8 +15,8 @@
 // is moved to <DSML_DATA>/Mods/save_copies/, never deleted. The same bytes: nothing to say. Different bytes (the copy was
 // played): one notice at the title says, per world, which file is newer (file times) and where the copy is kept.
 // Delete (owner 2026-10-17): a game save is the normal game's file too. After the game's own delete confirm, a game
-// world (the world's delete button: SaveLoadView.CompleteDeleteConfirmation) or a game save (the save's remove:
-// SaveLoadView.ConfirmRemove) asks once more in the game's notice box: "also used by Dungeon Settlers without mods.
+// world (the world's delete button: SaveLoadView.CompleteDeleteConfirmation) or a game save (the save's remove: its
+// RemoveFileRequested event at EventQueue.AddEvent; ConfirmRemove is inlined in the game's build) asks once more in the game's notice box: "also used by Dungeon Settlers without mods.
 // Delete it there too?" Delete / Cancel. Cancel = nothing deleted. Modded-only saves: the game's flow, no question.
 // CampaignSaveLoader.DeleteCampaignSaves of a game world deletes in the game folder (the stock service only reads the
 // folder of GetCampaignSavePath(<any name>): routed once to the game folder for that call).
@@ -553,7 +553,9 @@ static void ask(void) {
     dsl_log("saves: warning shown for %s (world %s, mods %s)%s%s", w_name, w_guid, w_key, w_backup ? ", backup to " : "", w_backup ? w_bdir : "");
     u->notice(b, TR("Load"), TR("Cancel"), on_load, on_cancel, NULL);
 }
+static int remove_gate(Obj queue, Obj ev);
 static void my_add(Obj self, Obj ev, const void *mi) {
+    if (ev && remove_gate(self, ev)) return;                                  /* a game save's remove: asked first */
     if (on && !w_pass && ev && k_loadreq && obj_class(ev) == k_loadreq && off_campaign >= 0) {
         char nm[300], g[40], key[512]; utf8_of(AT(ev, off_campaign, Obj), nm, sizeof nm);
         if (needs_warning(nm, g, key, sizeof key)) {
@@ -571,6 +573,7 @@ int dsl_saves_load_gate(const char *name) {
     return hold(name, g, key, 3);                                            /* after the stock box that closes the load */
 }
 /* ------------------------------------------------------------------ delete: a game save is the normal game's file too */
+static void *meth(const char *ns, const char *k, const char *m, int argc);
 typedef struct { uint64_t lo, hi; } DGuid;                /* System.Guid by value (same ABI as the game's method) */
 static void guid_str(DGuid v, char g[40]) {
     const uint8_t *b = (const uint8_t *)&v;
@@ -578,30 +581,51 @@ static void guid_str(DGuid v, char g[40]) {
              *(const uint32_t *)b, *(const uint16_t *)(b + 4), *(const uint16_t *)(b + 6), b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
 }
 static void (*o_complete)(Obj view, DGuid g, int32_t version, uint8_t confirmed, const void *mi);
-static void (*o_remove)(Obj view, Obj name, const void *mi);
 static Obj (*o_delcamp)(Obj loader, DGuid g, const void *mi);
-static void *a_complete, *a_remove;                       /* the game's methods (hooked): the test calls them */
-static struct { int open, kind; uintptr_t h_view; DGuid g; int32_t version; char name[300], what[300]; } D;   /* kind 1 world, 2 save */
+static void *a_complete, *a_remove;                       /* the game's methods: the test calls them (a_complete hooked) */
+/* The save's remove (bug 2026-10-20, a Windows player: "Remove File" in Host a world did not delete): the game's own Yes
+   callback (SaveLoadView.<>c__DisplayClass57_0.<CheckRemoveSlot>b__0) has SaveLoadView.ConfirmRemove INLINED (build
+   25846389, arm64: UIInput SaveLoadUI_RemoveCampaign built in the callback itself), so the old hook on ConfirmRemove never
+   ran on the player's path. Every remove reaches the game as the event RemoveFileRequested(name) through
+   IEventQueue.AddEvent (InputDispatcher.<Update>b__8_0, an interface call: never inlined) and then
+   InputEventHandler.OnEvent(RemoveFileRequested) -> CampaignSaveLoader.Delete(name). So the question sits on that event:
+   a game save's remove event is held (strong GC handle) and the question shows a few frames later from the frame tick
+   (the game's box that sent it has closed by then; the kit reuses that same CommonNoticeView). Delete = the held event
+   goes into the queue again; Cancel = it is dropped: nothing deleted. Modded-only saves: the stock flow, no question. */
+static void *k_rmreq; static int32_t off_rmname = -1; static int rm_pass;
+static struct { int open, kind, frames; uintptr_t h_view, h_ev, h_q; DGuid g; int32_t version; char name[300], what[300]; } D;   /* kind 1 world, 2 save */
+static void del_free(void) {
+    if (D.h_view) { gc_free(D.h_view); D.h_view = 0; }
+    if (D.h_ev) { gc_free(D.h_ev); D.h_ev = 0; }
+    if (D.h_q) { gc_free(D.h_q); D.h_q = 0; }
+}
 static void del_yes(void *ud, DSLObj w) {
-    (void)ud; (void)w; if (!D.open) return; D.open = 0;
-    Obj v = D.h_view ? gc_get(D.h_view) : NULL;
+    (void)ud; (void)w; if (!D.open || D.frames) return; D.open = 0;
+    Obj v = D.h_view ? gc_get(D.h_view) : NULL, e = D.h_ev ? gc_get(D.h_ev) : NULL, q = D.h_q ? gc_get(D.h_q) : NULL;
     dsl_log("saves: delete answered Delete for %s: deleted in the game's folder too", D.what);
     if (v && D.kind == 1) o_complete(v, D.g, D.version, 1, NULL);
-    else if (v && D.kind == 2) o_remove(v, str_new(D.name), NULL);
-    if (D.h_view) { gc_free(D.h_view); D.h_view = 0; }
+    else if (D.kind == 2 && e && q) { rm_pass = 1; o_add(q, e, NULL); rm_pass = 0; }        /* the game's own remove goes on */
+    else dsl_log("saves: delete of %s: the game's request is gone: NOT deleted", D.what);
+    del_free();
 }
 static void del_no(void *ud, DSLObj w) {
-    (void)ud; (void)w; if (!D.open) return; D.open = 0;
+    (void)ud; (void)w; if (!D.open || D.frames) return; D.open = 0;
     Obj v = D.h_view ? gc_get(D.h_view) : NULL;
     dsl_log("saves: delete answered Cancel for %s: nothing deleted", D.what);
     if (v && D.kind == 1) o_complete(v, D.g, D.version, 0, NULL);       /* the view's own "not confirmed" (buttons back) */
-    if (D.h_view) { gc_free(D.h_view); D.h_view = 0; }
+    del_free();
 }
-static int del_ask(Obj view, int kind, const char *what) {
-    const DSLUi *u = dsl_ui_kit(); if (!u || !gc_new) { dsl_log("saves: no kit: delete of %s not asked, NOT deleted", what); return 0; }
-    D.open = 1; D.kind = kind; D.h_view = gc_new(view, 0); snprintf(D.what, sizeof D.what, "%s", what);
-    dsl_log("saves: delete question shown for %s", what);
+static void del_show(void) {                              /* the frame tick, D.frames after del_ask */
+    const DSLUi *u = dsl_ui_kit();
+    if (!u) { dsl_log("saves: no kit: delete of %s not asked, NOT deleted", D.what); D.frames = 0; del_no(NULL, NULL); return; }
+    dsl_log("saves: delete question shown for %s", D.what);
     u->notice(TR("This save is also used by Dungeon Settlers without mods. Delete it there too?"), TR("Delete"), TR("Cancel"), del_yes, del_no, NULL);
+}
+/* 1 = asked (the question shows from the frame tick); 0 = cannot ask */
+static int del_ask(Obj view, Obj ev, Obj queue, int kind, const char *what) {
+    if (!dsl_ui_kit() || !gc_new) { dsl_log("saves: no kit: delete of %s not asked, NOT deleted", what); return 0; }
+    D.open = 1; D.kind = kind; D.frames = 3; snprintf(D.what, sizeof D.what, "%s", what);
+    D.h_view = view ? gc_new(view, 0) : 0; D.h_ev = ev ? gc_new(ev, 0) : 0; D.h_q = queue ? gc_new(queue, 0) : 0;
     return 1;
 }
 /* the world's delete button, after the game's own confirm (confirmed = its Yes) */
@@ -609,19 +633,21 @@ static void my_complete(Obj view, DGuid g, int32_t version, uint8_t confirmed, c
     if (on && confirmed && view && !D.open) {
         char gs[40]; guid_str(g, gs);
         pthread_mutex_lock(&mu); int game = guid_is_game_locked(gs); pthread_mutex_unlock(&mu);
-        if (game) { D.g = g; D.version = version; char w[80]; snprintf(w, sizeof w, "world %s", gs); if (del_ask(view, 1, w)) return; }
+        if (game) { D.g = g; D.version = version; char w[80]; snprintf(w, sizeof w, "world %s", gs); if (del_ask(view, NULL, NULL, 1, w)) return; }
     } else if (on && confirmed && D.open) { dsl_log("saves: delete held: a delete question is still open"); o_complete(view, g, version, 0, mi); return; }
     o_complete(view, g, version, confirmed, mi);
 }
-/* the save's remove, after the game's own confirm */
-static void my_remove(Obj view, Obj name, const void *mi) {
-    if (on && view && name) {
-        char nm[300]; utf8_of(name, nm, sizeof nm);
-        pthread_mutex_lock(&mu); int game = g_find(nm) != NULL; pthread_mutex_unlock(&mu);
-        if (game && D.open) { dsl_log("saves: remove of %s held: a delete question is still open", nm); return; }
-        if (game) { snprintf(D.name, sizeof D.name, "%s", nm); char w[340]; snprintf(w, sizeof w, "save %s", nm); if (del_ask(view, 2, w)) return; }
-    }
-    o_remove(view, name, mi);
+/* my_add: a save's remove request (RemoveFileRequested). 1 = held or dropped (not passed on) */
+static int remove_gate(Obj queue, Obj ev) {
+    if (!on || rm_pass || !k_rmreq || off_rmname < 0 || obj_class(ev) != k_rmreq) return 0;
+    char nm[300]; utf8_of(AT(ev, off_rmname, Obj), nm, sizeof nm);
+    pthread_mutex_lock(&mu); int game = g_find(nm) != NULL; pthread_mutex_unlock(&mu);
+    if (!game) return 0;                                                      /* modded-only: the game's flow */
+    if (D.open) { dsl_log("saves: remove of %s dropped: a delete question is still open (nothing deleted)", nm); return 1; }
+    snprintf(D.name, sizeof D.name, "%s", nm); char w[340]; snprintf(w, sizeof w, "save %s", nm);
+    if (!del_ask(NULL, ev, queue, 2, w)) return 1;                            /* cannot ask: NOT deleted */
+    dsl_log("saves: remove of game save %s held for the question", nm);
+    return 1;
 }
 /* the world's saves deleted: a game world's are in the game folder (the stock service lists one folder) */
 static Obj my_delcamp(Obj loader, DGuid g, const void *mi) {
@@ -680,6 +706,18 @@ static void test_frame(void) {
         ((void (*)(Obj, DGuid, int32_t, uint8_t, const void *))a_complete)(v, g, ver, 1, NULL);
     } else if (v && c && !strcmp(c, "del_save") && a_remove && json_str(j, "name"))
         ((void (*)(Obj, Obj, const void *))a_remove)(v, str_new(json_str(j, "name")), NULL);
+    else if (v && c && !strcmp(c, "del_save_ui") && json_str(j, "name")) {   /* the player's path: select the save, press Remove File
+                                                                                (the game's own box follows; the test answers it) */
+        static void *a_slot, *a_cur, *a_click;               /* a click on the save row; the selected save; Remove File */
+        if (!a_slot) { a_slot = meth("Refactor", "SaveLoadView", "OnClickLoadSlot", 1); a_cur = meth("Refactor", "SaveLoadView", "get_CurrentSelectedSaveName", 0);
+                       a_click = meth("Refactor", "SaveLoadView", "OnClickRemove", 0); }
+        char cur[300] = ""; if (a_cur) utf8_of(((Obj (*)(Obj, const void *))a_cur)(v, NULL), cur, sizeof cur);
+        if (a_slot && a_click) {                             /* a second click on the selected row would LOAD it: one click only */
+            if (strcmp(cur, json_str(j, "name"))) ((void (*)(Obj, Obj, const void *))a_slot)(v, str_new(json_str(j, "name")), NULL);
+            ((void (*)(Obj, const void *))a_click)(v, NULL);
+        }
+        dsl_log("saves test: Remove File pressed on %s (was selected: %s)", json_str(j, "name"), cur[0] ? cur : "none");
+    }
     if (j) json_free(j);
 }
 
@@ -688,6 +726,7 @@ int dsl_reg_scene(void);
 void dsl_saves_frame(void) {
     if (!on) return;
     test_frame();
+    if (D.open && D.frames && !--D.frames) del_show();
     if (w_pending && --w_frames <= 0) ask();
     if (f_frames && !--f_frames) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(f_text, TR("OK"), NULL, NULL, NULL, NULL); }
     if (ndiffer && !differ_told && dsl_reg_scene() == 1 && dsl_soft_title_idle()) {
@@ -786,9 +825,9 @@ static int install_hooks(void) {
         a_complete = NULL; dsl_log("saves: world delete question off: a game world's delete removes nothing in the game's folder");
     } else if (hk(a_delcamp, (void *)my_delcamp, (void **)&o_delcamp, "loader saves CampaignSaveLoader.DeleteCampaignSaves"))
         dsl_log("saves: world delete routing off: a game world's delete removes nothing in the game's folder");
-    if (hk(a_remove, (void *)my_remove, (void **)&o_remove, "loader saves SaveLoadView.ConfirmRemove")) {
-        a_remove = NULL; dsl_log("saves: save remove question off");
-    }
+    k_rmreq = dsl_find_class("Refactor.Main.Event", "RemoveFileRequested");    /* the save's remove: asked at AddEvent (my_add) */
+    off_rmname = k_rmreq ? dsl_field_offset(k_rmreq, "CampaignName") : -1;
+    if (o_add == a_add || off_rmname < 0) dsl_log("saves: save remove question off: a game save's Remove File deletes it in the game's folder with the game's own box only");
     dsl_log("saves: on: %d game save(s) in %s are listed and played in place; modded-only saves in %s", n, game_d, mod_d);
     return 0;
 }
