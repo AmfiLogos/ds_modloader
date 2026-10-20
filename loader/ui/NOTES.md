@@ -10,9 +10,11 @@ Plan: ~/ds_multiplayer/research/MASTER_PLAN.md (L2 row). Contract with the loade
   orange), "Save these mods as a group" (name field + Save / Cancel), group rows (click = switches to that set, gold mark
   on the group that matches the switches, x = delete after the game's notice), Undo changes, Apply.
 - Apply: dsl_apply_mods(); the window closes at once so the game's loading screen covers the screen; the new game opens
-  the Mods window again by itself once dsl_busy_reason() is NULL ("put people back exactly where they were"); marker file
-  `<dir of DSL_PROFILE>/.cache/reopen_mods_window` (renamed .used after reading; 180 s limit). If the restart ends with
-  no swap, this game reopens the window with "The mods did not change: ...".
+  the Mods window again by itself once dsl_busy_reason() is NULL ("put people back exactly where they were"). The request
+  travels in the soft restart's handoff.json ("reopen":"mods", dsl_soft_reopen_request in A before dsl_apply_mods), B takes
+  it once after its swap (dsl_soft_take_reopen). No marker file (2026-10-20: a prewarmed B boots before Apply, so it
+  missed the old `.cache/reopen_mods_window` marker, and the stale marker opened the window at the next unrelated start).
+  If the restart ends with no swap, this game reopens the window with "The mods did not change: ...".
 - Cache: `<dir of DSL_PROFILE>/.cache/mudslogel_idle_<k>.png` (image_png reads files). Asset source:
   `assets/mudslogel_idle.png` -> `dsl_win_assets.h` (assets/gen_assets.py).
 - No game address. Unity calls by name (dsl_find_class / dsl_find_method, parameter types for GetComponent(Type)).

@@ -161,7 +161,6 @@ static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applyi
 static double applying_t;
 static char carry_note[300];                                           /* shown when the window opens again (failed Apply) */
 static int slogel_files(void);
-static void reopen_mark(int on);
 static void destroy_all(void);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
@@ -353,10 +352,10 @@ static void apply_click(void *ud, DSLObj w) {
         mods_sync(); return;
     }
     char why[300] = "";
-    if (dsl_apply_mods(ids, n, why, sizeof why)) { snprintf(m_note, sizeof m_note, TR("The mods did not change: %s"), why[0] ? why : TR("the game did not allow the change")); dsi_utf8_fix_end(m_note); mods_sync(); return; }
+    dsl_soft_reopen_request("mods");                                   /* the new game opens this window again (handoff) */
+    if (dsl_apply_mods(ids, n, why, sizeof why)) { dsl_soft_reopen_request(NULL); snprintf(m_note, sizeof m_note, TR("The mods did not change: %s"), why[0] ? why : TR("the game did not allow the change")); dsi_utf8_fix_end(m_note); mods_sync(); return; }
     applying = 1; applying_seen_busy = 0; applying_t = now_s(); m_note[0] = 0;
     dsl_log("win: Apply: %d mods, soft restart started: the window closes (the loading screen covers the screen)", n);
-    reopen_mark(1);
     destroy_all();                                                     /* the game's loading screen must be on top */
 }
 /* new mod packages (ui/dsl_pkg.c): looked for when the Mods tab opens and with "Refresh"; switches the player already
@@ -728,7 +727,7 @@ static void apply_watch(void) {
         snprintf(carry_note, sizeof carry_note, TR("The mods did not change: %s"), why[0] ? TR(why) : TR("the mods could not be applied."));
         dsi_utf8_fix_end(carry_note);
         dsl_log("win: the soft restart ended here without a swap: window opens with the reason");
-        reopen_mark(0);
+        dsl_soft_reopen_request(NULL);
         dsl_win_open("mods");
     }
 }
@@ -818,7 +817,7 @@ static void destroy_all(void) {
     unreg_all();
     is_open = 0;
 }
-static int open_tries, reopen_wait; static double open_retry_at;
+static int open_tries; static double open_retry_at;
 static void open_now(void) {
     want_open = 0;
     if (!U) U = dsl_ui_kit();
@@ -839,22 +838,11 @@ static void open_now(void) {
     tab_select(t);
 }
 
-/* "put people back exactly where they were" (owner): Apply came from this window, so the new game opens it again */
-static void reopen_path(char *out, size_t n) { slogel_files(); snprintf(out, n, "%s/reopen_mods_window", slogel_dir); }
-static void reopen_mark(int on) {
-    char p[1300], used[1400]; reopen_path(p, sizeof p);
-    if (on) { FILE *f = fopen(p, "w"); if (f) { fprintf(f, "%ld\n", (long)time(NULL)); fclose(f); } }
-    else { snprintf(used, sizeof used, "%s.used", p); rename(p, used); }
-}
+/* "put people back exactly where they were" (owner): Apply came from this window, so the new game opens it again.
+   The request travels in the soft restart's handoff (dsl_soft_reopen_request / dsl_soft_take_reopen), never in a file. */
 void dsl_win_init(void) {
     unity_init(); U = dsl_ui_kit();
-    char p[1300]; reopen_path(p, sizeof p);
-    FILE *f = fopen(p, "r"); long t = 0;
-    if (f) { if (fscanf(f, "%ld", &t) != 1) t = 0; fclose(f); }
-    int reopen = t && time(NULL) - t < 180;
-    if (f) reopen_mark(0);
-    reopen_wait = reopen;                                              /* opens once the restart is over (dsl_busy_reason NULL) */
-    dsl_log("win: Mods window ready (%s)%s", U ? "kit ok" : "no kit yet", reopen ? "; opens again after the Apply restart" : "");
+    dsl_log("win: Mods window ready (%s)", U ? "kit ok" : "no kit yet");
 }
 static void rebind(int wm) {                                          /* the Mods tab changes its meaning: build it again */
     if (wm != world_mode && is_open && cur == 0) { world_mode = wm; tab_close(); return; }
@@ -967,7 +955,8 @@ static void test_frame(void) {
 void dsl_win_frame(void) {
     if (!test_checked) { test_checked = 1; test_dir = getenv("DSL_UI_TEST"); if (test_dir && !*test_dir) test_dir = NULL; }
     apply_watch();
-    if (reopen_wait && !dsl_busy_reason()) { reopen_wait = 0; dsl_win_open("mods"); }
+    if (!dsl_busy_reason()) { const char *ro = dsl_soft_take_reopen();          /* B after the swap: once */
+        if (ro) { dsl_log("win: opens again after the Apply restart (%s)", ro); dsl_win_open(ro); } }
     if (want_open && now_s() >= open_retry_at) open_now();
     if (is_open) {
         int f = (int)(now_s() * 6) % SLOGEL_FRAMES;                   /* Mud Slogel idle, 6 frames per second */
