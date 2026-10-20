@@ -36,7 +36,7 @@ def pkg(i, win_sha=None, name=None):
        file whose sha256 = win_sha (the copy never checks another platform's files; the HELLO line has them)"""
     src = os.path.join(HP.BUILD, 'mods', i); m = json.load(open(os.path.join(src, 'mod.json'), encoding='utf-8'))
     if win_sha:
-        m['platforms']['mac-arm64']['files'] = {f: sha(os.path.join(src, f)) for f in ('custom-modes.dylib', 'custom-modes-mp.dylib')}
+        m['platforms']['mac-arm64']['files'] = {f: sha(os.path.join(src, f)) for f in ('custom-modes.dylib',) if os.path.exists(os.path.join(src, f))}
         m['platforms']['win-x64']['files'] = {'custom-modes.dll': win_sha}
     zp = os.path.join(OUT, 'pkg', name or f'{i}-{m["version"]}.zip'); os.makedirs(os.path.dirname(zp), exist_ok=True)
     with zipfile.ZipFile(zp, 'w', zipfile.ZIP_DEFLATED) as zf:

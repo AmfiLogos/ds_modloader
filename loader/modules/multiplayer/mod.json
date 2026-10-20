@@ -1,7 +1,7 @@
 {
  "id": "multiplayer",
  "name": "Multiplayer",
- "version": "0.1.14",
+ "version": "0.1.16",
  "category": "feature",
  "author": "AmfiLogos",
  "kind": "code",
@@ -19,44 +19,44 @@
   "loader>=2.0.0"
  ],
  "conflicts": [],
- "description": "Play your worlds with friends. Host one of your saves, or join a friend by address or through Steam. Each player controls their own units.",
+ "description": "Play your worlds with friends. Host one of your saves, or join a friend by address or through Steam. Each player controls their own units. You can also host Foreign Expedition and PvP.",
  "scope": "gameplay",
  "i18n": {
   "ko": {
    "name": "멀티플레이",
-   "description": "친구와 함께 월드를 플레이합니다. 내 세이브 하나를 호스트하거나, 주소 또는 Steam으로 친구의 월드에 참가하십시오. 각 플레이어는 자기 유닛을 조작합니다."
+   "description": "친구와 함께 월드를 플레이합니다. 내 세이브 하나를 호스트하거나, 주소 또는 Steam으로 친구의 월드에 참가하십시오. 각 플레이어는 자기 유닛을 조작합니다. 외부 탐사와 PvP도 호스트할 수 있습니다."
   },
   "fr": {
    "name": "Multijoueur",
-   "description": "Jouez vos mondes avec des amis. Hébergez une sauvegarde, ou rejoignez un ami par adresse ou via Steam. Chaque joueur contrôle ses propres unités."
+   "description": "Jouez vos mondes avec des amis. Hébergez une sauvegarde, ou rejoignez un ami par adresse ou via Steam. Chaque joueur contrôle ses propres unités. Vous pouvez aussi héberger Expédition étrangère et PvP."
   },
   "de": {
    "name": "Mehrspieler",
-   "description": "Spiele deine Welten mit Freunden. Hoste einen deiner Spielstände oder tritt einem Freund über die Adresse oder über Steam bei. Jeder Spieler steuert seine eigenen Einheiten."
+   "description": "Spiele deine Welten mit Freunden. Hoste einen deiner Spielstände oder tritt einem Freund über die Adresse oder über Steam bei. Jeder Spieler steuert seine eigenen Einheiten. Außerdem kannst du Fremde Expedition und PvP hosten."
   },
   "ru": {
    "name": "Мультиплеер",
-   "description": "Играйте в свои миры с друзьями. Откройте одно из своих сохранений для других игроков или присоединитесь к другу по адресу или через Steam. Каждый игрок управляет своими юнитами."
+   "description": "Играйте в свои миры с друзьями. Откройте одно из своих сохранений для других игроков или присоединитесь к другу по адресу или через Steam. Каждый игрок управляет своими юнитами. Также можно создавать «Чужую экспедицию» и PvP."
   },
   "zh-Hans": {
    "name": "多人游戏",
-   "description": "和好友一起游玩你的世界。可以用你的存档创建游戏，或通过地址或 Steam 加入好友。每位玩家控制自己的单位。"
+   "description": "和好友一起游玩你的世界。可以用你的存档创建游戏，或通过地址或 Steam 加入好友。每位玩家控制自己的单位。你还可以创建异地探险和 PvP 对战。"
   },
   "zh-Hant": {
    "name": "多人遊戲",
-   "description": "與好友一起遊玩你的世界。可以用你的存檔建立遊戲，或透過位址或 Steam 加入好友。每位玩家控制自己的單位。"
+   "description": "與好友一起遊玩你的世界。可以用你的存檔建立遊戲，或透過位址或 Steam 加入好友。每位玩家控制自己的單位。你也可以建立「異地探險」和 PvP 對戰。"
   },
   "ja": {
    "name": "マルチプレイ",
-   "description": "フレンドと一緒にワールドをプレイしましょう。自分のセーブをホストするか、アドレスまたはSteamでフレンドのゲームに参加できます。各プレイヤーは自分のユニットを操作します。"
+   "description": "フレンドと一緒にワールドをプレイしましょう。自分のセーブをホストするか、アドレスまたはSteamでフレンドのゲームに参加できます。各プレイヤーは自分のユニットを操作します。外部探索とPvPもホストできます。"
   },
   "es": {
    "name": "Multijugador",
-   "description": "Juega tus mundos con amigos. Aloja una de tus partidas, o únete a un amigo por dirección o a través de Steam. Cada jugador controla sus propias unidades."
+   "description": "Juega tus mundos con amigos. Aloja una de tus partidas, o únete a un amigo por dirección o a través de Steam. Cada jugador controla sus propias unidades. También puedes alojar Expedición foránea y PvP."
   },
   "pt-BR": {
    "name": "Multijogador",
-   "description": "Jogue seus mundos com amigos. Hospede um dos seus salvamentos, ou entre no jogo de um amigo pelo endereço ou pela Steam. Cada jogador controla suas próprias unidades."
+   "description": "Jogue seus mundos com amigos. Hospede um dos seus salvamentos, ou entre no jogo de um amigo pelo endereço ou pela Steam. Cada jogador controla suas próprias unidades. Você também pode hospedar Expedição estrangeira e PvP."
   }
  }
 }

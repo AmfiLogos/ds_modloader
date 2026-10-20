@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "46f8596ee6d2a44dbd6daca59f800f491e78748a",
- "cm_pin": "116e2708fd4c24c262c432f9e30f1c454765427a",
+ "mp_pin": "850b6f8670aee0ef01010087b38e8bf67b801adf",
+ "cm_pin": "5454e0315216280093ebc9637585f8ec76ad7226",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -1635,6 +1635,312 @@
    "label": "multiplayer ord WaypointOrder.Reserve",
    "source": "ds_multiplayer:src/ord_game.c",
    "key": "multiplayer|ord_game.c|h_wp_reserve|ord WaypointOrder.Reserve"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.CampaignEntityLoadHelper$$SpawnDungeonNPC",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xda8b30"
+    },
+    "win-x64": {
+     "rva": "0xaa3800"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CampaignEntityLoadHelper.SpawnDungeonNPC",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_spawnnpc|pvp CampaignEntityLoadHelper.SpawnDungeonNPC"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.CombatDataHandler$$CheckAggroTrigger",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbce72c"
+    },
+    "win-x64": {
+     "rva": "0x8ddb30"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CombatDataHandler.CheckAggroTrigger",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_aggro|pvp CombatDataHandler.CheckAggroTrigger"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.CombatDataHandler$$Init",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbcde24"
+    },
+    "win-x64": {
+     "rva": "0x8de2a0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CombatDataHandler.Init",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_init|pvp CombatDataHandler.Init"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.CombatDataHandler$$OnDeadUnit",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbd00e8"
+    },
+    "win-x64": {
+     "rva": "0x8df1b0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CombatDataHandler.OnDeadUnit",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_dead|pvp CombatDataHandler.OnDeadUnit"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.CombatDataHandler$$OnDespawnUnit",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbd1eb8"
+    },
+    "win-x64": {
+     "rva": "0x8df9a0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CombatDataHandler.OnDespawnUnit",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_despawn|pvp CombatDataHandler.OnDespawnUnit"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.CombatDataHandler$$OnMoveUnit",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbd1930"
+    },
+    "win-x64": {
+     "rva": "0x8dfa10"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CombatDataHandler.OnMoveUnit",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_move|pvp CombatDataHandler.OnMoveUnit"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.CombatDataHandler$$OnSpawnUnit",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbcf690"
+    },
+    "win-x64": {
+     "rva": "0x8e0320"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp CombatDataHandler.OnSpawnUnit",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_spawn|pvp CombatDataHandler.OnSpawnUnit"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Runtime.DungeonBehaviorSimulator$$Tick",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xbc4d80"
+    },
+    "win-x64": {
+     "rva": "0x8e3740"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp DungeonBehaviorSimulator.Tick",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_dtick|pvp DungeonBehaviorSimulator.Tick"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Main.DungeonGeneratorStrategy$$HandleSpawnCategory",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcba210"
+    },
+    "win-x64": {
+     "rva": "0x9de1a0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp DungeonGeneratorStrategy.HandleSpawnCategory",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_spawncat|pvp DungeonGeneratorStrategy.HandleSpawnCategory"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.DungeonPortalHandler$$Process",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf9e298"
+    },
+    "win-x64": {
+     "rva": "0xcb83a0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp DungeonPortalHandler.Process",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_portal|pvp DungeonPortalHandler.Process"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.EntityEventHandler$$CheckGameOver",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xd854ec"
+    },
+    "win-x64": {
+     "rva": "0xa8a9a0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp EntityEventHandler.CheckGameOver",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_gameover|pvp EntityEventHandler.CheckGameOver"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.EntityExtensions$$IsHostile",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xfa4ce8"
+    },
+    "win-x64": {
+     "rva": "0xcb8e80"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp EntityExtensions.IsHostile",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_ishostile|pvp EntityExtensions.IsHostile"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Main.EventContainer$$IsEventStartable",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xc8d6fc"
+    },
+    "win-x64": {
+     "rva": "0x9aad60"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp EventContainer.IsEventStartable",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_ev_startable|pvp EventContainer.IsEventStartable"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Main.EventContainer$$StartEvent",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xc8dfbc"
+    },
+    "win-x64": {
+     "rva": "0x9abab0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp EventContainer.StartEvent(key)",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_ev_start1|pvp EventContainer.StartEvent(key)"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Main.EventFlowProcessor$$StartEvent",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcea620"
+    },
+    "win-x64": {
+     "rva": "0xa02340"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp EventFlowProcessor.StartEvent(key)",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_ev_start2|pvp EventFlowProcessor.StartEvent(key)"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.FactionRelationInfo$$GetRelation",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x82bba0"
+    },
+    "win-x64": {
+     "rva": "0x5991b0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp FactionRelationInfo.GetRelation",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_getrel|pvp FactionRelationInfo.GetRelation"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.FactionRelationInfo$$IsRelation",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x82c5dc"
+    },
+    "win-x64": {
+     "rva": "0x59a120"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp FactionRelationInfo.IsRelation",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_isrel|pvp FactionRelationInfo.IsRelation"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Tick.DataApply.MainEventApplier$$Apply",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xab7628"
+    },
+    "win-x64": {
+     "rva": "0x7f41e0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp MainEventApplier.Apply(DeadApplyData)",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_deadapply|pvp MainEventApplier.Apply(DeadApplyData)"
   },
   {
    "owner": "multiplayer",
@@ -4379,329 +4685,6 @@
    "label": "custom-modes SaveLoadHelper.DeserializeCampaignSaveDataSafely",
    "source": "ds_custommodes:fights/tf_worlds.c",
    "key": "custom-modes|tf_worlds.c|h_deser|"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Main.Event.CampaignEntityLoadHelper$$SpawnDungeonNPC",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xda8b30"
-    },
-    "win-x64": {
-     "rva": "0xaa3800"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CampaignEntityLoadHelper.SpawnDungeonNPC",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_spawnnpc|pvp CampaignEntityLoadHelper.SpawnDungeonNPC"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.CombatDataHandler$$CheckAggroTrigger",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbce72c"
-    },
-    "win-x64": {
-     "rva": "0x8ddb30"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CombatDataHandler.CheckAggroTrigger",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_aggro|pvp CombatDataHandler.CheckAggroTrigger"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.CombatDataHandler$$Init",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbcde24"
-    },
-    "win-x64": {
-     "rva": "0x8de2a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CombatDataHandler.Init",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_init|pvp CombatDataHandler.Init"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.CombatDataHandler$$OnDeadUnit",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbd00e8"
-    },
-    "win-x64": {
-     "rva": "0x8df1b0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CombatDataHandler.OnDeadUnit",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_dead|pvp CombatDataHandler.OnDeadUnit"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.CombatDataHandler$$OnDespawnUnit",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbd1eb8"
-    },
-    "win-x64": {
-     "rva": "0x8df9a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CombatDataHandler.OnDespawnUnit",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_despawn|pvp CombatDataHandler.OnDespawnUnit"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.CombatDataHandler$$OnMoveUnit",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbd1930"
-    },
-    "win-x64": {
-     "rva": "0x8dfa10"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CombatDataHandler.OnMoveUnit",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_move|pvp CombatDataHandler.OnMoveUnit"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.CombatDataHandler$$OnSpawnUnit",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbcf690"
-    },
-    "win-x64": {
-     "rva": "0x8e0320"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp CombatDataHandler.OnSpawnUnit",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_spawn|pvp CombatDataHandler.OnSpawnUnit"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Runtime.DungeonBehaviorSimulator$$Tick",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xbc4d80"
-    },
-    "win-x64": {
-     "rva": "0x8e3740"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp DungeonBehaviorSimulator.Tick",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_dtick|pvp DungeonBehaviorSimulator.Tick"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Main.DungeonGeneratorStrategy$$HandleSpawnCategory",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xcba210"
-    },
-    "win-x64": {
-     "rva": "0x9de1a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp DungeonGeneratorStrategy.HandleSpawnCategory",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_spawncat|pvp DungeonGeneratorStrategy.HandleSpawnCategory"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.DungeonPortalHandler$$Process",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xf9e298"
-    },
-    "win-x64": {
-     "rva": "0xcb83a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp DungeonPortalHandler.Process",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_portal|pvp DungeonPortalHandler.Process"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Main.Event.EntityEventHandler$$CheckGameOver",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xd854ec"
-    },
-    "win-x64": {
-     "rva": "0xa8a9a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp EntityEventHandler.CheckGameOver",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_gameover|pvp EntityEventHandler.CheckGameOver"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.EntityExtensions$$IsHostile",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xfa4ce8"
-    },
-    "win-x64": {
-     "rva": "0xcb8e80"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp EntityExtensions.IsHostile",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_ishostile|pvp EntityExtensions.IsHostile"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Main.EventContainer$$IsEventStartable",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xc8d6fc"
-    },
-    "win-x64": {
-     "rva": "0x9aad60"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp EventContainer.IsEventStartable",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_ev_startable|pvp EventContainer.IsEventStartable"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Main.EventContainer$$StartEvent",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xc8dfbc"
-    },
-    "win-x64": {
-     "rva": "0x9abab0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp EventContainer.StartEvent(key)",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_ev_start1|pvp EventContainer.StartEvent(key)"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Main.EventFlowProcessor$$StartEvent",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xcea620"
-    },
-    "win-x64": {
-     "rva": "0xa02340"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp EventFlowProcessor.StartEvent(key)",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_ev_start2|pvp EventFlowProcessor.StartEvent(key)"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.FactionRelationInfo$$GetRelation",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0x82bba0"
-    },
-    "win-x64": {
-     "rva": "0x5991b0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp FactionRelationInfo.GetRelation",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_getrel|pvp FactionRelationInfo.GetRelation"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.FactionRelationInfo$$IsRelation",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0x82c5dc"
-    },
-    "win-x64": {
-     "rva": "0x59a120"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp FactionRelationInfo.IsRelation",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_isrel|pvp FactionRelationInfo.IsRelation"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Tick.DataApply.MainEventApplier$$Apply",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xab7628"
-    },
-    "win-x64": {
-     "rva": "0x7f41e0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp MainEventApplier.Apply(DeadApplyData)",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_deadapply|pvp MainEventApplier.Apply(DeadApplyData)"
-  },
-  {
-   "owner": "custom-modes",
-   "kind": "detour",
-   "method": "Refactor.Tick.PassiveActionContainer$$Register",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0xa782c8"
-    },
-    "win-x64": {
-     "rva": "0x7beeb0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "custom-modes pvp PassiveActionContainer.Register",
-   "source": "ds_custommodes:pvp/pvp_game.c",
-   "key": "custom-modes|pvp_game.c|h_preg|pvp PassiveActionContainer.Register"
   },
   {
    "owner": "gcd-cdr",
