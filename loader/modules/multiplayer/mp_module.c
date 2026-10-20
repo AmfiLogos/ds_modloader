@@ -92,6 +92,8 @@ static int setting_int(const char *id, int dflt) { return dsl_get_int(H, ME, id,
 DSL_EXPORT int dsl_module_load(const DSLHost *host, DSLPlugin *self) {
     H = host; ME = self;
     { int (**fn)(const char *, int) = (int (**)(const char *, int))dlsym(RTLD_SELF, "mp_setting_int_fn"); if (fn) *fn = setting_int; }
+    /* the Bring Units card window (src/mu_ui.c) draws with this host's widget kit; RTLD_SELF: an older pin without it links */
+    { void (*ch)(const DSLHost *, DSLPlugin *) = (void (*)(const DSLHost *, DSLPlugin *))dlsym(RTLD_SELF, "mp_cards_host"); if (ch) ch(host, self); }
     const char *d = getenv("DSRIG_DIR");
     if (!d || !*d) { host->log(self, "DSRIG_DIR not set: multiplayer inactive"); return 1; }
     snprintf(rig_dir, sizeof rig_dir, "%s", d);
