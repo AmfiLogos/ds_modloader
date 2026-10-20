@@ -166,6 +166,8 @@ static void destroy_all(void);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
+static int m_tab;                                                      /* Mods window tab: 0 Game mods, 1 Launcher mods (owner 2026-10-20) */
+static DSLObj m_sub[2];                                                /* the two tab buttons in the window's tab strip (title, not world) */
 static char set_page[64];                                              /* the Settings page of this mod is open ("" = the list) */
 static int changed(void) {
     for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1;
@@ -188,7 +190,7 @@ static int group_is_current(int g) {
 }
 static void mods_sync(void) {
     for (int i = 0; i < nmods; i++) {
-        U->toggle_set(mods[i].row, mods[i].on);
+        if (mods[i].row) U->toggle_set(mods[i].row, mods[i].on);       /* NULL: the mod is on the other tab */
         if (!mods[i].warn) continue;
         U->set_active(mods[i].warn, mods[i].on);                       /* test state: the line's text only while it shows */
         for (int k = 0; k < nreg; k++) if (reg[k].w == mods[i].warn) {
@@ -224,7 +226,7 @@ static void mods_sync(void) {
     U->set_enabled(m_apply, ch && (world_mode || !busy) && !applying && !read_only);
     U->set_enabled(m_undo, ch && !applying && !read_only);
     U->set_enabled(m_save, !applying && !read_only);
-    for (int i = 0; i < nmods; i++) U->set_enabled(mods[i].row, !applying && !read_only);
+    for (int i = 0; i < nmods; i++) if (mods[i].row) U->set_enabled(mods[i].row, !applying && !read_only);
     void settings_sync(void); settings_sync();
     for (int g = 0; g < ng_rows; g++) { U->set_enabled(g_row[g], !read_only); U->set_enabled(g_del[g], !read_only); }
     int cur_g = -1;
@@ -385,17 +387,36 @@ static size_t cols_at(const char *s, int cols) {
 static int has_wide(const char *s) { for (const unsigned char *p = (const unsigned char *)s; *p; p++) if (wide_at(p)) return 1; return 0; }
 static void settings_open(DSLObj root, float w, float h);
 static void bottom_bar(DSLObj root, float w, float h);
-/* a group heading in the mod list: title + one line on how the group works; returns its height */
-static float section_head(DSLObj list, float y, int feature) {
-    const char *t = feature ? TR("Launcher features") : TR("Game modification mods");
+/* the line on how the open tab's mods work, at the top of its list; returns its height */
+static float tab_desc(DSLObj list, int feature) {
     const char *d = feature ? TR("On or off for every world. They start from the title screen, never from a world.")
                             : TR("Each world keeps its own set of these mods.");
-    float top = y ? 14 : 0, dw = m_lw - 56, dh = 20;
-    named(U->text(list, 12, y + top, dw, 28, t, 18, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, feature ? "section:features" : "section:game", NULL, NULL, t);
-    DSLObj dt = U->text(list, 12, y + top + 30, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
-    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, y + top + 30, dw, dh); } }
+    float dw = m_lw - 56, dh = 20;
+    DSLObj dt = U->text(list, 12, 0, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
+    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, 0, dw, dh); } }
     named(dt, 3, feature ? "section-desc:features" : "section-desc:game", NULL, NULL, d);
-    return top + 30 + dh + 10;
+    return dh + 12;
+}
+static void keep_switches(void);
+/* "Game mods" / "Launcher mods": the switches of both tabs stay as the player left them (one mods[] list, one Apply) */
+static void subtab_click(void *ud, DSLObj w) {
+    (void)w; int t = (int)(intptr_t)ud;
+    if (t == m_tab && !set_page[0]) return;
+    keep_switches(); set_page[0] = 0; m_tab = t; m_note[0] = 0;
+    dsl_log("win: Mods tab %s", t ? "launcher" : "game");
+    mods_tab_reload();
+}
+#define SUB_W 236.0f
+/* the window's tab strip: "Mods" in a world's Mods tab (only game mods there), else the two tabs; gold mark under the open one */
+static void subtabs_show(void) {
+    if (w_tab[0]) U->set_active(w_tab[0], world_mode);
+    if (world_mode) { if (w_mark) U->place(w_mark, 24, TAB_Y + TAB_H + 3, TAB_W, 3); return; }
+    static const char *const ids[2] = { "tab-mods:game", "tab-mods:launcher" };
+    for (int t = 0; t < 2; t++) {
+        const char *l = t ? TR("Launcher mods") : TR("Game mods");
+        m_sub[t] = named(U->button(w_win, 24 + t * (SUB_W + 8), TAB_Y, SUB_W, TAB_H, l, subtab_click, (void *)(intptr_t)t), 0, ids[t], subtab_click, (void *)(intptr_t)t, l);
+    }
+    if (w_mark) U->place(w_mark, 24 + m_tab * (SUB_W + 8), TAB_Y + TAB_H + 3, SUB_W, 3);
 }
 static void settings_click(void *ud, DSLObj w);
 static void mods_open(DSLObj root, float w, float h) {
@@ -403,14 +424,14 @@ static void mods_open(DSLObj root, float w, float h) {
     read_only = dsl_reg_scene() == 2;
     snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0;
     if (!world_mode && nkeep < 0) { char fail[400]; int n = dsl_pkg_refresh(fail, sizeof fail); if (n || fail[0]) refresh_note(n, fail); }
-    /* game modification mods first, then launcher features (owner 2026-10-20: Multiplayer, Units Laboratory start from
-       the title, never from a world). A world's Mods tab shows only the game mods: features are not per world. */
-    int nfeat = 0;
+    /* game mods first, then launcher mods (owner 2026-10-20: Multiplayer, Units Laboratory start from the title, never
+       from a world); each has its own tab, all in one list so a change on one tab stays when the other opens. A world's
+       Mods tab shows only the game mods (no tabs): launcher mods are not per world. */
     for (int pass = 0; pass < 2; pass++)
         for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
             const DSLModInfo *m = dsl_mods_at(i);
             if (!m || m->hidden || (m->feature != 0) != pass || (pass && world_mode)) continue;
-            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++; nfeat += pass;
+            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++;
         }
     if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
         const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
@@ -425,6 +446,8 @@ static void mods_open(DSLObj root, float w, float h) {
         for (int i = 0; i < nmods; i++) for (int k = 0; k < nkeep; k++) if (!strcmp(keep_ids[k], mods[i].m->id)) mods[i].on = keep_on[k];
         nkeep = -1;
     }
+    m_sub[0] = m_sub[1] = NULL;
+    subtabs_show();
     if (set_page[0] && !world_mode) { settings_open(root, w, h); return; }
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
     float lh = h - 40 - 76;
@@ -442,10 +465,14 @@ static void mods_open(DSLObj root, float w, float h) {
     U->panel(root, 0, 40, m_lw, lh, 0);
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
     float y = 0, rh = 74;
+    int shown = 0, tab = world_mode ? 0 : m_tab;
+    for (int i = 0; i < nmods; i++) if ((mods[i].m->feature != 0) == tab) shown++;
+    if (!world_mode && shown) y = tab_desc(list, tab);
     for (int i = 0; i < nmods; i++, y += rh) {
-        rh = 74;
+        rh = 0;
         const DSLModInfo *m = mods[i].m;
-        if (!world_mode && nfeat && (i == 0 || (m->feature && !mods[i - 1].m->feature))) y += section_head(list, y, m->feature);
+        if ((m->feature != 0) != tab) continue;                         /* on the other tab: no row (row stays NULL) */
+        rh = 74;
         char lb[160], nm[100];
         snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
         int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
@@ -490,7 +517,8 @@ static void mods_open(DSLObj root, float w, float h) {
             rh += wh + 2;
         }
     }
-    if (!nmods) U->text(list, 12, 8, m_lw - 56, 40, TR("No mods are installed."), 16, DSL_TXT_LEFT, SUB);
+    if (!shown) { const char *e = world_mode ? TR("No mods are installed.") : tab ? TR("No launcher mods installed.") : TR("No game mods installed.");
+                  named(U->text(list, 12, 8, m_lw - 56, 40, e, 16, DSL_TXT_LEFT, SUB), 3, "mods-empty", NULL, NULL, e); }
     U->scroll_height(list, y);
     /* groups */
     U->text(root, m_rx, 0, m_rw, 32, TR("Groups"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
@@ -672,6 +700,7 @@ static void tab_close(void) {
     if (cur < 0) return;
     if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->close) t->close(t->ud); }
     U->destroy(w_body); w_body = NULL;
+    for (int t = 0; t < 2; t++) if (m_sub[t]) { U->destroy(m_sub[t]); m_sub[t] = NULL; }
     for (int k = 0; k < nreg; k++) if (strncmp(reg[k].name, "tab:", 4) && strcmp(reg[k].name, "close")) reg[k].w = NULL;
     cur = -1;
 }
@@ -790,7 +819,7 @@ static void rebind(int wm) {                                          /* the Mod
     if (wm != world_mode && is_open && cur == 0) { world_mode = wm; tab_close(); return; }
     world_mode = wm;
 }
-void dsl_win_open(const char *tab_id) { if (!is_open) set_page[0] = 0; rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
+void dsl_win_open(const char *tab_id) { if (!is_open) { set_page[0] = 0; m_tab = 0; } rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
 void dsl_win_open_world(const char *guid, const char *name) {
     if (!guid || !*guid) { dsl_win_open(NULL); return; }
     int same = world_mode && !strcmp(world_guid, guid);
