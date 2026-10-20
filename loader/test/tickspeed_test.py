@@ -54,7 +54,7 @@ def install():
 
 def shot(name):
     os.makedirs(SHOTS, exist_ok=True); p = os.path.join(SHOTS, name + '.png')
-    j = c(cmd='screenshot', path=p); time.sleep(1.5)
+    j = c(cmd='ui_capture', path=p); time.sleep(1.5)                 # the frame WITH the UI (screenshot = world only)
     ok = os.path.exists(p)
     if ok: shutil.copy2(p, os.path.join(OUT, name + '.png'))
     log('shot', name, 'ok' if ok else ('MISSING %s' % j))
@@ -100,6 +100,7 @@ def main():
     if not pair: raise SystemExit('no free pair lease: not started')
     install()
     try:
+        os.environ['DSML_ROOT'] = os.path.join(OUT, 'root'); os.environ['DSL_UPDATE'] = '0'   # the title corner's switch, no network check
         start(False)
         time.sleep(4); shot('1_title')
         c(cmd='mpm_open_load'); time.sleep(3); shot('2_loadlist_off')
