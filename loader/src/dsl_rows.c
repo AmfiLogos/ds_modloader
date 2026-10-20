@@ -325,10 +325,25 @@ static void filters_apply(Obj slv) {
 static void toggles_build(Obj slv) {
     const DSLUi *u = dsl_ui_kit(); if (!u || !nf) return;
     Obj low = o_lowload >= 0 ? AT(slv, o_lowload, Obj) : NULL; if (!live(low)) return;
-    if (!band || !live((Obj)band)) {
-        band = u->panel(low, 0, -40, 600, 36, 0x00000000);
-        if (!band) return;
+    /* the strip only while one of our toggles shows, and see-through: a filter without a label (custom-modes' test-world
+       filter) left the strip alone on top of the multiplayer toggle, and rgba 0 = the kit's default tint = the game's
+       dark Box panel: an empty dark bar where the "Show single-player worlds" box should be (owner 2026-10-20) */
+    int want = 0;
+    for (int f = 0; f < nf && !want; f++) {
+        int m = F[f].f.mode ? F[f].f.mode(F[f].f.ud) : DSL_LIST_LOAD;
+        const char *lb = m != DSL_LIST_OFF && F[f].f.label ? F[f].f.label(F[f].f.ud) : NULL;
+        want = lb && *lb;
     }
+    if (band && !live((Obj)band)) band = NULL;
+    if (!want) {
+        if (band) u->set_active(band, 0);
+        for (int f = 0; f < nf; f++) if (F[f].tog && live((Obj)F[f].tog)) u->set_active(F[f].tog, 0);
+        return;
+    }
+    if (!band) {
+        band = u->panel(low, 0, -40, 600, 36, 0xFFFFFF00);                 /* alpha 0 (0 itself = the default tint) */
+        if (!band) return;
+    } else u->set_active(band, 1);
     int k = 0;
     for (int f = 0; f < nf; f++) {
         F[f].mode = F[f].f.mode ? F[f].f.mode(F[f].f.ud) : DSL_LIST_LOAD;

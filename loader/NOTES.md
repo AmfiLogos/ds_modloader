@@ -549,6 +549,13 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   - Not a hidden world: a modded file named like a game save (the game's save of that world is listed); `mp_*` files.
     Not reachable: the normal game (no loader) never lists modded-only worlds; the group header "Modded saves: only in
     Dungeon Settlers Modded" says so in the modded game.
+- Filter strip (bug 2026-10-20, v0.1.15-0.1.17): the loader's strip for its own filter toggles (`dsl_rows.c toggles_build`)
+  was built for ANY registered filter and drawn with rgba 0 (= the kit's default tint: the game's dark Box panel).
+  custom-modes registers a filter with no label (its test worlds), so with Units Laboratory on, every Load list (Load
+  Campaign, Host a world / Your save, Esc Load) could show an empty dark bar on top of the multiplayer box "Show
+  single-player worlds" / "Show multiplayer worlds": the hidden-worlds line said "tick the box" and no box was seen.
+  Now the strip exists only while one of our toggles has a label, and it is see-through (alpha 0).
+  `l1_hidden_test.py` M runs with custom-modes and checks the box's pixels in the frame (fails on the old loader).
 - Tests: `test/saves_hidden/run.sh` (host; the Windows and Mac branches of the notice count: 3 checks);
   `test/l1_hidden_test.py` (copy Y, hidden): M multiplayer filter + unreadable game save, EN and DE, box ticked = line
   gone; F hooks off; B other build (status message); G crash guard: 19 + 2 checks, screenshots M_en / M_de / F_en / F_de.
