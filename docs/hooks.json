@@ -198,23 +198,6 @@
   {
    "owner": "loader",
    "kind": "detour",
-   "method": "Refactor.SaveLoadView$$ConfirmRemove",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0x861054"
-    },
-    "win-x64": {
-     "rva": "0x5e77e0"
-    }
-   },
-   "active": "always when the launcher starts the game with the game's save folder (DSML_GAME_SAVES, DSML_DATA)",
-   "label": "loader saves SaveLoadView.ConfirmRemove",
-   "source": "ds_modloader:loader/src/dsl_saves.c",
-   "key": "loader|dsl_saves.c|my_remove|loader saves SaveLoadView.ConfirmRemove"
-  },
-  {
-   "owner": "loader",
-   "kind": "detour",
    "method": "Refactor.SaveLoadHelper$$TryQuarantineCorruptSaveFile",
    "platforms": {
     "mac-arm64": {
