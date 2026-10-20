@@ -169,6 +169,8 @@
  "Settings: %s": "設定：%s",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "Steamを起動できませんでした。Steamをインストールし、起動してサインインしてから、Dungeon Settlers Moddedを開き直してください。",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steamの準備ができませんでした。Steamを起動してサインインしてから、Dungeon Settlers Moddedを開き直してください。",
+ "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again.": "Steamは起動していますが、ゲームの接続を受け付けませんでした。Steamにサインインしていてオンラインであることを確認してから、Dungeon Settlers Moddedを開き直してください。",
+ "Steam is running, but it does not answer. Quit Steam fully (Steam menu > Quit Steam), start it again and sign in, then open Dungeon Settlers Modded again.": "Steamは起動していますが、応答しません。Steamを完全に終了し（Steamメニュー > Steamを終了）、もう一度起動してサインインしてから、Dungeon Settlers Moddedを開き直してください。",
  "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "Steamを待っています。Steamからサインインを求められたら、サインインしてください。その後、ゲームが起動します。",
  "Step %d of %d · %s": "ステップ %d / %d · %s",
  "Switch mods on or off, then Apply.": "MODをオン・オフにしてから、適用してください。",
