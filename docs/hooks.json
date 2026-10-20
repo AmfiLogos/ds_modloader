@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "46f8596ee6d2a44dbd6daca59f800f491e78748a",
- "cm_pin": "116e2708fd4c24c262c432f9e30f1c454765427a",
+ "mp_pin": "caa4c7881523ba2e2bc2400fd7219c9505756f44",
+ "cm_pin": "ba3052216677900e980347cee7bb050314c07c28",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
