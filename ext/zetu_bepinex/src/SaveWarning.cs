@@ -261,7 +261,12 @@ namespace ZetuSuite
             a = a.Replace('\\', '/'); b = b.Replace('\\', '/');
             return a.StartsWith(b, StringComparison.OrdinalIgnoreCase);
         }
-        /* the world's save files (the loaded one first + every other one with its guid) copied into a new folder */
+        /* the world's save files (the loaded one first + every other one with its guid) copied into a new folder.
+           Each file once: the game's path to the loaded save can be spelled differently from the folder listing
+           (Windows: Unity's persistentDataPath has '/', Directory.GetFiles answers with '\\'), so files are compared by
+           full path and by name (case-insensitive), never by the raw string. The folder is always a new one (never an
+           older copy, nor a folder of the same minute); inside it a file is written over, so only a real copy failure
+           stops the load. */
         static bool BackupWorld(string name, string guid, ref string bdir, out int nf, out string why)
         {
             nf = 0; why = "";
@@ -269,24 +274,28 @@ namespace ZetuSuite
             {
                 string src = SavePath(name);
                 if (src == null || !File.Exists(src)) { why = $"{name}.json is not there"; return false; }
+                src = Path.GetFullPath(src);
                 string saves = Path.GetDirectoryName(src);
                 var files = new List<string> { src };
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFileName(src) };
                 if (guid != null && !guid.StartsWith("save:", StringComparison.Ordinal))
-                    foreach (var f in Directory.GetFiles(saves, "*.json"))
+                    foreach (var f0 in Directory.GetFiles(saves, "*.json"))
                     {
-                        if (string.Equals(f, src, StringComparison.OrdinalIgnoreCase)) continue;
+                        string f = Path.GetFullPath(f0);
+                        if (names.Contains(Path.GetFileName(f))) continue;     // the loaded save itself, or a name already taken
                         string fn = Path.GetFileNameWithoutExtension(f);
                         string g = NameGuid(fn) ?? Header(f, out _);
-                        if (string.Equals(g, guid, StringComparison.OrdinalIgnoreCase)) files.Add(f);
+                        if (string.Equals(g, guid, StringComparison.OrdinalIgnoreCase)) { files.Add(f); names.Add(Path.GetFileName(f)); }
                     }
                 if (Inside(bdir, saves)) { why = $"{bdir} is inside the Saves folder"; return false; }
                 string b0 = bdir;
-                for (int k = 2; Directory.Exists(bdir) && k < 100; k++) bdir = $"{b0}_{k}";   // never into an older copy
+                for (int k = 2; (Directory.Exists(bdir) || File.Exists(bdir)) && k < 100; k++) bdir = $"{b0}_{k}";   // never into an older copy
+                if (Directory.Exists(bdir) || File.Exists(bdir)) bdir = $"{b0}_{DateTime.Now:ssfff}_{Guid.NewGuid().ToString("N").Substring(0, 6)}";
                 Directory.CreateDirectory(bdir);
                 foreach (var f in files)
                 {
                     string dst = Path.Combine(bdir, Path.GetFileName(f));
-                    File.Copy(f, dst, false);
+                    File.Copy(f, dst, true);                            // our own new folder: written over, never refused
                     File.SetLastWriteTimeUtc(dst, File.GetLastWriteTimeUtc(f));
                     if (!SameBytes(f, dst)) { why = $"{dst}: the copy differs from the save file"; return false; }
                     nf++;

@@ -6,6 +6,9 @@ One rig lease (~/ds_multiplayer/rig), the test copy cap first. Never the owner's
   zetu_bie_test.py run [out]      max_units 8: the whole proof below; exit 1 on a failed check
   zetu_bie_test.py fresh [out]    no config file: BepInEx writes it with the defaults, the plugin changes no party size;
                                   BepInEx.cfg console on before: the plugin turns it off, the log file stays on
+  zetu_bie_test.py backup [out]   the save backup never blocks a load: a world with 2 save files, the game's save path
+                                  spelled unlike the folder listing (persistentDataPath ending in '//', as Unity's '/' on
+                                  Windows), and backup folders of this minute (+ '_2') already there with the same file
   zetu_bie_test.py disable [out]  the mod loader with its own zetu-suite module in the same game: this plugin stays off
   zetu_bie_test.py cmd '<json>' | probe '<line>'   to the running copy
 
@@ -389,6 +392,52 @@ def fresh(out):
     return S, g0
 
 
+def backup(out):
+    """player report 2026-10-20 (Windows): 'save files could not be copied first ... TenevoyClan_1.json already exists':
+    the loaded save was listed twice (its path spelled with '/' by the game, '\\' by Directory.GetFiles), so the
+    second copy was refused and no world loaded. Here: a manual save + an autosave of one world, the save path with
+    '//' (GetDirectoryName / GetFiles answer it with '/'), and this minute's backup folders already taken."""
+    install(out, {'skills_without_weapon': 'true', 'max_units': 8})
+    for p in (os.path.join(I, 'data', 'Saves'), os.path.join(I, 'data', 'SaveHeaderCache.json'), os.path.join(I, 'player.log')): aside(p, out)
+    mp = os.path.join(I, 'mp.json')
+    if os.path.exists(mp): shutil.move(mp, os.path.join(out, 'mp.json.of_copy')); RESTORE.append((os.path.join(out, 'mp.json.of_copy'), mp))
+    sv = os.path.join(I, 'data', 'Saves'); os.makedirs(sv)
+    auto = os.path.join(sv, os.path.basename(SEED)); shutil.copy2(SEED, auto)
+    man = os.path.join(sv, 'ElvenExpedition_1.json')
+    t = open(SEED, encoding='utf-8').read()
+    open(man, 'w', encoding='utf-8').write(re.sub(r'("SaveName"\s*:\s*")[^"]*(")', lambda m: m.group(1) + 'ElvenExpedition_1' + m.group(2), t, count=1))
+    bk = os.path.join(BIE, 'BepInEx', 'ZetuSuite', 'save_backups'); taken = []
+    for dt in (0, 60, 120, 180):                       # this minute and the next ones (the start takes a while): <ts>_Elven_Expedition + _2
+        ts = time.strftime('%Y-%m-%d_%H%M', time.localtime(time.time() + dt))
+        for suf in ('', '_2'):
+            d = os.path.join(bk, f'{ts}_Elven_Expedition'); d += suf
+            os.makedirs(d, exist_ok=True); open(os.path.join(d, 'ElvenExpedition_1.json'), 'w').write('older copy'); taken.append(d)
+    S = {}
+    g0 = start(window=True, extra_env={'ZETU_TEST_DATA': os.path.join(I, 'data') + '//'})
+    title()
+    L = blog(); S['probe'] = [l for l in L.splitlines() if 'persistentDataPath' in l][:2]
+    mark = len(blog())
+    probe('load ElvenExpedition_1')
+    check('B: the warning shows before the load', wait_log('save warning: shown for ElvenExpedition_1', mark, 60), zl(blog()[mark:])[-4:])
+    time.sleep(1.5); probe('notice_ok')
+    t0 = time.time()
+    while time.time() - t0 < 30 and 'save warning: answered Load' not in blog()[mark:] and 'FAILED' not in blog()[mark:]: time.sleep(1)
+    L = blog()[mark:]
+    S['log'] = [l for l in zl(L) if 'save warning' in l][-4:]
+    m = re.search(r'save warning: backup of ElvenExpedition_1 \(world ([0-9a-f-]+)\): (\d+) file\(s\) copied to (.+)', L)
+    ok = False
+    if m:
+        d = m.group(3).strip(); fs = sorted(os.listdir(d)) if os.path.isdir(d) else []; S['backup'] = [d, fs]
+        ok = (m.group(2) == '2' and d not in taken and os.path.dirname(d) == bk and fs == sorted([os.path.basename(SEED), 'ElvenExpedition_1.json'])
+              and sha(os.path.join(d, 'ElvenExpedition_1.json')) == sha(man) and sha(os.path.join(d, os.path.basename(SEED))) == sha(auto))
+    check('B: Load: both save files of the world copied once (same bytes) into a new folder, not refused', ok, S['log'])
+    check('B: the folders already there are untouched', all(open(os.path.join(d, 'ElvenExpedition_1.json')).read() == 'older copy' and os.listdir(d) == ['ElvenExpedition_1.json'] for d in taken))
+    try: r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
+    except Exception as e: log('world:', e)
+    check('B: then the world loads', status().get('scene') == 2)
+    return S, g0
+
+
 def disable(out):
     """the mod loader (dsload) with its zetu-suite module enabled + this plugin: the plugin says OFF and patches nothing"""
     LB = os.path.join(os.path.dirname(os.path.dirname(HERE)), '..', 'loader', 'build')
@@ -415,7 +464,7 @@ def disable(out):
 def main():
     global X, I
     a = sys.argv[1:] or ['run']
-    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'fresh', 'disable') else f'~/ds_zetubie/out/{a[0]}')
+    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'fresh', 'disable', 'backup') else f'~/ds_zetubie/out/{a[0]}')
     if a[0] in ('cmd', 'probe'):
         X = os.environ['ZETU_X']; I = r.idir(X)
         print(json.dumps(cmd(json.loads(a[1]), 120)) if a[0] == 'cmd' else probe(a[1])); return
@@ -423,7 +472,7 @@ def main():
     lane, pair = lease(); X = pair[0]; I = r.idir(X); log('lease', pair, 'copy', X)
     S = {}; g0 = 0
     try:
-        S, g0 = {'run': run, 'fresh': fresh, 'disable': disable}[a[0]](out)
+        S, g0 = {'run': run, 'fresh': fresh, 'disable': disable, 'backup': backup}[a[0]](out)
     except Exception as e:
         import traceback; traceback.print_exc()
         check('run finished', False, repr(e))

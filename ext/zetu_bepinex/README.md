@@ -28,16 +28,29 @@ chips). Put this plugin in its `BepInEx/plugins/ZetuSuite/` folder, and start th
 Dungeon Settlers Modded does all of this for you, and it has the ZET-U Mod Suite built in: with it you do not need
 this plugin.
 
-## Settings
+## How to change the settings
 
-File: `BepInEx/config/amfi.zetu-suite.cfg` (written at the first start). Change it while the game is closed; the new
-values apply at the next start.
+1. Start the game once with the plugin, then quit. This makes the settings file.
+2. Close the game. Open this file with a text editor (for example Notepad):
+   `BepInEx/config/amfi.zetu-suite.cfg` (in the game folder, next to `DungeonSettlers.exe`).
+3. Change the value after the `=` sign. Save the file.
+4. Start the game. The new values work from this start. (A change while the game runs does nothing until the next start.)
+
+The file looks like this:
 
 ```
 [Gameplay]
 skills_without_weapon = true
 max_units = 4
 ```
+
+| Setting | Values | What it does |
+|---|---|---|
+| `skills_without_weapon` | `true` (normal) or `false` | `true`: a unit can use the skills of a skill tree without holding that tree's weapon. `false`: the game's normal rule. |
+| `max_units` | a number from `4` to `8` (normal: `4`) | How many units can go into the dungeon on one expedition. `4` is the game's normal value. Example: `max_units = 8` for 8 units. |
+
+A value outside these limits is changed to the nearest good value. If you delete the file, the next start makes it
+again with the normal values.
 
 ## BepInEx console
 
@@ -49,7 +62,8 @@ BepInEx's log file `BepInEx/LogOutput.log` stays on.
 
 This mod changes what a world saves (for example 8 units in a dungeon). Such a world may break later in the game
 without this mod. So before a save loads with the mod on, the game asks you once per world: **Load** or **Cancel**.
-Load first copies that world's save files to `BepInEx/ZetuSuite/save_backups/<date>_<clan name>/`.
+Load first copies that world's save files to `BepInEx/ZetuSuite/save_backups/<date>_<clan name>/` (a new folder each
+time; `_2`, `_3` ... is added when the folder of that minute is there already).
 To go back: quit the game, then copy the files from that folder into the game's `Saves` folder
 (Windows: `%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\Saves`).
 The plugin never deletes or moves a save file.
