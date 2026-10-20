@@ -1,12 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { createGunzip } from 'node:zlib';
 import { put } from '@vercel/blob';
-import { ipAddress } from '@vercel/functions';
+import { ipAddress, waitUntil } from '@vercel/functions';
 import { json, safeEqual, ipKey } from '../lib/common.js';
 import { checkIp, checkInstallAndGlobal } from '../lib/limits.js';
+import { parseReport, checkBug, summary } from '../lib/parse.js';
+import { pingDiscord } from '../lib/discord.js';
 
 const APP_KEY = 'dscr1-621ed5ae365845cd8ed0034a'; // public app key, shipped in the client
-const KINDS = new Set(['crash', 'freeze', 'desync', 'join', 'blank', 'test']);
+const KINDS = new Set(['bug', 'crash', 'freeze', 'desync', 'join', 'blank', 'test']);
 const MAX_GZ = 4 * 1024 * 1024;
 const MAX_RAW = 32 * 1024 * 1024;
 const MAGIC = 'DSCRASH 1';
@@ -31,12 +33,12 @@ async function readCapped(request, cap) {
   return Buffer.concat(parts.map((p) => Buffer.from(p.buffer, p.byteOffset, p.byteLength)));
 }
 
-// Streams the gzip through inflate, stops past MAX_RAW, keeps only the first line.
-function inspectGzip(buf) {
+// Streams the gzip through inflate, stops past MAX_RAW, returns the unpacked text.
+function inflateCapped(buf) {
   return new Promise((resolve) => {
     const gz = createGunzip();
     let total = 0;
-    let head = Buffer.alloc(0);
+    const parts = [];
     let finished = false;
     const done = (r) => {
       if (finished) return;
@@ -50,12 +52,13 @@ function inspectGzip(buf) {
         done({ error: 'too_large' });
         return;
       }
-      if (head.length < 64) head = Buffer.concat([head, chunk.subarray(0, 64 - head.length)]);
+      parts.push(chunk);
     });
     gz.on('error', () => done({ error: 'bad_gzip' }));
     gz.on('end', () => {
-      const firstLine = head.toString('utf8').split('\n')[0].replace(/\r$/, '');
-      done(firstLine === MAGIC ? { ok: true } : { error: 'bad_header' });
+      const text = Buffer.concat(parts).toString('utf8');
+      const firstLine = text.slice(0, 64).split('\n')[0].replace(/\r$/, '');
+      done(firstLine === MAGIC ? { ok: true, text } : { error: 'bad_header' });
     });
     gz.end(buf);
   });
@@ -97,10 +100,17 @@ export async function POST(request) {
   }
   if (body.length < 18) return json(400, { error: 'empty or not gzip' });
 
-  const check = await inspectGzip(body);
+  const check = await inflateCapped(body);
   if (check.error === 'too_large') return json(413, { error: 'report too large when unpacked' });
   if (check.error === 'bad_gzip') return json(400, { error: 'not gzip' });
   if (check.error) return json(400, { error: 'bad report header' });
+  const parsed = parseReport(check.text);
+  check.text = null;
+  let bug = null;
+  if (kind === 'bug') {
+    bug = checkBug(parsed);
+    if (bug.error) return json(400, { error: bug.error });
+  }
 
   let commit = null;
   if (!bypass) {
@@ -111,15 +121,21 @@ export async function POST(request) {
 
   const now = new Date();
   const d = now.toISOString();
-  const path =
+  const base =
     `reports/${d.slice(0, 4)}/${d.slice(5, 7)}/${d.slice(8, 10)}/` +
-    `${stamp(now)}-${kind}-${install.slice(0, 8)}-${randomBytes(6).toString('hex')}.txt.gz`;
-  await put(path, body, {
-    access: 'private',
-    contentType: 'application/gzip',
-    addRandomSuffix: false,
-  });
+    `${stamp(now)}-${kind}-${install.slice(0, 8)}-${randomBytes(6).toString('hex')}`;
+  const path = `${base}.txt.gz`;
+  const shot = bug && bug.shot ? `${base}.shot.${bug.shot.ext}` : null;
+  const opts = { access: 'private', addRandomSuffix: false };
+  const meta = summary(parsed, kind, { size: body.length, shot, shotW: bug?.shot?.w || 0, shotH: bug?.shot?.h || 0 });
+  await Promise.all([
+    put(path, body, { ...opts, contentType: 'application/gzip' }),
+    put(`${base}.meta.json`, JSON.stringify(meta), { ...opts, contentType: 'application/json' }),
+    shot ? put(shot, bug.shot.buf, { ...opts, contentType: bug.shot.ext === 'png' ? 'image/png' : 'image/jpeg' }) : null,
+  ]);
   if (commit) await commit();
+  // Tests (admin bypass) never ping Discord.
+  if (!bypass) waitUntil(pingDiscord(kind, meta, path).catch(() => {}));
   return json(201, { id: path });
 }
 

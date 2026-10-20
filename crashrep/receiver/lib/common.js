@@ -34,3 +34,21 @@ export function ipKey(ip) {
   if (!salt) throw new Error('IP_SALT missing');
   return createHmac('sha256', salt).update(ip || 'unknown').digest('hex').slice(0, 32);
 }
+
+// Admin web pages: the cookie holds an HMAC of ADMIN_TOKEN, never the token itself.
+export const COOKIE = '__Host-dscr_admin';
+export function sessionValue() {
+  const t = process.env.ADMIN_TOKEN;
+  if (!t) return '';
+  return createHmac('sha256', t).update('dscr-admin-session-1').digest('hex');
+}
+export function isAdminCookie(request) {
+  const want = sessionValue();
+  if (!want) return false;
+  const c = request.headers.get('cookie') || '';
+  for (const part of c.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === COOKIE) return safeEqual(part.slice(i + 1).trim(), want);
+  }
+  return false;
+}

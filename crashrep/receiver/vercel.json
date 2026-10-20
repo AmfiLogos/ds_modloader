@@ -1,9 +1,34 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/privacy", "destination": "/api/privacy" }],
-  "crons": [{ "path": "/api/cron/expire", "schedule": "17 4 * * *" }],
+  "rewrites": [
+    {
+      "source": "/privacy",
+      "destination": "/api/privacy"
+    },
+    {
+      "source": "/admin",
+      "destination": "/api/web"
+    },
+    {
+      "source": "/admin/:r",
+      "destination": "/api/web?r=:r"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/expire",
+      "schedule": "17 4 * * *"
+    }
+  ],
   "functions": {
-    "api/report.js": { "maxDuration": 30 },
-    "api/cron/expire.js": { "maxDuration": 300 }
+    "api/report.js": {
+      "maxDuration": 30
+    },
+    "api/cron/expire.js": {
+      "maxDuration": 300
+    },
+    "api/web.js": {
+      "maxDuration": 60
+    }
   }
 }

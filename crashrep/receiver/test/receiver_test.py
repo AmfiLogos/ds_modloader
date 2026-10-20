@@ -9,6 +9,7 @@ the rate-limit check runs without it and the per-IP counters are reset at the en
 Usage: python3 receiver_test.py [--url URL]
 """
 import argparse
+import base64
 import gzip
 import json
 import os
@@ -17,7 +18,10 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
+import struct
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 READER = os.path.join(HERE, "..", "..", "tools", "dscr_read.py")
@@ -52,16 +56,58 @@ def http(method, url, body=None, headers=None):
         return e.code, dict(e.headers), e.read()
 
 
-def report(base, body, key=APP_KEY, ctype="application/gzip", admin=None):
+def report(base, body, key=APP_KEY, ctype="application/gzip", admin=None, kind="test"):
     h = {
         "Content-Type": ctype,
         "X-DSCR-Key": key,
         "X-DSCR-Install": os.urandom(16).hex(),
-        "X-DSCR-Kind": "test",
+        "X-DSCR-Kind": kind,
     }
     if admin:
         h["X-DSCR-Admin"] = admin
     return http("POST", base + "/api/report", body, h)
+
+
+def png(w, h):
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    raw = b"".join(b"\0" + b"\x80\x40\x20" * w for _ in range(h))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def bug_body(text, shot=None, shot_name="screenshot.png.b64"):
+    t = ("DSCRASH 1\ninstall: " + "0" * 32 + "\nloader: test\ngame_build: 0\nplatform: test\nos: test\n"
+         "cpu: test\nsent: 2026-10-20T00:00:00Z\nmods: none\nkind: bug\ncontact: receiver_test\n"
+         "reason: player bug report\n")
+    if text is not None:
+        t += f"===== bug.txt ({len(text)} of {len(text)} bytes) =====\n{text}\n"
+    if shot is not None:
+        b = base64.b64encode(shot).decode()
+        t += f"===== {shot_name} ({len(b)} of {len(b)} bytes, base64) =====\n{b}\n"
+    t += "===== dsload.log (3 of 3 bytes, the end of the file) =====\nabc\n"
+    return gzip.compress(t.encode())
+
+
+def web(method, base, path, form=None, cookie=None):
+    h = {"Origin": base}
+    data = None
+    if form is not None:
+        data = urllib.parse.urlencode(form).encode()
+        h["Content-Type"] = "application/x-www-form-urlencoded"
+    if cookie:
+        h["Cookie"] = cookie
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    op = urllib.request.build_opener(NoRedirect, urllib.request.HTTPSHandler(context=SSL_CTX))
+    req = urllib.request.Request(base + path, data=data, method=method, headers=h)
+    try:
+        with op.open(req, timeout=60) as r:
+            return r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
 
 
 def check(name, ok, detail=""):
@@ -134,15 +180,60 @@ def main():
     st, _, rb = http("POST", base + "/api/admin/reset-limits", b"", auth)
     check("rate counters reset after test", st == 200, rb.decode()[:80])
 
-    # 9. Privacy page.
+    # 9. Bug report with a screenshot: stored; then the private pages show it (cookie login).
+    shot = png(64, 36)
+    st, _, body = report(base, bug_body("receiver_test bug <b>text</b>", shot), admin=tok, kind="bug")
+    bug_id = json.loads(body).get("id", "") if st == 201 else ""
+    check("bug report with PNG screenshot accepted (201)", st == 201 and "-bug-" in bug_id, f"{st} {body[:80]!r}")
+    st1, _, _ = report(base, bug_body("x", b"GIF89a" + b"\0" * 40), admin=tok, kind="bug")
+    st2, _, _ = report(base, bug_body("x", png(5000, 10)), admin=tok, kind="bug")
+    st3, _, _ = report(base, bug_body("x", shot, "screenshot.jpg.b64"), admin=tok, kind="bug")
+    st4, _, _ = report(base, bug_body(None, shot), admin=tok, kind="bug")
+    check("bad image / too wide / PNG named jpg / no text -> 400", (st1, st2, st3, st4) == (400,) * 4,
+          f"{st1}/{st2}/{st3}/{st4}")
+
+    st, _, b = web("GET", base, "/admin")
+    check("/admin without cookie shows sign-in, no report data", st == 200 and b"Admin token" in b
+          and b"receiver_test" not in b, str(st))
+    st, _, _ = web("GET", base, "/admin/shot?id=" + urllib.parse.quote(bug_id))
+    check("screenshot without cookie -> 401", st == 401, str(st))
+    st, _, _ = web("POST", base, "/admin/login", {"token": "wrong"})
+    check("wrong token -> 401", st == 401, str(st))
+    st, h, _ = web("POST", base, "/admin/login", {"token": tok})
+    sc = h.get("Set-Cookie") or ""
+    cookie = sc.split(";")[0]
+    flags = sc.lower()
+    check("login sets HttpOnly Secure SameSite=Strict cookie without the token",
+          st == 303 and all(f in flags for f in ("httponly", "secure", "samesite=strict")) and tok not in sc, str(st))
+    if bug_id and cookie:
+        q = urllib.parse.quote(bug_id, safe="")
+        st, _, b = web("GET", base, "/admin?kind=bug", cookie=cookie)
+        check("list shows the bug report", st == 200 and q.encode() in b.replace(b"&amp;", b"&"), str(st))
+        st, _, b = web("GET", base, "/admin/r?id=" + q, cookie=cookie)
+        check("detail shows escaped text, screenshot and log",
+              st == 200 and b"receiver_test bug &lt;b&gt;text&lt;/b&gt;" in b and b"/admin/shot?id=" in b
+              and b"dsload.log" in b, str(st))
+        st, h, b = web("GET", base, "/admin/shot?id=" + q, cookie=cookie)
+        check("screenshot served, bytes equal", st == 200 and b == shot, f"{st} {len(b)}")
+        st, _, b = web("GET", base, "/admin/dl?id=" + q, cookie=cookie)
+        check("gzip download works", st == 200 and gzip.decompress(b).startswith(b"DSCRASH 1"), str(st))
+        st, _, _ = web("POST", base, "/admin/handled", {"id": bug_id, "on": "1"}, cookie=cookie)
+        _, _, b = web("GET", base, "/admin/r?id=" + q, cookie=cookie)
+        check("mark handled persists", st == 303 and b"Mark open again" in b, str(st))
+        st, _, _ = web("POST", base, "/admin/handled", {"id": bug_id, "on": "1"}, cookie="x=1")
+        check("mark handled without cookie -> 401", st == 401, str(st))
+
+    # 10. Privacy page.
     st, h, b = http("GET", base + "/privacy")
     html = b.decode("utf-8", "replace")
     check("/privacy 200, no cookies, no external assets",
           st == 200 and "set-cookie" not in {k.lower() for k in h} and "src=" not in html
-          and "<link" not in html and "90 days" in html, str(st))
+          and "<link" not in html and "90 days" in html and "screenshot" in html, str(st))
 
     if path:
         print("left behind:", path)
+    if bug_id:
+        print("left behind (marked handled):", bug_id)
     print(f"{sum(RESULTS)}/{len(RESULTS)} passed")
     sys.exit(0 if all(RESULTS) else 1)
 

@@ -4,7 +4,7 @@ const HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crash reports and privacy</title>
+<title>Crash reports, bug reports and privacy</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5;color:#1a1a1a;background:#fff}
 @media (prefers-color-scheme: dark){body{color:#e8e8e8;background:#161616}}
@@ -12,8 +12,8 @@ h1{font-size:1.5rem}h2{font-size:1.15rem;margin-top:1.6rem}
 </style>
 </head>
 <body>
-<h1>Dungeon Settlers Modded: crash reports and privacy</h1>
-<p>This page tells you what a crash report contains. It also tells you how to turn crash reports off.</p>
+<h1>Dungeon Settlers Modded: crash reports, bug reports and privacy</h1>
+<p>This page tells you what a crash report and a bug report contain. It also tells you how to turn crash reports off.</p>
 
 <h2>What we collect</h2>
 <p>A crash report can contain:</p>
@@ -39,9 +39,9 @@ h1{font-size:1.5rem}h2{font-size:1.15rem;margin-top:1.6rem}
 </ul>
 
 <h2>Why we collect it</h2>
-<p>We use the reports to find and fix crashes, freezes, desyncs, failed joins and an empty game view.</p>
+<p>We use the reports to find and fix bugs, crashes, freezes, desyncs, failed joins and an empty game view.</p>
 
-<h2>When it is sent</h2>
+<h2>When a crash report is sent</h2>
 <ul>
 <li>Only after you click Yes.</li>
 <li>Only after a crash, a freeze, a desync report, a failed join, or a multiplayer view that showed nothing.</li>
@@ -49,8 +49,23 @@ h1{font-size:1.5rem}h2{font-size:1.15rem;margin-top:1.6rem}
 <li>The report is sent at the next start of the game, or at the title screen. Never while you play.</li>
 </ul>
 
+<h2>Bug reports</h2>
+<p>You can send a bug report from the game. A bug report contains:</p>
+<ul>
+<li>The text that you write.</li>
+<li>Your contact, for example a Discord name or an email address. Only if you type one. We use it only to ask you about the bug.</li>
+<li>A screenshot of the game, if you add one.</li>
+<li>The same logs, versions and install id as a crash report. The same items are removed from the logs before sending.</li>
+</ul>
+<p>Your text and your contact are sent as you type them. Do not type data that you do not want to send.</p>
+<p>A bug report is sent only when you click Send.</p>
+
+<h2>Who can see a report</h2>
+<p>Only the maker of Dungeon Settlers Modded can see reports. Reports are kept in private storage and are never made public.</p>
+<p>When a bug report arrives, a short notice goes to a private Discord channel of the maker. The notice contains the versions, your operating system and the first 120 characters of your text.</p>
+
 <h2>How long we keep it</h2>
-<p>We keep each report for 90 days. Then it is deleted automatically.</p>
+<p>We keep each report (crash or bug, with its screenshot) for 90 days. Then it is deleted automatically.</p>
 
 <h2>Your IP address</h2>
 <p>The server does not store your IP address with the report.</p>

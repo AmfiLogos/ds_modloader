@@ -1,4 +1,4 @@
-// Daily: delete reports older than 90 days. Paths are reports/YYYY/MM/DD/...
+// Daily: delete reports older than 90 days (with their .meta.json and .shot.* files). Paths are reports/YYYY/MM/DD/...
 import { list, del } from '@vercel/blob';
 import { json, safeEqual } from '../../lib/common.js';
 
@@ -50,6 +50,8 @@ export async function GET(request) {
       }
     }
   }
+  // "Handled" markers (state/handled/...) older than the cutoff belong to deleted reports.
+  deleted += await purge('state/', cutoff);
   console.log(`expire: deleted ${deleted} reports older than ${cutoff.toISOString()}`);
   return json(200, { deleted, cutoff: cutoff.toISOString() });
 }
