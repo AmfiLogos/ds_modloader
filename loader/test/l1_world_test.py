@@ -39,13 +39,15 @@ def main():
         # 2 heading
         r.send(T.X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
         check('Load list rows rebuilt', T.wait_log('rows: Load list rebuilt', 20)); time.sleep(1.5)
-        # the row: every mod on for the world (gcd-cdr + multiplayer); the card lists them all, one per line
+        # the row: the world's GAME mods only (gcd-cdr; multiplayer is a launcher feature since v0.1.17, featsplit);
+        # the card lists the game mods, then the features in their own block
         mark = len(T.dlog()); m, text = V.tip('row:0', '1_row_card')
         b = V.wait_line(r"reg test: tip row:0 body '([^']*)'", mark, 5)
         body = b.group(1).split('|') if b else []
         S['row_text'] = text; S['card_lines'] = body
-        check('row shows more than one mod (name + "+N" or both names)', text and 'Global cooldown' in text and ('+1' in text or 'Multiplayer' in text), text)
-        check('card lists every mod on for the world', sorted(body) == ['Global cooldown fix', 'Multiplayer'], body)
+        check('row shows the game mod and no launcher feature', bool(text) and 'Global cooldown' in text and '+1' not in text and 'Multiplayer' not in text, text)
+        gm = body[:body.index('')] if '' in body else body
+        check('card lists the game mods, then Multiplayer under launcher features', gm == ['Global cooldown fix'] and bool(body) and body[-1] == 'Multiplayer' and any('Launcher features' in x for x in body), body)
         T.request({'cmd': 'change', 'row': 0}); st = {}
         for _ in range(15):
             time.sleep(1); st = V.ui('state')
