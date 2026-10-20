@@ -831,3 +831,153 @@ static int install_hooks(void) {
     dsl_log("saves: on: %d game save(s) in %s are listed and played in place; modded-only saves in %s", n, game_d, mod_d);
     return 0;
 }
+
+/* ------------------------------------------------------------------ tutorial progress from the normal game (before GameAssembly) */
+// Owner 2026-10-20 (v0.1.20 test): "the modded game uses its own profile, so tutorial / hint progress starts from zero
+// and advanced players get spammed with tutorial notices". The game keeps that progress in ONE file of its data folder,
+// OutGame.json (Refactor.SaveLoadHelper.OutGameSaveFileName, decompile 25846389): "TutorialSaveData" =
+// { "OccurredConditions": [...], "CompletedTutorials": [...] } (Refactor.Main.TutorialSaveData), read once into
+// TutorialContainer; AlertEvaluator.IsTutorialAlreadySeen and the guide providers ask it. The starters copy OutGame.json
+// once, on the first start only (app/stub/ds_modded.c, start/win/ds_modded_win.c), so progress made in the normal game
+// later never came over. Now, on every start before any game code runs: every key the normal game's file has and the
+// modded file lacks is added to the modded file. Only adds (never removes a key the modded game has), never writes the
+// normal game's file. Normal game: dirname(DSML_GAME_SAVES) (Mac ~/Library/Application Support/CanOpener/Dungeon
+// Settlers, Windows %USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers); modded: DSML_DATA. A modded file the
+// loader cannot read is left as it is (the game makes its own choice), a missing one becomes a copy of the normal one
+// (as the first start does). The rest of the file is written back as read (2-space indent like the game's).
+typedef struct { char *b; size_t n, cap; int bad; } JB;
+static void jb_put(JB *w, const char *s, size_t l) {
+    if (w->bad) return;
+    if (w->n + l + 1 > w->cap) { size_t c = (w->cap ? w->cap * 2 : 8192) + l; char *nb = realloc(w->b, c); if (!nb) { w->bad = 1; return; } w->b = nb; w->cap = c; }
+    memcpy(w->b + w->n, s, l); w->n += l; w->b[w->n] = 0;
+}
+static void jb_s(JB *w, const char *s) { jb_put(w, s, strlen(s)); }
+static void jb_ind(JB *w, int d) { jb_put(w, "\n", 1); for (int i = 0; i < d; i++) jb_put(w, "  ", 2); }
+static void jb_q(JB *w, const char *s) {
+    jb_put(w, "\"", 1);
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        char e[8];
+        if (*p == '"' || *p == '\\') { e[0] = '\\'; e[1] = (char)*p; jb_put(w, e, 2); }
+        else if (*p == '\n') jb_s(w, "\\n"); else if (*p == '\r') jb_s(w, "\\r"); else if (*p == '\t') jb_s(w, "\\t");
+        else if (*p < 0x20) { snprintf(e, sizeof e, "\\u%04x", *p); jb_s(w, e); }
+        else jb_put(w, (const char *)p, 1);
+    }
+    jb_put(w, "\"", 1);
+}
+static const char *const TUT_LISTS[2] = { "OccurredConditions", "CompletedTutorials" };
+typedef struct { const char **add[2]; int nadd[2]; } TutAdd;
+static void jb_node(JB *w, const JNode *n, int d, const TutAdd *ta, int where);   /* where: 0 other, 1 TutorialSaveData, 2+i list i */
+static void jb_extra_list(JB *w, const TutAdd *ta, int i, int d, int first) {
+    for (int k = 0; k < ta->nadd[i]; k++) { if (!first || k) jb_put(w, ",", 1); jb_ind(w, d); jb_q(w, ta->add[i][k]); }
+}
+static void jb_node(JB *w, const JNode *n, int d, const TutAdd *ta, int where) {
+    char num[64];
+    if (where >= 2 && (!n || n->t != JN_ARR)) {                        /* the list was null (or not a list): a new one */
+        int i = where - 2;
+        jb_put(w, "[", 1); jb_extra_list(w, ta, i, d + 1, 1); if (ta->nadd[i]) jb_ind(w, d); jb_put(w, "]", 1); return;
+    }
+    if (where == 1 && (!n || n->t != JN_OBJ)) {
+        jb_put(w, "{", 1);
+        for (int i = 0; i < 2; i++) { if (i) jb_put(w, ",", 1); jb_ind(w, d + 1); jb_q(w, TUT_LISTS[i]); jb_s(w, ": "); jb_node(w, NULL, d + 1, ta, 2 + i); }
+        jb_ind(w, d); jb_put(w, "}", 1); return;
+    }
+    switch (n->t) {
+    case JN_NULL: jb_s(w, "null"); break;
+    case JN_BOOL: jb_s(w, n->b ? "true" : "false"); break;
+    case JN_NUM:
+        if (n->num == (double)(long long)n->num && n->num > -1e15 && n->num < 1e15) snprintf(num, sizeof num, "%lld", (long long)n->num);
+        else snprintf(num, sizeof num, "%.17g", n->num);
+        jb_s(w, num); break;
+    case JN_STR: jb_q(w, n->str ? n->str : ""); break;
+    case JN_ARR: {
+        int c = 0; jb_put(w, "[", 1);
+        for (const JNode *x = n->child; x; x = x->next) { if (c++) jb_s(w, ","); jb_ind(w, d + 1); jb_node(w, x, d + 1, ta, 0); }
+        if (where >= 2) { jb_extra_list(w, ta, where - 2, d + 1, c == 0); c += ta->nadd[where - 2]; }
+        if (c) jb_ind(w, d);
+        jb_put(w, "]", 1); break;
+    }
+    case JN_OBJ: {
+        int c = 0, seen[2] = { 0, 0 }; jb_put(w, "{", 1);
+        for (const JNode *x = n->child; x; x = x->next) {
+            int sub = 0;
+            if (where == -1 && x->key && !strcmp(x->key, "TutorialSaveData")) { sub = 1; seen[0] = 1; }
+            if (where == 1) for (int i = 0; i < 2; i++) if (x->key && !strcmp(x->key, TUT_LISTS[i])) { sub = 2 + i; seen[i] = 1; }
+            if (c++) jb_s(w, ","); jb_ind(w, d + 1); jb_q(w, x->key ? x->key : ""); jb_s(w, ": "); jb_node(w, x, d + 1, ta, sub);
+        }
+        if (where == -1 && !seen[0]) { if (c++) jb_s(w, ","); jb_ind(w, d + 1); jb_q(w, "TutorialSaveData"); jb_s(w, ": "); jb_node(w, NULL, d + 1, ta, 1); }
+        if (where == 1) for (int i = 0; i < 2; i++) if (!seen[i]) { if (c++) jb_s(w, ","); jb_ind(w, d + 1); jb_q(w, TUT_LISTS[i]); jb_s(w, ": "); jb_node(w, NULL, d + 1, ta, 2 + i); }
+        if (c) jb_ind(w, d);
+        jb_put(w, "}", 1); break;
+    }
+    }
+}
+static char *tut_slurp(const char *p, size_t *len) {
+    FILE *f = fopen(p, "rb"); if (!f) return NULL;
+    size_t cap = 1 << 16, n = 0; char *b = malloc(cap + 1);
+    while (b) { size_t r = fread(b + n, 1, cap - n, f); n += r; if (n < cap) break; if (cap > (64u << 20)) { free(b); b = NULL; break; }
+                char *nb = realloc(b, cap * 2 + 1); if (!nb) { free(b); b = NULL; break; } b = nb; cap *= 2; }
+    fclose(f); if (!b) return NULL; b[n] = 0; if (len) *len = n; return b;
+}
+static int tut_has(const JNode *list, const char *s) {
+    if (!list || list->t != JN_ARR) return 0;
+    for (const JNode *x = list->child; x; x = x->next) if (x->t == JN_STR && x->str && !strcmp(x->str, s)) return 1;
+    return 0;
+}
+static int tut_put(const char *path, const char *text, size_t len) {    /* temp + checks + rename: a failed write keeps the old file */
+    char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp-tutorial", path);
+    FILE *f = fopen(tmp, "wb"); if (!f) return -1;
+    int bad = fwrite(text, 1, len, f) != len; bad |= fflush(f) != 0; bad |= fclose(f) != 0;
+    if (bad) { remove(tmp); return -1; }
+    return dsl_os_replace(tmp, path);
+}
+int dsl_saves_tutorial_added;                                          /* tests / log: keys added this start */
+void dsl_saves_tutorial_import(void) {
+    const char *g = getenv("DSML_GAME_SAVES"), *d = getenv("DSML_DATA");
+    if (!g || !*g || !d || !*d) return;
+    char sd[1100], sp[1200], mp[1200];
+    snprintf(sd, sizeof sd, "%s", g);
+    size_t l = strlen(sd); while (l > 1 && (sd[l - 1] == '/' || sd[l - 1] == '\\')) sd[--l] = 0;
+    while (l > 0 && sd[l - 1] != '/' && sd[l - 1] != '\\') sd[--l] = 0;      /* <normal game data>/Saves -> <normal game data>/ */
+    if (!l) return;
+    snprintf(sp, sizeof sp, "%sOutGame.json", sd); snprintf(mp, sizeof mp, "%s" SEP "OutGame.json", d);
+    size_t sl = 0, ml = 0; char *st = tut_slurp(sp, &sl);
+    if (!st) return;                                                    /* the normal game has no progress (never played here) */
+    JNode *sj = json_parse(st);
+    JNode *stut = json_get(sj, "TutorialSaveData");
+    if (!stut || stut->t != JN_OBJ) { dsl_log("tutorial: %s has no TutorialSaveData: nothing to bring", sp); json_free(sj); free(st); return; }
+    char *mt = tut_slurp(mp, &ml);
+    if (!mt) {                                                          /* no modded file yet: the normal game's, as the first start copies it */
+        int r = tut_put(mp, st, sl);
+        int n = 0; for (int i = 0; i < 2; i++) { JNode *a = json_get(stut, TUT_LISTS[i]); if (a && a->t == JN_ARR) for (JNode *x = a->child; x; x = x->next) n++; }
+        if (!r) dsl_saves_tutorial_added = n;
+        dsl_log("tutorial: no modded OutGame.json: %s the normal game's (%d tutorial key(s))", r ? "copy FAILED of" : "copied", n);
+        json_free(sj); free(st); return;
+    }
+    JNode *mj = json_parse(mt);
+    if (!mj || mj->t != JN_OBJ) { dsl_log("tutorial: the modded OutGame.json cannot be read: left as it is"); json_free(mj); json_free(sj); free(st); free(mt); return; }
+    JNode *mtut = json_get(mj, "TutorialSaveData");
+    TutAdd ta = { { NULL, NULL }, { 0, 0 } };
+    for (int i = 0; i < 2; i++) {
+        JNode *sa = json_get(stut, TUT_LISTS[i]), *ma = mtut && mtut->t == JN_OBJ ? json_get(mtut, TUT_LISTS[i]) : NULL;
+        if (!sa || sa->t != JN_ARR) continue;
+        int cap = 0; for (JNode *x = sa->child; x; x = x->next) cap++;
+        ta.add[i] = calloc((size_t)cap + 1, sizeof(char *));
+        for (JNode *x = sa->child; x && ta.add[i]; x = x->next) {
+            if (x->t != JN_STR || !x->str || !*x->str || tut_has(ma, x->str)) continue;
+            int dup = 0; for (int k = 0; k < ta.nadd[i]; k++) if (!strcmp(ta.add[i][k], x->str)) dup = 1;
+            if (!dup) ta.add[i][ta.nadd[i]++] = x->str;
+        }
+    }
+    int n = ta.nadd[0] + ta.nadd[1];
+    if (n) {
+        JB w = { 0 };
+        jb_node(&w, mj, 0, &ta, -1);
+        int r = w.bad ? -1 : tut_put(mp, w.b, w.n);
+        if (!r) dsl_saves_tutorial_added = n;
+        dsl_log("tutorial: %s %d seen hint(s) and %d finished tutorial(s) of the normal game into the modded profile (%s)",
+                r ? "FAILED to bring" : "brought", ta.nadd[0], ta.nadd[1], mp);
+        free(w.b);
+    } else dsl_log("tutorial: the modded profile already has every tutorial key of the normal game");
+    free(ta.add[0]); free(ta.add[1]);
+    json_free(mj); json_free(sj); free(st); free(mt);
+}

@@ -540,6 +540,16 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   instances ..., player file names, any .json with "CampaignSaveHeader"): `package_mods.sh`, `app/build_app.sh`,
   `start/win/build_win.sh` (kit), `start/win/installer/make_installer.sh`. The released packages checked: none has one.
 
+- Tutorial progress (owner 2026-10-20, v0.1.20 test: advanced players got every tutorial notice again). The game keeps it
+  in `OutGame.json` of its data folder, `TutorialSaveData` = `OccurredConditions` + `CompletedTutorials`
+  (`Refactor.Main.TutorialSaveData`, read once into `TutorialContainer`; `AlertEvaluator.IsTutorialAlreadySeen` takes
+  `ALERT_Tutorial_<id>` -> `tutorial.complete.<id>`). The starters copy that file on the FIRST start only. Now
+  `dsl_saves_tutorial_import` (dsl_core_start, before GameAssembly, any build) adds on every start each key the normal
+  game's file (`dirname(DSML_GAME_SAVES)/OutGame.json`: Mac `~/Library/Application Support/CanOpener/Dungeon Settlers`,
+  Windows `%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers`) has and `<DSML_DATA>/OutGame.json` lacks. Only
+  adds; never writes the normal game's file; an unreadable modded file is left alone; a missing one = a copy. Tests:
+  `run_tests.sh` T8 (host), `l1_tutorial_test.py` (hidden copy, a PvP base world made by a test, never an owner save).
+
 ## Hidden worlds: a count, never a silent gap (owner 2026-10-18; branch hiddenworlds)
 - Owner: a player whose worlds are not in the Load list must see that they are hidden, not lost: a line with how many
   and why. Every case where worlds are on disk but not listed:

@@ -830,6 +830,7 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     dsl_lang_early();                                                /* the notices below speak the game's language */
     dsl_moddata_start();                                             /* before any module / .NET runtime: env DSML_MOD_DATA,
                                                                         own files back after a game that died as a guest */
+    dsl_saves_tutorial_import();                                     /* before the game reads OutGame.json (any build: a file) */
     dsl_build_id = build;
     const char *pin = launcher_pin();
     if (!dsl_build_id) {
