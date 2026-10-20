@@ -361,7 +361,9 @@ Helpers (opus): soft restart work in `test/soft/NOTES_v13.md` (branch loaderui-s
 ### What changed
 - Title (dsl_reg.c, dsl_ui.c): "Mods" has no hover card. The loader's title buttons sit right below the multiplayer
   module's "Multiplayer" button, by order (Mods 100, then other modules' buttons such as "Custom Modes"); without
-  "Multiplayer" they stay last in the column as before.
+  "Multiplayer" right below the stock "Load Campaign" button, the same place (2026-10-20, branch modspos: they were last
+  in the column, below Quit; test `test/l1_titlepos_test.py`, 4 cases: all on, multiplayer off, both off, Units
+  Laboratory off).
 - Hover cards (dsl_ui.c): the card's top-left = the panel's right edge (+8 px), level with the element's top. Panel =
   the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list). After layout, a card that
   leaves the screen on the right or was pushed back over the panel by the stock clamp moves outside the panel's left edge.
@@ -501,8 +503,19 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   the box in de/ru/ja).
 - Delete (owner 2026-10-17, branch savesync2): a game save is the normal game's file too. After the game's own delete
   confirm, a game world (`SaveLoadView.CompleteDeleteConfirmation`, the world's delete button) or a game save
-  (`SaveLoadView.ConfirmRemove`) asks once more in the game's notice box: "This save is also used by Dungeon Settlers
-  without mods. Delete it there too?" Delete / Cancel (Cancel = the view's own "not confirmed", nothing deleted).
+  (its `RemoveFileRequested` event at `EventQueue.AddEvent`) asks once more in the game's notice box: "This save is also
+  used by Dungeon Settlers without mods. Delete it there too?" Delete / Cancel (Cancel = the view's own "not confirmed",
+  nothing deleted).
+  Fix 2026-10-20 (branch fixfoc-del; a Windows player: "Remove File" in Host a world did not delete as expected): the
+  old hook was on `SaveLoadView.ConfirmRemove`, but build 25846389 INLINES it into the stock box's Yes callback
+  (`<>c__DisplayClass57_0.<CheckRemoveSlot>b__0` builds UIInput SaveLoadUI_RemoveCampaign itself; Mac disassembly at
+  0x862040), so the question never showed on the player's path and the old rig test passed only because it called
+  ConfirmRemove directly. Every remove reaches the game as `RemoveFileRequested(name)` through `IEventQueue.AddEvent`
+  (`InputDispatcher.<Update>b__8_0`, an interface call: not inlinable) -> `InputEventHandler.OnEvent(RemoveFileRequested)`
+  -> `CampaignSaveLoader.Delete`. A game save's event is held (strong GC handle) and the question shows 3 frames later
+  from the frame tick (the kit reuses the game's CommonNoticeView that just closed); Delete puts the held event back in
+  the queue, Cancel drops it. Rig test `test/l1_savedel_test.py` clicks the save row + Remove File and the game's own box
+  (CommonNoticeView.OnClick_*) in Load Campaign and in Multiplayer > Host a world.
   Modded-only saves: the stock flow. Build 25846389 has the world's delete OFF (`CampaignSaveDeletionService.IsAvailable`
   returns false: no world delete button), so the save's remove is the delete players see; the world hooks wait for a
   build that turns it on (untested in the game until then). Before this, a game world's delete removed nothing: the stock
@@ -580,6 +593,16 @@ Owner: "add a way to adjust mod settings in the modloader". First user: ZET-U Mo
 - Mods window: a Settings button on rows of mods with settings (not in the world-bound mode); the Settings page shares
   the bottom bar (status lists the gameplay drafts, Undo changes drops them, Apply applies switches + settings).
   Rig proof: `test/settings/ui_settings_test.py <out>` (copy T, lease, cap, hidden).
+- Number field (branch numfield, 2026-10-20): an int setting with `"input": "number"` shows a typed field (label left,
+  the kit's TMP_InputField clone right; `dsl_ui_field_number` sets TMP ContentType.IntegerNumber + a character limit)
+  instead of the slider. A slider cannot pick an exact port (multiplayer `host_port`, 1024..65535). Explicit key, not
+  automatic: every setting without it keeps its slider. The typed text is taken on Enter, when the field loses the
+  keyboard, and before Apply / Back / close (`num_commit`); not a whole number or outside min..max = refused, the field
+  shows the value again and the status line says "Type a whole number from %d to %d." (10 languages). Then it is saved
+  like the slider (`dsl_settings_set`: local = settings.json at once; gameplay = a draft for Apply). Parse rule:
+  `dsl_settings_parse` (pure C). Test driver: `{"op":"type","target":"set:<id>","text":"..","keys":true}` types through
+  `TMP_InputField.ProcessEvent` (the field's own validation); `click` on the field = Enter.
+  Rig proof: `test/settings/numfield_test.py <out>` (one copy, multiplayer kit: type, refuse, reopen, host on the port).
 
 ## Dependencies (v0.1.16, lane starter, 2026-10-18): `requires`, `optional`, `conflicts`
 One rule, `src/dsl_deps.h` (header only), used by the loader core (`dsl_main.c`), the Mods window's Apply
@@ -711,7 +734,11 @@ world; they must not mix with the per-world mods.
 - Multiplayer: the HELLO mod-set lines (`set_lines`) are unchanged: a feature with `scope: gameplay` (Units Laboratory)
   is still in the hash, so every player needs it; `scope: client` features are not. The multiplayer mod stays out (its
   HELLO checks build + protocol). The notch fix is built into the Mac start part (always on, not in the Mods window).
-- Mods window: "Game modification mods" group, then "Launcher features" group (global switches + Apply as before).
-  A world's Mods tab ([Change]) lists only game mods. World rows: the line names only game mods; the hover card names
+- Mods window (owner 2026-10-20, branch modtabs): two tabs in the window's tab strip, "Game mods" (opens first) and
+  "Launcher mods" (category feature), each listing only its mods with one line on how they work. One `mods[]` list
+  holds both tabs (rows of the other tab are NULL), so a switch changed on one tab stays when the other opens, the status
+  line lists every pending change, and Apply / Undo / groups act on both. A tab change keeps the switches like Settings
+  / Refresh (`keep_switches` + rebuild). A tab with no mods says "No launcher mods installed." / "No game mods installed.".
+  A world's Mods tab ([Change]) lists only game mods, with the old single "Mods" tab and no tabs of its own. World rows: the line names only game mods; the hover card names
   the features that are on in a block of their own.
 - Proof: host test T1c (fails on the old code: world refused); rig `test/featsplit_test.py` 13/13 on copy S.

@@ -223,7 +223,8 @@ typedef struct DSLHost {
                              void (*fill)(void *ud, DSLObj box, int fresh));
 
     /* ---- API 5 (appended): mod settings. mod.json "settings": [{"id", "type": "toggle" | "int" | "choice", "default",
-       "min" / "max" / "step" (int), "choices": [{"id", "label", "i18n": {"<code>": "..."}}] (choice), "scope":
+       "min" / "max" / "step" (int), "input": "number" (int, optional: a typed number field instead of the slider, for
+       exact values in a wide range such as a port; digits only, values outside min..max are refused), "choices": [{"id", "label", "i18n": {"<code>": "..."}}] (choice), "scope":
        "gameplay" (default: the simulation uses it; every multiplayer player needs the same value, part of the mod-set
        check) | "local" (display only), "label", "help", "i18n": {"<code>": {"label", "help"}}}]. Ids: a-z 0-9 _ . -
        The player changes them in the Mods window (Settings of that mod). Values come from files: these work in every

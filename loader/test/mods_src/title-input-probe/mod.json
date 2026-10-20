@@ -1,0 +1,12 @@
+{
+ "id": "title-input-probe",
+ "name": "Title input probe (test only)",
+ "version": "0.1.0",
+ "kind": "code",
+ "api": 3,
+ "scope": "client",
+ "game_builds": ["*"],
+ "platforms": { "mac-arm64": { "entry": "title-input-probe.dylib" } },
+ "requires": ["loader>=2.0.0"],
+ "description": "Test module for soft_input_test.py: fake mouse clicks on title buttons, counts the stock title actions."
+}

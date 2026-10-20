@@ -12,7 +12,7 @@ import json, os, shutil, signal, subprocess, sys, threading, time, glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lrig as r
 
-X = 'S'; I = r.idir(X)
+X = os.environ.get('L1_COPY', 'S'); I = r.idir(X)                 # L1_COPY: another hidden copy while a gate uses S
 OUT = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/ds_launcher/loader/test_env/l1_out/run')
 os.makedirs(OUT, exist_ok=True)
 SDIR = os.path.join(I, 'softrestart'); MODS = os.path.join(I, 'data', 'Mods')

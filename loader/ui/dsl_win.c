@@ -136,7 +136,7 @@ static int typing(void) {                                             /* a text 
 }
 
 /* ---------------------------------------------------------------- test registry: named controls */
-typedef struct { char name[80]; DSLObj w; dsl_ui_cb cb; void *ud; int kind; char text[160]; } Reg;   /* kind 0 button, 1 toggle, 2 field, 3 text */
+typedef struct { char name[80]; DSLObj w; dsl_ui_cb cb; void *ud; int kind; char text[160]; } Reg;   /* kind 0 button, 1 toggle, 2 field, 3 text, 4 value row, 5 slider, 6 number field */
 #define NREG 256
 static Reg reg[NREG]; static int nreg;
 static DSLObj named(DSLObj w, int kind, const char *name, dsl_ui_cb cb, void *ud, const char *text) {
@@ -161,11 +161,12 @@ static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applyi
 static double applying_t;
 static char carry_note[300];                                           /* shown when the window opens again (failed Apply) */
 static int slogel_files(void);
-static void reopen_mark(int on);
 static void destroy_all(void);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
+static int m_tab;                                                      /* Mods window tab: 0 Game mods, 1 Launcher mods (owner 2026-10-20) */
+static DSLObj m_sub[2];                                                /* the two tab buttons in the window's tab strip (title, not world) */
 static char set_page[64];                                              /* the Settings page of this mod is open ("" = the list) */
 static int changed(void) {
     for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1;
@@ -188,7 +189,7 @@ static int group_is_current(int g) {
 }
 static void mods_sync(void) {
     for (int i = 0; i < nmods; i++) {
-        U->toggle_set(mods[i].row, mods[i].on);
+        if (mods[i].row) U->toggle_set(mods[i].row, mods[i].on);       /* NULL: the mod is on the other tab */
         if (!mods[i].warn) continue;
         U->set_active(mods[i].warn, mods[i].on);                       /* test state: the line's text only while it shows */
         for (int k = 0; k < nreg; k++) if (reg[k].w == mods[i].warn) {
@@ -224,7 +225,7 @@ static void mods_sync(void) {
     U->set_enabled(m_apply, ch && (world_mode || !busy) && !applying && !read_only);
     U->set_enabled(m_undo, ch && !applying && !read_only);
     U->set_enabled(m_save, !applying && !read_only);
-    for (int i = 0; i < nmods; i++) U->set_enabled(mods[i].row, !applying && !read_only);
+    for (int i = 0; i < nmods; i++) if (mods[i].row) U->set_enabled(mods[i].row, !applying && !read_only);
     void settings_sync(void); settings_sync();
     for (int g = 0; g < ng_rows; g++) { U->set_enabled(g_row[g], !read_only); U->set_enabled(g_del[g], !read_only); }
     int cur_g = -1;
@@ -337,8 +338,10 @@ static void undo_click(void *ud, DSLObj w) {
     dsl_settings_undo(); settings_values();
     m_note[0] = 0; mods_sync(); draft();
 }
+static void num_commit_all(int quiet);
 static void apply_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
+    num_commit_all(1);
     if (!changed() || applying || read_only) return;
     const char *ids[NM]; int n = 0;
     for (int i = 0; i < nmods; i++) if (mods[i].on) ids[n++] = mods[i].m->id;
@@ -349,10 +352,10 @@ static void apply_click(void *ud, DSLObj w) {
         mods_sync(); return;
     }
     char why[300] = "";
-    if (dsl_apply_mods(ids, n, why, sizeof why)) { snprintf(m_note, sizeof m_note, TR("The mods did not change: %s"), why[0] ? why : TR("the game did not allow the change")); dsi_utf8_fix_end(m_note); mods_sync(); return; }
+    dsl_soft_reopen_request("mods");                                   /* the new game opens this window again (handoff) */
+    if (dsl_apply_mods(ids, n, why, sizeof why)) { dsl_soft_reopen_request(NULL); snprintf(m_note, sizeof m_note, TR("The mods did not change: %s"), why[0] ? why : TR("the game did not allow the change")); dsi_utf8_fix_end(m_note); mods_sync(); return; }
     applying = 1; applying_seen_busy = 0; applying_t = now_s(); m_note[0] = 0;
     dsl_log("win: Apply: %d mods, soft restart started: the window closes (the loading screen covers the screen)", n);
-    reopen_mark(1);
     destroy_all();                                                     /* the game's loading screen must be on top */
 }
 /* new mod packages (ui/dsl_pkg.c): looked for when the Mods tab opens and with "Refresh"; switches the player already
@@ -385,17 +388,36 @@ static size_t cols_at(const char *s, int cols) {
 static int has_wide(const char *s) { for (const unsigned char *p = (const unsigned char *)s; *p; p++) if (wide_at(p)) return 1; return 0; }
 static void settings_open(DSLObj root, float w, float h);
 static void bottom_bar(DSLObj root, float w, float h);
-/* a group heading in the mod list: title + one line on how the group works; returns its height */
-static float section_head(DSLObj list, float y, int feature) {
-    const char *t = feature ? TR("Launcher features") : TR("Game modification mods");
+/* the line on how the open tab's mods work, at the top of its list; returns its height */
+static float tab_desc(DSLObj list, int feature) {
     const char *d = feature ? TR("On or off for every world. They start from the title screen, never from a world.")
                             : TR("Each world keeps its own set of these mods.");
-    float top = y ? 14 : 0, dw = m_lw - 56, dh = 20;
-    named(U->text(list, 12, y + top, dw, 28, t, 18, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, feature ? "section:features" : "section:game", NULL, NULL, t);
-    DSLObj dt = U->text(list, 12, y + top + 30, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
-    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, y + top + 30, dw, dh); } }
+    float dw = m_lw - 56, dh = 20;
+    DSLObj dt = U->text(list, 12, 0, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
+    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, 0, dw, dh); } }
     named(dt, 3, feature ? "section-desc:features" : "section-desc:game", NULL, NULL, d);
-    return top + 30 + dh + 10;
+    return dh + 12;
+}
+static void keep_switches(void);
+/* "Game mods" / "Launcher mods": the switches of both tabs stay as the player left them (one mods[] list, one Apply) */
+static void subtab_click(void *ud, DSLObj w) {
+    (void)w; int t = (int)(intptr_t)ud;
+    if (t == m_tab && !set_page[0]) return;
+    keep_switches(); set_page[0] = 0; m_tab = t; m_note[0] = 0;
+    dsl_log("win: Mods tab %s", t ? "launcher" : "game");
+    mods_tab_reload();
+}
+#define SUB_W 236.0f
+/* the window's tab strip: "Mods" in a world's Mods tab (only game mods there), else the two tabs; gold mark under the open one */
+static void subtabs_show(void) {
+    if (w_tab[0]) U->set_active(w_tab[0], world_mode);
+    if (world_mode) { if (w_mark) U->place(w_mark, 24, TAB_Y + TAB_H + 3, TAB_W, 3); return; }
+    static const char *const ids[2] = { "tab-mods:game", "tab-mods:launcher" };
+    for (int t = 0; t < 2; t++) {
+        const char *l = t ? TR("Launcher mods") : TR("Game mods");
+        m_sub[t] = named(U->button(w_win, 24 + t * (SUB_W + 8), TAB_Y, SUB_W, TAB_H, l, subtab_click, (void *)(intptr_t)t), 0, ids[t], subtab_click, (void *)(intptr_t)t, l);
+    }
+    if (w_mark) U->place(w_mark, 24 + m_tab * (SUB_W + 8), TAB_Y + TAB_H + 3, SUB_W, 3);
 }
 static void settings_click(void *ud, DSLObj w);
 static void mods_open(DSLObj root, float w, float h) {
@@ -403,14 +425,14 @@ static void mods_open(DSLObj root, float w, float h) {
     read_only = dsl_reg_scene() == 2;
     snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0;
     if (!world_mode && nkeep < 0) { char fail[400]; int n = dsl_pkg_refresh(fail, sizeof fail); if (n || fail[0]) refresh_note(n, fail); }
-    /* game modification mods first, then launcher features (owner 2026-10-20: Multiplayer, Units Laboratory start from
-       the title, never from a world). A world's Mods tab shows only the game mods: features are not per world. */
-    int nfeat = 0;
+    /* game mods first, then launcher mods (owner 2026-10-20: Multiplayer, Units Laboratory start from the title, never
+       from a world); each has its own tab, all in one list so a change on one tab stays when the other opens. A world's
+       Mods tab shows only the game mods (no tabs): launcher mods are not per world. */
     for (int pass = 0; pass < 2; pass++)
         for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
             const DSLModInfo *m = dsl_mods_at(i);
             if (!m || m->hidden || (m->feature != 0) != pass || (pass && world_mode)) continue;
-            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++; nfeat += pass;
+            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++;
         }
     if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
         const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
@@ -425,6 +447,8 @@ static void mods_open(DSLObj root, float w, float h) {
         for (int i = 0; i < nmods; i++) for (int k = 0; k < nkeep; k++) if (!strcmp(keep_ids[k], mods[i].m->id)) mods[i].on = keep_on[k];
         nkeep = -1;
     }
+    m_sub[0] = m_sub[1] = NULL;
+    subtabs_show();
     if (set_page[0] && !world_mode) { settings_open(root, w, h); return; }
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
     float lh = h - 40 - 76;
@@ -442,10 +466,14 @@ static void mods_open(DSLObj root, float w, float h) {
     U->panel(root, 0, 40, m_lw, lh, 0);
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
     float y = 0, rh = 74;
+    int shown = 0, tab = world_mode ? 0 : m_tab;
+    for (int i = 0; i < nmods; i++) if ((mods[i].m->feature != 0) == tab) shown++;
+    if (!world_mode && shown) y = tab_desc(list, tab);
     for (int i = 0; i < nmods; i++, y += rh) {
-        rh = 74;
+        rh = 0;
         const DSLModInfo *m = mods[i].m;
-        if (!world_mode && nfeat && (i == 0 || (m->feature && !mods[i - 1].m->feature))) y += section_head(list, y, m->feature);
+        if ((m->feature != 0) != tab) continue;                         /* on the other tab: no row (row stays NULL) */
+        rh = 74;
         char lb[160], nm[100];
         snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
         int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
@@ -490,7 +518,8 @@ static void mods_open(DSLObj root, float w, float h) {
             rh += wh + 2;
         }
     }
-    if (!nmods) U->text(list, 12, 8, m_lw - 56, 40, TR("No mods are installed."), 16, DSL_TXT_LEFT, SUB);
+    if (!shown) { const char *e = world_mode ? TR("No mods are installed.") : tab ? TR("No launcher mods installed.") : TR("No game mods installed.");
+                  named(U->text(list, 12, 8, m_lw - 56, 40, e, 16, DSL_TXT_LEFT, SUB), 3, "mods-empty", NULL, NULL, e); }
     U->scroll_height(list, y);
     /* groups */
     U->text(root, m_rx, 0, m_rw, 32, TR("Groups"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
@@ -528,9 +557,11 @@ static void bottom_bar(DSLObj root, float w, float h) {
 /* ---------------------------------------------------------------- the Settings page of one mod (mod.json "settings")
    Opened by the mod's Settings button; it takes the place of the list in the Mods tab, with the same bottom bar (the
    switches the player changed stay). Gameplay settings are drafts until Apply (and only at the title); local ones are
-   saved and used at once. Toggle = the kit's switch, number = the game's own slider (else < value >), choice = < value >. */
+   saved and used at once. Toggle = the kit's switch, number = the game's own slider (else < value >), choice = < value >.
+   A number with mod.json "input": "number" (exact values in a wide range, e.g. a port) = a typed field: digits only,
+   taken on Enter or when the field loses the keyboard (also before Apply / Back / close); outside min..max = refused. */
 #define NSET 64
-static struct { DSLObj w; int type; } st[NSET]; static int nst;
+static struct { DSLObj w; int type, focused; } st[NSET]; static int nst;
 static DSLObj st_note;
 static void keep_switches(void) { nkeep = 0; for (int i = 0; i < nmods && nkeep < NM; i++) { snprintf(keep_ids[nkeep], 64, "%s", mods[i].m->id); keep_on[nkeep++] = mods[i].on; } }
 static void settings_click(void *ud, DSLObj w) {
@@ -539,7 +570,8 @@ static void settings_click(void *ud, DSLObj w) {
     dsl_log("win: Settings of %s", set_page);
     mods_tab_reload();
 }
-static void back_click(void *ud, DSLObj w) { (void)ud; (void)w; keep_switches(); set_page[0] = 0; mods_tab_reload(); }
+static void num_commit_all(int quiet);
+static void back_click(void *ud, DSLObj w) { (void)ud; (void)w; num_commit_all(1); keep_switches(); set_page[0] = 0; mods_tab_reload(); }
 static int st_enabled(int i) { const DSLSettingInfo *in = dsl_settings_at(set_page, i); return in && !applying && (!in->gameplay || !read_only); }
 /* the controls show the values (after Undo / Default values) */
 static void settings_values(void) {
@@ -549,6 +581,7 @@ static void settings_values(void) {
         if (!st[i].w) continue;
         if (st[i].type == 1) U->toggle_set(st[i].w, v);
         else if (st[i].type == 5) U->slider_set(st[i].w, v);
+        else if (st[i].type == 6) { char b[32]; snprintf(b, sizeof b, "%d", v); U->field_set(st[i].w, b); }
         else { const DSLSettingInfo *in = dsl_settings_at(set_page, i); U->value_set(st[i].w, in && in->type == DSL_SET_INT ? (v - in->min) / in->step : v); }
         char vt[200]; dsl_settings_value_label(set_page, i, v, vt, sizeof vt);
         for (int k = 0; k < nreg; k++) if (reg[k].w == st[i].w) snprintf(reg[k].text, sizeof reg[k].text, "%s", vt);
@@ -560,14 +593,43 @@ void settings_sync(void) {
 }
 static void set_change(void *ud, DSLObj w) {
     int i = (int)(intptr_t)ud; const DSLSettingInfo *in = dsl_settings_at(set_page, i); if (!in) return;
-    int v = st[i].type == 1 ? U->toggle_get(w) : st[i].type == 5 ? U->slider_get(w) : U->value_get(w);
+    int v = st[i].type == 1 ? U->toggle_get(w) : st[i].type == 5 ? U->slider_get(w) : st[i].type == 6 ? 0 : U->value_get(w);
     if (st[i].type == 4 && in->type == DSL_SET_INT) v = in->min + v * in->step;
+    if (st[i].type == 6) { char t[64]; U->field_get(w, t, sizeof t); if (dsl_settings_parse(set_page, i, t, &v)) return; }
     if (dsl_settings_set(set_page, i, v)) snprintf(m_note, sizeof m_note, "%s", TR("The setting could not be saved."));
     else m_note[0] = 0;
     char vt[200]; dsl_settings_value_label(set_page, i, dsl_settings_value(set_page, i), vt, sizeof vt);
     for (int k = 0; k < nreg; k++) if (reg[k].w == w) snprintf(reg[k].text, sizeof reg[k].text, "%s", vt);
     dsl_log("win: setting %s/%s -> %s (%s)", set_page, in->id, vt, in->gameplay ? "gameplay: waits for Apply" : "local: saved, live");
     mods_sync(); draft();
+}
+/* number field (type 6): the typed text becomes the value, or is refused (the field shows the value again) */
+static void num_commit(int i, int quiet) {
+    const DSLSettingInfo *in = dsl_settings_at(set_page, i); if (!in || i >= nst || st[i].type != 6 || !st[i].w) return;
+    char t[64]; U->field_get(st[i].w, t, sizeof t);
+    int cur = dsl_settings_value(set_page, i), v;
+    char ct[32]; snprintf(ct, sizeof ct, "%d", cur);
+    if (!strcmp(t, ct)) return;                                       /* nothing typed */
+    if (!st_enabled(i)) { U->field_set(st[i].w, ct); return; }
+    if (dsl_settings_parse(set_page, i, t, &v)) {
+        U->field_set(st[i].w, ct);
+        dsl_log("win: setting %s/%s: \"%s\" refused (%d..%d)", set_page, in->id, t, in->min, in->max);
+        if (quiet) return;
+        snprintf(m_note, sizeof m_note, TR("Type a whole number from %d to %d."), in->min, in->max); dsi_utf8_fix_end(m_note);
+        mods_sync(); return;
+    }
+    char b[32]; snprintf(b, sizeof b, "%d", v); U->field_set(st[i].w, b);
+    set_change((void *)(intptr_t)i, st[i].w);
+}
+static void num_submit(void *ud, DSLObj w) { (void)w; num_commit((int)(intptr_t)ud, 0); }
+static void num_commit_all(int quiet) { if (set_page[0]) for (int i = 0; i < nst; i++) if (st[i].type == 6) num_commit(i, quiet); }
+static void num_focus_frame(void) {                                    /* the field lost the keyboard: take what was typed */
+    if (!set_page[0]) return;
+    for (int i = 0; i < nst; i++) if (st[i].type == 6 && st[i].w) {
+        int f = dsl_ui_field_focused(st[i].w);
+        if (st[i].focused && !f) num_commit(i, 0);
+        st[i].focused = f;
+    }
 }
 static void defaults_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
@@ -608,6 +670,12 @@ static void settings_open(DSLObj root, float w, float h) {
         dsl_settings_value_label(set_page, i, v, vt, sizeof vt);
         DSLObj c = NULL; int kind = 4;
         if (in->type == DSL_SET_TOGGLE) { c = U->toggle(list, 0, y, rw, in->label, v, set_change, (void *)(intptr_t)i); kind = 1; }
+        else if (in->type == DSL_SET_INT && in->number && (c = U->field(list, rw - 200, y, 200, 40, "", vt, num_submit, (void *)(intptr_t)i))) {
+            int nd = 1; for (int m = in->max; m >= 10; m /= 10) nd++;
+            dsl_ui_field_number(c, nd);
+            U->text(list, 12, y, rw - 220, 40, in->label, 15, DSL_TXT_LEFT, SUB);
+            kind = 6;
+        }
         else if (in->type == DSL_SET_INT && has_slider && (c = U->slider(list, 0, y, rw, in->label, in->min, in->max, in->step, v, set_change, (void *)(intptr_t)i))) kind = 5;
         else {
             int cnt = in->type == DSL_SET_INT ? (in->max - in->min) / in->step + 1 : in->nchoices;
@@ -623,7 +691,7 @@ static void settings_open(DSLObj root, float w, float h) {
             free(vals);
         }
         st[nst].w = c; st[nst].type = kind; nst++;
-        named(c, kind, nm, set_change, (void *)(intptr_t)i, vt);
+        named(c, kind, nm, kind == 6 ? num_submit : set_change, (void *)(intptr_t)i, vt);
         y += in->type == DSL_SET_TOGGLE ? 40 : 48;
         /* help under the control, and which kind of setting it is (gold, right) */
         const char *kd = in->gameplay ? TR("Gameplay") : TR("Display");
@@ -659,7 +727,7 @@ static void apply_watch(void) {
         snprintf(carry_note, sizeof carry_note, TR("The mods did not change: %s"), why[0] ? TR(why) : TR("the mods could not be applied."));
         dsi_utf8_fix_end(carry_note);
         dsl_log("win: the soft restart ended here without a swap: window opens with the reason");
-        reopen_mark(0);
+        dsl_soft_reopen_request(NULL);
         dsl_win_open("mods");
     }
 }
@@ -672,6 +740,7 @@ static void tab_close(void) {
     if (cur < 0) return;
     if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->close) t->close(t->ud); }
     U->destroy(w_body); w_body = NULL;
+    for (int t = 0; t < 2; t++) if (m_sub[t]) { U->destroy(m_sub[t]); m_sub[t] = NULL; }
     for (int k = 0; k < nreg; k++) if (strncmp(reg[k].name, "tab:", 4) && strcmp(reg[k].name, "close")) reg[k].w = NULL;
     cur = -1;
 }
@@ -748,7 +817,7 @@ static void destroy_all(void) {
     unreg_all();
     is_open = 0;
 }
-static int open_tries, reopen_wait; static double open_retry_at;
+static int open_tries; static double open_retry_at;
 static void open_now(void) {
     want_open = 0;
     if (!U) U = dsl_ui_kit();
@@ -769,28 +838,17 @@ static void open_now(void) {
     tab_select(t);
 }
 
-/* "put people back exactly where they were" (owner): Apply came from this window, so the new game opens it again */
-static void reopen_path(char *out, size_t n) { slogel_files(); snprintf(out, n, "%s/reopen_mods_window", slogel_dir); }
-static void reopen_mark(int on) {
-    char p[1300], used[1400]; reopen_path(p, sizeof p);
-    if (on) { FILE *f = fopen(p, "w"); if (f) { fprintf(f, "%ld\n", (long)time(NULL)); fclose(f); } }
-    else { snprintf(used, sizeof used, "%s.used", p); rename(p, used); }
-}
+/* "put people back exactly where they were" (owner): Apply came from this window, so the new game opens it again.
+   The request travels in the soft restart's handoff (dsl_soft_reopen_request / dsl_soft_take_reopen), never in a file. */
 void dsl_win_init(void) {
     unity_init(); U = dsl_ui_kit();
-    char p[1300]; reopen_path(p, sizeof p);
-    FILE *f = fopen(p, "r"); long t = 0;
-    if (f) { if (fscanf(f, "%ld", &t) != 1) t = 0; fclose(f); }
-    int reopen = t && time(NULL) - t < 180;
-    if (f) reopen_mark(0);
-    reopen_wait = reopen;                                              /* opens once the restart is over (dsl_busy_reason NULL) */
-    dsl_log("win: Mods window ready (%s)%s", U ? "kit ok" : "no kit yet", reopen ? "; opens again after the Apply restart" : "");
+    dsl_log("win: Mods window ready (%s)", U ? "kit ok" : "no kit yet");
 }
 static void rebind(int wm) {                                          /* the Mods tab changes its meaning: build it again */
     if (wm != world_mode && is_open && cur == 0) { world_mode = wm; tab_close(); return; }
     world_mode = wm;
 }
-void dsl_win_open(const char *tab_id) { if (!is_open) set_page[0] = 0; rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
+void dsl_win_open(const char *tab_id) { if (!is_open) { set_page[0] = 0; m_tab = 0; } rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
 void dsl_win_open_world(const char *guid, const char *name) {
     if (!guid || !*guid) { dsl_win_open(NULL); return; }
     int same = world_mode && !strcmp(world_guid, guid);
@@ -813,6 +871,7 @@ void dsl_win_relang(void) {
 void dsl_win_close(void) {
     if (!is_open) return;
     if (!tab_can_close()) { dsl_log("win: the open tab does not close now"); return; }
+    num_commit_all(1);                                                 /* a typed local value (number field) is kept */
     if (!applying) { dsl_mods_draft(NULL, -1); dsl_settings_undo(); }   /* closed without Apply: the prewarmed game quits, drafts go */
     set_page[0] = 0;
     destroy_all();
@@ -834,6 +893,7 @@ static void test_answer(const char *seq, int ok, const char *msg, int dump) {
             if (!reg[i].w) continue;
             char t[200]; size_t j = 0; for (const char *c = reg[i].text; *c && j + 3 < sizeof t; c++) { if (*c == '"' || *c == '\\') t[j++] = '\\'; t[j++] = *c; } t[j] = 0;
             int on = reg[i].kind == 1 ? U->toggle_get(reg[i].w) : -1;
+            if (reg[i].kind == 6) { U->field_get(reg[i].w, reg[i].text, sizeof reg[i].text); j = 0; for (const char *c = reg[i].text; *c && j + 3 < sizeof t; c++) { if (*c == '"' || *c == '\\') t[j++] = '\\'; t[j++] = *c; } t[j] = 0; }
             o += (size_t)snprintf(out + o, sizeof out - o, "%s{\"name\":\"%s\",\"kind\":%d,\"text\":\"%s\",\"on\":%d}", k++ ? "," : "", reg[i].name, reg[i].kind, t, on);
         }
         o += (size_t)snprintf(out + o, sizeof out - o, "]");
@@ -872,6 +932,11 @@ static void test_frame(void) {
     else if (!strcmp(op, "shot")) { char sp[1300]; snprintf(sp, sizeof sp, "%s/%s.png", test_dir, json_str(j, "name") ? json_str(j, "name") : "shot"); ok = shot(sp) == 0; snprintf(msg, sizeof msg, "%s", sp); }
     else if (!strcmp(op, "click") || !strcmp(op, "type")) {
         if (!r) { ok = 0; snprintf(msg, sizeof msg, "no control %s", target ? target : ""); }
+        else if (!strcmp(op, "type") && json_get(j, "keys")) {          /* typed keys (TMP_InputField.ProcessEvent: its validation) */
+            int dsl_ui_test_type(DSLObj field, const char *chars);
+            U->field_set(r->w, ""); ok = dsl_ui_test_type(r->w, json_str(j, "text") ? json_str(j, "text") : "") >= 0;
+            U->field_get(r->w, r->text, sizeof r->text);
+        }
         else if (!strcmp(op, "type")) { U->field_set(r->w, json_str(j, "text") ? json_str(j, "text") : ""); snprintf(r->text, sizeof r->text, "%s", json_str(j, "text") ? json_str(j, "text") : ""); }
         else {
             if (r->kind == 1) U->toggle_set(r->w, !U->toggle_get(r->w));    /* the kit flips a toggle before its callback */
@@ -890,12 +955,13 @@ static void test_frame(void) {
 void dsl_win_frame(void) {
     if (!test_checked) { test_checked = 1; test_dir = getenv("DSL_UI_TEST"); if (test_dir && !*test_dir) test_dir = NULL; }
     apply_watch();
-    if (reopen_wait && !dsl_busy_reason()) { reopen_wait = 0; dsl_win_open("mods"); }
+    if (!dsl_busy_reason()) { const char *ro = dsl_soft_take_reopen();          /* B after the swap: once */
+        if (ro) { dsl_log("win: opens again after the Apply restart (%s)", ro); dsl_win_open(ro); } }
     if (want_open && now_s() >= open_retry_at) open_now();
     if (is_open) {
         int f = (int)(now_s() * 6) % SLOGEL_FRAMES;                   /* Mud Slogel idle, 6 frames per second */
         if (f != slogel_shown && w_slogel[f]) { if (slogel_shown >= 0 && w_slogel[slogel_shown]) U->set_active(w_slogel[slogel_shown], 0); U->set_active(w_slogel[f], 1); slogel_shown = f; }
-        if (cur == 0) mods_update();
+        if (cur == 0) { mods_update(); num_focus_frame(); }
         else if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->update) t->update(t->ud); }
         if (esc_down() && !typing()) { if (naming) naming_show(0); else dsl_win_close(); }
     }

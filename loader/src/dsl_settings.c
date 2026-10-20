@@ -28,6 +28,7 @@
 typedef struct {
     char id[48]; int type, gameplay;                     /* DSL_SET_TOGGLE / INT / CHOICE */
     int dflt, min, max, step;                            /* choice: dflt = index */
+    int number;                                          /* int with "input": "number": a typed number field, no slider */
     int nch; char ch_id[SM_CH][48]; char *ch_label[SM_CH][DSI_LANGS];
     char *label[DSI_LANGS], *help[DSI_LANGS];
     int run;                                             /* the value this process runs with */
@@ -95,6 +96,8 @@ static int parse_set(const JNode *j, Set *s, const char *mod) {
         if (s->step < 1) s->step = 1;
         if (s->max < s->min) { dsl_log("settings: %s/%s: max < min, skipped", mod, id); return -1; }
         s->dflt = fit_int(s, d && d->t == JN_NUM ? (int)d->num : s->min);
+        const char *in = json_str(j, "input");                    /* "number": the page shows a typed field (exact values) */
+        s->number = in && !strcmp(in, "number");
     } else if (ty && !strcmp(ty, "choice")) {
         s->type = DSL_SET_CHOICE;
         JNode *cs = json_get(j, "choices");
@@ -316,6 +319,7 @@ const DSLSettingInfo *dsl_settings_at(const char *mod, int i) {
     Set *s = &m->s[i]; int L = dsi_lang();
     s->info.id = s->id; s->info.type = s->type; s->info.gameplay = s->gameplay;
     s->info.min = s->min; s->info.max = s->max; s->info.step = s->step; s->info.nchoices = s->nch; s->info.dflt = s->dflt;
+    s->info.number = s->number;
     s->info.label = s->label[L] ? s->label[L] : s->label[0];
     s->info.help = s->help[L] ? s->help[L] : s->help[0] ? s->help[0] : "";
     return &s->info;
@@ -324,6 +328,19 @@ const char *dsl_settings_choice_label(const char *mod, int i, int c) {
     Mod *m = mod_of(mod); if (!m || i < 0 || i >= m->n) return "";
     Set *s = &m->s[i]; if (c < 0 || c >= s->nch) return "";
     int L = dsi_lang(); return s->ch_label[c][L] ? s->ch_label[c][L] : s->ch_label[c][0];
+}
+/* typed text of a number field as an int setting's value: 0 = ok (*out set; off-step values go down to a step),
+   -1 = not a whole number or outside min..max (the page refuses it and says the range) */
+int dsl_settings_parse(const char *mod, int i, const char *text, int *out) {
+    Mod *m = mod_of(mod); if (!m || i < 0 || i >= m->n || !text) return -1;
+    Set *s = &m->s[i]; if (s->type != DSL_SET_INT) return -1;
+    while (*text == ' ') text++;
+    long v = 0; int nd = 0;
+    for (; *text >= '0' && *text <= '9'; text++) { if (++nd > 9) return -1; v = v * 10 + (*text - '0'); }
+    while (*text == ' ') text++;
+    if (!nd || *text || v < s->min || v > s->max) return -1;
+    *out = fit_int(s, (int)v);
+    return 0;
 }
 int dsl_settings_value(const char *mod, int i) { Mod *m = mod_of(mod); return m && i >= 0 && i < m->n ? m->s[i].edit : 0; }
 int dsl_settings_running(const char *mod, int i) { Mod *m = mod_of(mod); return m && i >= 0 && i < m->n ? m->s[i].run : 0; }

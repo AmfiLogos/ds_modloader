@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "850b6f8670aee0ef01010087b38e8bf67b801adf",
- "cm_pin": "5454e0315216280093ebc9637585f8ec76ad7226",
+ "mp_pin": "1acbbbc64f27428c1caa5ae9f0c73edf8753af9e",
+ "cm_pin": "11c501ff655cb1e3073578d759731bc3738fcd23",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -194,23 +194,6 @@
    "label": "loader saves SaveLoadView.CompleteDeleteConfirmation",
    "source": "ds_modloader:loader/src/dsl_saves.c",
    "key": "loader|dsl_saves.c|my_complete|loader saves SaveLoadView.CompleteDeleteConfirmation"
-  },
-  {
-   "owner": "loader",
-   "kind": "detour",
-   "method": "Refactor.SaveLoadView$$ConfirmRemove",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0x861054"
-    },
-    "win-x64": {
-     "rva": "0x5e77e0"
-    }
-   },
-   "active": "always when the launcher starts the game with the game's save folder (DSML_GAME_SAVES, DSML_DATA)",
-   "label": "loader saves SaveLoadView.ConfirmRemove",
-   "source": "ds_modloader:loader/src/dsl_saves.c",
-   "key": "loader|dsl_saves.c|my_remove|loader saves SaveLoadView.ConfirmRemove"
   },
   {
    "owner": "loader",
@@ -815,23 +798,6 @@
    "label": "multiplayer QuitToTitleSceneRequested..ctor",
    "source": "ds_multiplayer:src/mp_game.c",
    "key": "multiplayer|mp_game.c|h_quit_ctor|QuitToTitleSceneRequested..ctor"
-  },
-  {
-   "owner": "multiplayer",
-   "kind": "detour",
-   "method": "Steamworks.NativeMethods$$SteamAPI_ManualDispatch_GetNextCallback",
-   "platforms": {
-    "mac-arm64": {
-     "rva": "0x1141aac"
-    },
-    "win-x64": {
-     "rva": "0xe5f7a0"
-    }
-   },
-   "active": "always (module loaded)",
-   "label": "multiplayer Steamworks ManualDispatch_GetNextCallback",
-   "source": "ds_multiplayer:src/mp_game.c",
-   "key": "multiplayer|mp_game.c|h_getnext|Steamworks ManualDispatch_GetNextCallback"
   },
   {
    "owner": "multiplayer",

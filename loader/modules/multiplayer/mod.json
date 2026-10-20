@@ -21,6 +21,58 @@
  "conflicts": [],
  "description": "Play your worlds with friends. Host one of your saves, or join a friend by address or through Steam. Each player controls their own units. You can also host Foreign Expedition and PvP.",
  "scope": "gameplay",
+ "settings": [
+  {
+   "id": "host_port",
+   "type": "int",
+   "default": 47777,
+   "min": 1024,
+   "max": 65535,
+   "step": 1,
+   "input": "number",
+   "scope": "local",
+   "label": "Host port",
+   "help": "The port your computer listens on when you host. Use a port that your router sends to this computer. Friends outside your home then join with your address and this port. Default: 47777.",
+   "i18n": {
+    "fr": {
+     "label": "Port d'hébergement",
+     "help": "Le port sur lequel votre ordinateur écoute quand vous hébergez. Utilisez un port que votre routeur envoie vers cet ordinateur. Les amis hors de chez vous rejoignent alors avec votre adresse et ce port. Par défaut : 47777."
+    },
+    "de": {
+     "label": "Host-Port",
+     "help": "Der Port, auf dem dein Computer wartet, wenn du hostest. Nimm einen Port, den dein Router an diesen Computer weiterleitet. Freunde außerhalb deines Zuhauses treten dann mit deiner Adresse und diesem Port bei. Standard: 47777."
+    },
+    "es": {
+     "label": "Puerto de anfitrión",
+     "help": "El puerto en el que tu ordenador escucha cuando alojas. Usa un puerto que tu router envíe a este ordenador. Los amigos fuera de tu casa se unen entonces con tu dirección y este puerto. Por defecto: 47777."
+    },
+    "pt-BR": {
+     "label": "Porta do anfitrião",
+     "help": "A porta em que seu computador escuta quando você hospeda. Use uma porta que seu roteador encaminha para este computador. Amigos fora da sua casa entram então com seu endereço e esta porta. Padrão: 47777."
+    },
+    "ru": {
+     "label": "Порт хоста",
+     "help": "Порт, который ваш компьютер слушает, когда вы создаёте игру. Укажите порт, который роутер перенаправляет на этот компьютер. Друзья не из вашей сети подключаются по вашему адресу и этому порту. По умолчанию: 47777."
+    },
+    "ja": {
+     "label": "ホストのポート",
+     "help": "ホストするときにこのコンピューターが待ち受けるポートです。ルーターがこのコンピューターへ転送しているポートを使ってください。家の外のフレンドは、あなたのアドレスとこのポートで参加します。初期値: 47777"
+    },
+    "ko": {
+     "label": "호스트 포트",
+     "help": "호스트할 때 이 컴퓨터가 대기하는 포트입니다. 공유기가 이 컴퓨터로 전달하는 포트를 사용하십시오. 집 밖의 친구는 내 주소와 이 포트로 참가합니다. 기본값: 47777"
+    },
+    "zh-Hans": {
+     "label": "主机端口",
+     "help": "你创建游戏时电脑监听的端口。请使用路由器已转发到这台电脑的端口。家庭网络以外的好友用你的地址和这个端口加入。默认：47777。"
+    },
+    "zh-Hant": {
+     "label": "主機連接埠",
+     "help": "你建立遊戲時電腦監聽的連接埠。請使用路由器已轉送到這台電腦的連接埠。家庭網路以外的好友用你的位址和這個連接埠加入。預設：47777。"
+    }
+   }
+  }
+ ],
  "i18n": {
   "ko": {
    "name": "멀티플레이",
