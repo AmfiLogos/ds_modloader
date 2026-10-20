@@ -182,6 +182,8 @@
  "Settings: %s": "Ajustes: %s",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "No se pudo iniciar Steam. Instala Steam, ábrelo e inicia sesión, y luego abre Dungeon Settlers Modded de nuevo.",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam no estuvo listo. Inicia Steam e inicia sesión, y luego abre Dungeon Settlers Modded de nuevo.",
+ "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again.": "Steam está abierto, pero no dejó entrar al juego. Comprueba que has iniciado sesión en Steam y que Steam está en línea, y luego vuelve a abrir Dungeon Settlers Modded.",
+ "Steam is running, but it does not answer. Quit Steam fully (Steam menu > Quit Steam), start it again and sign in, then open Dungeon Settlers Modded again.": "Steam está abierto, pero no responde. Cierra Steam por completo (menú Steam > Salir de Steam), ábrelo de nuevo e inicia sesión, y luego vuelve a abrir Dungeon Settlers Modded.",
  "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "Esperando a Steam. Inicia sesión en Steam si te lo pide. Después se iniciará el juego.",
  "Step %d of %d · %s": "Paso %d de %d · %s",
  "Switch mods on or off, then Apply.": "Activa o desactiva los mods y luego pulsa Aplicar.",

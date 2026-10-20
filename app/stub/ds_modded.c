@@ -24,6 +24,7 @@
 #include <copyfile.h>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <libproc.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -556,7 +557,25 @@ static int steam_probe(const char *lib, int init) {
     return 0;
 }
 
-/* Steam not running: start it in the background and wait. 0 = go on, 1 = Steam never got ready (notice shown). */
+/* pid of this user's Steam client (process steam_osx), 0 = none. SteamAPI_IsSteamRunning asks Steam's ipcserver
+   (mach service com.valvesoftware.steam.ipctool), not the process: a Steam whose ipcserver was killed and restarted
+   by launchd keeps running, but games cannot reach it (2026-10-20: a stray pkill). Never call that "not running". */
+static pid_t steam_client_pid(void) {
+    int n = proc_listallpids(NULL, 0); if (n <= 0) return 0;
+    pid_t *p = calloc((size_t)n + 64, sizeof *p); if (!p) return 0;
+    n = proc_listallpids(p, (int)(((size_t)n + 64) * sizeof *p));
+    pid_t found = 0; uid_t me = getuid();
+    for (int i = 0; i < n && !found; i++) {
+        char name[64] = ""; struct proc_bsdinfo bi;
+        if (p[i] <= 0 || proc_name(p[i], name, sizeof name) <= 0 || strcmp(name, "steam_osx") != 0) continue;
+        if (proc_pidinfo(p[i], PROC_PIDTBSDINFO, 0, &bi, sizeof bi) == (int)sizeof bi && bi.pbi_uid == me) found = p[i];
+    }
+    free(p);
+    return found;
+}
+
+/* Steam not reachable: start it in the background (only when no Steam client runs) and wait.
+   0 = go on, 1 = Steam never got ready (notice shown; the text says what is wrong). */
 static int ensure_steam(const char *app) {
     char lib[PATH_MAX]; snprintf(lib, sizeof lib, "%s/Contents/PlugIns/libsteam_api.dylib", app);
     if (!exists(lib)) { logf_("no %s: Steam not checked", lib); return 0; }
@@ -564,26 +583,42 @@ static int ensure_steam(const char *app) {
     if (run != 0) { if (run < 0) logf_("cannot ask libsteam_api: Steam not checked"); return 0; }
     const char *sapp = getenv("DSMP_STEAM_APP"); if (!sapp || !*sapp) sapp = "Steam";
     const char *w = getenv("DSMP_STEAM_WAIT"); int wait_s = w ? atoi(w) : 90;
-    logf_("Steam is not running: starting %s in the background (wait up to %d s)", sapp, wait_s);
-    char *oav[] = { "/usr/bin/open", "-g", "-a", (char *)sapp, NULL };
-    pid_t op; int st = 1;
-    if (posix_spawn(&op, oav[0], NULL, NULL, oav, environ) == 0) waitpid(op, &st, 0);
-    if (!(WIFEXITED(st) && WEXITSTATUS(st) == 0)) {
-        logf_("open -a %s failed (status %d)", sapp, st);
-        notice(TR("Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again."));
-        return 1;
+    pid_t sp = steam_client_pid();
+    if (sp) {
+        if (!w) wait_s = 30;                             /* a running Steam answers within seconds when it is healthy */
+        logf_("Steam runs (steam_osx pid %d) but does not answer games yet: waiting up to %d s", (int)sp, wait_s);
+    } else {
+        logf_("Steam is not running: starting %s in the background (wait up to %d s)", sapp, wait_s);
+        char *oav[] = { "/usr/bin/open", "-g", "-a", (char *)sapp, NULL };
+        pid_t op; int st = 1;
+        if (posix_spawn(&op, oav[0], NULL, NULL, oav, environ) == 0) waitpid(op, &st, 0);
+        if (!(WIFEXITED(st) && WEXITSTATUS(st) == 0)) {
+            logf_("open -a %s failed (status %d)", sapp, st);
+            notice(TR("Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again."));
+            return 1;
+        }
     }
     time_t t0 = time(NULL);
+    int answers = 0, signed_in = 0;
     while (time(NULL) - t0 < wait_s) {
         sleep(2);
-        if (steam_probe(lib, 0) == 1 && steam_probe(lib, 1) == 1) {
+        answers = steam_probe(lib, 0) == 1;
+        signed_in = answers && steam_probe(lib, 1) == 1;
+        if (signed_in) {
             logf_("Steam ready after %ld s", (long)(time(NULL) - t0));
             sleep(1);
             return 0;
         }
     }
-    logf_("Steam not ready after %d s", wait_s);
-    notice(TR("Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again."));
+    sp = steam_client_pid();
+    logf_("Steam not ready after %d s (steam_osx %s, answers games: %s, game accepted: %s)", wait_s,
+          sp ? "running" : "not running", answers ? "yes" : "no", signed_in ? "yes" : "no");
+    if (answers)
+        notice(TR("Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again."));
+    else if (sp)
+        notice(TR("Steam is running, but it does not answer. Quit Steam fully (Steam menu > Quit Steam), start it again and sign in, then open Dungeon Settlers Modded again."));
+    else
+        notice(TR("Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again."));
     return 1;
 }
 
