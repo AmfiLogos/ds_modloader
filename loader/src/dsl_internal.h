@@ -94,6 +94,7 @@ void dsl_fastboot_yield(void *target, const char *who);   /* before a module hoo
 int dsl_fastboot_part(const char *env);      /* one boot speed-up part on? <env> "1"/"0", else DSL_FASTBOOT "1"/"0", else DSL_FB_DEFAULT */
 int dsl_soft_title_idle(void);               /* title on screen, boot done, nothing loading, no loading screen */
 int dsl_soft_busy(void);                     /* a restart runs (A) or is not finished (B) */
+int dsl_soft_input_blocked(void);            /* A: the title under the loading screen takes no input now */
 int dsl_soft_wanted(void);                   /* 1 = this process is B of a soft restart */
 int dsl_soft_apply(const char *profile, const char *env_lines);   /* host->soft_restart */
 
