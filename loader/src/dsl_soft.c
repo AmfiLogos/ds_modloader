@@ -367,16 +367,27 @@ static void jesc(char *out, size_t n, const char *s) {    /* JSON string body (W
     for (; s && *s && k + 3 < n; s++) { if (*s == '"' || *s == '\\') out[k++] = '\\'; out[k++] = *s; }
     out[k] = 0;
 }
+/* "open this window again in the new game" (the Mods window's Apply): A keeps the request until its next Apply writes it
+   into the handoff; B takes it once, when it is the game on screen. Never a file of its own: a prewarmed B boots before
+   the Apply, and a marker file outlived the restart and opened the window at a later, unrelated start. */
+static char a_reopen[32], b_reopen[32]; static int b_reopen_taken;
+void dsl_soft_reopen_request(const char *what) { snprintf(a_reopen, sizeof a_reopen, "%s", what ? what : ""); }
+static void b_reopen_read(void) {
+    const char *w = json_str(hand, "reopen");
+    snprintf(b_reopen, sizeof b_reopen, "%s", w && strlen(w) < sizeof b_reopen && strspn(w, "abcdefghijklmnopqrstuvwxyz0123456789-_") == strlen(w) ? w : "");
+}
 static void write_handoff(const char *profile, int prewarm, double apply_at) {
     char jp[2400], js[1100]; jesc(jp, sizeof jp, profile); jesc(js, sizeof js, a_save);
+    char jr[64]; jesc(jr, sizeof jr, apply_at > 0 ? a_reopen : "");    /* a prewarm start (apply_at 0) never carries it */
+    if (apply_at > 0) a_reopen[0] = 0;                                 /* used by this Apply only */
     double f[4] = { 0, 0, 0, 0 }; dsl_sos_game_frame(f);
     char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", handoff_path);
     FILE *o = fopen(tmp, "w"); if (!o) return;
     fprintf(o, "{\"v\":2,\"from_pid\":%d,\"profile\":\"%s\",\"scene\":%d,\"save\":\"%s\",\"speed\":-1,\"prewarm\":%d,"
-               "\"frame\":[%.1f,%.1f,%.1f,%.1f],\"fsmode\":%d,\"apply_at\":%.3f}\n",
-            (int)getpid(), jp, a_scene, js, prewarm, f[0], f[1], f[2], f[3], get_fsmode ? get_fsmode() : -1, apply_at);
+               "\"frame\":[%.1f,%.1f,%.1f,%.1f],\"fsmode\":%d,\"apply_at\":%.3f,\"reopen\":\"%s\"}\n",
+            (int)getpid(), jp, a_scene, js, prewarm, f[0], f[1], f[2], f[3], get_fsmode ? get_fsmode() : -1, apply_at, jr);
     fclose(o); rename(tmp, handoff_path);
-    SLOG("A: handoff written: scene %d save '%s' prewarm %d frame %.0f,%.0f %.0fx%.0f", a_scene, a_save, prewarm, f[0], f[1], f[2], f[3]);
+    SLOG("A: handoff written: scene %d save '%s' prewarm %d frame %.0f,%.0f %.0fx%.0f%s%s", a_scene, a_save, prewarm, f[0], f[1], f[2], f[3], jr[0] ? ", reopen " : "", jr);
 }
 /* B's "ready" file holds B's pid: a ready from an older (stopped) B never counts */
 static int ready_ok(void) {
@@ -559,7 +570,7 @@ static int b_state = B_BOOT; static double b_tstate; static int b_frames_ok, b_l
 static void b_read_handoff(void) {                                     /* at "go": A's frame and apply time of now */
     char *txt = slurp(handoff_path); JNode *j = txt ? json_parse(txt) : NULL; free(txt);
     if (!j) { SLOG("B: handoff not readable at go: the first one is kept"); return; }
-    json_free(hand); hand = j;
+    json_free(hand); hand = j; b_reopen_read();                         /* a prewarmed B learns it only here */
     JNode *f = json_get(hand, "frame"); int k = 0; double fr[4] = { 0, 0, 0, 0 };
     if (f && f->t == JN_ARR) for (JNode *c = f->child; c && k < 4; c = c->next) fr[k++] = c->num;
     if (k == 4 && fr[2] > 0) { memcpy(a_frame, fr, sizeof fr); a_has_frame = 1; }
@@ -572,6 +583,12 @@ static void b_fade_start(double t) {
 static void b_quit(const char *why) {
     SLOG("B: %s: B quits", why);
     b_state = B_DONE; if (app_quit && mf) app_quit(NULL); else exit(0);
+}
+const char *dsl_soft_take_reopen(void) {                               /* B, once swap + fade in are done; else NULL */
+    static char out[32];
+    if (b_state != B_DONE || b_reopen_taken || !b_reopen[0]) return NULL;
+    b_reopen_taken = 1; snprintf(out, sizeof out, "%s", b_reopen); b_reopen[0] = 0;
+    return out;
 }
 int dsl_soft_b_live(void) { return role_b && b_state >= B_SHOWN; }   /* B is the game the player sees now (dsl_crash.c) */
 int dsl_soft_b_state_visible(double t) { return role_b ? b_state >= B_FADING : (b_state == B_DONE && t - b_tstate < 0.3); }
@@ -900,6 +917,7 @@ void dsl_soft_snapshot(const char *logdir) {
         else {
             role_b = 1; hidden = 1; mute_on = 1; if (cap_dir[0]) cap_on = 1;
             b_prewarm = json_get(hand, "prewarm") && json_get(hand, "prewarm")->num != 0;
+            if (!b_prewarm) b_reopen_read();                                /* started by the Apply: the handoff is final */
             JNode *f = json_get(hand, "frame"); int k = 0;
             if (f && f->t == JN_ARR) for (JNode *c = f->child; c && k < 4; c = c->next) a_frame[k++] = c->num;
             a_has_frame = (k == 4 && a_frame[2] > 0);
