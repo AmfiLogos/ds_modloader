@@ -178,7 +178,7 @@ static int release_name(const char *id, const char *ver, char *out, size_t cap, 
     pthread_mutex_unlock(&nq_mu);
     return pending;
 }
-static int is_gameplay(const DSLModInfo *m) { return m && m->scope && !strcmp(m->scope, "gameplay") && strcmp(m->id, "multiplayer"); }
+static int is_gameplay(const DSLModInfo *m) { return m && m->scope && !strcmp(m->scope, "gameplay") && !m->feature && strcmp(m->id, "multiplayer"); }
 
 static HostMod H[HM_MAX]; static Row R[HM_MAX * 2]; static int nh, nr, names_pending;
 /* the rows; returns the number that differ, -1 bad input */
@@ -448,12 +448,12 @@ void dsl_hostmods_frame(void) {
         int took = settings_take(host_text); sets_taken = 1;
         dsl_log("hostmods: %d gameplay setting value(s) taken from the host (%d mod(s) differed)", took, nsets);
     }
-    /* the new set: the host's gameplay mods + my client mods and multiplayer that are on */
+    /* the new set: the host's gameplay mods + my client mods and launcher features (multiplayer, Units Laboratory) that are on */
     const char *ids[HM_MAX * 2]; int n = 0;
     for (int i = 0; i < nwant; i++) ids[n++] = want_ids[i];
     for (int i = 0; i < dsl_mods_count() && n < HM_MAX * 2; i++) {
         const DSLModInfo *m = dsl_mods_at(i);
-        if (!m || !m->enabled || (strcmp(m->id, "multiplayer") && strcmp(m->scope, "client"))) continue;
+        if (!m || !m->enabled || (strcmp(m->id, "multiplayer") && strcmp(m->scope, "client") && !m->feature)) continue;
         int dup = 0; for (int j = 0; j < n; j++) dup |= !strcmp(ids[j], m->id);
         if (!dup) ids[n++] = m->id;
     }

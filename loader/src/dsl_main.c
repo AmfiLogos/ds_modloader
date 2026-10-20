@@ -383,6 +383,8 @@ static void scan_mods(const char *build) {
         p->mf = m; p->idx = np; p->state = 0;
         const char *scope = json_str(m, "scope");
         p->gameplay = !(scope && !strcmp(scope, "client"));          /* default: gameplay (launcher model.rs) */
+        { const char *ca = json_str(m, "category");                 /* launcher features: never in the gameplay set (dsl_reg.c set_lines) */
+          if (ca ? !strcmp(ca, "feature") : (!strcmp(id, "multiplayer") || !strcmp(id, "custom-modes"))) p->gameplay = 0; }
         JNode *api = json_get(m, "api"); p->api = api && api->t == JN_NUM ? (int)api->num : 1;
         int pos = list_pos(order, id); if (pos < 0) pos = list_pos(enabled, id);
         p->order_key = pos < 0 ? 1000 + np : pos;

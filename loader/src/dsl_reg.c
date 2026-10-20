@@ -417,11 +417,13 @@ static const char *world_key(const char *guid) {
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR) { key_norm(c->str, nk, sizeof nk); return nk; }
     return NULL;
 }
-/* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save */
+/* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save. Launcher features
+   (category "feature": multiplayer, Units Laboratory) are never in it (owner 2026-10-20: a launcher mod never blocks a
+   join); multiplayer's own HELLO checks its build + protocol. */
 static void set_lines(char *out, size_t cap, char ms[65]) {
 #define MAXL (MAXM * 4)
     static char ln[MAXL][2048]; const char *lp[MAXL]; int nl = 0; char hs[1800], e1[2100];
-    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && strcmp(MI[i].id, "multiplayer")) {
+    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && strcmp(MI[i].id, "multiplayer")) {
         extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
         dsl_mod_hashes(MI[i].id, hs, sizeof hs);
         snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;

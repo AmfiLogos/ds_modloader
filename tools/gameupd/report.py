@@ -10,7 +10,8 @@ The OLD build is the reference build the sources were written against (today 258
 
 1. Harvest every game address our code uses (hex 0x10000..0x7FFFFFF, comments skipped):
    multiplayer   MP/src/**.c|h (test folders skipped, but ord_test/ord_smoke.c: in the module) + mp_module.c
-   Custom Modes  CM/cm_mp.c, CM/fe/, CM/pvp/, CM/units/pvp_units.c (multiplayer part only)
+   Custom Modes  CM/cm_mp.c, CM/fe/, CM/pvp/, CM/units/pvp_units.c (the multiplayer part of an older tree; since the
+                 Units Laboratory split Foreign Expedition / PvP are in MP/src, read above)
    loader        LOADER/modules/*/rva/<ref>_<plat>.tsv and <ref>_<plat>_patches.tsv
    Windows start LOADER/start/win/dsl_start_win.c  #define W_*  (--plat win only)
    --plat win: the multiplayer / Custom Modes sources hold Mac addresses. With --win-src DIR (gen_port output,

@@ -91,6 +91,24 @@ multiplayer	detour	Refactor.Main.TradeHelper$$TryCommit	0xcb2d14	0x9cfa40	always
 multiplayer	detour	Refactor.Control.UseSkillMode$$UseSkill	0xc0e2a0	0x939230	always (module loaded)	multiplayer ord UseSkillMode.UseSkill	ds_multiplayer:src/ord_game.c
 multiplayer	detour	Refactor.Control.WaypointOrder$$ClearWayPoint	0xc06f5c	0x939b30	always (module loaded)	multiplayer ord WaypointOrder.ClearWayPoint	ds_multiplayer:src/ord_game.c
 multiplayer	detour	Refactor.Control.WaypointOrder$$Reserve	0xc072d4	0x939d90	always (module loaded)	multiplayer ord WaypointOrder.Reserve	ds_multiplayer:src/ord_game.c
+multiplayer	detour	Refactor.Main.Event.CampaignEntityLoadHelper$$SpawnDungeonNPC	0xda8b30	0xaa3800	always (module loaded)	multiplayer pvp CampaignEntityLoadHelper.SpawnDungeonNPC	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.CombatDataHandler$$CheckAggroTrigger	0xbce72c	0x8ddb30	always (module loaded)	multiplayer pvp CombatDataHandler.CheckAggroTrigger	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.CombatDataHandler$$Init	0xbcde24	0x8de2a0	always (module loaded)	multiplayer pvp CombatDataHandler.Init	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.CombatDataHandler$$OnDeadUnit	0xbd00e8	0x8df1b0	always (module loaded)	multiplayer pvp CombatDataHandler.OnDeadUnit	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.CombatDataHandler$$OnDespawnUnit	0xbd1eb8	0x8df9a0	always (module loaded)	multiplayer pvp CombatDataHandler.OnDespawnUnit	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.CombatDataHandler$$OnMoveUnit	0xbd1930	0x8dfa10	always (module loaded)	multiplayer pvp CombatDataHandler.OnMoveUnit	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.CombatDataHandler$$OnSpawnUnit	0xbcf690	0x8e0320	always (module loaded)	multiplayer pvp CombatDataHandler.OnSpawnUnit	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Runtime.DungeonBehaviorSimulator$$Tick	0xbc4d80	0x8e3740	always (module loaded)	multiplayer pvp DungeonBehaviorSimulator.Tick	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Main.DungeonGeneratorStrategy$$HandleSpawnCategory	0xcba210	0x9de1a0	always (module loaded)	multiplayer pvp DungeonGeneratorStrategy.HandleSpawnCategory	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.DungeonPortalHandler$$Process	0xf9e298	0xcb83a0	always (module loaded)	multiplayer pvp DungeonPortalHandler.Process	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Main.Event.EntityEventHandler$$CheckGameOver	0xd854ec	0xa8a9a0	always (module loaded)	multiplayer pvp EntityEventHandler.CheckGameOver	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.EntityExtensions$$IsHostile	0xfa4ce8	0xcb8e80	always (module loaded)	multiplayer pvp EntityExtensions.IsHostile	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Main.EventContainer$$IsEventStartable	0xc8d6fc	0x9aad60	always (module loaded)	multiplayer pvp EventContainer.IsEventStartable	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Main.EventContainer$$StartEvent	0xc8dfbc	0x9abab0	always (module loaded)	multiplayer pvp EventContainer.StartEvent(key)	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Main.EventFlowProcessor$$StartEvent	0xcea620	0xa02340	always (module loaded)	multiplayer pvp EventFlowProcessor.StartEvent(key)	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.FactionRelationInfo$$GetRelation	0x82bba0	0x5991b0	always (module loaded)	multiplayer pvp FactionRelationInfo.GetRelation	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.FactionRelationInfo$$IsRelation	0x82c5dc	0x59a120	always (module loaded)	multiplayer pvp FactionRelationInfo.IsRelation	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Tick.DataApply.MainEventApplier$$Apply	0xab7628	0x7f41e0	always (module loaded)	multiplayer pvp MainEventApplier.Apply(DeadApplyData)	ds_multiplayer:src/pvp_game.c
 multiplayer	detour	AstarPath$$StartPath	0xfe19c0	0xcf24a0	always (module loaded)	multiplayer AstarPath.StartPath	ds_multiplayer:src/rig_det.c
 multiplayer	detour	Refactor.Component.CombatInfoComponent$$SetCombatTarget	0xdd7990	0x5c3ee0	env DSRIG_DIAG (test copies / debugging only)	multiplayer CombatInfoComponent.SetCombatTarget	ds_multiplayer:src/rig_det.c
 multiplayer	detour	Refactor.CombatTargetApplyData$$.ctor	0x847ef0	0x56af40	env DSRIG_DIAG (test copies / debugging only)	multiplayer CombatTargetApplyData..ctor	ds_multiplayer:src/rig_det.c
@@ -217,25 +235,6 @@ multiplayer	detour	Refactor.UI.ExpeditionPlanRiskData$$get_IsCritical	-	0xbf28d0
 multiplayer	detour	Refactor.UI.ExpeditionPlanView$$ShowCriticalRiskConfirm	-	0xbeca90	always (module loaded)	multiplayer win_exp ExpeditionPlanView.ShowCriticalRiskConfirm	ds_multiplayer:win/port/win_test_cmds.c
 custom-modes	detour	Refactor.Main.InputModule.InputDispatcher$$Update	0xd3b550	0xa4c970	always (module loaded)	custom-modes InputDispatcher.Update	ds_custommodes:fights/cm_win.c
 custom-modes	detour	Refactor.SaveLoadHelper$$DeserializeCampaignSaveDataSafely	0x875df4	0x5dd560	always (module loaded)	custom-modes SaveLoadHelper.DeserializeCampaignSaveDataSafely	ds_custommodes:fights/tf_worlds.c
-custom-modes	detour	Refactor.Main.Event.CampaignEntityLoadHelper$$SpawnDungeonNPC	0xda8b30	0xaa3800	always (module loaded)	custom-modes pvp CampaignEntityLoadHelper.SpawnDungeonNPC	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.CombatDataHandler$$CheckAggroTrigger	0xbce72c	0x8ddb30	always (module loaded)	custom-modes pvp CombatDataHandler.CheckAggroTrigger	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.CombatDataHandler$$Init	0xbcde24	0x8de2a0	always (module loaded)	custom-modes pvp CombatDataHandler.Init	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.CombatDataHandler$$OnDeadUnit	0xbd00e8	0x8df1b0	always (module loaded)	custom-modes pvp CombatDataHandler.OnDeadUnit	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.CombatDataHandler$$OnDespawnUnit	0xbd1eb8	0x8df9a0	always (module loaded)	custom-modes pvp CombatDataHandler.OnDespawnUnit	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.CombatDataHandler$$OnMoveUnit	0xbd1930	0x8dfa10	always (module loaded)	custom-modes pvp CombatDataHandler.OnMoveUnit	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.CombatDataHandler$$OnSpawnUnit	0xbcf690	0x8e0320	always (module loaded)	custom-modes pvp CombatDataHandler.OnSpawnUnit	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Runtime.DungeonBehaviorSimulator$$Tick	0xbc4d80	0x8e3740	always (module loaded)	custom-modes pvp DungeonBehaviorSimulator.Tick	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Main.DungeonGeneratorStrategy$$HandleSpawnCategory	0xcba210	0x9de1a0	always (module loaded)	custom-modes pvp DungeonGeneratorStrategy.HandleSpawnCategory	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.DungeonPortalHandler$$Process	0xf9e298	0xcb83a0	always (module loaded)	custom-modes pvp DungeonPortalHandler.Process	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Main.Event.EntityEventHandler$$CheckGameOver	0xd854ec	0xa8a9a0	always (module loaded)	custom-modes pvp EntityEventHandler.CheckGameOver	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.EntityExtensions$$IsHostile	0xfa4ce8	0xcb8e80	always (module loaded)	custom-modes pvp EntityExtensions.IsHostile	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Main.EventContainer$$IsEventStartable	0xc8d6fc	0x9aad60	always (module loaded)	custom-modes pvp EventContainer.IsEventStartable	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Main.EventContainer$$StartEvent	0xc8dfbc	0x9abab0	always (module loaded)	custom-modes pvp EventContainer.StartEvent(key)	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Main.EventFlowProcessor$$StartEvent	0xcea620	0xa02340	always (module loaded)	custom-modes pvp EventFlowProcessor.StartEvent(key)	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.FactionRelationInfo$$GetRelation	0x82bba0	0x5991b0	always (module loaded)	custom-modes pvp FactionRelationInfo.GetRelation	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.FactionRelationInfo$$IsRelation	0x82c5dc	0x59a120	always (module loaded)	custom-modes pvp FactionRelationInfo.IsRelation	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Tick.DataApply.MainEventApplier$$Apply	0xab7628	0x7f41e0	always (module loaded)	custom-modes pvp MainEventApplier.Apply(DeadApplyData)	ds_custommodes:pvp/pvp_game.c
-custom-modes	detour	Refactor.Tick.PassiveActionContainer$$Register	0xa782c8	0x7beeb0	always (module loaded)	custom-modes pvp PassiveActionContainer.Register	ds_custommodes:pvp/pvp_game.c
 gcd-cdr	detour	Refactor.Component.SkillComponent$$SetGlobalCooldown	0xddba18	0xae56b0	always (mod enabled)	gcd-cdr SkillComponent.SetGlobalCooldown	ds_modloader:loader/modules/gcd-cdr/gcd_cdr.c
 hell-difficulty	detour	Refactor.Main.Event.RecruitHelper$$DetermineInitialEquipments	0xd5c58c	0xa7e480	always (mod enabled)	hell-difficulty	ds_modloader:loader/modules/hell-difficulty/hell.c
 hell-difficulty	detour	Refactor.Main.Event.RecruitHelper$$ParseItems	0xd60228	0xa80ce0	always (mod enabled)	hell-difficulty	ds_modloader:loader/modules/hell-difficulty/hell.c

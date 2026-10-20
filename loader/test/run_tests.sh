@@ -32,6 +32,9 @@ mod other-build 3 '{"id":"other-build","version":"1.0.0","kind":"code","api":2,"
 mod no-table 3 '{"id":"no-table","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"tables":{"1":{"mac-arm64":"t.tsv"}}}'
 mod patcher 5 '{"id":"patcher","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"client","requires":["early-mod"]}'
 mod failpatch 6 '{"id":"failpatch","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}'
+# a launcher feature that is a code mod with scope gameplay (Units Laboratory 0.1.10's mod.json): never in the HELLO
+# mod set. Break caught: a guest refused with "Units Laboratory: same version, different files" (player report 2026-10-20).
+mod lab-code 3 '{"id":"lab-code","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"gameplay","category":"feature"}'
 mod data-mod none '{"id":"data-mod","version":"1.0.0","type":"data","game_build":"test"}'
 # dependencies with BepInEx plugins (dsl_deps.h): bie-core 0.4.0 is too old for the three mods below
 mod bie-core none '{"id":"bie-core","version":"0.4.0","kind":"bepinex"}'
@@ -40,7 +43,7 @@ mod needs-bie none '{"id":"needs-bie","version":"1.0.0","kind":"code","api":2,"g
 mod opt-old none '{"id":"opt-old","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"optional":["bie-core>=0.5.0"]}'
 mkdir -p "$M/floor-logger"; cp ~/DungeonSettlersMods/mods/floor-logger/floor-logger.dylib "$M/floor-logger/"
 sed 's/"game_build": "25846389"/"game_build": "test"/' ~/DungeonSettlersMods/mods/floor-logger/mod.json > "$M/floor-logger/mod.json"
-print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch","bie-core","bie-needs","needs-bie","opt-old"],"provided":["notch-fix"]}' > "$M/profile.json"
+print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch","bie-core","bie-needs","needs-bie","opt-old","lab-code"],"provided":["notch-fix"]}' > "$M/profile.json"
 
 run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_NO_ALERT=1 DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
 EXPECT="orig_init=1 orig_safe=2 orig_normal=1 orig_tick=1 orig_update=2"
@@ -67,6 +70,7 @@ check "late page after init" 'log | grep -q "new stubs go to the late page"'
 check "patch_rva: applied, wrong bytes refused, overlap with a hook refused" '[[ "$r" == *"PATCH target=2"* ]] && log | grep -q "\[patcher\] patches: wrong=-1 ok=0 over_hook=-1" && log | grep -q "bytes are 0000000000000000\|bytes are e0008052"'
 check "failing module: its patch is undone" 'log | grep -q "failpatch: FAILED: dsl_module_early returned 9; 1 hook(s) removed"'
 check "modset file: gameplay vs client scope, no session" 'grep -q "\"client\":\[{\"id\":\"patcher\"" "$LOGD/dsload_modset.json" && grep -q "\"check\":\"no session\"" "$LOGD/dsload_modset.json" && grep -q "\"id\":\"early-mod\",\"version\":\"1.2.0\",\"files\":{\"early-mod.dylib\":\"[0-9a-f]\{64\}\"" "$LOGD/dsload_modset.json"'
+check "launcher feature (code, scope gameplay) runs but is not in the gameplay mod set nor in modset_lines" 'log | grep -q "lab-code 1.0.0: loaded" && ! grep -o "\"gameplay\":\[[^]]*\]" "$LOGD/dsload_modset.json" | grep -q lab-code && grep -q "\"modset_lines\":" "$M/worlds.json" && ! grep -q "lab-code@" "$M/worlds.json"'
 check "world check off without a session" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: off"'
 check "build status for the launcher: active on the pinned build" 'grep -q "\"active\":true,\"reason\":\"ok\"" "$LOGD/dsload_status.json"'
 check "codepatch guard cleared" '[[ ! -e "$LOGD/dsload_state/_codepatch.pending" ]]'
