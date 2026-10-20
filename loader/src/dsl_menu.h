@@ -12,6 +12,8 @@ int dsl_tab_count(void);                        /* module tabs sorted by order; 
 const DSLTab *dsl_tab_at(int i);
 const char *dsl_tab_owner(int i);               /* module id that added it */
 const DSLUi *dsl_ui_kit(void);                  /* NULL before il2cpp_init returned */
+void dsl_ui_field_number(DSLObj f, int max_chars);   /* a kit field takes digits only (TMP IntegerNumber), max_chars long */
+int dsl_ui_field_focused(DSLObj f);                 /* the kit field has the keyboard */
 
 /* installed mods (every <mods>/<id>/mod.json seen at start, code or not) */
 typedef struct DSLModInfo {
@@ -56,6 +58,7 @@ typedef struct DSLSettingInfo {
     const char *id, *label, *help;               /* texts in the current language (help "" = none) */
     int type, gameplay;                          /* gameplay 1: changes apply with Apply; 0 (local): at once */
     int min, max, step, nchoices, dflt;          /* toggle 0..1, choice 0..nchoices-1 (dflt = index) */
+    int number;                                  /* int with mod.json "input": "number": a typed field, not a slider */
 } DSLSettingInfo;
 int dsl_settings_count(const char *mod);                         /* declared settings of that mod (0 = no Settings button) */
 const DSLSettingInfo *dsl_settings_at(const char *mod, int i);
@@ -63,6 +66,7 @@ const char *dsl_settings_choice_label(const char *mod, int i, int c);
 void dsl_settings_value_label(const char *mod, int i, int v, char *out, size_t cap);   /* On / Off, the number, the choice */
 int dsl_settings_value(const char *mod, int i);                  /* what the page shows (a gameplay draft or the value) */
 int dsl_settings_running(const char *mod, int i);                /* the value this game runs with */
+int dsl_settings_parse(const char *mod, int i, const char *text, int *out);   /* number field text: 0 ok, -1 refused */
 int dsl_settings_set(const char *mod, int i, int v);             /* local: saved + live; gameplay: draft for Apply */
 int dsl_settings_pending(const char *mod);                       /* gameplay drafts not applied (mod NULL = all mods) */
 void dsl_settings_undo(void);                                    /* drop the gameplay drafts */

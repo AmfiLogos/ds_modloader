@@ -243,6 +243,7 @@
  "This world uses: %s.\nLoad it with them?": "此世界使用了：%s。\n要使用它们加载吗？",
  "This world was not loaded: its save files could not be copied first.\n\n%s": "未读取此世界：无法先复制它的存档文件。\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "在加载画面后启用这些模组，然后回到这里。",
+ "Type a whole number from %d to %d.": "请输入 %d 到 %d 之间的整数。",
  "Undo changes": "撤销更改",
  "Update": "更新",
  "Update mods": "更新模组",

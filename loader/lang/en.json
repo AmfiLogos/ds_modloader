@@ -210,6 +210,7 @@
  "This world uses: %s.\nLoad it with them?": "This world uses: %s.\nLoad it with them?",
  "This world was not loaded: its save files could not be copied first.\n\n%s": "This world was not loaded: its save files could not be copied first.\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "Turns these mods on behind a loading screen and brings you back here.",
+ "Type a whole number from %d to %d.": "Type a whole number from %d to %d.",
  "Undo changes": "Undo changes",
  "Update": "Update",
  "Update mods": "Update mods",

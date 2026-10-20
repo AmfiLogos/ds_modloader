@@ -243,6 +243,7 @@
  "This world uses: %s.\nLoad it with them?": "このワールドは次のMODを使っています：%s。\nこのMODで読み込みますか？",
  "This world was not loaded: its save files could not be copied first.\n\n%s": "このワールドは読み込まれませんでした：先にセーブファイルをコピーできませんでした。\n\n%s",
  "Turns these mods on behind a loading screen and brings you back here.": "ロード画面の裏でこれらのMODを有効にし、この画面に戻ります。",
+ "Type a whole number from %d to %d.": "%d～%dの整数を入力してください。",
  "Undo changes": "変更を元に戻す",
  "Update": "アップデート",
  "Update mods": "MODをアップデート",

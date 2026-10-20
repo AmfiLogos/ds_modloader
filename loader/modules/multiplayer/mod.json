@@ -29,6 +29,7 @@
    "min": 1024,
    "max": 65535,
    "step": 1,
+   "input": "number",
    "scope": "local",
    "label": "Host port",
    "help": "The port your computer listens on when you host. Use a port that your router sends to this computer. Friends outside your home then join with your address and this port. Default: 47777.",

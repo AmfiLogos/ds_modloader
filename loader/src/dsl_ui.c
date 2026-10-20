@@ -984,6 +984,16 @@ static size_t k_field_get(DSLObj f, char *out, size_t cap) {
     return s ? utf8_len_of(s) : 0;
 }
 static void k_field_set(DSLObj f, const char *s) { W *w = w_of(f); if (w && w->kind == W_FIELD) in_settext(hget(w->h_a), s); }
+/* loader only (the Settings page's number field): digits only through the field's own validation, max_chars long */
+void dsl_ui_field_number(DSLObj f, int max_chars) {
+    W *w = w_of(f); Obj fc = w && w->kind == W_FIELD ? hget(w->h_a) : NULL; if (!fc) return;
+    if (m_in_ctype) CALL(m_in_ctype, void, Obj, int)(fc, 2, m_in_ctype);   /* ContentType.IntegerNumber */
+    if (m_in_limit && max_chars > 0) CALL(m_in_limit, void, Obj, int)(fc, max_chars, m_in_limit);
+}
+int dsl_ui_field_focused(DSLObj f) {
+    W *w = w_of(f); Obj fc = w && w->kind == W_FIELD ? hget(w->h_a) : NULL;
+    return fc && m_in_focused && CALL(m_in_focused, bool, Obj)(fc, m_in_focused);
+}
 
 /* scroll list: viewport (RectMask2D + ScrollRect, mouse wheel) with a content RectTransform anchored top-left */
 static DSLObj k_scroll(DSLObj parent, float x, float y, float w, float h) {

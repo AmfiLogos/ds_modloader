@@ -573,6 +573,16 @@ Owner: "add a way to adjust mod settings in the modloader". First user: ZET-U Mo
 - Mods window: a Settings button on rows of mods with settings (not in the world-bound mode); the Settings page shares
   the bottom bar (status lists the gameplay drafts, Undo changes drops them, Apply applies switches + settings).
   Rig proof: `test/settings/ui_settings_test.py <out>` (copy T, lease, cap, hidden).
+- Number field (branch numfield, 2026-10-20): an int setting with `"input": "number"` shows a typed field (label left,
+  the kit's TMP_InputField clone right; `dsl_ui_field_number` sets TMP ContentType.IntegerNumber + a character limit)
+  instead of the slider. A slider cannot pick an exact port (multiplayer `host_port`, 1024..65535). Explicit key, not
+  automatic: every setting without it keeps its slider. The typed text is taken on Enter, when the field loses the
+  keyboard, and before Apply / Back / close (`num_commit`); not a whole number or outside min..max = refused, the field
+  shows the value again and the status line says "Type a whole number from %d to %d." (10 languages). Then it is saved
+  like the slider (`dsl_settings_set`: local = settings.json at once; gameplay = a draft for Apply). Parse rule:
+  `dsl_settings_parse` (pure C). Test driver: `{"op":"type","target":"set:<id>","text":"..","keys":true}` types through
+  `TMP_InputField.ProcessEvent` (the field's own validation); `click` on the field = Enter.
+  Rig proof: `test/settings/numfield_test.py <out>` (one copy, multiplayer kit: type, refuse, reopen, host on the port).
 
 ## Dependencies (v0.1.16, lane starter, 2026-10-18): `requires`, `optional`, `conflicts`
 One rule, `src/dsl_deps.h` (header only), used by the loader core (`dsl_main.c`), the Mods window's Apply
