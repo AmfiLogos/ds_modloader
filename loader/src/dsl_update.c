@@ -411,7 +411,7 @@ static void title_results(void) {
 }
 
 /* ------------------------------------------------------------------ title corner */
-static uintptr_t c_tog, c_txt, c_btn;                      /* DSLObj kept as plain pointers (re-made when gone) */
+static uintptr_t c_tog, c_txt, c_btn, c_ver;               /* DSLObj kept as plain pointers (re-made when gone) */
 static int c_btn_on; static char c_last_line[600], c_btn_label[160]; static unsigned c_gen;
 static void toggle_change(void *ud, DSLObj w) {
     (void)ud; const DSLUi *u = dsl_ui_kit(); if (!u) return;
@@ -431,23 +431,29 @@ static void button_click(void *ud, DSLObj w) {
 static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
     int show = dsl_ui_title_shown() && dsl_reg_scene() == 1 && dsl_soft_title_idle();   /* the idle title only: never under a loading screen */
-    DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn;
+    DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn, ver = (DSLObj)c_ver;
     if (tog && c_gen != dsi_generation()) {                 /* a language change: made again (label, the new language's font) */
-        u->destroy(tog); if (txt) u->destroy(txt); if (btn) u->destroy(btn);
-        c_tog = c_txt = c_btn = 0; tog = txt = btn = NULL; c_btn_label[0] = 0;
+        u->destroy(tog); if (txt) u->destroy(txt); if (btn) u->destroy(btn); if (ver) u->destroy(ver);
+        c_tog = c_txt = c_btn = c_ver = 0; tog = txt = btn = ver = NULL; c_btn_label[0] = 0;
     }
-    if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); return; }
+    if (!show) { if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); if (ver) u->set_active(ver, 0); return; }
     if (!tog) {
         c_gen = dsi_generation();
         tog = u->toggle(NULL, 0, 0, 380, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
         txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 220, 40, TR("Update"), button_click, NULL);
         if (!tog || !txt || !btn) return;
-        dsl_ui_place_tr(tog, 24, 56, 380, 40); dsl_ui_place_tr(txt, 24, 100, 520, 30); dsl_ui_place_tr(btn, 24, 100, 220, 40);   /* below the game's copyright line */
-        c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_last_line[0] = 0; c_btn_on = -1;
+        /* the installed kit release, so two players can see they have the same one (owner 2026-10-20). The product name
+           is not translated. Unknown release (dev build, no RELEASE file): no line. */
+        if (S.have[0]) { char v[96]; snprintf(v, sizeof v, "Dungeon Settlers Modded v%s", S.have); ver = u->text(NULL, 0, 0, 520, 24, v, 14, DSL_TXT_RIGHT, 0xD8CCB0D0); }
+        /* below the game's copyright line: switch, version, then the status line or the Update button */
+        dsl_ui_place_tr(tog, 24, 56, 380, 40); if (ver) dsl_ui_place_tr(ver, 24, 98, 520, 24);
+        dsl_ui_place_tr(txt, 24, 126, 520, 30); dsl_ui_place_tr(btn, 24, 126, 220, 40);
+        c_tog = (uintptr_t)tog; c_txt = (uintptr_t)txt; c_btn = (uintptr_t)btn; c_ver = (uintptr_t)ver; c_last_line[0] = 0; c_btn_on = -1;
+        if (ver) dsl_log("update: title version line: Dungeon Settlers Modded v%s", S.have);
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
-    u->set_active(tog, 1);
+    u->set_active(tog, 1); if (ver) u->set_active(ver, 1);
     /* the button: Off, an update found, not clicked yet */
     pthread_mutex_lock(&mu);
     int st = S.dl, avail = S.checked && any_update(), clicked = consent || S.dl_wanted, rk = ready_kind; char kv[32];
