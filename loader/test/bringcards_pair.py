@@ -13,7 +13,7 @@ its lobby refused ("Not in a multiplayer session", v0.1.19), a desync from the b
 Env: HM_BUILD = loader build folder (dsload.dylib with the dev key + mods/multiplayer), BC_MP = the ds_multiplayer checkout
 whose ext/units13/driver and ext/fepvp13/tools are used (default ~/ds_multiplayer).
 Output: ../test_env/bringcards/<time>/ (logs, frames, results.json)."""
-import json, os, shutil, subprocess, sys, threading, time, zipfile
+import json, os, re, shutil, subprocess, sys, threading, time, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__)); L = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
@@ -112,8 +112,14 @@ def pick(x, n, tag):
     return ok and s.get('picked') == n and s2.get('open') == 0, s
 
 
+WORLD = re.compile(r'^(mp_sync|mp_fullcheck|MPFE_|MPHub_|MPPvP_)|_(fe5ea00|fe5eb|b45e0)[0-9a-fA-F]{25,27}(?![0-9a-fA-F])')   # the mod's own worlds
+
+
 def cards_ok(s):
-    return s.get('open') == 1 and s.get('cards', 0) >= 1 and s.get('card_sprites', 0) >= 3 and s.get('saves', 0) >= 1
+    """open, cards with game icons, and only real worlds in the save list (no hub / PvP world saves or autosaves)"""
+    files = s.get('save_files', [])
+    return s.get('open') == 1 and s.get('cards', 0) >= 1 and s.get('card_sprites', 0) >= 3 and s.get('saves', 0) >= 1 \
+        and len(files) == s.get('saves') and not any(WORLD.search(f) for f in files)
 
 
 def fp_read(path, t_from):
@@ -150,8 +156,10 @@ def pvp(port):
     wait('PvP world + lobby', lambda: (lambda s: s.get('scene') == 2 and s.get('tick', -1) > 0 and not s.get('busy') and s.get('det', {}).get('locked'))(st(H))
          and c(H, cmd='mpm_status').get('state') == 'lobby', timeout=900, every=2)
     port = c(H, cmd='mpm_status').get('port') or port
+    worlds = sorted(f for f in os.listdir(os.path.join(lrig.idir(H), 'data', 'Saves')) if WORLD.search(f))
+    info['world_saves_on_disk'] = worlds                             # earlier runs leave hub / PvP autosaves here: they must not show
     s = open_cards(H, 'pvp_host')
-    check('PvP 1: the lobby Bring Units opens the CARD window (cards with game icons, the player\'s own saves)', cards_ok(s), s)
+    check('PvP 1: the lobby Bring Units opens the CARD window (cards with game icons, real worlds only: no hub / PvP world saves)', cards_ok(s) and len(worlds) > 0, f'{s} | world saves on disk {len(worlds)}')
     if ONLY_OPEN:
         return False
     ok_h, sh = pick(H, 2, 'pvp_host')                               # the host alone in its lobby (no guest yet)
