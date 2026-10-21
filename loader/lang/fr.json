@@ -347,5 +347,6 @@
  "this update needs the installer (new game version)": "cette mise à jour nécessite le programme d'installation (nouvelle version du jeu)",
  "this world": "ce monde",
  "unknown error": "erreur inconnue",
- "works only with %s, but version %s is installed": "fonctionne seulement avec %s, mais la version %s est installée"
+ "works only with %s, but version %s is installed": "fonctionne seulement avec %s, mais la version %s est installée",
+ "No world can be loaded now.": "Aucun monde ne peut être chargé pour le moment."
 }

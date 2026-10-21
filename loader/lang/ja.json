@@ -330,5 +330,6 @@
  "this update needs the installer (new game version)": "ゲームの新バージョンのため、このアップデートにはインストーラーが必要です",
  "this world": "このワールド",
  "unknown error": "不明なエラー",
- "works only with %s, but version %s is installed": "%sでのみ動作しますが、インストールされているのはバージョン%sです"
+ "works only with %s, but version %s is installed": "%sでのみ動作しますが、インストールされているのはバージョン%sです",
+ "No world can be loaded now.": "今はワールドを読み込めません。"
 }

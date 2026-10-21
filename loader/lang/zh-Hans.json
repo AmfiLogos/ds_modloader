@@ -330,5 +330,6 @@
  "this update needs the installer (new game version)": "游戏有新版本，此更新需要安装程序",
  "this world": "此世界",
  "unknown error": "未知错误",
- "works only with %s, but version %s is installed": "仅适用于 %s，但已安装的版本是 %s"
+ "works only with %s, but version %s is installed": "仅适用于 %s，但已安装的版本是 %s",
+ "No world can be loaded now.": "现在无法加载任何世界。"
 }

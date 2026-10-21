@@ -364,5 +364,6 @@
  "this update needs the installer (new game version)": "для этого обновления нужен установщик (новая версия игры)",
  "this world": "этот мир",
  "unknown error": "неизвестная ошибка",
- "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s"
+ "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s",
+ "No world can be loaded now.": "Сейчас нельзя загрузить ни один мир."
 }

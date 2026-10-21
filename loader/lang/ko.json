@@ -330,5 +330,6 @@
  "this update needs the installer (new game version)": "이 업데이트에는 설치 프로그램이 필요함(새 게임 버전)",
  "this world": "이 월드",
  "unknown error": "알 수 없는 오류",
- "works only with %s, but version %s is installed": "%s에서만 작동하지만 설치된 버전은 %s입니다"
+ "works only with %s, but version %s is installed": "%s에서만 작동하지만 설치된 버전은 %s입니다",
+ "No world can be loaded now.": "지금은 월드를 불러올 수 없습니다."
 }
