@@ -7,7 +7,7 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "4227d54015edbc502eab53cbf00e1b25c7b616bd",
+ "mp_pin": "16e915a660d83eb332a9b8d2e015f438c44aaa5e",
  "cm_pin": "7638bbeb20d3b2db44a6eb955cbdaa5e0376b05b",
  "fields": {
   "owner": "loader or the mod id",
