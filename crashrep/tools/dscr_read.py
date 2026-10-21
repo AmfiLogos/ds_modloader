@@ -100,7 +100,7 @@ def main():
     elif a.cmd == "get":
         get(a.url, a.path, a.out)
     elif a.cmd == "latest":
-        blobs = sorted(list_all(a.url, "reports/"), key=lambda b: b["uploadedAt"], reverse=True)
+        blobs = sorted((b for b in list_all(a.url, "reports/") if b["path"].endswith(".txt.gz")), key=lambda b: b["uploadedAt"], reverse=True)
         for b in blobs[: a.n]:
             get(a.url, b["path"], a.out)
 

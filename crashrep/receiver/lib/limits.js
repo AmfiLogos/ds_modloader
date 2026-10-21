@@ -77,3 +77,13 @@ export function cacheBackend() {
   }
   return 'memory';
 }
+
+// Admin login tries per IP: 10 per hour. Returns null or retryAfter seconds.
+export async function checkLogin(ipHash) {
+  const w = windows();
+  const k = `login:h:${ipHash}:${w.hour}`;
+  const n = await read(k);
+  if (n >= 10) return w.hourLeft;
+  await bump(k, n, 3700);
+  return null;
+}
