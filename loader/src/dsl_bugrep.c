@@ -89,8 +89,8 @@ static char done_msg[1400], last_id[160];
 
 /* ------------------------------------------------------------------ Unity by name */
 static void *m_amin, *m_amax, *m_pivot, *m_pos, *m_size, *m_key, *m_cur_es, *m_sel_go, *m_go_get, *m_go_tr, *m_in_focused, *m_img_sprite,
-            *m_gr_color, *m_shot, *m_tw, *m_th, *m_pix, *m_destroy, *m_comp_tr, *m_tr_getscale, *m_tr_setscale;
-static void *k_image, *k_input;
+            *m_gr_color, *m_shot, *m_tw, *m_th, *m_pix, *m_destroy, *m_comp_tr, *m_tr_getscale, *m_tr_setscale, *m_rect;
+static void *k_image, *k_input, *k_tmp;
 static void *(*x_class_type)(void *), *(*x_type_obj)(void *);
 static void *mth(const char *ns, const char *k, const char *m, int argc) {
     void *kl = dsl_find_class(ns, k); void *mi = kl ? dsl_find_method(kl, m, argc) : NULL;
@@ -99,7 +99,7 @@ static void *mth(const char *ns, const char *k, const char *m, int argc) {
 static void unity_init(void) {
     m_amin = mth("UnityEngine", "RectTransform", "set_anchorMin", 1); m_amax = mth("UnityEngine", "RectTransform", "set_anchorMax", 1);
     m_pivot = mth("UnityEngine", "RectTransform", "set_pivot", 1); m_pos = mth("UnityEngine", "RectTransform", "set_anchoredPosition", 1);
-    m_size = mth("UnityEngine", "RectTransform", "set_sizeDelta", 1);
+    m_size = mth("UnityEngine", "RectTransform", "set_sizeDelta", 1); m_rect = mth("UnityEngine", "RectTransform", "get_rect", 0);
     m_key = mth("UnityEngine", "Input", "GetKeyDownInt", 1);
     m_cur_es = mth("UnityEngine.EventSystems", "EventSystem", "get_current", 0);
     m_sel_go = mth("UnityEngine.EventSystems", "EventSystem", "get_currentSelectedGameObject", 0);
@@ -112,6 +112,7 @@ static void unity_init(void) {
     m_comp_tr = mth("UnityEngine", "Component", "get_transform", 0);
     m_tr_getscale = mth("UnityEngine", "Transform", "get_localScale", 0); m_tr_setscale = mth("UnityEngine", "Transform", "set_localScale", 1);
     k_image = dsl_find_class("UnityEngine.UI", "Image"); k_input = dsl_find_class("TMPro", "TMP_InputField");
+    k_tmp = dsl_find_class("TMPro", "TMP_Text");
     *(void **)&x_class_type = dsl_il2cpp_fn("il2cpp_class_get_type"); *(void **)&x_type_obj = dsl_il2cpp_fn("il2cpp_type_get_object");
     { void *kc = dsl_find_class("UnityEngine", "Component"); void *mi = NULL;
       void *(*gm)(void *, void **) = dsl_il2cpp_fn("il2cpp_class_get_methods"); const char *(*nm)(void *) = dsl_il2cpp_fn("il2cpp_method_get_name");
@@ -128,11 +129,12 @@ static Obj comp_of(Obj any_comp, void *k) {
     if (!any_comp || !k || !m_go_get || !x_class_type || !x_type_obj) return NULL;
     return CALL(m_go_get, Obj, Obj, Obj)(any_comp, x_type_obj(x_class_type(k)), m_go_get);
 }
+static Col col_of(uint32_t c) { return (Col){ (c >> 24) / 255.f, (c >> 16 & 255) / 255.f, (c >> 8 & 255) / 255.f, (c & 255) / 255.f }; }
 static DSLObj flat(DSLObj panel, uint32_t c) {                        /* a kit panel as one flat colour (as the Mods window) */
     Obj im = comp_of(panel, k_image);
     if (im && m_img_sprite && m_gr_color) {
         CALL(m_img_sprite, void, Obj, Obj)(im, NULL, m_img_sprite);
-        CALL(m_gr_color, void, Obj, Col)(im, (Col){ (c >> 24) / 255.f, (c >> 16 & 255) / 255.f, (c >> 8 & 255) / 255.f, (c & 255) / 255.f }, m_gr_color);
+        CALL(m_gr_color, void, Obj, Col)(im, col_of(c), m_gr_color);
     }
     return panel;
 }
@@ -141,6 +143,16 @@ static void centre(DSLObj rt) {
     V2 h = { 0.5f, 0.5f }, z = { 0, 0 };
     CALL(m_amin, void, Obj, V2)(rt, h, m_amin); CALL(m_amax, void, Obj, V2)(rt, h, m_amax);
     CALL(m_pivot, void, Obj, V2)(rt, h, m_pivot); CALL(m_pos, void, Obj, V2)(rt, z, m_pos);
+}
+typedef struct { float x, y, w, h; } R4;
+static float win_scale;
+static void fit_window(void) {                                        /* a screen smaller than the window: scale it down (never up) */
+    if (!w_back || !w_win || !m_rect || !m_tr_setscale) return;
+    R4 r = CALL(m_rect, R4, Obj)(w_back, m_rect);                     /* the dim layer fills the screen layer */
+    if (r.w < 100 || r.h < 100) return;
+    float s = (r.w - 16) / WIN_W, t = (r.h - 16) / WIN_H; if (t < s) s = t; if (s > 1) s = 1;
+    if (s == win_scale) return;
+    win_scale = s; CALL(m_tr_setscale, void, Obj, V3)(w_win, (V3){ s, s, 1 }, m_tr_setscale);
 }
 static void fill_parent(DSLObj rt) {
     if (!rt || !m_amin || !m_amax || !m_pivot || !m_pos || !m_size) return;
@@ -386,7 +398,10 @@ static char *header_text(void) {                                      /* main th
 static void close_window(void);
 static void status(const char *s, uint32_t col) {
     snprintf(status_s, sizeof status_s, "%s", s);
-    if (w_status) { U->set_text(w_status, s); (void)col; }
+    if (!w_status) return;
+    U->set_text(w_status, s);
+    Obj t = comp_of(w_status, k_tmp);                                 /* gold = sent, orange = a problem, grey = busy */
+    if (t && m_gr_color) CALL(m_gr_color, void, Obj, Col)(t, col_of(col), m_gr_color);
 }
 static void send_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
@@ -467,15 +482,14 @@ static void build(void) {
     if (!shot_ok && w_tshot) { U->toggle_set(w_tshot, 0); U->set_enabled(w_tshot, 0); }
     w_tlogs = U->toggle(w_win, RX, 396, RW, TR("Include logs"), 1, NULL, NULL);
     U->text(w_win, RX, 440, RW, 70, TR("Game and mod logs, the mod list, versions, your system. Names and folders are taken out."), 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
-    U->text(w_win, L, 526, CW + 40, 50, TR("The report goes to the Dungeon Settlers Modded developer only. No IP address is kept. Reports are deleted after 90 days."), 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
+    U->text(w_win, L, 526, CW, 50, TR("The report goes to the Dungeon Settlers Modded developer only. No IP address is kept. Reports are deleted after 90 days."), 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     U->button(w_win, RX, 530, 200, 40, TR("Privacy note"), privacy_click, NULL);
     w_status = U->text(w_win, L, 586, 560, 92, status_s, 15, DSL_TXT_LEFT | DSL_TXT_WRAP, 0);
-    w_saved = U->button(w_win, RX - 64, 600, 250, 40, "", saved_click, NULL);
+    w_saved = U->button(w_win, RX, 584, RW, 40, "", saved_click, NULL);    /* right column, above Cancel / Send: never under the status */
     w_cancel = U->button(w_win, WIN_W - 32 - 260 - 12 + 0, 636, 130, 48, TR("Cancel"), cancel_click, NULL);
     w_send = U->button(w_win, WIN_W - 32 - 130, 636, 130, 48, TR("Send"), send_click, NULL);
-    if (w_saved) U->place(w_saved, L + 560 - 250, 646, 250, 38);
     saved_label();
-    if (w_saved && unsent_n > 0) U->place(w_status, L, 586, 560, 56);
+    win_scale = 0; fit_window();
 }
 static void close_window(void) {
     if (!is_open) return;
@@ -586,6 +600,7 @@ void dsl_bugrep_frame(void) {
         }
     }
     if (is_open) {
+        fit_window();                                                 /* the game window may be resized under it */
         pthread_mutex_lock(&mu); int dc = done_code; char m[1400]; snprintf(m, sizeof m, "%s", done_msg); if (dc) done_code = 0; int sn = sending; pthread_mutex_unlock(&mu);
         if (dc) {
             status(m, dc == 1 ? GOLD : WARN);
