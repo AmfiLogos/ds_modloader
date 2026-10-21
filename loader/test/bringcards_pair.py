@@ -4,7 +4,7 @@ of hidden loader copies (BCH host, BCG guest; never the owner's game, saves or s
 each runs multiplayer + the test-only units-driver (fake mouse, ds_multiplayer ext/units13/driver).
  PvP: host page "PvP" (best of 1, 60 s) -> PvP world + lobby -> guest joins by address -> each player presses the lobby's
       Bring Units: the card window opens (cards with game icons, the player's own saves) -> picks 2 units by clicking
-      their ticks -> Bring (the host first, ALONE, before the guest joins) -> the host has 4 units -> Start -> fight -> match end -> 0 desyncs -> Back to the Title.
+      their ticks -> Bring (the host first, ALONE, before the guest joins) -> the host has 4 units -> Start -> fight vote -> attack orders -> fight -> match end -> 0 desyncs -> Back to the Title.
  FE:  host page Foreign Expedition (Death Off) -> hub lobby -> guest joins -> both Bring through the card window (host 1,
       ALONE before the guest joins; guest 2) -> Start -> hub with 3 units -> expedition (Teams) -> fight -> portal -> back on the base map -> 0 desyncs.
 Breaks caught: no card window (the text list of the mpsplit build), picks that do not reach the host, a host alone in
@@ -199,13 +199,25 @@ def pvp(port):
     t_match = st(H)['tick']
     ps = c(H, cmd='pvp_status'); names = {u['guid'] for u in ps.get('units', [])}
     info['pvp_units'] = [(u.get('name'), u['guid'][:8], u.get('team')) for u in ps.get('units', [])]
+    time.sleep(12)                                               # v0.1.21 (E4): the teams walk to their ends, then a fight vote: G proposes, H agrees
+    c(G, cmd='pvp_vote', op='propose'); wait('vote open', lambda: c(H, cmd='pvp_status').get('vote_open'), timeout=60, every=1); c(H, cmd='pvp_vote', op='agree')
     wait('fight begins', lambda: c(H, cmd='pvp_status').get('fight_start', 0) > 0 and not c(H, cmd='pvp_status').get('placing'), timeout=300, every=2)
     for x in (H, G):
         HP.shot(x, f'pvp_fight_{x}.png')
     s0 = c(H, cmd='pvp_status'); hp0 = {u['guid']: u.get('hp', 0) for u in s0['units']}
+    owner = {u['guid']: (H if u['player'] == 0 else G) for u in s0['units']}
+    def orders():                                                # v0.1.21 (E7): no automatic attack orders: each player orders his units, like right-clicks
+        q = c(H, cmd='pvp_status'); cl = {u['guid']: u for u in c(H, cmd='list_units')['units']}
+        al = [u for u in q.get('units', []) if u.get('out_tick', -1) < 0 and 'cell' in cl.get(u['guid'], {})]
+        for u in al:
+            en = [v for v in al if v['team'] != u['team']]
+            if en:
+                c0 = cl[u['guid']]['cell']; tg = min(en, key=lambda v: (cl[v['guid']]['cell'][0] - c0[0]) ** 2 + (cl[v['guid']]['cell'][1] - c0[1]) ** 2); tc = cl[tg['guid']]['cell']
+                c(owner[u['guid']], cmd='ord_run_attack', unit=u['guid'], target=tg['guid'], x=tc[0], y=tc[1], mp=1)
     lost = down = None; t0 = time.time()
     while time.time() - t0 < 600:
         s = c(H, cmd='pvp_status')
+        if s.get('active') and not s.get('ending') and not s.get('resetting') and s.get('fight_start') and not s.get('placing'): orders()
         if s.get('units'):
             l = {u['guid']: hp0.get(u['guid'], 0) - u.get('hp', 0) for u in s['units'] if 'hp' in u}
             team = {u['guid']: u['team'] for u in s['units']}
