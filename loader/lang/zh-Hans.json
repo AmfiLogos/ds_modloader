@@ -92,7 +92,7 @@
  "Cloud backup: %d save in your Steam Cloud, checked at %s.||Cloud backup: %d saves in your Steam Cloud, checked at %s.": [
   "云备份：你的 Steam 云中有 %d 个存档，检查时间为 %s。"
  ],
- "Contact (optional): your Discord name, if we may ask you questions": "联系方式（可选）：如果我们可以向你提问，请填写 Discord 名称",
+ "Contact (optional): your Discord name, so we can ask you questions": "联系方式（可选）：你的 Discord 名称，方便我们向你提问",
  "Default values": "默认值",
  "Delete": "删除",
  "Delete the group \"%s\"? The mods stay installed.": "要删除组合“%s”吗？模组仍保持安装。",
@@ -156,11 +156,12 @@
  "No mods.": "无模组。",
  "No mods: the game without mods.": "无模组：不带模组的游戏。",
  "No screenshot could be taken.": "无法截图。",
+ "No world can be loaded now.": "现在无法加载任何世界。",
  "Not running: %s": "未运行：%s",
  "OK": "确定",
  "Off": "关",
  "On": "开",
- "On or off for every world. They start from the title screen, never from a world.": "对所有世界统一开启或关闭。从标题画面启动，不从世界中启动。",
+ "One setting for all worlds. They start from the title screen, never from inside a world.": "所有世界共用同一个设置。从标题画面启动，不会在世界内启动。",
  "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses.": "仅在崩溃、卡死、不同步或加入失败后发送：日志和版本信息，不含名称和 IP 地址。",
  "Open mods folder": "打开模组文件夹",
  "Open the privacy note in your browser.": "在浏览器中打开隐私说明。",
@@ -330,6 +331,5 @@
  "this update needs the installer (new game version)": "游戏有新版本，此更新需要安装程序",
  "this world": "此世界",
  "unknown error": "未知错误",
- "works only with %s, but version %s is installed": "仅适用于 %s，但已安装的版本是 %s",
- "No world can be loaded now.": "现在无法加载任何世界。"
+ "works only with %s, but version %s is installed": "仅适用于 %s，但已安装的版本是 %s"
 }

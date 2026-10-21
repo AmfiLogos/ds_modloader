@@ -105,7 +105,7 @@
   "Copia en la nube: %d partida en tu Steam Cloud, revisada a las %s.",
   "Copia en la nube: %d partidas en tu Steam Cloud, revisadas a las %s."
  ],
- "Contact (optional): your Discord name, if we may ask you questions": "Contacto (opcional): tu nombre de Discord, si podemos hacerte preguntas",
+ "Contact (optional): your Discord name, so we can ask you questions": "Contacto (opcional): tu nombre de Discord, para poder hacerte preguntas",
  "Default values": "Valores por defecto",
  "Delete": "Eliminar",
  "Delete the group \"%s\"? The mods stay installed.": "¿Eliminar el grupo \"%s\"? Los mods siguen instalados.",
@@ -170,11 +170,12 @@
  "No mods.": "Sin mods.",
  "No mods: the game without mods.": "Sin mods: el juego sin mods.",
  "No screenshot could be taken.": "No se pudo hacer una captura de pantalla.",
+ "No world can be loaded now.": "Ahora no se puede cargar ningún mundo.",
  "Not running: %s": "No se está ejecutando: %s",
  "OK": "OK",
  "Off": "Desactivado",
  "On": "Activado",
- "On or off for every world. They start from the title screen, never from a world.": "Activadas o no para todos los mundos. Se inician desde la pantalla de título, nunca desde un mundo.",
+ "One setting for all worlds. They start from the title screen, never from inside a world.": "Un solo ajuste para todos los mundos. Se inician desde la pantalla de título, nunca desde dentro de un mundo.",
  "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses.": "Solo tras un cierre inesperado, un bloqueo, una desincronización o una conexión fallida: los registros y las versiones, sin nombres ni direcciones IP.",
  "Open mods folder": "Abrir la carpeta de mods",
  "Open the privacy note in your browser.": "Abrir la nota de privacidad en el navegador.",
@@ -347,6 +348,5 @@
  "this update needs the installer (new game version)": "esta actualización necesita el instalador (nueva versión del juego)",
  "this world": "este mundo",
  "unknown error": "error desconocido",
- "works only with %s, but version %s is installed": "solo funciona con %s, pero está instalada la versión %s",
- "No world can be loaded now.": "Ahora no se puede cargar ningún mundo."
+ "works only with %s, but version %s is installed": "solo funciona con %s, pero está instalada la versión %s"
 }

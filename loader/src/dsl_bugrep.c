@@ -472,7 +472,7 @@ static void build(void) {
     U->text(w_win, L, 96, CW, 30, TR("What happened? What did you expect?"), 18, DSL_TXT_LEFT, GOLD);
     w_text = U->field(w_win, L, 130, CW, 290, TR("For example: I opened the shop and the game froze. I expected to buy a sword."), "", NULL, NULL);
     dsl_ui_field_multiline(w_text, DSL_BUG_TEXT_MAX);
-    U->text(w_win, L, 434, CW, 30, TR("Contact (optional): your Discord name, if we may ask you questions"), 16, DSL_TXT_LEFT | DSL_TXT_WRAP, GOLD);
+    U->text(w_win, L, 434, CW, 30, TR("Contact (optional): your Discord name, so we can ask you questions"), 16, DSL_TXT_LEFT | DSL_TXT_WRAP, GOLD);
     w_contact = U->field(w_win, L, 466, CW, 44, TR("Discord name (optional)"), "", NULL, NULL);
     w_tshot = U->toggle(w_win, RX, 130, RW, TR("Include a screenshot"), shot_ok, tshot_change, NULL);
     float pw = RW, ph = RW * 9 / 16; if (shot_ok && shot_w > 0) ph = RW * shot_h / shot_w;

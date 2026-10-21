@@ -105,7 +105,7 @@
   "Cloud-Sicherung: %d Spielstand in deiner Steam Cloud, geprüft um %s.",
   "Cloud-Sicherung: %d Spielstände in deiner Steam Cloud, geprüft um %s."
  ],
- "Contact (optional): your Discord name, if we may ask you questions": "Kontakt (optional): dein Discord-Name, falls wir dir Fragen stellen dürfen",
+ "Contact (optional): your Discord name, so we can ask you questions": "Kontakt (optional): dein Discord-Name, damit wir dir Fragen stellen können",
  "Default values": "Standardwerte",
  "Delete": "Löschen",
  "Delete the group \"%s\"? The mods stay installed.": "Gruppe „%s“ löschen? Die Mods bleiben installiert.",
@@ -170,11 +170,12 @@
  "No mods.": "Keine Mods.",
  "No mods: the game without mods.": "Keine Mods: das Spiel ohne Mods.",
  "No screenshot could be taken.": "Es konnte kein Screenshot gemacht werden.",
+ "No world can be loaded now.": "Gerade kann keine Welt geladen werden.",
  "Not running: %s": "Läuft nicht: %s",
  "OK": "OK",
  "Off": "Aus",
  "On": "An",
- "On or off for every world. They start from the title screen, never from a world.": "An oder aus für jede Welt. Sie starten vom Titelbildschirm, nie aus einer Welt.",
+ "One setting for all worlds. They start from the title screen, never from inside a world.": "Eine Einstellung für alle Welten. Sie starten vom Titelbildschirm, nie aus einer Welt heraus.",
  "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses.": "Nur nach einem Absturz, einem Einfrieren, einer Desynchronisierung oder einem fehlgeschlagenen Beitritt: die Protokolle und Versionen, ohne Namen oder IP-Adressen.",
  "Open mods folder": "Mods-Ordner öffnen",
  "Open the privacy note in your browser.": "Den Datenschutzhinweis im Browser öffnen.",
@@ -347,6 +348,5 @@
  "this update needs the installer (new game version)": "dieses Update braucht den Installer, weil sich die Spielversion geändert hat",
  "this world": "diese Welt",
  "unknown error": "unbekannter Fehler",
- "works only with %s, but version %s is installed": "funktioniert nur mit %s, aber Version %s ist installiert",
- "No world can be loaded now.": "Gerade kann keine Welt geladen werden."
+ "works only with %s, but version %s is installed": "funktioniert nur mit %s, aber Version %s ist installiert"
 }

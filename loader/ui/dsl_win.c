@@ -396,13 +396,13 @@ static void settings_open(DSLObj root, float w, float h);
 static void bottom_bar(DSLObj root, float w, float h);
 /* the line on how the open tab's mods work, at the top of its list; returns its height */
 static float tab_desc(DSLObj list, int feature) {
-    const char *d = feature ? TR("On or off for every world. They start from the title screen, never from a world.")
+    const char *d = feature ? TR("One setting for all worlds. They start from the title screen, never from inside a world.")
                             : TR("Each world keeps its own set of these mods.");
     float dw = m_lw - 56, dh = 20;
-    DSLObj dt = U->text(list, 12, 0, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
-    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, 0, dw, dh); } }
+    DSLObj dt = U->text(list, 12, 6, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);   /* 6 px under the box's top border (CJK ink touched it at 960) */
+    { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, 6, dw, dh); } }
     named(dt, 3, feature ? "section-desc:features" : "section-desc:game", NULL, NULL, d);
-    return dh + 12;
+    return dh + 18;
 }
 static void keep_switches(void);
 /* "Game mods" / "Launcher mods": the switches of both tabs stay as the player left them (one mods[] list, one Apply) */

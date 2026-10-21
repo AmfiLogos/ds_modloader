@@ -92,7 +92,7 @@
  "Cloud backup: %d save in your Steam Cloud, checked at %s.||Cloud backup: %d saves in your Steam Cloud, checked at %s.": [
   "클라우드 백업: Steam 클라우드에 세이브 %d개가 있습니다. 확인 시각: %s."
  ],
- "Contact (optional): your Discord name, if we may ask you questions": "연락처(선택): 질문을 드려도 된다면 Discord 이름",
+ "Contact (optional): your Discord name, so we can ask you questions": "연락처(선택): 질문을 드릴 수 있도록 Discord 이름",
  "Default values": "기본값",
  "Delete": "삭제",
  "Delete the group \"%s\"? The mods stay installed.": "\"%s\" 그룹을 삭제하시겠습니까? 모드는 설치된 상태로 남습니다.",
@@ -156,11 +156,12 @@
  "No mods.": "모드 없음.",
  "No mods: the game without mods.": "모드 없음: 모드 없이 게임을 실행합니다.",
  "No screenshot could be taken.": "스크린샷을 찍을 수 없었습니다.",
+ "No world can be loaded now.": "지금은 월드를 불러올 수 없습니다.",
  "Not running: %s": "실행되지 않음: %s",
  "OK": "확인",
  "Off": "끔",
  "On": "켬",
- "On or off for every world. They start from the title screen, never from a world.": "모든 월드에 공통으로 켜거나 끕니다. 타이틀 화면에서 시작하며, 월드에서는 시작하지 않습니다.",
+ "One setting for all worlds. They start from the title screen, never from inside a world.": "모든 월드에 같은 설정이 적용됩니다. 타이틀 화면에서 시작하며, 월드 안에서는 시작하지 않습니다.",
  "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses.": "충돌, 멈춤, 동기화 오류, 참가 실패가 있을 때만 보냅니다: 로그와 버전 정보이며, 이름과 IP 주소는 제외됩니다.",
  "Open mods folder": "모드 폴더 열기",
  "Open the privacy note in your browser.": "브라우저에서 개인정보 안내를 엽니다.",
@@ -330,6 +331,5 @@
  "this update needs the installer (new game version)": "이 업데이트에는 설치 프로그램이 필요함(새 게임 버전)",
  "this world": "이 월드",
  "unknown error": "알 수 없는 오류",
- "works only with %s, but version %s is installed": "%s에서만 작동하지만 설치된 버전은 %s입니다",
- "No world can be loaded now.": "지금은 월드를 불러올 수 없습니다."
+ "works only with %s, but version %s is installed": "%s에서만 작동하지만 설치된 버전은 %s입니다"
 }

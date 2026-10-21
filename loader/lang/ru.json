@@ -118,7 +118,7 @@
   "Облачная копия: %d сохранения в вашем Steam Cloud, проверено в %s.",
   "Облачная копия: %d сохранений в вашем Steam Cloud, проверено в %s."
  ],
- "Contact (optional): your Discord name, if we may ask you questions": "Контакт (необязательно): ваше имя в Discord, если нам можно задать вам вопросы",
+ "Contact (optional): your Discord name, so we can ask you questions": "Контакт (необязательно): имя в Discord, чтобы мы могли задать вопросы",
  "Default values": "По умолчанию",
  "Delete": "Удалить",
  "Delete the group \"%s\"? The mods stay installed.": "Удалить группу «%s»? Моды останутся установленными.",
@@ -184,11 +184,12 @@
  "No mods.": "Нет модов.",
  "No mods: the game without mods.": "Нет модов: игра без модов.",
  "No screenshot could be taken.": "Не удалось сделать снимок экрана.",
+ "No world can be loaded now.": "Сейчас нельзя загрузить ни один мир.",
  "Not running: %s": "Не запущено: %s",
  "OK": "OK",
  "Off": "Выкл.",
  "On": "Вкл.",
- "On or off for every world. They start from the title screen, never from a world.": "Включены или выключены для всех миров. Запускаются с титульного экрана, а не из мира.",
+ "One setting for all worlds. They start from the title screen, never from inside a world.": "Одна настройка для всех миров. Запускаются с титульного экрана, никогда не изнутри мира.",
  "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses.": "Только после сбоя, зависания, рассинхронизации или неудачного подключения: журналы и версии, без имён и IP-адресов.",
  "Open mods folder": "Открыть папку модов",
  "Open the privacy note in your browser.": "Открыть заметку о конфиденциальности в браузере.",
@@ -364,6 +365,5 @@
  "this update needs the installer (new game version)": "для этого обновления нужен установщик (новая версия игры)",
  "this world": "этот мир",
  "unknown error": "неизвестная ошибка",
- "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s",
- "No world can be loaded now.": "Сейчас нельзя загрузить ни один мир."
+ "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s"
 }

@@ -105,7 +105,7 @@
   "Sauvegarde cloud : %d sauvegarde dans votre Steam Cloud, vérifiée à %s.",
   "Sauvegarde cloud : %d sauvegardes dans votre Steam Cloud, vérifiées à %s."
  ],
- "Contact (optional): your Discord name, if we may ask you questions": "Contact (facultatif) : votre nom Discord, si nous pouvons vous poser des questions",
+ "Contact (optional): your Discord name, so we can ask you questions": "Contact (facultatif) : votre nom Discord, pour vous poser des questions",
  "Default values": "Valeurs par défaut",
  "Delete": "Supprimer",
  "Delete the group \"%s\"? The mods stay installed.": "Supprimer le groupe « %s » ? Les mods restent installés.",
@@ -170,11 +170,12 @@
  "No mods.": "Aucun mod.",
  "No mods: the game without mods.": "Aucun mod : le jeu sans mods.",
  "No screenshot could be taken.": "Aucune capture d'écran n'a pu être prise.",
+ "No world can be loaded now.": "Aucun monde ne peut être chargé pour le moment.",
  "Not running: %s": "Inactif : %s",
  "OK": "OK",
  "Off": "Désactivé",
  "On": "Activé",
- "On or off for every world. They start from the title screen, never from a world.": "Activées ou non pour tous les mondes. Elles se lancent depuis l'écran titre, jamais depuis un monde.",
+ "One setting for all worlds. They start from the title screen, never from inside a world.": "Un seul réglage pour tous les mondes. Elles se lancent depuis l'écran titre, jamais depuis l'intérieur d'un monde.",
  "Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses.": "Seulement après un plantage, un blocage, une désynchronisation ou une connexion échouée : les journaux et les versions, sans noms ni adresses IP.",
  "Open mods folder": "Ouvrir le dossier des mods",
  "Open the privacy note in your browser.": "Ouvrir la note de confidentialité dans votre navigateur.",
@@ -347,6 +348,5 @@
  "this update needs the installer (new game version)": "cette mise à jour nécessite le programme d'installation (nouvelle version du jeu)",
  "this world": "ce monde",
  "unknown error": "erreur inconnue",
- "works only with %s, but version %s is installed": "fonctionne seulement avec %s, mais la version %s est installée",
- "No world can be loaded now.": "Aucun monde ne peut être chargé pour le moment."
+ "works only with %s, but version %s is installed": "fonctionne seulement avec %s, mais la version %s est installée"
 }
