@@ -462,11 +462,11 @@ static void mods_open(DSLObj root, float w, float h) {
     char wn[160]; snprintf(wn, sizeof wn, "%s", world_name[0] ? world_name : TR("this world"));
     { int c = 0; for (char *p = wn; *p; p++) if ((*p & 0xC0) != 0x80 && ++c > 30) { *p = 0; strcat(wn, "..."); break; } }
     char hd[200]; if (world_mode) snprintf(hd, sizeof hd, TR("Mods for %s"), wn); else snprintf(hd, sizeof hd, "%s", TR("Installed mods")); dsi_utf8_fix_end(hd);
-    named(U->text(root, 0, 0, world_mode ? m_lw : m_lw - 324, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);   /* left of Refresh */
+    named(U->text(root, 0, 0, world_mode ? m_lw : m_lw - 344, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);   /* left of Refresh */
     if (!world_mode) {
         DSLObj of = named(U->button(root, m_lw - 200, 0, 200, 34, TR("Open mods folder"), folder_click, NULL), 0, "mods-folder", folder_click, NULL, TR("Open mods folder"));
         U->tooltip(of, TR("Open mods folder"), TR("Put the mod's .zip file in this folder. Click Refresh to add it to this list. Then turn it on and click Apply."));
-        DSLObj rf = named(U->button(root, m_lw - 316, 0, 108, 34, TR("Refresh"), refresh_click, NULL), 0, "mods-refresh", refresh_click, NULL, TR("Refresh"));
+        DSLObj rf = named(U->button(root, m_lw - 336, 0, 128, 34, TR("Refresh"), refresh_click, NULL), 0, "mods-refresh", refresh_click, NULL, TR("Refresh"));
         U->tooltip(rf, TR("Refresh"), TR("Check the mods folder for new mods."));
     }
     U->panel(root, 0, 40, m_lw, lh, 0);
@@ -535,7 +535,7 @@ static void mods_open(DSLObj root, float w, float h) {
         DSLObj ct = named(U->toggle(root, m_rx, h - 118, m_rw - 116, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
                           "crash-reports", crash_change, NULL, dsl_crash_consent() == 1 ? "on" : "off");
         U->tooltip(ct, TR("Send crash reports"), TR("After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day."));
-        DSLObj pb = named(U->button(root, m_rx + m_rw - 108, h - 118, 108, 40, TR("Privacy"), privacy_click, NULL), 0, "crash-privacy", privacy_click, NULL, TR("Privacy"));
+        DSLObj pb = named(U->button(root, m_rx + m_rw - 108, h - 118, 108, 36, TR("Privacy"), privacy_click, NULL), 0, "crash-privacy", privacy_click, NULL, TR("Privacy"));
         U->tooltip(pb, TR("Privacy"), TR("Open the privacy note in your browser."));
     }
     bottom_bar(root, w, h);
