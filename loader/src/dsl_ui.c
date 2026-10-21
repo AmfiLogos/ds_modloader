@@ -33,6 +33,7 @@ typedef struct { float x, y; } V2;
 typedef struct { float x, y, z; } V3;
 typedef struct { float r, g, b, a; } Col;
 typedef struct { float x, y, w, h; } R4;
+typedef struct { float x, y, z, w; } V4;
 typedef struct { uint64_t lo, hi; } Guid;
 #define AT(o, off, T) (*(T *)((char *)(o) + (off)))
 /* call a method through its MethodInfo (methodPointer = first field; the MethodInfo is passed last) */
@@ -86,7 +87,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv,   /* text fit (+ m_tmp_getsize, m_tmp_getauto, m_rt_rect) */
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
     *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
-    *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create,
+    *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create, *m_spr_create7, *m_spr_tex, *m_spr_texrect, *m_img_ppm,
     *m_cv_mode, *m_cv_getmode, *m_cv_order, *m_cv_override, *m_cv_root, *m_cv_cam, *m_cs_mode, *m_cs_getmode, *m_cs_ref, *m_cs_getref,
     *m_cs_match, *m_cs_getmatch, *m_cs_smm, *m_cs_getsmm, *m_rtu_w2s,
     *m_sr_content, *m_sr_viewport, *m_sr_h, *m_sr_v, *m_sr_move, *m_sr_sens,
@@ -784,6 +785,26 @@ static DSLObj k_text(DSLObj parent, float x, float y, float w, float h, const ch
     hset(&wd->h_label, t);
     return w_done(wd, tr_of(t), NULL);
 }
+/* the menu button's frame Button_Normal (131 x 26 px, a 1 px line, no 9-slice border) is drawn stretched: a narrow
+   button's side lines got thinner than one screen pixel and vanished at 960x540 (bug report Cancel / Send, Refresh). A
+   copy of it with a 2 px border, drawn sliced at 2 units per pixel (the title column's buttons: ~2.2), keeps every line. */
+static uintptr_t h_bspr, h_bspr_src;
+static void btn_frame(Obj im) {
+    Obj stock = img_sprite(im), s = hget(h_bspr);
+    if (!stock || !m_spr_create7 || !m_spr_tex || !m_spr_texrect || !m_img_type) return;
+    if (stock == s) return;
+    if (!s || hget(h_bspr_src) != stock) {
+        Obj tex = CALL(m_spr_tex, Obj, Obj)(stock, m_spr_tex); R4 r = CALL(m_spr_texrect, R4, Obj)(stock, m_spr_texrect);
+        if (!alive(tex) || r.w < 5 || r.h < 5) return;
+        s = CALL(m_spr_create7, Obj, Obj, R4, V2, float, uint32_t, int, V4)(tex, r, (V2){ 0.5f, 0.5f }, 50.f, 0, 0, (V4){ 2, 2, 2, 2 }, m_spr_create7);   /* FullRect */
+        if (!alive(s)) { dsl_log("ui: button frame: Sprite.Create failed, stretched frame kept"); return; }
+        hset(&h_bspr, s); hset(&h_bspr_src, stock);
+        dsl_log("ui: button frame: sliced copy of the stock frame (%.0fx%.0f px, border 2)", r.w, r.h);
+    }
+    CALL(m_img_sprite, void, Obj, Obj)(im, s, m_img_sprite);
+    CALL(m_img_type, void, Obj, int)(im, 1, m_img_type);                /* Sliced */
+    if (m_img_ppm) CALL(m_img_ppm, void, Obj, float)(im, 1.f, m_img_ppm);
+}
 /* a clickable clone of the title menu button: its own frame (Button_Normal), label centred, crafted Action */
 static Obj mk_btn(Obj parent, float x, float y, float w, float h, const char *label, float fs, uint32_t token, uintptr_t *h_act) {
     Obj b = inst(hget(h_tpl_btn), parent); if (!b) return NULL;
@@ -793,7 +814,7 @@ static Obj mk_btn(Obj parent, float x, float y, float w, float h, const char *la
     if (a && m_tb_init) CALL(m_tb_init, void, Obj, Obj)(bc, a, m_tb_init);
     if (h_act) hset(h_act, a);
     Obj bg = first_image(tr_of(bc), 0);
-    if (bg) { stretch(bg); gr_raycast(bg, 1); }                      /* the frame is the click target */
+    if (bg) { stretch(bg); gr_raycast(bg, 1); btn_frame(bg); }       /* the frame is the click target */
     Obj l = btn_label(bc);
     if (isa(l, K.TMP_Text)) { txt_body(l); txt_style(l, 0, fs, 514, 0); gr_color(l, C_MAIN); stretch(l); tmp_set(l, label); }
     place_tl(bc, x, y, w, h);
@@ -984,7 +1005,7 @@ static DSLObj k_field(DSLObj parent, float x, float y, float w, float h, const c
     if (!fc) { if (f) destroy_obj(go_of(f)); return NULL; }
     go_active(fc, 1);
     Obj fim = comp_get(fc, K.Image), bim = first_image(tr_of(hget(h_tpl_btn)), 0), bs = img_sprite(bim);
-    if (fim && bs) { CALL(m_img_sprite, void, Obj, Obj)(fim, bs, m_img_sprite); gr_color(fim, C_FIELD); }
+    if (fim && bs) { CALL(m_img_sprite, void, Obj, Obj)(fim, bs, m_img_sprite); gr_color(fim, C_FIELD); btn_frame(fim); }
     float fs = h >= 40 ? 18 : 16;
     Obj tc = m_in_tc ? CALL(m_in_tc, Obj, Obj)(fc, m_in_tc) : NULL;
     if (isa(tc, K.TMP_Text)) { txt_body(tc); txt_style(tc, 0, fs, 513, 0); gr_color(tc, C_MAIN); }
@@ -2015,7 +2036,8 @@ void dsl_ui_install(void) {
     m_rt_getsize = MTH(K.RectTransform, "get_sizeDelta", 0); m_rt_pos = MTH(K.RectTransform, "set_anchoredPosition", 1);
     m_rt_corners = MTH(K.RectTransform, "GetWorldCorners", 1);
     m_rt_getpos = OPT(K.RectTransform, "get_anchoredPosition", 0); m_tr_find = OPTSIG(K.Transform, "Find", 1, "System.String");   /* title brand */
-    m_spr_rect = OPT(K.Sprite, "get_rect", 0); m_scr_h = OPT(klass(UE, "Screen"), "get_height", 0);
+    m_spr_rect = OPT(K.Sprite, "get_rect", 0); m_spr_tex = OPT(K.Sprite, "get_texture", 0); m_spr_texrect = OPT(K.Sprite, "get_textureRect", 0);
+    m_img_ppm = OPT(K.Image, "set_pixelsPerUnitMultiplier", 1); m_scr_h = OPT(klass(UE, "Screen"), "get_height", 0);
     m_tr_setscale = OPT(K.Transform, "set_localScale", 1);
     m_rt_omin = OPT(K.RectTransform, "get_offsetMin", 0); m_rt_setomin = OPT(K.RectTransform, "set_offsetMin", 1);   /* title button icon */
     m_rt_getamin = OPT(K.RectTransform, "get_anchorMin", 0); m_rt_getamax = OPT(K.RectTransform, "get_anchorMax", 0);
@@ -2052,6 +2074,7 @@ void dsl_ui_install(void) {
     m_tex_filter = OPT(kTex, "set_filterMode", 1); m_tex_wrap = OPT(kTex, "set_wrapMode", 1); m_tex_apply = OPT(K.Texture2D, "Apply", 0);
     m_tex_w = OPT(kTex, "get_width", 0); m_tex_h = OPT(kTex, "get_height", 0);
     m_spr_create = OPTSIG(K.Sprite, "Create", 4, "UnityEngine.Texture2D,UnityEngine.Rect,UnityEngine.Vector2,System.Single");
+    m_spr_create7 = OPTSIG(K.Sprite, "Create", 7, "UnityEngine.Texture2D,UnityEngine.Rect,UnityEngine.Vector2,System.Single,System.UInt32,UnityEngine.SpriteMeshType,UnityEngine.Vector4");
     m_cv_mode = MTH(K.Canvas, "set_renderMode", 1); m_cv_order = OPT(K.Canvas, "set_sortingOrder", 1);
     m_cv_override = OPT(K.Canvas, "set_overrideSorting", 1); m_cv_root = OPT(K.Canvas, "get_rootCanvas", 0);
     m_cv_cam = OPT(K.Canvas, "get_worldCamera", 0);
