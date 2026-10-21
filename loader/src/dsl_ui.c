@@ -267,15 +267,16 @@ static void tmp_set(Obj t, const char *s) {
 static const Col C_MAIN = { 0.8f, 0.745f, 0.722f, 1 }, C_SUB = { 0.651f, 0.565f, 0.522f, 1 }, C_WHITE = { 1, 1, 1, 1 },
                  C_ORANGE = { 0.918f, 0.624f, 0.239f, 1 }, C_ROW1 = { 0.212f, 0.196f, 0.227f, 1 }, C_BOXF = { 0.133f, 0.125f, 0.145f, 1 },
                  C_GREY = { 0.45f, 0.42f, 0.45f, 1 }, C_FIELD = { 0.6f, 0.58f, 0.6f, 1 };
-enum { S_BOX, S_NBTN, S_CHECK, S_TEXTBOX, S_CHECKOFF, S_N };
-static const char *const spr_names[S_N] = { "Box", "Button_Normal", "CheckBox_Selected", "TextBox", "CheckBox_Normal" };
-/* the game's Settings switches (GameOptionUI Panel_ToggleVSync/Toggle/Img_Check): one 10 x 10 image, sprite
-   CheckBox_Selected when on, CheckBox_Normal when off, both 5 x 5. The game has CheckBox_Normal at 10 x 10 and 12 x 12
-   too (other screens): only the 5 x 5 one is taken */
+enum { S_BOX, S_NBTN, S_CHK10, S_OFF10, S_N };
+static const char *const spr_names[S_N] = { "Box", "Button_Normal", "CheckBox_Checked", "CheckBox_Normal" };
+/* toggles: the game's dark square check box, 10 x 10 (CheckBox_Normal off, CheckBox_Checked on = the same square with
+   a tick), square corners and a brown frame, so an off box shows on the dark rows too. Not the 5 x 5 Settings sprites
+   (CheckBox_Selected / CheckBox_Normal 5 x 5, a28dd17): their corner pixels and the off one's centre are see-through,
+   so drawn at 20 they looked like round rings (owner 2026-10-20). Only the 10 x 10 CheckBox_Normal is taken. */
 static int spr_ok(int k, Obj sp) {
-    if ((k != S_CHECK && k != S_CHECKOFF) || !m_spr_rect) return 1;
+    if ((k != S_CHK10 && k != S_OFF10) || !m_spr_rect) return 1;
     R4 r = CALL(m_spr_rect, R4, Obj)(sp, m_spr_rect);
-    return r.w > 4.5f && r.w < 5.5f && r.h > 4.5f && r.h < 5.5f;
+    return r.w > 9.5f && r.w < 10.5f && r.h > 9.5f && r.h < 10.5f;
 }
 static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat;   /* title font, body font + its plain material (per language) */
 static int64_t frames, scan_last = -100000; static int scans, scan_done, kit_used;
@@ -812,19 +813,22 @@ static DSLObj k_button(DSLObj parent, float x, float y, float w, float h, const 
 
 /* toggle row: [label ............ [x]] (the button's frame is the row; check box at the right) */
 #define TOGGLE_H 36
-#define TOGGLE_BOX 20          /* 2x the Settings box (10): the 5 x 5 sprite lost pixel columns at 10 in a 960 x 540 window */
+#define TOGGLE_BOX 20          /* 2x the game's 10 x 10 check box: whole pixels at every window size */
 static void toggle_look(W *w) {
-    /* the game's Settings switch: one box, CheckBox_Selected when on, CheckBox_Normal when off (both have the game's
-       own frame, so an off switch shows on the dark rows too), the game's disabled tint (Toggle m_DisabledColor) */
+    /* the game's dark square: CheckBox_Normal (off) / CheckBox_Checked (on, its tick inside), the game's disabled tint
+       (Toggle m_DisabledColor). No CheckBox_Checked loaded: the off square + a light mark inside. */
     Obj ck = hget(w->h_b), box = hget(w->h_a);
-    static const Col C_DIS = { 0.784f, 0.784f, 0.784f, 0.502f };
-    if (box) { Obj s = spr(w->on ? S_CHECK : S_CHECKOFF); img_set(box, s, !w->enabled ? C_DIS : s ? C_WHITE : w->on ? C_ORANGE : C_BOXF, 0); }
-    if (ck) go_active(ck, 0);
+    static const Col C_DIS = { 0.784f, 0.784f, 0.784f, 0.502f }, C_TICK = { 0.843f, 0.839f, 0.761f, 1 };   /* d7d6c2: CheckBox_Checked's tick */
+    Obj on_s = spr(S_CHK10), off_s = spr(S_OFF10), s = w->on && on_s ? on_s : off_s;
+    if (box) img_set(box, s, !w->enabled ? C_DIS : s ? C_WHITE : C_BOXF, 0);
+    int tick = w->on && !on_s;
+    if (ck) { if (tick) img_set(ck, NULL, !w->enabled ? C_DIS : C_TICK, 0); go_active(ck, tick); }
 }
 static void toggle_layout(W *w) {
-    Obj l = hget(w->h_label), box = hget(w->h_a);
+    Obj l = hget(w->h_label), box = hget(w->h_a), ck = hget(w->h_b);
     if (l) { place_tl(l, 12, 0, w->w - 60, TOGGLE_H); txt_style(l, 0, 16, 513, 0); }
     if (box) place_tl(box, w->w - 24 - (TOGGLE_BOX / 2.f), (TOGGLE_H - TOGGLE_BOX) / 2.f, TOGGLE_BOX, TOGGLE_BOX);
+    if (ck) place_tl(ck, 6, 6, TOGGLE_BOX - 12, TOGGLE_BOX - 12);
 }
 static DSLObj k_toggle(DSLObj parent, float x, float y, float w, const char *label, int on, dsl_ui_cb change, void *ud) {
     if (!ready_basic()) return NULL;

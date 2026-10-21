@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); L = os.path.dirname(os.path.d
 sys.path.insert(0, os.path.join(L, 'test'))
 import lrig as r
 
-X = 'T'; I = r.idir(X)
+X = os.environ.get('DSL_TEST_COPY', 'T'); I = r.idir(X)          # DSL_TEST_COPY: another K..Z copy when T is busy
 OUT = os.path.abspath(os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, 'build', 'run')))
 UI = os.path.join(OUT, 'ui'); MODS = os.path.join(I, 'data', 'Mods'); SDIR = os.path.join(I, 'softrestart')
 APP = os.path.join(I, 'DungeonSettlers.app'); BUILD = os.path.join(L, 'build')
