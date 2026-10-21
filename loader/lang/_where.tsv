@@ -180,8 +180,8 @@
 "The game could not restart. The update installs the next time you start the game."	dsl_update.c:525
 "The game files changed after the start check. Mods stay off. Restart the game."	dsl_main.c:758
 "The game stopped while the mod loader was starting last time, so mods stay off until the mod loader is updated."	dsl_main.c:722
-"The game was updated. Mods stay off until they are updated for this game version. Auto-update is off: download the new version from github.com/AmfiLogos/ds_modloader/releases."	dsl_main.c:840
-"The game was updated. Mods stay off until they are updated for this game version. Dungeon Settlers Modded checks for that update each time you start it and installs it at the next start."	dsl_main.c:838
+"The game was updated. Mods stay off until they are updated for this game version. Auto-update is off: download the new version from github.com/AmfiLogos/ds_modloader/releases."	dsl_main.c:841
+"The game was updated. Mods stay off until they are updated for this game version. Dungeon Settlers Modded checks for that update each time you start it and installs it at the next start."	dsl_main.c:839
 "The game will not start from this folder:\n%s\n\nIts path has letters the game cannot read on this PC (for example Chinese or Japanese letters).\nInstall Dungeon Settlers Modded again into a folder with plain letters only, for example C:\\Games\\Dungeon Settlers Modded."	win/ds_modded_win.c:714
 "The group could not be deleted."	dsl_win.c:254
 "The group could not be saved."	dsl_win.c:304
@@ -221,7 +221,7 @@
 "The update to %s was cut off. Nothing changed."	dsl_update_start.c:120
 "The world cannot be loaded now: %s"	dsl_reg.c:829
 "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again."	ds_modded.c:180
-"This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again."	dsl_main.c:848
+"This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again."	dsl_main.c:849
 "This mod has no settings."	dsl_win.c:707
 "This save is also used by Dungeon Settlers without mods. Delete it there too?"	dsl_saves.c:622
 "This world is one of your game saves."	dsl_world.c:56
