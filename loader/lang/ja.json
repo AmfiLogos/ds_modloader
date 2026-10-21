@@ -114,7 +114,7 @@
  "Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply.": [
   "新しいMODを%d件見つけました。オンにしてから適用をクリックしてください。"
  ],
- "Game and mod logs, the mod list, versions, your system. Names and folders are taken out.": "ゲームとMODのログ、MOD一覧、バージョン、システム情報。名前とフォルダーは取り除かれます。",
+ "Game and mod logs, the mod list, versions, your system. Names and folders are taken out.": "ゲームとMODのログ、MOD一覧、\nバージョン、システム情報。\n名前とフォルダーは取り除かれます。",
  "Game mods": "ゲームMOD",
  "Game saves: also in Dungeon Settlers": "通常のセーブ：Dungeon Settlersでも遊べます",
  "Gameplay": "ゲームプレイ",
