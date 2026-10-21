@@ -528,14 +528,15 @@ static void mods_open(DSLObj root, float w, float h) {
     m_fcancel = named(U->button(root, m_rx + m_rw - 84, 40, 84, 40, TR("Cancel"), fcancel_click, NULL), 0, "group-cancel", fcancel_click, NULL, TR("Cancel"));
     naming_show(0);
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
-    int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: one row above the bottom line */
-    m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - (crash ? 54 : 0));
+    int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: the switch the column's width, Privacy under it
+                                                                          (side by side, ru / fr wrapped the switch's label on its frame) */
+    m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - (crash ? 98 : 0));
     groups_build();
     if (crash) {
-        DSLObj ct = named(U->toggle(root, m_rx, h - 118, m_rw - 116, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
+        DSLObj ct = named(U->toggle(root, m_rx, h - 162, m_rw, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
                           "crash-reports", crash_change, NULL, dsl_crash_consent() == 1 ? "on" : "off");
         U->tooltip(ct, TR("Send crash reports"), TR("After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day."));
-        DSLObj pb = named(U->button(root, m_rx + m_rw - 108, h - 118, 108, 36, TR("Privacy"), privacy_click, NULL), 0, "crash-privacy", privacy_click, NULL, TR("Privacy"));
+        DSLObj pb = named(U->button(root, m_rx + m_rw - 160, h - 120, 160, 36, TR("Privacy"), privacy_click, NULL), 0, "crash-privacy", privacy_click, NULL, TR("Privacy"));
         U->tooltip(pb, TR("Privacy"), TR("Open the privacy note in your browser."));
     }
     bottom_bar(root, w, h);
