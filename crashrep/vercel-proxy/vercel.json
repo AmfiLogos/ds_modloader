@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    { "source": "/:path((?!api/report$).*)", "destination": "https://crashrep.dungeonsettlers.wiki/:path", "permanent": true }
+  ],
+  "functions": { "api/report.js": { "maxDuration": 30 } }
+}

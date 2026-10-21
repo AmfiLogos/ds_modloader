@@ -1,0 +1,19 @@
+// Crash-report receiver on Cloudflare. Reports in R2 wiki-files/ds-crashrep-reports/.
+// Secrets: ADMIN_TOKEN, CRON_SECRET, IP_SALT, DISCORD_WEBHOOK_URL, PROXY_SECRET. Account ID: wrangler wrapper.
+{
+  "name": "ds-crashrep",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "alias": {
+    "@vercel/blob": "./shims/blob.js",
+    "@vercel/functions": "./shims/functions.js"
+  },
+  "vars": { "PUBLIC_URL": "https://crashrep.dungeonsettlers.wiki" },
+  "triggers": { "crons": ["17 4 * * *"] },
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "wiki-files" }
+  ]
+}

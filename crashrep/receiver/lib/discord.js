@@ -1,7 +1,7 @@
 // Discord ping for new reports. Webhook URL in env DISCORD_WEBHOOK_URL; missing = no ping.
 // DISCORD_PING_KINDS: comma list of kinds that ping (default "bug").
 
-const BASE = process.env.PUBLIC_URL || 'https://ds-crashrep.vercel.app';
+const BASE = process.env.PUBLIC_URL || 'https://crashrep.dungeonsettlers.wiki';
 
 export function pingText(kind, meta, path) {
   const text = (meta.text || meta.reason || '').replace(/\s+/g, ' ').trim();

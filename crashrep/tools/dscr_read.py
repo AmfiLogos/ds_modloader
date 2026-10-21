@@ -6,7 +6,7 @@
   dscr_read.py latest [N] [--out DIR]
 
 Token: macOS Keychain (service ds-crashrep-admin, account ds-crashrep).
-Base URL: --url, else env DSCR_URL, else https://ds-crashrep.vercel.app
+Base URL: --url, else env DSCR_URL, else https://crashrep.dungeonsettlers.wiki
 """
 import argparse
 import gzip
@@ -19,7 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_URL = "https://ds-crashrep.vercel.app"
+DEFAULT_URL = "https://crashrep.dungeonsettlers.wiki"
 
 
 def _ssl_context():

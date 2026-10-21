@@ -1,8 +1,10 @@
 # Crash-report receiver (ds-crashrep)
 
-A small private receiver for "Dungeon Settlers Modded" crash reports and player bug reports. Plain Vercel functions (Node runtime), no framework.
+A small private receiver for "Dungeon Settlers Modded" crash reports and player bug reports. Plain Web-style handlers (`api/*.js`), run as one Cloudflare Worker (`receiver/cloudflare/`), no framework.
 
-Production: https://ds-crashrep.vercel.app
+Production: https://crashrep.dungeonsettlers.wiki (Cloudflare Worker `ds-crashrep`, since 2026-10-21).
+
+Old address https://ds-crashrep.vercel.app (compiled into loaders v0.1.15 to v0.1.16.1): `crashrep/vercel-proxy/` forwards `POST /api/report` to the new address (with the player's IP and `PROXY_SECRET`) and answers 308 to the new address for every other path.
 
 ## Endpoints
 
@@ -17,7 +19,7 @@ Production: https://ds-crashrep.vercel.app
 | POST | `/api/admin/reset-limits` | Admin. Clears the per-IP counters of the caller's IP (for tests). |
 | GET | `/api/cron/expire` | Daily cron. Deletes reports older than 90 days. |
 
-Admin calls need `Authorization: Bearer <ADMIN_TOKEN>`. The cron needs `Authorization: Bearer <CRON_SECRET>` (Vercel sends it).
+Admin calls need `Authorization: Bearer <ADMIN_TOKEN>`. The cron needs `Authorization: Bearer <CRON_SECRET>` (the Worker's Cron Trigger adds it).
 
 ### POST /api/report
 
@@ -26,7 +28,7 @@ Admin calls need `Authorization: Bearer <ADMIN_TOKEN>`. The cron needs `Authoriz
 - `X-DSCR-Install`: 32 lower-case hex chars (else 400).
 - `X-DSCR-Kind`: `bug` (player bug report, see below), `crash`, `freeze`, `desync`, `join`, `blank` (multiplayer view showed nothing) or `test` (else 400).
 - Body: gzip of UTF-8 text. First line must be `DSCRASH 1` (else 400).
-- Stored at `reports/YYYY/MM/DD/<time>-<kind>-<install8>-<random>.txt.gz` (original gzip bytes, private Blob store). Time is ISO 8601 basic format, for example `20261018T001137Z`. Next to it: `<same>.meta.json` (parsed header + first 600 chars of the bug text, for the list page) and, for a bug with a screenshot, `<same>.shot.png` or `.shot.jpg` (decoded image).
+- Stored at `reports/YYYY/MM/DD/<time>-<kind>-<install8>-<random>.txt.gz` (original gzip bytes, private R2 bucket `wiki-files`, under `ds-crashrep-reports/`). Time is ISO 8601 basic format, for example `20261018T001137Z`. Next to it: `<same>.meta.json` (parsed header + first 600 chars of the bug text, for the list page) and, for a bug with a screenshot, `<same>.shot.png` or `.shot.jpg` (decoded image).
 - `X-DSCR-Admin: <ADMIN_TOKEN>` skips the rate limits (tests only).
 
 ### Kind "bug"
@@ -49,7 +51,7 @@ Each stored bug report pings Discord (see below), except uploads with `X-DSCR-Ad
 
 ## Admin web page
 
-`https://ds-crashrep.vercel.app/admin`. Type the `ADMIN_TOKEN` once (Keychain `ds-crashrep-admin`). The cookie `__Host-dscr_admin` is HttpOnly, Secure, SameSite=Strict, 30 days, and holds an HMAC of the token, never the token. Changing `ADMIN_TOKEN` signs everyone out. Login tries: 10 per hour per IP. Every POST checks the Origin header. "Mark handled" writes `state/handled/<report>.json`; the cron deletes markers older than 90 days.
+`https://crashrep.dungeonsettlers.wiki/admin`. Type the `ADMIN_TOKEN` once (Keychain `ds-crashrep-admin`). The cookie `__Host-dscr_admin` is HttpOnly, Secure, SameSite=Strict, 30 days, and holds an HMAC of the token, never the token. Changing `ADMIN_TOKEN` signs everyone out. Login tries: 10 per hour per IP. Every POST checks the Origin header. "Mark handled" writes `state/handled/<report>.json`; the cron deletes markers older than 90 days.
 
 ## Discord ping
 
@@ -64,34 +66,37 @@ Env `DISCORD_WEBHOOK_URL` (a Discord webhook URL; missing = no ping). Message: `
 - Over a limit: 429 with `Retry-After` (seconds to the end of the window).
 - The IP is never stored or logged. Only an HMAC-SHA256 of it (salt `IP_SALT`) is used as a counter key.
 
-Counter store: Vercel Runtime Cache (`getCache` from `@vercel/functions`), because it is part of the plan, needs no Marketplace install and no extra Blob operations; counters are fixed windows with a TTL, so they clean themselves.
+Counter store: R2 objects under `wiki-files/ds-crashrep-limits/` (`cloudflare/shims/functions.js` gives `getCache` the Vercel shape; the Workers Cache API did not keep counters on this zone). Fixed windows with an expiry time; the nightly cron deletes counters older than 2 days. Behind the old-address proxy the IP comes from `x-dscr-client-ip`, trusted only with `x-dscr-proxy` = `PROXY_SECRET`.
 
 ## Storage
 
-Private Vercel Blob store `ds-crashrep-reports` (connected to the project, gives `BLOB_READ_WRITE_TOKEN`). Blob URLs answer 403 without the token.
+Private R2 bucket `wiki-files`, keys `ds-crashrep-reports/<path>` (binding `FILES`). `cloudflare/shims/blob.js` gives the handlers the `@vercel/blob` calls they use (put, get, list, del). R2 has no public object URL; a listed `url` is the admin download address (needs the token). The old Vercel Blob store `ds-crashrep-reports` is kept, read-only, until the Vercel close-down.
 
 ## Env vars (names only)
 
-- `BLOB_READ_WRITE_TOKEN` (set by the store connection)
 - `ADMIN_TOKEN` (sensitive; copy in macOS Keychain, service `ds-crashrep-admin`, account `ds-crashrep`)
 - `CRON_SECRET` (sensitive; copy in Keychain, service `ds-crashrep-cron`)
-- `IP_SALT` (sensitive)
-- `DISCORD_WEBHOOK_URL` (sensitive, optional)
+- `IP_SALT` (Keychain `ds-crashrep-ipsalt`; new on Cloudflare, it only keys the rate counters)
+- `PROXY_SECRET` (Keychain `ds-crashrep-proxy`; also set on the Vercel project for the old-address proxy)
+- `DISCORD_WEBHOOK_URL` (optional; Keychain `discord-webhook-bugreports`)
+- `PUBLIC_URL` (plain var in `wrangler.jsonc`: base of the Discord links)
 - `DISCORD_PING_KINDS` (optional)
 
 ## Cron
 
-`vercel.json` runs `/api/cron/expire` once per day at 04:17 UTC. It walks `reports/YYYY/MM/DD/` folders and deletes days older than 90 days (reports, `.meta.json`, screenshots), then handled markers older than 90 days.
+The Worker's Cron Trigger (`17 4 * * *`, `cloudflare/wrangler.jsonc`) runs the `/api/cron/expire` handler once per day at 04:17 UTC. It walks `reports/YYYY/MM/DD/` folders and deletes days older than 90 days (reports, `.meta.json`, screenshots), then handled markers older than 90 days.
 
 ## Deploy
 
 ```sh
-cd crashrep/receiver
-npm install
-vercel deploy --prod
+cd crashrep/receiver/cloudflare
+wrangler deploy --dry-run --outdir .wrangler/dist && cf-namescan . .wrangler/dist
+wrangler deploy --message "<what changed>"
+python3 ../test/receiver_test.py --url https://crashrep.dungeonsettlers.wiki
 ```
 
-Production domain is public. Previews and per-deployment URLs stay behind Vercel deployment protection.
+Secrets: `security find-generic-password -s <item> -w | wrangler secret put <NAME>`. Back: `wrangler rollback`.
+`receiver/vercel.json` is the old Vercel setup, kept for reference. The old-address proxy: `cd crashrep/vercel-proxy && vercel deploy --prod` (project `ds-crashrep`).
 
 ## Read reports on the Mac
 
