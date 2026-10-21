@@ -63,7 +63,8 @@ def shot(name):
 def owner_playing():
     """the owner's own modded game (launcher play copy or the app), not other lanes' test copies"""
     out = subprocess.run(['pgrep', '-fl', 'DSModLauncher/games/|Dungeon Settlers Modded.app'], capture_output=True, text=True).stdout
-    return [l for l in out.splitlines() if '/Contents/MacOS/' in l and '/private/' not in l and '/test_env/' not in l and '/scratchpad/' not in l]
+    return [l for l in out.splitlines() if '/Contents/MacOS/' in l and '/private/' not in l and '/test_env/' not in l and '/scratchpad/' not in l
+            and 'zsh -c' not in l and 'bash -c' not in l and 'pgrep' not in l]   # other agents' shells quote the path
 
 
 def start(mp):
