@@ -560,6 +560,9 @@ static int steam_probe(const char *lib, int init) {
 /* pid of this user's Steam client (process steam_osx), 0 = none. SteamAPI_IsSteamRunning asks Steam's ipcserver
    (mach service com.valvesoftware.steam.ipctool), not the process: a Steam whose ipcserver was killed and restarted
    by launchd keeps running, but games cannot reach it (2026-10-20: a stray pkill). Never call that "not running". */
+#ifndef STEAM_CLIENT_PROC
+#define STEAM_CLIENT_PROC "steam_osx"     /* app/test/steam builds the check with another name: the real Steam stays invisible to it */
+#endif
 static pid_t steam_client_pid(void) {
     int n = proc_listallpids(NULL, 0); if (n <= 0) return 0;
     pid_t *p = calloc((size_t)n + 64, sizeof *p); if (!p) return 0;
@@ -567,7 +570,7 @@ static pid_t steam_client_pid(void) {
     pid_t found = 0; uid_t me = getuid();
     for (int i = 0; i < n && !found; i++) {
         char name[64] = ""; struct proc_bsdinfo bi;
-        if (p[i] <= 0 || proc_name(p[i], name, sizeof name) <= 0 || strcmp(name, "steam_osx") != 0) continue;
+        if (p[i] <= 0 || proc_name(p[i], name, sizeof name) <= 0 || strcmp(name, STEAM_CLIENT_PROC) != 0) continue;
         if (proc_pidinfo(p[i], PROC_PIDTBSDINFO, 0, &bi, sizeof bi) == (int)sizeof bi && bi.pbi_uid == me) found = p[i];
     }
     free(p);
