@@ -17,6 +17,7 @@ int dsl_soft_progress_view(int *pct, char *text, size_t cap, char *arg, size_t a
 void dsl_ui_flat(DSLObj o, uint32_t rgba);                                  /* src/dsl_ui.c */
 void dsl_ui_turned(DSLObj o, float cx, float cy, float size, float deg);
 void dsl_ui_raise(DSLObj o, int order);
+void dsl_ui_fit_screen(DSLObj w, float wd, float h, float ay);
 
 #define TITLE_C 0xE3CFB0FFu
 #define BODY_C 0xCBBFAEFFu
@@ -31,12 +32,13 @@ void dsl_ui_raise(DSLObj o, int order);
 static const DSLUi *U;
 enum { D_STRIP, D_PANEL, D_ORNAMENT };
 static DSLObj root, fill, step_t, pct_t; static int built_panel = -1; static float fill_x, fill_y, fill_h; static float fill_w; static int last_pct = -1; static char last_text[160], last_arg[160];
+static int last_fit = -1;                                                   /* design last fitted to the screen */
 static unsigned last_gen;                                                   /* ds_i18n.h generation: a language change redraws */
 
 static DSLObj flat_at(DSLObj parent, float x, float y, float w, float h, uint32_t c) {
     DSLObj p = U->panel(parent, x, y, w, h, c); if (p) dsl_ui_flat(p, c); return p;
 }
-static void destroy_ui(void) { if (root) U->destroy(root); root = fill = step_t = pct_t = NULL; built_panel = -1; last_pct = -1; last_text[0] = 0; last_arg[0] = 0; }
+static void destroy_ui(void) { if (root) U->destroy(root); root = fill = step_t = pct_t = NULL; built_panel = -1; last_fit = -1; last_pct = -1; last_text[0] = 0; last_arg[0] = 0; }
 
 /* design B: bottom strip (reference 1920x1080, the game's NOW LOADING sits at the bottom right below it) */
 static void build_strip(void) {
@@ -117,6 +119,9 @@ void dsl_progress_frame(void) {
         built_panel = design; dsl_ui_raise(root, 32100);
         dsl_log("progress: %s shown", design == D_PANEL ? "centered panel" : design == D_ORNAMENT ? "ornament bar" : "bottom strip");
     }
+    /* the designs are 1920 x 1080: centred on the screen (the strip at its bottom), smaller on a 4:3 or tall window,
+       where the layer is narrower than 1920 and the right side was cut off */
+    if (tick % 30 == 0 || built_panel != last_fit) { dsl_ui_fit_screen(root, 1920, 1080, design == D_STRIP ? 0.f : 0.5f); last_fit = built_panel; }
     if (pct == last_pct && !strcmp(key, last_text) && !strcmp(arg, last_arg)) return;
     last_pct = pct; snprintf(last_text, sizeof last_text, "%s", key); snprintf(last_arg, sizeof last_arg, "%s", arg);
     step_text(key, arg, text, sizeof text, 0);

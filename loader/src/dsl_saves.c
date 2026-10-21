@@ -723,12 +723,17 @@ static void test_frame(void) {
 
 /* the title tick (dsl_reg.c dsl_frame_hook) */
 int dsl_reg_scene(void);
+/* dsl_world.c: a long notice over the stock box that closed a load (CancelIronModeLoad shows the game's fixed 520 x 109
+   box, which never grows: a long text ran over its button). A few frames later the kit's box shows it; that one grows. */
+void dsl_saves_notice_later(const char *text) {
+    snprintf(f_text, sizeof f_text, "%s", text ? text : ""); dsi_utf8_fix_end(f_text); f_frames = 3;
+}
 void dsl_saves_frame(void) {
-    if (!on) return;
+    if (f_frames && !--f_frames) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(f_text, TR("OK"), NULL, NULL, NULL, NULL); }
+    if (!on) return;                                     /* the notice above also shows when this file is off (dsl_world.c) */
     test_frame();
     if (D.open && D.frames && !--D.frames) del_show();
     if (w_pending && --w_frames <= 0) ask();
-    if (f_frames && !--f_frames) { const DSLUi *u = dsl_ui_kit(); if (u) u->notice(f_text, TR("OK"), NULL, NULL, NULL, NULL); }
     if (ndiffer && !differ_told && dsl_reg_scene() == 1 && dsl_soft_title_idle()) {
         const DSLUi *u = dsl_ui_kit(); if (!u) return;
         differ_told = 1;
@@ -742,11 +747,13 @@ void dsl_saves_frame(void) {
         char where[1700];
         if (ndiffer == 1) snprintf(where, sizeof where, TR("The old modded copy is this file:\n%s"), differ_path[0]);
         else snprintf(where, sizeof where, TR("The old modded copies are in this folder:\n%s"), copies_d);
-        int shown = 0;
+        int shown = 0, zw = 40;                  /* room for the kit's line breaks in the path (3 bytes per separator), so the
+                                                    path still breaks at a folder name, not in the middle of one */
+        for (const char *c = where; *c; c++) zw += (*c == '/' || *c == '\\') * 3;
         for (int i = 0; i < ndiffer; i++) {
             snprintf(t, sizeof t, differ_newer[i] ? TR("%s: the old modded copy is NEWER than your game save.")
                                                   : TR("%s: your game save is newer than the old modded copy."), differ[i]);
-            if (strlen(b) + 2 + strlen(t) + 2 + strlen(where) + 40 >= sizeof b) break;
+            if (strlen(b) + 2 + strlen(t) + 2 + strlen(where) + (size_t)zw >= sizeof b) break;
             strlcat(b, "\n\n", sizeof b); strlcat(b, t, sizeof b); shown++;
         }
         if (shown < ndiffer) { snprintf(t, sizeof t, TR("(and %d more)"), ndiffer - shown); strlcat(b, "\n", sizeof b); strlcat(b, t, sizeof b); }

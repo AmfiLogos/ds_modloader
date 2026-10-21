@@ -19,6 +19,9 @@
 /* in a world (Esc menu Load): no restart there (owner 2026-10-16 #10), flow K only from the title */
 #define REFUSE_IN_WORLD TR("This world uses other mods. Go back to the title screen to load it.")
 int dsl_reg_scene(void);                             /* dsl_reg.c: MainFlow._currentScene, 1 title, 2 world */
+void dsl_saves_notice_later(const char *text);       /* dsl_saves.c: the kit's notice box a few frames from now */
+/* CancelIronModeLoad's notice (CommonNoticeView.Show_Confirm, build 25846389): a text that starts with "TEXTKEY" is
+   looked up in the game's table, any other text shows as it is. So these plain sentences show; the box does not grow. */
 
 static void *(*orig_load)(void *self, void *name, const void *mi);
 static uint8_t (*try_header)(void *self, void *name, void *hdr, void **set, const void *mi);
@@ -69,9 +72,11 @@ static void *my_load(void *self, void *name, const void *mi) {
         dsl_log("world check: REFUSED %s: worlds.json could not be read (kept as %s)", nm, kept);
         dsl_world_refusals++;
         if (it) *(int32_t*)((char*)it + 0x10) = -2;
-        if (cancel_notice && str_new) {
+        if (cancel_notice && str_new) {          /* the stock box is a fixed 520 x 109: a short text there, the long one
+                                                    with the path in the kit's box (it grows) a few frames later */
             char msg[1600]; snprintf(msg, sizeof msg, TR("The list of mods for each world could not be read, so no world is loaded now. The file is kept as %s. Restart the game, and if this message comes back, send that file with a bug report."), kept); dsi_utf8_fix_end(msg);
-            cancel_notice(self, str_new(msg), str_new("dsload: worlds.json unreadable"), NULL);
+            cancel_notice(self, str_new(TR("No world can be loaded now.")), str_new("dsload: worlds.json unreadable"), NULL);
+            dsl_saves_notice_later(msg);
         }
         return it;
     }
