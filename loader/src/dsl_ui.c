@@ -80,7 +80,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
     *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
     *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_getpos, *m_rt_corners, *m_rt_omin, *m_rt_setomin, *m_rt_getamin, *m_rt_omax, *m_rt_setomax, *m_rt_getamax, *m_tr_find, *m_spr_rect, *m_scr_h, *m_tr_setscale, *m_lg_setsp, *m_lg_getsp,
-    *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
+    *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_img_gettype, *m_img_ppm, *m_img_getppm, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
     *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv,   /* text fit (+ m_tmp_getsize, m_tmp_getauto, m_rt_rect) */
@@ -977,6 +977,10 @@ static DSLObj k_field(DSLObj parent, float x, float y, float w, float h, const c
     go_active(fc, 1);
     Obj fim = comp_get(fc, K.Image), bim = first_image(tr_of(hget(h_tpl_btn)), 0), bs = img_sprite(bim);
     if (fim && bs) { CALL(m_img_sprite, void, Obj, Obj)(fim, bs, m_img_sprite); gr_color(fim, C_FIELD); }
+    /* the button's frame drawn the button's way (sliced, its pixels per unit): the field's own image type stretched the
+       frame, so a tall field (the bug report's text) had top and bottom borders 5x thicker than its sides */
+    if (fim && bs && m_img_type && m_img_gettype) CALL(m_img_type, void, Obj, int)(fim, CALL(m_img_gettype, int, Obj)(bim, m_img_gettype), m_img_type);
+    if (fim && bs && m_img_ppm && m_img_getppm) CALL(m_img_ppm, void, Obj, float)(fim, CALL(m_img_getppm, float, Obj)(bim, m_img_getppm), m_img_ppm);
     float fs = h >= 40 ? 18 : 16;
     Obj tc = m_in_tc ? CALL(m_in_tc, Obj, Obj)(fc, m_in_tc) : NULL;
     if (isa(tc, K.TMP_Text)) { txt_body(tc); txt_style(tc, 0, fs, 513, 0); gr_color(tc, C_MAIN); }
@@ -1667,6 +1671,19 @@ int dsl_ui_title_shown(void) {
     for (int i = 0; i < 7; i++) if (f_tv_btn[i] >= 0) { Obj b = AT(v, f_tv_btn[i], Obj); if (b && active_self(b)) return 1; }
     return 0;
 }
+/* a kit widget of a fixed design size (w x h units) kept inside its parent (the screen layer): anchored at (0.5, ay) of
+   the parent, and scaled down (never up) when the parent is narrower or lower than the design (a 4:3 or a tall game
+   window: the layer is 1080 high and 1080 x aspect wide). Called again every few frames, it follows a window resize. */
+static void tr_scale(Obj o, float s);
+void dsl_ui_fit_screen(DSLObj w, float wd, float h, float ay) {
+    Obj o = w ? (Obj)w : NULL, p = o ? tr_parent(o) : NULL;
+    if (!o || !p || !m_rt_rect || !isa(tr_of(p), K.RectTransform)) return;
+    R4 r = CALL(m_rt_rect, R4, Obj)(tr_of(p), m_rt_rect);
+    if (r.w < 100 || r.h < 100) return;                                /* not laid out yet */
+    float s = r.w / wd, t = r.h / h; if (t < s) s = t; if (s > 1) s = 1;
+    rt_set(o, (V2){ 0.5f, ay }, (V2){ 0.5f, ay }, (V2){ 0.5f, ay }, (V2){ wd, h }, (V2){ 0, 0 });
+    tr_scale(o, s);
+}
 /* a kit widget pinned to the top-right corner of its parent (the screen layer): right / top margins, size */
 void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
     if (w) rt_set((Obj)w, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ wd, h }, (V2){ -right, -top });
@@ -1991,6 +2008,7 @@ void dsl_ui_install(void) {
     if (K.HVLayout) { m_lg_setsp = OPT(K.HVLayout, "set_spacing", 1); m_lg_getsp = OPT(K.HVLayout, "get_spacing", 0); }
     m_gr_color = MTH(K.Graphic, "set_color", 1); m_gr_raycast = MTH(K.Graphic, "set_raycastTarget", 1); m_gr_material = OPT(K.Graphic, "set_material", 1);
     m_img_sprite = MTH(K.Image, "set_sprite", 1); m_img_getsprite = MTH(K.Image, "get_sprite", 0); m_img_type = OPT(K.Image, "set_type", 1);
+    m_img_gettype = OPT(K.Image, "get_type", 0); m_img_ppm = OPT(K.Image, "set_pixelsPerUnitMultiplier", 1); m_img_getppm = OPT(K.Image, "get_pixelsPerUnitMultiplier", 0);
     m_beh_enabled = OPT(kBeh, "set_enabled", 1);
     m_tmp_get = MTH(K.TMP_Text, "get_text", 0); m_tmp_set = MTH(K.TMP_Text, "set_text", 1);
     m_tmp_font = MTH(K.TMP_Text, "set_font", 1); m_tmp_getfont = MTH(K.TMP_Text, "get_font", 0); m_tmp_size = MTH(K.TMP_Text, "set_fontSize", 1);

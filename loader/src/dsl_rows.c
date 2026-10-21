@@ -479,6 +479,28 @@ static void hidden_off(void) {
 /* the New Campaign line */
 static DSLObj nc_line, nc_btn; static uintptr_t h_cs;
 static void nc_click(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("rows: New Campaign [Change]"); dsl_newworld_change(); }
+/* the line keeps to its 40-high rect: the kit fits two lines at its smallest size (12 of 16); a longer list wrapped at
+   16 and ran out of the rect, over the panel's bottom edge. Then the list is cut ("...") and the hover card has it all.
+   Height at 12 wrapped at w = height at 16 wrapped at w * 16/12, times 12/16 (TMP scales with the size). */
+static char nc_last[600]; static float nc_lastw;
+static void nc_fit(DSLObj line, const char *full, float w) {
+    const DSLUi *u = dsl_ui_kit();
+    if (!strcmp(full, nc_last) && w == nc_lastw) return;
+    snprintf(nc_last, sizeof nc_last, "%s", full); nc_lastw = w;
+    char t[600]; snprintf(t, sizeof t, "%s", full);
+    u->set_text(line, t);
+    int can = u->size >= offsetof(DSLUi, text_height) + sizeof u->text_height && u->text_height && w > 40;
+    for (int k = 0; can && k < 16 && u->text_height(line, w * 4 / 3.f) * 0.75f > 40; k++) {
+        size_t n = strlen(t), cut = n * 7 / 8; if (n < 24) break;
+        while (cut && ((unsigned char)t[cut] & 0xC0) == 0x80) cut--;     /* a whole UTF-8 character */
+        for (size_t s = cut; s > 0 && cut - s < 24; s--) if (t[s] == ' ') { cut = s; break; }   /* at a word if one is near */
+        while (cut && (t[cut - 1] == ' ' || t[cut - 1] == ',')) cut--;
+        snprintf(t + cut, sizeof t - cut, "\xE2\x80\xA6");
+        u->set_text(line, t);
+    }
+    u->tooltip(line, TR("Mods of this world"), strcmp(t, full) ? full : NULL);
+    if (strcmp(t, full)) dsl_log("rows: New Campaign line cut to fit (%zu of %zu bytes); the hover card has every mod", strlen(t), strlen(full));
+}
 static void new_campaign_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || !t_cs) return;
     Obj cs = h_cs ? gc_get(h_cs) : NULL;
@@ -486,9 +508,10 @@ static void new_campaign_frame(void) {
     if (!shown(cs)) return;
     char t[600]; dsl_newworld_label(t, sizeof t);
     Obj tr = comp_tr(cs, NULL);
-    if (!nc_line || !live((Obj)nc_line)) { nc_line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF); nc_btn = u->button(tr, 0, 0, 10, 10, TR("Change"), nc_click, NULL); }
-    else u->set_text(nc_line, t);
+    if (!nc_line || !live((Obj)nc_line)) { nc_line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF); nc_btn = u->button(tr, 0, 0, 10, 10, TR("Change"), nc_click, NULL);
+                                           nc_last[0] = 0; }
     dsl_rows_place_newcampaign(cs, nc_line, nc_btn);
+    if (nc_line && rt_rect) nc_fit(nc_line, t, rt_rect(tr, NULL).w - 180);   /* the line's width (dsl_rows_place_newcampaign) */
 }
 
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */

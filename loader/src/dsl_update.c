@@ -490,7 +490,7 @@ static void corner_frame(void) {
     if (!tog) {
         c_gen = dsi_generation();
         tog = u->toggle(NULL, 0, 0, 380, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
-        txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT, 0xE8DCC0FF);
+        txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT | DSL_TXT_WRAP, 0xE8DCC0FF);
         btn = u->button(NULL, 0, 0, 260, 40, TR("Download update"), button_click, NULL);
         rbtn = u->button(NULL, 0, 0, 340, 40, TR("Restart and update now"), restart_click, NULL);
         if (!tog || !txt || !btn || !rbtn) return;
@@ -529,7 +529,13 @@ static void corner_frame(void) {
     else if (kv[0]) snprintf(l, sizeof l, TR("Update %s is available."), kv);
     else snprintf(l, sizeof l, "%s", TR("Mod updates are available."));
     dsi_utf8_fix_end(l);
-    if (strcmp(l, c_last_line)) { snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l); }
+    if (strcmp(l, c_last_line)) {
+        snprintf(c_last_line, sizeof c_last_line, "%s", l); u->set_text(txt, l); if (l[0]) dsl_log("update: corner line: %s", l);
+        /* a long line (the starter's notice, de / ru) wraps: its box grows and the buttons move down under it (it drew
+           over them and the version line) */
+        float th = l[0] ? u->text_height(txt, 520) : 0; if (th < 30) th = 30;
+        dsl_ui_place_tr(txt, 24, 126, 520, th); dsl_ui_place_tr(btn, 24, 130 + th, 260, 40); dsl_ui_place_tr(rbtn, 24, 130 + th, 340, 40);
+    }
     u->set_active(txt, l[0] != 0);
     if (want_btn != c_btn_on) { u->set_active(btn, want_btn); c_btn_on = want_btn; if (want_btn) dsl_log("update: corner button \"%s\" shown", c_btn_label); }
     if (want_r != c_rbtn_on) { u->set_active(rbtn, want_r); c_rbtn_on = want_r; if (want_r) dsl_log("update: corner button \"Restart and update now\" shown"); }
