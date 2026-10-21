@@ -128,6 +128,18 @@ for s in mac win; do
   if [[ -d $OUT/$s/custom-modes ]]; then zsh $MD/copy_lang.sh $CM_REPO $CSHA $OUT/$s/custom-modes; fi
 done
 
+# ---- map files of the Foreign Expedition hub and the PvP v1 world (ds_multiplayer maps/README.md: game saves, so not in
+# git): hub_<build>.json + base_<build>.json for every game build of the module, top level next to the module in both
+# copies (listed with sha256 in mod.json files below). scan_saves.py lets exactly these names through. A missing map = no build.
+MAPS=${MP_MAPS:-${MP_REPO:-$HOME/ds_multiplayer}/maps}
+for b in $(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["game_builds"]))' $MD/multiplayer/mod.json); do
+  for k in hub base; do
+    [[ -f $MAPS/${k}_$b.json ]] || { echo "multiplayer: map file $MAPS/${k}_$b.json missing (ds_multiplayer maps/README.md)" >&2; exit 1; }
+    for s in mac win; do cp $MAPS/${k}_$b.json $OUT/$s/multiplayer/; done
+  done
+done
+echo "multiplayer: map files from $MAPS"
+
 # ---- what ships carries no debug info (build paths) and no user name: strip, then scan every file (fails the build)
 for f in $OUT/win/**/*.dll(N); do ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $f; done
 for f in $OUT/mac/**/*.dylib(N); do strip -S $f 2>/dev/null; codesign -f -s - $f 2>/dev/null; done
