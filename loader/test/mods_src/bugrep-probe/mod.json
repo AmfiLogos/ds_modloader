@@ -1,0 +1,12 @@
+{
+ "id": "bugrep-probe",
+ "name": "Bug report probe (test only)",
+ "version": "0.1.0",
+ "kind": "code",
+ "api": 3,
+ "scope": "client",
+ "game_builds": ["*"],
+ "platforms": { "mac-arm64": { "entry": "bugrep-probe.dylib" } },
+ "requires": ["loader>=2.0.0"],
+ "description": "Test module for bugrep_test.py: fake mouse clicks on the game's Bug Report buttons; the stock web form and saves folder are counted, never opened."
+}

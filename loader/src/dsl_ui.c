@@ -1003,6 +1003,23 @@ void dsl_ui_field_number(DSLObj f, int max_chars) {
     if (m_in_ctype) CALL(m_in_ctype, void, Obj, int)(fc, 2, m_in_ctype);   /* ContentType.IntegerNumber */
     if (m_in_limit && max_chars > 0) CALL(m_in_limit, void, Obj, int)(fc, max_chars, m_in_limit);
 }
+/* loader only (the bug report window, dsl_bugrep.c): a kit field takes many lines (Enter = new line), text from the
+   top left, wrapped, max_chars long. Its text keeps its size (no text fit: a long text scrolls inside the field). */
+void dsl_ui_field_multiline(DSLObj f, int max_chars) {
+    W *w = w_of(f); Obj fc = w && w->kind == W_FIELD ? hget(w->h_a) : NULL; if (!fc) return;
+    static void *m_lt; if (!m_lt) m_lt = mi_sig(K.TMP_Input, "set_lineType", 1, NULL);
+    if (m_lt && *(void **)m_lt) CALL(m_lt, void, Obj, int)(fc, 2, m_lt);                /* LineType.MultiLineNewline */
+    if (m_in_limit && max_chars > 0) CALL(m_in_limit, void, Obj, int)(fc, max_chars, m_in_limit);
+    Obj tc = m_in_tc ? CALL(m_in_tc, Obj, Obj)(fc, m_in_tc) : NULL, ph = m_in_ph ? CALL(m_in_ph, Obj, Obj)(fc, m_in_ph) : NULL;
+    Obj ts[2] = { tc, ph };
+    for (int i = 0; i < 2; i++) {
+        if (!isa(ts[i], K.TMP_Text)) continue;
+        FitE *e = fit_find(ts[i], 0); if (e) fit_drop(e);
+        fit_auto(ts[i], 0);
+        CALL(m_tmp_align, void, Obj, int)(ts[i], 257, m_tmp_align);                      /* TopLeft */
+        CALL(m_tmp_wrap, void, Obj, int)(ts[i], 1, m_tmp_wrap);
+    }
+}
 int dsl_ui_field_focused(DSLObj f) {
     W *w = w_of(f); Obj fc = w && w->kind == W_FIELD ? hget(w->h_a) : NULL;
     return fc && m_in_focused && CALL(m_in_focused, bool, Obj)(fc, m_in_focused);

@@ -34,6 +34,7 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 /* crash reports (src/dsl_crash.c). Paths and texts here are UTF-8 on both OS. */
 int dsl_uos_post(const char *url, const char *file, const char *const *headers, int nh);   /* POST the file; 0 = HTTP 2xx */
+int dsl_uos_post_resp(const char *url, const char *file, const char *const *headers, int nh, char *resp, size_t rcap);   /* HTTP status, -1 = none */
 void dsl_uos_sysinfo(char *os, size_t on, char *cpu, size_t cn, char *plat, size_t pn);   /* "macOS 27.2", CPU name, "mac-arm64" */
 int dsl_uos_pid_alive(long pid);
 void dsl_uos_random(unsigned char *buf, size_t n);

@@ -24,6 +24,40 @@
   {
    "owner": "loader",
    "kind": "detour",
+   "method": "Refactor.UI.SystemMenuView$$OnReportBugPressed",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf2efd8"
+    },
+    "win-x64": {
+     "rva": "0xc37ea0"
+    }
+   },
+   "active": "always",
+   "label": "loader bug report Esc menu button",
+   "source": "ds_modloader:loader/src/dsl_bugrep.c",
+   "key": "loader|dsl_bugrep.c|h_world|loader bug report Esc menu button"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.TitleMenuView$$OnBugReportPressed",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xe711e8"
+    },
+    "win-x64": {
+     "rva": "0xb70800"
+    }
+   },
+   "active": "always",
+   "label": "loader bug report title button",
+   "source": "ds_modloader:loader/src/dsl_bugrep.c",
+   "key": "loader|dsl_bugrep.c|h_title|loader bug report title button"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
    "method": "UnityEngine.Application$$Internal_ApplicationQuit",
    "platforms": {
     "mac-arm64": {

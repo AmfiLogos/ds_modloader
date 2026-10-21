@@ -759,3 +759,38 @@ Patching the file gives no speed: it starts like stock. The gain is the boot spe
 uncapped, loading priority High until the title); the loader itself costs at most ~1.4 s. Windows (older VM logs):
 default mods 7.0-10.3 s, BepInEx first start 286 s / next 16 s; stock and MelonLoader not measured there.
 Details and the comparison with BepInEx / MelonLoader: `../docs/MODDING.md`.
+
+## Bug report window (owner 2026-10-20, branch bugreport) - `src/dsl_bugrep.c`, `src/dsl_bugrep_fmt.c`
+The owner wants "an in-game bug report: text + screenshot + logs", reaching him through the private receiver page and a
+Discord ping (receiver side: lane bugrecv; its spec is crashrep/README.md "kind bug").
+- The game's own Bug Report buttons are REPLACED in the modded game: `TitleMenuView.OnBugReportPressed` (title) and
+  `SystemMenuView.OnReportBugPressed` (Esc menu in a world) are hooked by name in `dsl_reg_ready` (before the modules)
+  and never run (stock = `Application.OpenURL` of the developers' form; the title one also opens the saves folder).
+  The Esc menu already has the entry: no new button.
+- Screenshot = the frame just before the window: title = the next frame; world = the Esc menu scaled to 0 for 3 frames
+  (no OnDisable, the game stays paused), shot, scale back, the window opens over the Esc menu (Esc / X / Cancel close it,
+  the Esc menu is still there). `CaptureScreenshotAsTexture` -> `GetPixels32` -> box scale to <= 1600 x 900 -> JPEG
+  with stb_image_write (`src/third_party/stb`, public domain; this IL2CPP build has no `EncodeToJPG`), quality 85 -> 65
+  -> 45 until <= 1 MB -> `<crash>/bugs/shot.jpg`, previewed in the window (`image_png`, LoadImage reads JPEG).
+- Window (kit only, Mods window look): multi-line text (kit `dsl_ui_field_multiline`: TMP LineType MultiLineNewline,
+  8000 chars, top-left, wrapped, no text fit), contact (optional, one line, 200), "Include a screenshot" (on; off and
+  grey when no shot), "Include logs" (on), privacy line + "Privacy note" (opens `ds-crashrep.vercel.app/privacy`), Send /
+  Cancel, a status line, "Send saved reports (n)" when some were not sent. No consent question: Send is the consent;
+  nothing is sent without it.
+- Send (thread): `<crash>/bugs/<time>-<n>/report.txt.gz` is written FIRST (+ screenshot.jpg), then POST
+  `/api/report` with `X-DSCR-Kind: bug` (same key / install id as crash reports; a random id when crash reports are not
+  in this start). 2xx: "Thanks, your report was sent (id <random part of the receiver's path>)" + sent.txt; 429:
+  "Too many reports, try later" (saved); else the error + the folder (saved). 10 newest folders kept. `<crash>` =
+  ROOT/crash (DSML_ROOT) else `<log dir>/crash`.
+- Wire format (agreed with bugrecv, client side): gzip, `DSCRASH 1`, the crash header lines (install, loader,
+  game_build, platform, os, cpu, sent, mods, + scene), `kind: bug`, `contact: <as typed, not scrubbed>`,
+  `reason: player bug report`, `===== bug.txt (N of N bytes) =====` (scrubbed), `===== screenshot.jpg.b64 (N of N bytes,
+  base64) =====` (76-char lines, NEVER scrubbed or cut), then dsload.log, dsload.prev.log, rig.log, player.log,
+  starter.log (Mac `~/Library/Logs/DungeonSettlersModded.log`, Windows `<profile>\starter.log`), ErrorLog.txt (scrubbed
+  tails, crash caps). Over 3.5 MB gzip: log tails cut to 1/2 .. 1/16, then the screenshot is dropped (text kept).
+- Test switches (no player start sets them): `DSL_BUGREP_DRY=1` (write, no POST), `DSL_BUGREP_ADMIN=<token>`
+  (X-DSCR-Admin: receiver rate limits off), `DSL_BUGREP_TEST=<dir>` (cmd.json driver).
+- Tests: `test/crashrep/run.sh` runs `bugrep_test.c` (format: base64 survives the scrubber byte for byte, text scrubbed,
+  too big -> screenshot dropped; fails when the base64 is scrubbed). Rig: `test/bugrep_test.py [out] [--send]
+  [--title-only]` on copy R with test module `bugrep-probe` (fake mouse on the stock buttons; OpenURL and
+  OpenSavesFolder counted, never run): title + world, fails on the old loader (the stock button calls OpenURL).
