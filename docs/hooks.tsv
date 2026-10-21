@@ -50,6 +50,7 @@ multiplayer	detour	Refactor.Main.Event.CampaignLoadingEventHandler.<WaitForDefau
 multiplayer	detour	Refactor.Main.Event.CampaignLoadingEventHandler.<WaitUntilGameStabilizes>d__103$$MoveNext	0xd772a0	0xa9ee10	always (module loaded)	multiplayer WaitUntilGameStabilizes.MoveNext	ds_multiplayer:src/mp_game.c
 multiplayer	detour	UnityEngine.GUIUtility$$get_systemCopyBuffer	0x518aea0	0x39f54b0	env DSMP_TEST, DSRIG_BATCH, DSRIG_HIDEWIN, DSRIG_SPACE (test copies / debugging only)	multiplayer mpmenu GUIUtility.get_systemCopyBuffer (test: file)	ds_multiplayer:src/mpmenu.c
 multiplayer	detour	UnityEngine.GUIUtility$$set_systemCopyBuffer	0x518afe0	0x39f58b0	env DSMP_TEST, DSRIG_BATCH, DSRIG_HIDEWIN, DSRIG_SPACE (test copies / debugging only)	multiplayer mpmenu GUIUtility.set_systemCopyBuffer (test: file)	ds_multiplayer:src/mpmenu.c
+multiplayer	detour	UnityEngine.Input$$get_mouseScrollDelta	0x51ad584	0x3a0ea20	always (module loaded)	multiplayer mpmenu Input.get_mouseScrollDelta (0 over the chat: no camera zoom)	ds_multiplayer:src/mpmenu.c
 multiplayer	detour	Refactor.Main.InputModule.KeyInputDispatcher$$IsTextInputFocused	0xd42bbc	0xa62590	always (module loaded)	multiplayer mpmenu KeyInputDispatcher.IsTextInputFocused (chat typing: no hotkeys)	ds_multiplayer:src/mpmenu.c
 multiplayer	detour	Refactor.Main.Event.CampaignLoadingEventHandler$$OnEvent	0xd6c800	0xa71830	always (module loaded)	multiplayer mpmenu OnEvent(QuickLoadRequested) (blocked in MP)	ds_multiplayer:src/mpmenu.c
 multiplayer	detour	Refactor.SaveLoadView$$RefreshLoadPanel	0x85ed7c	0x5e8540	always (module loaded)	multiplayer mpmenu SaveLoadView.RefreshLoadPanel (single / multiplayer list)	ds_multiplayer:src/mpmenu.c
@@ -111,6 +112,7 @@ multiplayer	detour	Refactor.Main.EventFlowProcessor$$StartEvent	0xcea620	0xa0234
 multiplayer	detour	Refactor.FactionRelationInfo$$GetRelation	0x82bba0	0x5991b0	always (module loaded)	multiplayer pvp FactionRelationInfo.GetRelation	ds_multiplayer:src/pvp_game.c
 multiplayer	detour	Refactor.FactionRelationInfo$$IsRelation	0x82c5dc	0x59a120	always (module loaded)	multiplayer pvp FactionRelationInfo.IsRelation	ds_multiplayer:src/pvp_game.c
 multiplayer	detour	Refactor.Tick.DataApply.MainEventApplier$$Apply	0xab7628	0x7f41e0	always (module loaded)	multiplayer pvp MainEventApplier.Apply(DeadApplyData)	ds_multiplayer:src/pvp_game.c
+multiplayer	detour	Refactor.Tick.PassiveActionContainer$$Register	0xa782c8	0x7beeb0	always (module loaded)	multiplayer pvp PassiveActionContainer.Register	ds_multiplayer:src/pvp_game.c
 multiplayer	detour	AstarPath$$StartPath	0xfe19c0	0xcf24a0	always (module loaded)	multiplayer AstarPath.StartPath	ds_multiplayer:src/rig_det.c
 multiplayer	detour	Refactor.Component.CombatInfoComponent$$SetCombatTarget	0xdd7990	0x5c3ee0	env DSRIG_DIAG (test copies / debugging only)	multiplayer CombatInfoComponent.SetCombatTarget	ds_multiplayer:src/rig_det.c
 multiplayer	detour	Refactor.CombatTargetApplyData$$.ctor	0x847ef0	0x56af40	env DSRIG_DIAG (test copies / debugging only)	multiplayer CombatTargetApplyData..ctor	ds_multiplayer:src/rig_det.c

@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "98cf142232dafa4cf925168af27ee28accf7c33e",
- "cm_pin": "3f7b43e3c34773dc21d431cb39c4349b5fdd4a29",
+ "mp_pin": "7d2ce7c6013d399347f2592dcfd57b45693fb072",
+ "cm_pin": "562207f670782dc977da3777722950998bedc5d6",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -904,6 +904,23 @@
    "label": "multiplayer mpmenu GUIUtility.set_systemCopyBuffer (test: file)",
    "source": "ds_multiplayer:src/mpmenu.c",
    "key": "multiplayer|mpmenu.c|h_clip_set|mpmenu GUIUtility.set_systemCopyBuffer (test: file)"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "UnityEngine.Input$$get_mouseScrollDelta",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x51ad584"
+    },
+    "win-x64": {
+     "rva": "0x3a0ea20"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer mpmenu Input.get_mouseScrollDelta (0 over the chat: no camera zoom)",
+   "source": "ds_multiplayer:src/mpmenu.c",
+   "key": "multiplayer|mpmenu.c|h_scroll_delta|mpmenu Input.get_mouseScrollDelta (0 over the chat: no camera zoom)"
   },
   {
    "owner": "multiplayer",
@@ -1941,6 +1958,23 @@
    "label": "multiplayer pvp MainEventApplier.Apply(DeadApplyData)",
    "source": "ds_multiplayer:src/pvp_game.c",
    "key": "multiplayer|pvp_game.c|h_deadapply|pvp MainEventApplier.Apply(DeadApplyData)"
+  },
+  {
+   "owner": "multiplayer",
+   "kind": "detour",
+   "method": "Refactor.Tick.PassiveActionContainer$$Register",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xa782c8"
+    },
+    "win-x64": {
+     "rva": "0x7beeb0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "multiplayer pvp PassiveActionContainer.Register",
+   "source": "ds_multiplayer:src/pvp_game.c",
+   "key": "multiplayer|pvp_game.c|h_preg|pvp PassiveActionContainer.Register"
   },
   {
    "owner": "multiplayer",
