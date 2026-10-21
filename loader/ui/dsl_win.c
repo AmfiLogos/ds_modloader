@@ -392,7 +392,6 @@ static size_t cols_at(const char *s, int cols) {
                  if (c + wd > cols) break; c += wd; for (int k = 0; k < n && *p; k++) p++; }
     return (size_t)((const char *)p - s);
 }
-static int has_wide(const char *s) { for (const unsigned char *p = (const unsigned char *)s; *p; p++) if (wide_at(p)) return 1; return 0; }
 static void settings_open(DSLObj root, float w, float h);
 static void bottom_bar(DSLObj root, float w, float h);
 /* the line on how the open tab's mods work, at the top of its list; returns its height */
@@ -493,17 +492,10 @@ static void mods_open(DSLObj root, float w, float h) {
         }
         snprintf(nm, sizeof nm, "mod:%s", m->id); named(mods[i].row, 1, nm, mod_change, (void *)(intptr_t)i, mods[i].on ? "on" : "off");
         int bad = m->enabled && m->active != 1 && m->reason && m->reason[0];
-        char d[400];
+        char d[1200];
         if (bad) snprintf(d, sizeof d, TR("Not running: %s"), TR(m->reason));   /* reason: an English key (or a starter's text) */
         else snprintf(d, sizeof d, "%s", m->description ? m->description : "");
-        /* two lines; all in the tooltip. Counted in columns, not bytes (a Chinese / Japanese / Korean character is two
-           columns and three bytes, a Russian letter one column and two bytes): ru and CJK were cut at half the width */
-        int cut = 0; char full[400]; snprintf(full, sizeof full, "%s", d);
-        if (cols_at(d, 150) < strlen(d)) { size_t hi = cols_at(d, 146), lo = cols_at(d, 100), c = hi;
-                                           while (c > lo && d[c] != ' ') c--;
-                                           if (c == lo && d[c] != ' ' && has_wide(d)) c = hi;   /* no space (CJK): at the column */
-                                           while (c > 0 && ((unsigned char)d[c] & 0xC0) == 0x80) c--;   /* never inside a UTF-8 character */
-                                           snprintf(d + c, sizeof d - c, " ..."); cut = 1; }
+        dsi_utf8_fix_end(d);                                          /* the whole text: the row grows to it (it was cut at two lines) */
         /* owner: BepInEx plugins with a small mark; MelonLoader mods (kind "melon") the same way */
         const char *mk = !m->kind ? NULL : !strcmp(m->kind, "bepinex") ? "BepInEx" : !strcmp(m->kind, "melon") ? "MelonLoader" : NULL;
         float mw = mk && mk[0] == 'M' ? 100 : 64;
@@ -513,7 +505,6 @@ static void mods_open(DSLObj root, float w, float h) {
         /* the game's way for long text: the box grows to the text (two CJK lines are taller than two Lora lines) */
         { float ph = t && U->text_height ? U->text_height(t, dw) : 0; if (ph > dh) { dh = ph; U->place(t, dx, y + 38, dw, dh); rh = 40 + dh; } }
         snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
-        if (cut) U->tooltip(mods[i].row, m->name, full);              /* the whole text, also a long "Not running" reason */
         /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent"): one orange line under the
            description while it is switched on */
         int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);

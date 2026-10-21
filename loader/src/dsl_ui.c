@@ -80,7 +80,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
     *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
     *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_getpos, *m_rt_corners, *m_rt_omin, *m_rt_setomin, *m_rt_getamin, *m_rt_omax, *m_rt_setomax, *m_rt_getamax, *m_tr_find, *m_spr_rect, *m_scr_h, *m_tr_setscale, *m_lg_setsp, *m_lg_getsp,
-    *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_img_gettype, *m_img_ppm, *m_img_getppm, *m_beh_enabled,
+    *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
     *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv,   /* text fit (+ m_tmp_getsize, m_tmp_getauto, m_rt_rect) */
@@ -967,6 +967,14 @@ static void sliders_frame(void) {                                    /* the play
 static void k_value_set(DSLObj v, int index) { W *w = w_of(v); if (w && w->kind == W_VALUE && index >= 0 && index < w->n) { w->index = index; value_text(w); } }
 
 /* text field: a clone of a stock TMP_InputField, framed like a menu button (no magnifier), as mpmenu field_make */
+static V2 rt_pos(Obj o); static Obj tr_find(Obj t, const char *path);
+/* the text area ("Text Area", stretched): the stock save-name field keeps 35.8 units on its left for its magnifier, so the
+   typed text started ~36 in. Here in_x on both sides; in_y < 0: the source's height and place (multiplayer field_area) */
+static void field_area(Obj f, float in_x, float in_y) {
+    Obj ta = tr_find(f, "Text Area"); if (!isa(tr_of(ta), K.RectTransform)) return;
+    V2 sd = rt_size(ta), ap = rt_pos(ta);
+    rt_set(ta, (V2){ 0, 0 }, (V2){ 1, 1 }, (V2){ 0.5f, 0.5f }, (V2){ -2 * in_x, in_y < 0 ? sd.y : -2 * in_y }, (V2){ 0, in_y < 0 ? ap.y : 0 });
+}
 static void in_settext(Obj f, const char *s) { if (isa(f, K.TMP_Input)) CALL(m_in_settext, void, Obj, Obj)(f, str(s), m_in_settext); }
 static DSLObj k_field(DSLObj parent, float x, float y, float w, float h, const char *placeholder, const char *text, dsl_ui_cb submit, void *ud) {
     if (!ready_basic()) return NULL;
@@ -977,10 +985,6 @@ static DSLObj k_field(DSLObj parent, float x, float y, float w, float h, const c
     go_active(fc, 1);
     Obj fim = comp_get(fc, K.Image), bim = first_image(tr_of(hget(h_tpl_btn)), 0), bs = img_sprite(bim);
     if (fim && bs) { CALL(m_img_sprite, void, Obj, Obj)(fim, bs, m_img_sprite); gr_color(fim, C_FIELD); }
-    /* the button's frame drawn the button's way (sliced, its pixels per unit): the field's own image type stretched the
-       frame, so a tall field (the bug report's text) had top and bottom borders 5x thicker than its sides */
-    if (fim && bs && m_img_type && m_img_gettype) CALL(m_img_type, void, Obj, int)(fim, CALL(m_img_gettype, int, Obj)(bim, m_img_gettype), m_img_type);
-    if (fim && bs && m_img_ppm && m_img_getppm) CALL(m_img_ppm, void, Obj, float)(fim, CALL(m_img_getppm, float, Obj)(bim, m_img_getppm), m_img_ppm);
     float fs = h >= 40 ? 18 : 16;
     Obj tc = m_in_tc ? CALL(m_in_tc, Obj, Obj)(fc, m_in_tc) : NULL;
     if (isa(tc, K.TMP_Text)) { txt_body(tc); txt_style(tc, 0, fs, 513, 0); gr_color(tc, C_MAIN); }
@@ -989,6 +993,7 @@ static DSLObj k_field(DSLObj parent, float x, float y, float w, float h, const c
     Obj ph = m_in_ph ? CALL(m_in_ph, Obj, Obj)(fc, m_in_ph) : NULL;
     if (isa(ph, K.TMP_Text)) { tmp_set(ph, placeholder ? placeholder : ""); txt_body(ph); txt_style(ph, 0, fs - 2, 513, 0); gr_color(ph, C_SUB); }
     in_settext(fc, text ? text : "");
+    field_area(fc, 10, -1);
     place_tl(fc, x, y, w, h);
     W *wd = w_new(W_FIELD); if (!wd) { destroy_obj(go_of(fc)); return NULL; }
     hset(&wd->h_a, fc); wd->cb = submit; wd->ud = ud; wd->w = w; wd->h = h;
@@ -1015,6 +1020,17 @@ void dsl_ui_field_multiline(DSLObj f, int max_chars) {
     if (m_lt && *(void **)m_lt) CALL(m_lt, void, Obj, int)(fc, 2, m_lt);                /* LineType.MultiLineNewline */
     if (m_in_limit && max_chars > 0) CALL(m_in_limit, void, Obj, int)(fc, max_chars, m_in_limit);
     Obj tc = m_in_tc ? CALL(m_in_tc, Obj, Obj)(fc, m_in_tc) : NULL, ph = m_in_ph ? CALL(m_in_ph, Obj, Obj)(fc, m_in_ph) : NULL;
+    /* the button frame is drawn stretched (not sliced): at 290 high its top and bottom borders were ~12 units, its sides
+       ~4. A tall field gets its frame as two flat colours instead: the border colour, the dark inside 4 units in (the
+       colours the frame has on screen); the text area fills it 10 / 8 units in */
+    Obj fim = comp_get(fc, K.Image);
+    if (fim) {
+        img_set(fim, NULL, (Col){ 59 / 255.f, 35 / 255.f, 31 / 255.f, 1 }, 0); gr_material(fim, NULL); gr_raycast(fim, 1);   /* the click target stays */
+        Obj in = inst(hget(h_tpl_img), fc);
+        if (in) { go_active(in, 1); gr_material(in, NULL); img_set(in, NULL, (Col){ 20 / 255.f, 19 / 255.f, 22 / 255.f, 1 }, 0);
+                  rt_set(in, (V2){ 0, 0 }, (V2){ 1, 1 }, (V2){ 0.5f, 0.5f }, (V2){ -8, -8 }, (V2){ 0, 0 }); set_sibling(in, 0); }
+    }
+    field_area(fc, 10, 8);
     Obj ts[2] = { tc, ph };
     for (int i = 0; i < 2; i++) {
         if (!isa(ts[i], K.TMP_Text)) continue;
@@ -2008,7 +2024,6 @@ void dsl_ui_install(void) {
     if (K.HVLayout) { m_lg_setsp = OPT(K.HVLayout, "set_spacing", 1); m_lg_getsp = OPT(K.HVLayout, "get_spacing", 0); }
     m_gr_color = MTH(K.Graphic, "set_color", 1); m_gr_raycast = MTH(K.Graphic, "set_raycastTarget", 1); m_gr_material = OPT(K.Graphic, "set_material", 1);
     m_img_sprite = MTH(K.Image, "set_sprite", 1); m_img_getsprite = MTH(K.Image, "get_sprite", 0); m_img_type = OPT(K.Image, "set_type", 1);
-    m_img_gettype = OPT(K.Image, "get_type", 0); m_img_ppm = OPT(K.Image, "set_pixelsPerUnitMultiplier", 1); m_img_getppm = OPT(K.Image, "get_pixelsPerUnitMultiplier", 0);
     m_beh_enabled = OPT(kBeh, "set_enabled", 1);
     m_tmp_get = MTH(K.TMP_Text, "get_text", 0); m_tmp_set = MTH(K.TMP_Text, "set_text", 1);
     m_tmp_font = MTH(K.TMP_Text, "set_font", 1); m_tmp_getfont = MTH(K.TMP_Text, "get_font", 0); m_tmp_size = MTH(K.TMP_Text, "set_fontSize", 1);
