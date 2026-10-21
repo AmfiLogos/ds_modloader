@@ -50,6 +50,7 @@ typedef struct { float x, y; } V2;
 static const DSLUi *U;
 /* dsl_reg.c: the scene (1 title, 2 world) and the switches for the prewarm (n < 0 = drop) */
 int dsl_reg_scene(void);
+void dsl_ui_fit_screen(DSLObj w, float wd, float h, float ay);   /* src/dsl_ui.c: scaled down on a small screen */
 void dsl_mods_draft(const char *const *ids, int n);
 static int read_only;                                                  /* in a world: mods change only at the title (owner #10) */
 static int is_open, want_open, cur = -1, ntabs_shown;
@@ -168,6 +169,7 @@ static float m_lw, m_rw, m_rx;
 static int m_tab;                                                      /* Mods window tab: 0 Game mods, 1 Launcher mods (owner 2026-10-20) */
 static DSLObj m_sub[2];                                                /* the two tab buttons in the window's tab strip (title, not world) */
 static char set_page[64];                                              /* the Settings page of this mod is open ("" = the list) */
+static size_t cols_at(const char *s, int cols);
 static int changed(void) {
     for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1;
     return !world_mode && dsl_settings_pending(NULL) > 0;              /* a gameplay setting waits for Apply */
@@ -218,6 +220,11 @@ static void mods_sync(void) {
             if (k++) { snprintf(t, sizeof t, TR("%s, %s"), list, sc); snprintf(list, sizeof list, "%s", t); }
             else snprintf(list, sizeof list, "%s", sc);
         }
+        /* many changes (a group picked): the list is cut so the line keeps to its three lines over Undo / Apply (it ran
+           past the window's bottom edge) */
+        size_t c = cols_at(list, 140);
+        if (c < strlen(list)) { size_t sp = c; while (sp + 24 > c && sp > 0 && list[sp] != ' ') sp--; if (list[sp] == ' ') c = sp;
+                                snprintf(list + c, sizeof list - c, " \xE2\x80\xA6"); }
         snprintf(s, sizeof s, world_mode ? TR("Changes: %s. Save for this world to keep them.") : TR("Changes: %s. Apply to use them."), list);
     }
     dsi_utf8_fix_end(s);
@@ -456,7 +463,7 @@ static void mods_open(DSLObj root, float w, float h) {
     char wn[160]; snprintf(wn, sizeof wn, "%s", world_name[0] ? world_name : TR("this world"));
     { int c = 0; for (char *p = wn; *p; p++) if ((*p & 0xC0) != 0x80 && ++c > 30) { *p = 0; strcat(wn, "..."); break; } }
     char hd[200]; if (world_mode) snprintf(hd, sizeof hd, TR("Mods for %s"), wn); else snprintf(hd, sizeof hd, "%s", TR("Installed mods")); dsi_utf8_fix_end(hd);
-    named(U->text(root, 0, 0, m_lw, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);
+    named(U->text(root, 0, 0, world_mode ? m_lw : m_lw - 324, 32, hd, 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, "heading", NULL, NULL, hd);   /* left of Refresh */
     if (!world_mode) {
         DSLObj of = named(U->button(root, m_lw - 200, 0, 200, 34, TR("Open mods folder"), folder_click, NULL), 0, "mods-folder", folder_click, NULL, TR("Open mods folder"));
         U->tooltip(of, TR("Open mods folder"), TR("Put the mod's .zip file in this folder. Click Refresh to add it to this list. Then turn it on and click Apply."));
@@ -464,6 +471,7 @@ static void mods_open(DSLObj root, float w, float h) {
         U->tooltip(rf, TR("Refresh"), TR("Check the mods folder for new mods."));
     }
     U->panel(root, 0, 40, m_lw, lh, 0);
+    flat(U->panel(root, 4, 44, m_lw - 8, lh - 8, 0), 0x2D2A31FFu);     /* one colour inside the frame (its sprite has a lighter top band that ended mid-list) */
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
     float y = 0, rh = 74;
     int shown = 0, tab = world_mode ? 0 : m_tab;
@@ -490,7 +498,7 @@ static void mods_open(DSLObj root, float w, float h) {
         else snprintf(d, sizeof d, "%s", m->description ? m->description : "");
         /* two lines; all in the tooltip. Counted in columns, not bytes (a Chinese / Japanese / Korean character is two
            columns and three bytes, a Russian letter one column and two bytes): ru and CJK were cut at half the width */
-        int cut = 0;
+        int cut = 0; char full[400]; snprintf(full, sizeof full, "%s", d);
         if (cols_at(d, 150) < strlen(d)) { size_t hi = cols_at(d, 146), lo = cols_at(d, 100), c = hi;
                                            while (c > lo && d[c] != ' ') c--;
                                            if (c == lo && d[c] != ' ' && has_wide(d)) c = hi;   /* no space (CJK): at the column */
@@ -503,9 +511,9 @@ static void mods_open(DSLObj root, float w, float h) {
         float dx = mk ? 16 + mw : 12, dw = m_lw - (mk ? 60 + mw : 56), dh = rh - 40;
         DSLObj t = U->text(list, dx, y + 38, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
         /* the game's way for long text: the box grows to the text (two CJK lines are taller than two Lora lines) */
-        { float ph = t && U->text_height ? U->text_height(t, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(t, dx, y + 38, dw, dh); rh = 40 + dh; } }
+        { float ph = t && U->text_height ? U->text_height(t, dw) : 0; if (ph > dh) { dh = ph; U->place(t, dx, y + 38, dw, dh); rh = 40 + dh; } }
         snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
-        if (cut && m->description) U->tooltip(mods[i].row, m->name, m->description);
+        if (cut) U->tooltip(mods[i].row, m->name, full);              /* the whole text, also a long "Not running" reason */
         /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent"): one orange line under the
            description while it is switched on */
         int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
@@ -660,6 +668,7 @@ static void settings_open(DSLObj root, float w, float h) {
     float nh = 22; { float ph = st_note && U->text_height ? U->text_height(st_note, w) : 0; if (ph > nh + 2) { nh = ph; U->place(st_note, 0, 38, w, nh); } }
     float ly = 38 + nh + 8, lh = h - 66 - 8 - ly;
     U->panel(root, 0, ly, w, lh, 0);
+    flat(U->panel(root, 4, ly + 4, w - 8, lh - 8, 0), 0x2D2A31FFu);
     DSLObj list = U->scroll(root, 8, ly + 8, w - 16, lh - 16);
     float y = 0, rw = w - 48;
     int has_slider = U->size >= offsetof(DSLUi, slider_set) + sizeof U->slider_set && U->slider;
@@ -786,7 +795,7 @@ static void build(void) {
     w_back = flat(U->panel(NULL, 0, 0, 100, 100, 0), 0x0000009E);       /* dims the game and takes its clicks */
     fill_parent(w_back);
     w_win = U->panel(NULL, 0, 0, WIN_W, WIN_H, 0);
-    centre(w_win);
+    centre(w_win); dsl_ui_fit_screen(w_win, WIN_W, WIN_H, 0.5f);       /* a tall game window: smaller, never cut */
     flat(U->panel(w_win, 4, 4, WIN_W - 8, WIN_H - 8, 0), 0x222025FF);      /* one body colour (the frame sprite's inside has a band) */
     flat(U->panel(w_win, 4, 4, WIN_W - 8, BAND_H - 4, 0), 0x2D2A31FF);
     flat(U->panel(w_win, 4, BAND_H, WIN_W - 8, 1, 0), 0xB6835AFF);
@@ -959,6 +968,7 @@ void dsl_win_frame(void) {
         if (ro) { dsl_log("win: opens again after the Apply restart (%s)", ro); dsl_win_open(ro); } }
     if (want_open && now_s() >= open_retry_at) open_now();
     if (is_open) {
+        static int fit_tick; if (++fit_tick % 30 == 0) dsl_ui_fit_screen(w_win, WIN_W, WIN_H, 0.5f);   /* the game window was resized */
         int f = (int)(now_s() * 6) % SLOGEL_FRAMES;                   /* Mud Slogel idle, 6 frames per second */
         if (f != slogel_shown && w_slogel[f]) { if (slogel_shown >= 0 && w_slogel[slogel_shown]) U->set_active(w_slogel[slogel_shown], 0); U->set_active(w_slogel[f], 1); slogel_shown = f; }
         if (cur == 0) { mods_update(); num_focus_frame(); }
