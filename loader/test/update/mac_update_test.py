@@ -6,11 +6,11 @@ aborts at start). Each test has its own ROOT (DSMODDED_ROOT), app copy in <work>
 runs for real (install + execv) and starts <instance app> (hidden, LSBackgroundOnly; pinned in copy.json), or runs dry
 (DSMODDED_DRY_RUN=1: the update steps, no game). The update window is made hidden (DSL_UPDATE_WINDOW=hidden). A local
 release server (relserver.py) stands in for GitHub.
-Tests (default all): on, off, failed, crash, mismatch, dmg, xvol."""
+Tests (default all): on, off, restart, failed, crash, mismatch, dmg, xvol."""
 import glob, hashlib, json, os, re, shutil, signal, subprocess, sys, time
 
 W, APPS, INST_APP = (os.path.abspath(a) for a in sys.argv[1:4])
-TESTS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['on', 'off', 'failed', 'crash', 'mismatch', 'dmg', 'xvol']
+TESTS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['on', 'off', 'restart', 'failed', 'crash', 'mismatch', 'dmg', 'xvol']
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = open(os.path.join(HERE, '../../src/dsl_update.c')).read()
 KIT_REPO = re.search(r'#define KIT_REPO "([^"]+)"', SRC).group(1)
@@ -211,7 +211,7 @@ if 'off' in TESTS:
     r = Run('off', [('v' + NEW, NEW)], auto=False)
     try:
         r.stub()
-        shown = r.wait(f'update: corner button "Update to {NEW}" shown', 240)
+        shown = r.wait('update: corner button "Download update" shown', 240)
         time.sleep(3)
         reqs = open(os.path.join(r.srv, 'requests.log')).read() if os.path.exists(os.path.join(r.srv, 'requests.log')) else ''
         check('off: button shown, nothing downloaded', shown and not [l for l in reqs.splitlines() if '/dl/' in l and '/release-manifest.json' not in l], reqs.replace('\n', ' | ')[:200])   # the signed manifest (v0.1.16) may be read; no kit file
@@ -223,6 +223,72 @@ if 'off' in TESTS:
         r.stub()
         conf = r.wait(f'update: v{NEW} confirmed at the title', 240)
         check('off: installed at the next start', conf and r.release_of() == (NEW, NEW), str(r.release_of()))
+    finally:
+        r.stop()
+
+def until(fn, limit):
+    t0 = time.time()
+    while time.time() - t0 < limit:
+        if fn():
+            return True
+        time.sleep(1)
+    return False
+
+
+def game_pids():
+    out = subprocess.run(['/bin/ps', '-axo', 'pid=,command='], capture_output=True, text=True).stdout
+    return {int(l.split(None, 1)[0]) for l in out.splitlines() if INST_APP in l and '-screen-width 960' in l}
+
+
+if 'restart' in TESTS:
+    # owner 2026-10-20 (G1, G2): Auto-update off. "Download update" downloads at once; "Restart and update now" quits the
+    # game, the stub waits for it, installs the kit, starts the new game. Then the same for a mod update.
+    r = Run('restart', [('v' + NEW, NEW)], auto=False)
+    try:
+        src = os.path.join(APPS, NEW, NAME, 'Contents/Resources/dsml/mods/gcd-cdr')
+        mj = json.load(open(os.path.join(src, 'mod.json')))
+        a, b, c = (int(x) for x in mj['version'].split('.')[:3]); MODV = f'{a}.{b}.{c + 50}'
+        st = os.path.join(W, '.stage', 'gcd' + str(time.time())); sh('/usr/bin/ditto', src, os.path.join(st, 'gcd-cdr'))
+        mj['version'] = MODV; json.dump(mj, open(os.path.join(st, 'gcd-cdr/mod.json'), 'w'), indent=1)
+        md = os.path.join(r.srv, KIT_REPO, f'gcd-cdr-v{MODV}'); os.makedirs(md)
+        subprocess.run(['/usr/bin/zip', '-qr', os.path.join(md, f'gcd-cdr-{MODV}.zip'), 'gcd-cdr'], cwd=st, check=True)
+        r.stub()
+        shown = r.wait('update: corner button "Download update" shown', 240)
+        line = r.wait(f'update: corner line: Update {NEW} is available.', 30, new=False)
+        time.sleep(2)
+        reqs = open(os.path.join(r.srv, 'requests.log')).read()
+        check('restart: Off: "Download update" shown, line names the version, nothing downloaded', shown and line
+              and 'Mac.zip' not in reqs, reqs.count('\n'))
+        open(os.path.join(r.u, 'test_click'), 'w').close()
+        got = r.wait(f'update: corner line: {NEW} installs the next time you start the game.', 120)
+        rb = r.wait('update: corner button "Restart and update now" shown', 30, new=False)
+        check('restart: click -> downloaded now (sha256 ok), "Restart and update now" shown, nothing installed yet',
+              got and rb and 'downloaded, sha256 ok' in r.logtext() and r.release_of() == (OLD, OLD), str(r.release_of()))
+        old = game_pids()
+        open(os.path.join(r.u, 'test_restart'), 'w').close()
+        conf = until(lambda: f'update: v{NEW} confirmed at the title' in r.logtext(), 300)
+        stl = r.stublog()
+        check('restart: the game quit, the stub waited for it, then installed the kit',
+              'update: restart: the game ended: the update installs now' in stl and f'update: v{NEW} installed' in stl
+              and 'the stub' in r.logtext() and not (old & game_pids()), last(stl, 'restart:')[0])
+        check('restart: the new game runs on the new version (loader, app), confirmed at the title', conf and r.release_of() == (NEW, NEW)
+              and not r.pending() and len(game_pids()) == 1, str(r.release_of()))
+        check('restart: version line shows the new version', until(lambda: f'title version line: Dungeon Settlers Modded v{NEW}' in r.logtext(), 30))
+        # the mods: the next start checks the mods (no newer kit; this start shows "Updated to" instead): the same two buttons
+        r.kill(); r.stub()
+        ma = until(lambda: 'update: corner line: Mod updates are available.' in r.logtext(), 120)
+        open(os.path.join(r.u, 'test_click'), 'w').close()
+        mr = until(lambda: 'update: corner line: Mod updates install the next time you start the game.' in r.logtext(), 120)
+        check('restart: mod update offered, "Download update" downloads it', ma and mr, last(r.logtext(), 'gcd-cdr')[0])
+        time.sleep(2)
+        old = game_pids()
+        open(os.path.join(r.u, 'test_restart'), 'w').close()
+        mc = until(lambda: 'update: mods:' in r.logtext() and 'confirmed at the title' in last(r.logtext(), 'update: mods:')[0], 300)
+        inst = json.load(open(os.path.join(r.root, 'loader/mods/gcd-cdr/mod.json')))['version'] if os.path.exists(os.path.join(r.root, 'loader/mods/gcd-cdr/mod.json')) else '-'
+        check('restart: mod restart -> the stub installed the mod, the new game loads it, "Updated:" line',
+              mc and inst == MODV and not (old & game_pids()) and len(game_pids()) == 1
+              and until(lambda: f'update: corner line: Updated: ' in r.logtext() and MODV in last(r.logtext(), 'corner line: Updated:')[0], 30),
+              f'gcd-cdr {inst}')
     finally:
         r.stop()
 

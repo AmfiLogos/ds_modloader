@@ -30,6 +30,10 @@ EXTRA_CFLAGS=-DDSL_SIGN_DEV_KEY LOADER_ONLY=1 zsh $REPO/loader/build.sh > $W/bui
 for v in 0.1.3 0.1.4; do
   DSM_RELEASE=$v zsh $REPO/app/build_app.sh > $W/build_$v.log 2>&1 || { tail -3 $W/build_$v.log; LOADER_ONLY=1 zsh $REPO/loader/build.sh > /dev/null 2>&1; exit 1; }
   mkdir -p $A/$v; ditto "$REPO/app/build/Dungeon Settlers Modded.app" "$A/$v/Dungeon Settlers Modded.app"
+  # test apps only: hidden apps (the restart test starts the stub through LaunchServices: never a Dock icon, never focus)
+  plutil -replace LSBackgroundOnly -bool YES "$A/$v/Dungeon Settlers Modded.app/Contents/Info.plist"
+  plutil -replace LSUIElement -bool YES "$A/$v/Dungeon Settlers Modded.app/Contents/Info.plist"
+  codesign -f -s - "$A/$v/Dungeon Settlers Modded.app" 2>/dev/null
 done
 LOADER_ONLY=1 zsh $REPO/loader/build.sh > $W/build_loader_release.log 2>&1 || { print "loader/build/dsload.dylib is still the TEST build (dev key): rebuild it"; exit 1; }
 B="$A/0.1.5/Dungeon Settlers Modded.app"; mkdir -p $A/0.1.5; ditto "$A/0.1.4/Dungeon Settlers Modded.app" "$B"
@@ -41,4 +45,4 @@ R=~/ds_multiplayer/rig/rig.py; P=""
 for i in {1..60}; do P=$(python3 $R lease mac_gate --pid $$ 2>/dev/null | tail -1); [[ $P == [A-J][A-J] ]] && break; sleep 10; done
 [[ $P == [A-J][A-J] ]] || { print "no rig pair free"; exit 2; }
 trap "python3 $R release $P mac_gate >/dev/null" EXIT
-python3 $H/mac_update_test.py $W/run $A $INST
+python3 $H/mac_update_test.py $W/run $A $INST ${UPD_TESTS:+$UPD_TESTS}     # UPD_TESTS=restart,off: only those
