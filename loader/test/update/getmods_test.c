@@ -35,6 +35,12 @@ int dsl_soft_wanted(void) { return 0; }
 static int applied;
 int dsl_soft_busy(void) { return applied; }
 const char *dsl_busy_reason(void) { return NULL; }
+/* v0.1.21 "Restart and update now" (dsl_update.c): never reached in these tests (no game, no restart) */
+int dsl_soft_prewarm_state(void) { return 0; }
+void dsl_soft_prewarm_stop(void) {}
+void *dsl_find_method_address(const char *ns, const char *klass, const char *method, int argc) { (void)ns; (void)klass; (void)method; (void)argc; return NULL; }
+int dsl_sos_starter_known(void) { return 0; }
+long dsl_sos_start_starter(void) { return -1; }
 int dsl_mod_hashes(const char *id, char *out, size_t cap) { (void)id; if (cap) out[0] = 0; return 0; }
 int dsl_apply_mods_env(const char *const *ids, int n, const char *env, char *why, size_t cap) {
     if (getenv("HM_APPLY_REFUSE")) { snprintf(why, cap, "refused by the test"); return -1; }
