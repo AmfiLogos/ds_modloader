@@ -115,6 +115,7 @@ struct DSLHost; void dsl_cloud_install(struct DSLHost *host);   /* dsl_cloud.c: 
    in the Steam Cloud backup (dsl_cloud.c). One rule for both. */
 static inline int dsl_save_is_mp_temp(const char *name) { return (name[0] | 32) == 'm' && (name[1] | 32) == 'p' && name[2] == '_'; }
 /* dsl_saves.c: the game's own save folder listed and played in place next to the modded saves */
+void dsl_saves_tutorial_import(void);                    /* before GameAssembly: the normal game's tutorial keys -> modded OutGame.json */
 void dsl_saves_install(void);                            /* after il2cpp_init, before dsl_cloud_install */
 int dsl_saves_is_game(const char *save_name);            /* 1 = a save of the game's own folder */
 void dsl_saves_loading(const char *save_name, const char *guid);   /* dsl_world.c: a load with its world guid */

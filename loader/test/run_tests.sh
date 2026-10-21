@@ -124,6 +124,24 @@ check "session pin differs: same refusal (world check not installed either)" '[[
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=test)
 check "pin equal to the copy: modules load" 'log | grep -q "floor-logger 1.0.0: loaded" && grep -q "\"pinned_build\":\"test\"" "$LOGD/dsload_status.json"'
 
+# tutorial progress (dsl_saves.c dsl_saves_tutorial_import, owner 2026-10-20): the normal game's OutGame.json has hints /
+# tutorials the modded profile lacks. Break caught: advanced players get every tutorial notice again in the modded game
+# (the starters copy OutGame.json on the first start only), or the import loses the modded file's other progress, removes
+# a key, or writes the normal game's file.
+print "== T8 tutorial progress of the normal game comes into the modded profile"
+mkdir -p "$OUT/stock/Saves" "$OUT/mdata"
+print -r -- '{"TutorialSaveData":{"OccurredConditions":["tutorial.condition.A","tutorial.condition.B","tutorial.condition.C"],"CompletedTutorials":["tutorial.complete.Hunger","tutorial.complete.Tooltip"]},"ItemObtainedSaveData":{"ObtainedItems":["ITEM_X"]},"CreditRollSaveData":{"PlayedRevisions":[]},"DifficultyUnlockSaveData":{"IsDownfallUnlocked":false}}' > "$OUT/stock/OutGame.json"
+print -r -- '{"TutorialSaveData":{"OccurredConditions":["tutorial.condition.B","tutorial.condition.ModOnly"],"CompletedTutorials":null},"ItemObtainedSaveData":{"ObtainedItems":["ITEM_Y","ITEM_\"q\""]},"CreditRollSaveData":{"PlayedRevisions":[3]},"DifficultyUnlockSaveData":{"IsDownfallUnlocked":true}}' > "$OUT/mdata/OutGame.json"
+SSHA=$(shasum -a 256 "$OUT/stock/OutGame.json")
+tut() { run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_DATA="$OUT/mdata" DSML_GAME_SAVES="$OUT/stock/Saves" >/dev/null; }
+tut
+check "modded OutGame.json = union of tutorial keys, its own progress kept, normal game's file untouched" '/usr/bin/python3 -c "
+import json,sys; d=json.load(open(sys.argv[1])); t=d[\"TutorialSaveData\"]
+assert t[\"OccurredConditions\"]==[\"tutorial.condition.B\",\"tutorial.condition.ModOnly\",\"tutorial.condition.A\",\"tutorial.condition.C\"], t
+assert t[\"CompletedTutorials\"]==[\"tutorial.complete.Hunger\",\"tutorial.complete.Tooltip\"], t
+assert d[\"ItemObtainedSaveData\"][\"ObtainedItems\"]==[\"ITEM_Y\",\"ITEM_\\\"q\\\"\"] and d[\"CreditRollSaveData\"][\"PlayedRevisions\"]==[3] and d[\"DifficultyUnlockSaveData\"][\"IsDownfallUnlocked\"] is True, d
+" "$OUT/mdata/OutGame.json" && [[ "$(shasum -a 256 "$OUT/stock/OutGame.json")" == "$SSHA" ]] && log | grep -q "tutorial: brought 2 seen hint(s) and 2 finished tutorial(s)"'
+
 print "== T5 unknown build: loader inactive"
 print "" > "$OUT/gen/test_builds.inc"
 $CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_update,dsl_sig,dsl_sig_mc,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_moddata,dsl_crash,dsl_bugrep,dsl_bugrep_fmt,dsl_scrub,dsl_scrub_names}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_update_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_quiet_mac.c "$L"/start/mac/dsl_bie_mac.c "$L"/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null

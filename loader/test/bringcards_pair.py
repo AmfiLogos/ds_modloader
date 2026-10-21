@@ -10,6 +10,10 @@ each runs multiplayer + the test-only units-driver (fake mouse, ds_multiplayer e
 Breaks caught: no card window (the text list of the mpsplit build), picks that do not reach the host, a host alone in
 its lobby refused ("Not in a multiplayer session", v0.1.19), a desync from the brought units. Frames (game back buffer): <out>/*.png.
   bringcards_pair.py [--dive 420] [--only-open]       (--only-open: stop after the first card window check)
+  bringcards_pair.py --compact [LANGTYPE=3]          (one copy, the host alone in a PvP lobby: 8 compact cards on a page,
+                                                      a click on a card's body ticks / unticks it; LANGTYPE = the game's
+                                                      language, 3 de, 4 ru; shots to look at. Fails on the 3-card window
+                                                      and on cards that only the small tick selects, before 2026-10-20)
 Env: HM_BUILD = loader build folder (dsload.dylib with the dev key + mods/multiplayer), BC_MP = the ds_multiplayer checkout
 whose ext/units13/driver and ext/fepvp13/tools are used (default ~/ds_multiplayer).
 Output: ../test_env/bringcards/<time>/ (logs, frames, results.json)."""
@@ -24,6 +28,14 @@ HP.H, HP.G = H, G = 'BCH', 'BCG'
 A = sys.argv
 DIVE = int(A[A.index('--dive') + 1]) if '--dive' in A else 420
 ONLY_OPEN = '--only-open' in A
+COMPACT = '--compact' in A
+LANGTYPE = os.environ.get('LANGTYPE')                      # the game's LanguageType (3 de, 4 ru)
+if LANGTYPE:
+    _prep = lrig.prepare_data
+    def _prep_lang(x):
+        _prep(x); us = os.path.join(lrig.idir(x), 'data', 'UserSetting.json'); s = json.load(open(us))
+        s['GeneralSettingData']['SaveCurrentLanguageType'] = int(LANGTYPE); json.dump(s, open(us, 'w'), indent=1)
+    lrig.prepare_data = _prep_lang
 MP = os.path.expanduser(os.environ.get('BC_MP', '~/ds_multiplayer'))
 FIX = os.path.expanduser('~/ds_multiplayer/ext/foreign_expedition/fixtures')            # test saves (not in git)
 TPL = os.path.expanduser('~/dungeonsettlersdb/site/assets/saves/base_25846389.json')      # hub / PvP base template
@@ -228,6 +240,28 @@ def pvp(port):
     return True
 
 
+# ------------------------------------------------------------------ compact cards (one copy)
+def compact():
+    """the host alone in a PvP lobby: 8 cards on a page; a click on a card's body (its centre, not the tick) ticks it,
+       a second click unticks it"""
+    to_title(H)
+    press(H, 'MULTIPLAYER'); press(H, 'HOST_C1'); time.sleep(1); press(H, 'HOST_START')
+    wait('PvP world + lobby', lambda: (lambda s: s.get('scene') == 2 and s.get('tick', -1) > 0 and not s.get('busy') and s.get('det', {}).get('locked'))(st(H))
+         and c(H, cmd='mpm_status').get('state') == 'lobby', timeout=900, every=2)
+    lg = LANGTYPE or 'en'
+    s = open_cards(H, f'compact_{lg}')
+    click(H, 'bring:left0', 1.5); time.sleep(2); s = bst(H)            # the Elven home save (newest = row 0)
+    info[f'shot_compact_{lg}_page'] = HP.shot(H, f'compact_{lg}_page.png')
+    check(f'C1 ({lg}): 8 cards on one page (units in the save {s.get("units")})', s.get('open') == 1 and s.get('units', 0) >= 8 and s.get('cards', 0) >= 8, s)
+    a = click(H, 'bring:card0'); s1 = bst(H)
+    b = click(H, 'bring:card1'); s2 = bst(H)
+    info[f'shot_compact_{lg}_picked'] = HP.shot(H, f'compact_{lg}_picked.png')
+    d = click(H, 'bring:card0'); s3 = bst(H)
+    check(f'C2 ({lg}): a click on a card body ticks it (1, 2), a second click unticks it (1)', a and b and d and s1.get('picked') == 1 and s2.get('picked') == 2 and s3.get('picked') == 1,
+          f"picked {s1.get('picked')} {s2.get('picked')} {s3.get('picked')}")
+    click(H, 'bring:cancel', 1.5)
+
+
 # ------------------------------------------------------------------ Foreign Expedition
 def order_move(x, guid, cell):
     c(x, cmd='ord_hover', n=0)
@@ -410,19 +444,22 @@ def main():
     res = {}
     try:
         info['owner_prefs_before'] = lrig.check_prefs(restore=False)
+        XS = (H,) if COMPACT else (H, G)
         for x in (H, G):
             HP.make_copy(x)
         env = prepare(driver_pkg())
         api = 'http://127.0.0.1:9'                                    # no release server: nothing is downloaded
-        HP.room_for(2)
-        for x in (H, G):
+        HP.room_for(len(XS))
+        for x in XS:
             HP.start(x, api, env[x])
-        for x in (H, G):
+        for x in XS:
             to_title(x)
             dl = flog(x, 'dsload.log')
             check(f'{x}: multiplayer loaded, Units Laboratory not', ' multiplayer ' in dl and not any(' custom-modes ' in l and ': loaded (' in l for l in dl.splitlines()),
                   [l for l in dl.splitlines() if ': loaded (' in l][:4])
-        if pvp(port):
+        if COMPACT:
+            compact()
+        elif pvp(port):
             fe(port)
     except BaseException as e:
         import traceback; log(traceback.format_exc())
