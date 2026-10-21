@@ -76,7 +76,7 @@ def check(name, ok, detail=''):
     return ok
 
 
-def c(x, **k):
+def c(x, /, **k):                                                # x positional only: commands may carry an "x" field (ord_run_attack x, y)
     return lrig.send(x, k, timeout=120)
 
 
