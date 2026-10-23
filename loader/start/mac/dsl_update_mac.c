@@ -1,7 +1,7 @@
 // Mac OS part of the auto-update (src/dsl_update_os.h). ROOT = $DSML_ROOT (the app's stub), else two folders above
 // DSL_MODS_DIR (ROOT/loader/mods). Kit: the release's Mac zip (or .dmg) holds "Dungeon Settlers Modded.app"; it
-// replaces the app at $DSML_APP (bundle swap, quarantine cleared the way the .dmg install leaves it, signature checked)
-// and ROOT/loader (its Contents/Resources/dsml; the player's own mods, marker .player_mod, are carried over).
+// replaces the app at $DSML_APP (what is inside the bundle is swapped, the bundle folder stays for the Dock; quarantine
+// cleared the way the .dmg install leaves it, signature checked) and ROOT/loader (its Contents/Resources/dsml; the player's own mods, marker .player_mod, are carried over).
 // Mod: ROOT/loader/mods/<id> replaced by the package's <id> folder. Tools: /usr/bin/curl, ditto, hdiutil, xattr, codesign.
 // Built twice: into dsload.dylib (check + download) and, #included, into the app's stub (install, app/stub/ds_modded.c).
 #include "../../src/dsl_internal.h"
@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -91,6 +92,31 @@ static int swap_in(const char *newp, const char *path, const char *bk, DslMoves 
     if (old && dsl_uos_move(path, bk)) return -1;
     return dsl_uos_move(newp, path);
 }
+/* the app: the bundle FOLDER stays (the Dock and Finder aliases follow its file id, owner 2026-10-23), only what is in it
+   is swapped, each child through swap_in; the old children go to <bk>/<child>, so <bk> is a whole old app again */
+static int swap_bundle(const char *newp, const char *path, const char *bk, DslMoves *mv) {
+    if (!dsl_uos_exists(path)) return swap_in(newp, path, bk, mv);
+    char a[1600], b[1600], c[1600], nm[2][64][256]; int nn[2] = { 0, 0 }, r = 0;
+    for (int k = 0; k < 2; k++) {                            /* names first: nothing moves while a folder is read */
+        DIR *d = opendir(k ? newp : path); struct dirent *e; if (!d) return -1;
+        while ((e = readdir(d)))
+            if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..") && nn[k] < 64) snprintf(nm[k][nn[k]++], 256, "%s", e->d_name);
+        closedir(d);
+    }
+    for (int k = 0; k < 2 && !r; k++)                        /* 0: old children the new app lacks; 1: the new app's */
+        for (int i = 0; i < nn[k] && !r; i++) {
+            snprintf(a, sizeof a, "%s/%s", newp, nm[k][i]); snprintf(b, sizeof b, "%s/%s", path, nm[k][i]);
+            snprintf(c, sizeof c, "%s/%s", bk, nm[k][i]);
+            if (k) r = swap_in(a, b, c, mv);
+            else if (!dsl_uos_exists(a)) r = dsl_umove_add(mv, b, c) || dsl_uos_move(b, c);
+        }
+    if (r) return -1;
+    utimes(path, NULL);                                      /* LaunchServices reads Info.plist again */
+    char *xq[] = { "/usr/bin/xattr", "-d", "com.apple.quarantine", (char *)path, NULL }; run(xq);   /* as the new app had none */
+    char *ls[] = { "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-f", (char *)path, NULL };
+    run(ls);
+    return 0;
+}
 static void prog(DslMoves *mv, int pct) { if (mv->progress) mv->progress(pct); }
 /* first line of a small text file ("" when missing) */
 static void first_line(const char *p, char *out, size_t n) {
@@ -155,7 +181,7 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     prog(mv, 80);
     char bk[1600], base[300]; snprintf(base, sizeof base, "%s", strrchr(app, '/') + 1);
     snprintf(bk, sizeof bk, "%s/app/%s", backup, base);
-    if (swap_in(napp, app, bk, mv)) { snprintf(why, wn, TR("the app could not be replaced")); return -1; }
+    if (swap_bundle(napp, app, bk, mv)) { snprintf(why, wn, TR("the app could not be replaced")); return -1; }
     snprintf(bk, sizeof bk, "%s/loader", backup);
     if (swap_in(nl, ol, bk, mv)) { snprintf(why, wn, TR("the mod loader folder could not be replaced")); return -1; }
     dsl_log("update: Mac kit installed: %s and %s (old ones in %s)", app, ol, backup);

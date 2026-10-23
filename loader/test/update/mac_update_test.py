@@ -141,6 +141,10 @@ class Run:
         return (open(rl).read().strip() if os.path.exists(rl) else '-',
                 open(os.path.join(self.app, 'Contents/Resources/dsml/RELEASE')).read().strip())
 
+    def ino(self):
+        """the app bundle folder's file id: the Dock follows it, so an update must keep it (owner 2026-10-23)"""
+        return os.stat(self.app).st_ino
+
     def pending(self):
         p = os.path.join(self.u, 'pending.txt')
         return open(p).read() if os.path.exists(p) else ''
@@ -193,7 +197,7 @@ if 'on' in TESTS:
         t = r.logtext()
         check('on: downloaded in the background (sha256 ok), ready.txt', got and 'downloaded, sha256 ok' in t, last(t, 'sha256')[0])
         check('on: corner says it installs next start; nothing installed yet', line and r.release_of() == (OLD, OLD), str(r.release_of()))
-        r.kill()
+        r.kill(); ino0 = r.ino()
         r.stub()                                               # 2nd start: the stub installs before the game
         conf = r.wait(f'update: v{NEW} confirmed at the title', 240)
         st = r.stublog()
@@ -202,6 +206,7 @@ if 'on' in TESTS:
         check('on: installed by the stub, new stub started', f'update: v{NEW} installed' in st and 'starting the new app' in st)
         check('on: game started, update confirmed at the title', conf and not r.pending(), last(r.logtext(), 'confirmed')[0])
         check('on: release 0.1.4 (loader, app)', r.release_of() == (NEW, NEW), str(r.release_of()))
+        check('on: same app folder (Dock link kept)', r.ino() == ino0, f'{ino0} -> {r.ino()}')
         check('on: "Updated to" line', r.wait(f'update: corner line: Updated to {NEW}', 30, new=False))
         check('on: no quarantine on the new app', 'com.apple.quarantine' not in subprocess.run(['/usr/bin/xattr', '-lr', r.app], capture_output=True, text=True).stdout)
     finally:
@@ -297,7 +302,7 @@ if 'failed' in TESTS:
     r = Run('failed')
     try:
         r.stub(dry=True)                                       # first start: ROOT/loader from the app
-        r.seed_ready(NEW, NEW)
+        r.seed_ready(NEW, NEW); ino0 = r.ino()
         sh('/usr/bin/chflags', 'uchg', os.path.join(r.root, 'loader'))
         r.stub()
         notice = r.wait('update: starter notice shown: The update to 0.1.4 could not be installed', 240)
@@ -307,6 +312,7 @@ if 'failed' in TESTS:
               last(st, 'rolled back')[0])
         check('failed: old version back (loader, app) and running', r.release_of() == (OLD, OLD) and r.wait('update: title corner shown', 60, new=False), str(r.release_of()))
         check('failed: one line at the title, ready.txt moved away, no pending', notice and not r.ufile('ready.txt') and not r.pending())
+        check('failed: same app folder (Dock link kept)', r.ino() == ino0, f'{ino0} -> {r.ino()}')
     finally:
         r.stop()
         if os.path.exists(os.path.join(r.root, 'loader')):
@@ -317,7 +323,7 @@ if 'crash' in TESTS:
     r = Run('crash')
     try:
         r.stub(dry=True)
-        r.seed_ready(BROKEN, BROKEN)
+        r.seed_ready(BROKEN, BROKEN); ino0 = r.ino()
         r.stub(); r.proc.wait(120); time.sleep(2)              # install + first start (crashes)
         p1 = r.pending()
         check('crash: installed, first start crashed', r.release_of() == (BROKEN, BROKEN) and p1.count('STARTED') == 1 and 'DONE' in p1, str(r.release_of()))
@@ -327,6 +333,7 @@ if 'crash' in TESTS:
         r.stub()                                               # third start: rolled back, the old version runs
         notice = r.wait(f'update: starter notice shown: The update to {BROKEN} did not start. You have {OLD} again.', 240)
         check('crash: rolled back, old version runs, one line', notice and r.release_of() == (OLD, OLD) and not r.pending(), str(r.release_of()))
+        check('crash: same app folder after install and rollback (Dock link kept)', r.ino() == ino0, f'{ino0} -> {r.ino()}')
         check('crash: 0.1.5 not offered again', f'kit {BROKEN}' in r.ufile('bad.txt'), r.ufile('bad.txt').strip())
     finally:
         r.stop()
