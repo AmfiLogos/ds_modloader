@@ -18,7 +18,8 @@
 // Saves: 5 slots per unit. A 4-slot save (stock game, or the loader without this mod) is migrated when it loads: the
 // weapon skill moves from its free slot to WS, the other skills keep their place. A save of the old binary mod
 // (weapon skill at index 0) is turned into this layout. The stock game reads the first 4 slots of a 5-slot save
-// (QuickSlotData.Deserialize copies Math.Min of the two lengths), so only the weapon slot is lost there.
+// (QuickSlotData.Deserialize copies Math.Min of the two lengths), so only the weapon slot is lost there. When the load
+// ends, an empty weapon slot gets the equipped weapon's skill as an equip would give it (0.1.1, "fill on load").
 // UI: QuickSlotUI._skillSlots gets a 6th SkillSlotUI appended (UI_W = 5 = quickSlots[4]), a runtime copy of the first
 // free slot, placed between the basic attack and the free slots (owner's layout, 2026-10-04: panel 362 -> 430 px).
 // Its key box is hidden, it cannot be dragged from, dropped on or right-clicked.
@@ -179,7 +180,9 @@ static void grow_all(Obj qsc) {
 /* The skills that are a weapon's own skill: Equipment_ItemDefaultSkills[1] of every item (8 in this build, one per
    weapon type; none of them is in a skill tree). Read once from DataSheetManager._itemTable.tableDatas. */
 #define MAXW 64
+#define MAXI 512
 static char wsk[MAXW][64]; static int nwsk = -1;
+static struct { char item[64]; int w; } wit[MAXI]; static int nwit;   /* item key -> its weapon skill (index in wsk) */
 static void weapon_skills_load(void) {
     if (nwsk >= 0) return;
     void *k_dsm = H->find_class("Refactor.Util", "DataSheetManager"), *k_itd = H->find_class("Util.Sheet", "ItemTableData");
@@ -188,6 +191,7 @@ static void weapon_skills_load(void) {
     Obj dsm = NULL;
     if (f_inst) I.field_static_get_value(f_inst, &dsm);
     int32_t f_it = k_dsm ? foff(k_dsm, "_itemTable") : -1, f_skills = k_itd ? foff(k_itd, "Equipment_ItemDefaultSkills") : -1;
+    int32_t f_itd_key = k_itd ? foff(k_itd, "Key") : -1;
     Obj tab = dsm && f_it > 0 ? AT(dsm, f_it, Obj) : NULL;
     int32_t f_rows = tab ? foff(I.object_get_class(tab), "tableDatas") : -1;
     Obj rows = tab && f_rows > 0 ? AT(tab, f_rows, Obj) : NULL;
@@ -199,13 +203,22 @@ static void weapon_skills_load(void) {
         Obj w = alen(sk) >= 2 ? aget(sk, 1) : NULL;
         if (!slen(w) || slen(w) >= 64 || str_is(w, "NULL")) continue;
         char c[64]; str_c(w, c, sizeof c);
-        int dup = 0;
-        for (int j = 0; j < nwsk; j++) if (!strcmp(wsk[j], c)) dup = 1;
-        if (dup) continue;
-        strcpy(wsk[nwsk++], c);
-        if (o < sizeof list) o += (size_t)snprintf(list + o, sizeof list - o, "%s%s", nwsk > 1 ? " " : "", c);
+        int j = 0;
+        while (j < nwsk && strcmp(wsk[j], c)) j++;
+        if (j == nwsk) {
+            strcpy(wsk[nwsk++], c);
+            if (o < sizeof list) o += (size_t)snprintf(list + o, sizeof list - o, "%s%s", nwsk > 1 ? " " : "", c);
+        }
+        Obj key = f_itd_key > 0 ? AT(row, f_itd_key, Obj) : NULL;
+        if (nwit < MAXI && slen(key) && slen(key) < 64) { str_c(key, wit[nwit].item, 64); wit[nwit++].w = j; }
     }
-    H->log(ME, "weapon skills (%d items): %s", list_n(rows), list);
+    H->log(ME, "weapon skills (%d items, %d with a weapon skill): %s", list_n(rows), nwit, list);
+}
+static const char *item_weapon_skill(Obj key) {         /* the weapon skill of an item key, or NULL */
+    if (!slen(key)) return NULL;
+    weapon_skills_load();
+    for (int i = 0; i < nwit; i++) if (str_is(key, wit[i].item)) return wsk[wit[i].w];
+    return NULL;
 }
 static int is_weapon_skill(Obj s) {                     /* skill keys are ASCII */
     if (!slen(s)) return 0;
@@ -240,10 +253,13 @@ static Obj saved_slots(Obj data, const void *g) {       /* QuickSlotSaveData.Qui
 }
 static int n_mig;
 static void (*o_qsc_deser)(Obj, Obj, const void *);
+static uintptr_t load_qsc_h, load_skc_h;              /* the containers of the last load, for the fill (weak) */
 static void my_qsc_deser(Obj self, Obj data, const void *mi) {
     o_qsc_deser(self, data, mi);
     Obj skc = skc_h ? I.gch_target(skc_h) : NULL;
-    if (skc_h) { I.gch_free(skc_h); skc_h = 0; }
+    if (load_qsc_h) I.gch_free(load_qsc_h);
+    if (load_skc_h) I.gch_free(load_skc_h);
+    load_qsc_h = self ? I.gch_weak(self, 0) : 0; load_skc_h = skc_h; skc_h = 0;
     Obj d = self ? AT(self, f_qsc_dict, Obj) : NULL;
     const DL *L = dict_l(d);
     int units = 0, from4 = 0, moved = 0, old = 0;
@@ -386,6 +402,62 @@ static void my_unequip(Obj self, int32_t map, Obj ent, int32_t slot, Obj key, Ob
         if (logn(&n_uneq, 20)) { char gs[9], s[48]; guid_c(&unq[i].g, gs); str_c(unq[i].skill, s, sizeof s); H->log(ME, "unequip %s: %s left the weapon slot", gs, s); }
     }
     nunq = 0;
+}
+
+/* ------------------------------------------------------------------------------------------------ fill on load */
+/* A world played without the mod, or a unit that equipped its weapon while the 4 free slots were full, loads with an
+   empty weapon slot. When the load ends (CampaignLoadingEventHandler.FinalizeCampaignLoad, before the game speed
+   resumes; every multiplayer player runs it on the same world), each player unit with an empty weapon slot gets the
+   skill of its equipped weapon the way an equip gives it: an extra skill of the unit (SkillTreeData.RegisterExtraSkill,
+   only when missing: the list does not dedupe), the weapon slot (out of the free slots), and SkillComponent.AddSkill
+   when the unit does not have it (AddSkill moves an existing skill to the end of the list). */
+static void *k_unit, *k_skillcomp, *k_equip, *f_ec_inst, *m_has, *m_add, *m_regx;
+static int32_t f_ec_comps = -1, f_cl_comps = -1, f_unit_guid = -1, f_inv_slots = -1, f_ih_key = -1, ih_size = 0;
+static int is_a(Obj o, void *k) { return o && k && I.class_is_assignable_from(k, I.object_get_class(o)); }
+static Obj std_of(Obj skc, const WGuid *g) {             /* the unit's SkillTreeData */
+    Obj d = skc ? AT(skc, f_skc_dict, Obj) : NULL;
+    const DL *L = dict_l(d);
+    DICT_FOR(d, L, e) if (!memcmp(e + L->key, g, 16)) return AT(e, L->val, Obj);
+    return NULL;
+}
+static int n_fill;
+static void fill_all(void) {
+    Obj qsc = load_qsc_h ? I.gch_target(load_qsc_h) : NULL, skc = load_skc_h ? I.gch_target(load_skc_h) : NULL, ec = NULL;
+    I.field_static_get_value(f_ec_inst, &ec);
+    Obj comps = ec ? AT(ec, f_ec_comps, Obj) : NULL;
+    if (!qsc || !comps) { H->log(ME, "load end: no quick slots or entity components (%p %p)", qsc, comps); return; }
+    const DL *L = dict_l(comps);
+    int units = 0, filled = 0, added = 0, reg = 0;
+    DICT_FOR(comps, L, e) {
+        Obj ent = AT(e, L->key, Obj);
+        if (!is_a(ent, k_unit)) continue;
+        WGuid g; memcpy(&g, (char *)ent + f_unit_guid, sizeof g);
+        Obj a = qsd_grow(qsd_of(qsc, &g));
+        if (alen(a) != NSLOT) continue;                 /* not a player unit */
+        units++;
+        if (aget(a, WS)) continue;
+        Obj cl = AT(e, L->val, Obj), cd = cl ? AT(cl, f_cl_comps, Obj) : NULL, eq = NULL, sc = NULL;
+        const DL *C = dict_l(cd);
+        DICT_FOR(cd, C, ce) { Obj o = AT(ce, C->val, Obj); if (is_a(o, k_equip)) eq = o; else if (is_a(o, k_skillcomp)) sc = o; }
+        Obj slots = eq ? AT(eq, f_inv_slots, Obj) : NULL;
+        const char *wn = NULL;
+        for (uintptr_t i = 0; i < alen(slots) && !wn; i++) wn = item_weapon_skill(AT((char *)slots + AHDR + i * (uintptr_t)ih_size, f_ih_key, Obj));
+        if (!wn || !sc) continue;
+        Obj w = I.string_new(wn), std = std_of(skc, &g), ex = std ? AT(std, f_std_extra, Obj) : NULL;
+        int has_x = 0, r = 0, ad = 0;
+        for (int i = 0; i < list_n(ex); i++) if (str_is(list_at(ex, i), wn)) has_x = 1;
+        if (std && !has_x) { CALL(m_regx, void, Obj, Obj)(std, w, m_regx); r = 1; reg++; }
+        for (int i = 0; i < WS; i++) if (str_eq(aget(a, i), w)) aset(a, i, NULL);
+        aset(a, WS, w); filled++;
+        if (!CALL(m_has, uint8_t, Obj, Obj)(sc, w, m_has)) { CALL(m_add, void, Obj, Obj)(sc, w, m_add); ad = 1; added++; }
+        if (logn(&n_fill, 40)) { char gs[9]; guid_c(&g, gs); H->log(ME, "load end %s: %s -> weapon slot%s%s", gs, wn, r ? ", extra skill registered" : "", ad ? ", skill added to the unit" : ""); }
+    }
+    H->log(ME, "load end: %d player units, %d empty weapon slots filled (%d extra skills registered, %d skills added)", units, filled, reg, added);
+}
+static void (*o_finalize)(Obj, int32_t, const void *);
+static void my_finalize(Obj self, int32_t map, const void *mi) {
+    fill_all();
+    o_finalize(self, map, mi);
 }
 
 /* Every reader of a unit's slots (skill bar refresh, AI) asks GetAll: grow there too, in case a path made a 4-long
@@ -580,6 +652,21 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
         || !m_pos_get || !m_pos_set || !m_size_get || !m_size_set || !m_amin_set || !m_amax_set || !m_pivot_set) {
         H->log(ME, "a Unity UI method was not found"); return 4;
     }
+    /* fill on load: entities, their components, the equipped items */
+    void *k_ec = H->find_class(M, "EntityComponent"), *k_cl = H->find_class(M, "ComponentList"), *k_ih = H->find_class("Refactor", "ItemHolder");
+    void *k_inv = H->find_class("Refactor", "InventoryComponent");
+    k_unit = H->find_class("Refactor", "UnitEntity"); k_skillcomp = H->find_class("Refactor.Component", "SkillComponent");
+    k_equip = H->find_class("Refactor.Component", "EquipmentComponent");
+    f_ec_inst = k_ec ? I.class_get_field_from_name(k_ec, "_instance") : NULL;
+    f_ec_comps = k_ec ? foff(k_ec, "_components") : -1; f_cl_comps = k_cl ? foff(k_cl, "_components") : -1;
+    f_unit_guid = k_unit ? foff(k_unit, "<Guid>k__BackingField") : -1; f_inv_slots = k_inv ? foff(k_inv, "_itemSlots") : -1;
+    f_ih_key = k_ih ? foff(k_ih, "Key") - OHDR : -1; ih_size = k_ih ? I.class_value_size(k_ih, NULL) : 0;
+    m_has = k_skillcomp ? H->find_method(k_skillcomp, "HasSkill", 1) : NULL; m_add = k_skillcomp ? H->find_method(k_skillcomp, "AddSkill", 1) : NULL;
+    m_regx = H->find_method(k_std, "RegisterExtraSkill", 1);
+    H->log(ME, "load end fields: components %d/%d guid %d slots %d key %d item %d", f_ec_comps, f_cl_comps, f_unit_guid, f_inv_slots, f_ih_key, ih_size);
+    if (!k_unit || !k_skillcomp || !k_equip || !f_ec_inst || f_ec_comps <= 0 || f_cl_comps <= 0 || f_unit_guid <= 0 || f_inv_slots <= 0
+        || f_ih_key < 0 || ih_size < f_ih_key + 8 || !m_has || !m_add || !m_regx
+        || !dict_lk(ftype_class(k_ec, "_components")) || !dict_lk(ftype_class(k_cl, "_components"))) { H->log(ME, "load end: a game name was not found"); return 3; }
     void *dmi = H->find_method(H->find_class("Refactor.Task", "DecidePlayerCombatBehaviour"), "DecideSkill", 0);
     decide_lo = dmi ? (uintptr_t)H->method_address(dmi) : 0;
     if (!decide_lo) { H->log(ME, "DecidePlayerCombatBehaviour.DecideSkill not found"); return 5; }
@@ -599,10 +686,11 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
         || hk("Refactor.Main.Processor", "ItemControlProcessor", "ProcessUnequip", 5, (void *)my_unequip, (void **)&o_unequip)
         || hk(UI, "QuickSlotUI", "Init", 3, (void *)my_ui_init, (void **)&o_ui_init)
         || hk(UI, "SkillSlotUI", "GetPayload", 0, (void *)my_payload, (void **)&o_payload)
-        || hk(UI, "SkillSlotUI", "CanDrop", 1, (void *)my_candrop, (void **)&o_candrop))
+        || hk(UI, "SkillSlotUI", "CanDrop", 1, (void *)my_candrop, (void **)&o_candrop)
+        || hk("Refactor.Main.Event", "CampaignLoadingEventHandler", "FinalizeCampaignLoad", 1, (void *)my_finalize, (void **)&o_finalize))
         return 6;
     /* AI order only (weapon skill first). Optional: the multiplayer module hooks this method in diagnostic test runs. */
     int order = !hk("Refactor.Task", "DecidePlayerCombatBehaviour", "DecideSkill", 0, (void *)my_decide, (void **)&o_decide);
-    H->log(ME, "weapon skill slot on (%d hooks; AI auto-use order %s)", 14 + order, order ? "weapon skill first" : "stock (hook taken)");
+    H->log(ME, "weapon skill slot on (%d hooks; AI auto-use order %s)", 15 + order, order ? "weapon skill first" : "stock (hook taken)");
     return 0;
 }

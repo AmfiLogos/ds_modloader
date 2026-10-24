@@ -54,7 +54,7 @@ def load(w, local, name):
 
 def phase_a(w, out):
     L = w.text(W.PROF + r'\dsload.log') or ''
-    check('A: module on (15 hooks, AI order)', 'weapon skill slot on (15 hooks; AI auto-use order weapon skill first)' in L,
+    check('A: module on (16 hooks, AI order)', 'weapon skill slot on (16 hooks; AI auto-use order weapon skill first)' in L,
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
     before = T.units_of(T.OWNER_SAVE)
     load(w, T.OWNER_SAVE, 'owner_4slot')
