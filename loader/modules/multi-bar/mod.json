@@ -7,6 +7,7 @@
  "kind": "code",
  "api": 3,
  "scope": "client",
+ "default_on": false,
  "game_builds": [
   "25846389"
  ],

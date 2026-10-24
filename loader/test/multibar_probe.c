@@ -31,7 +31,7 @@ static void *(*ctype)(void *), *(*methods)(void *, void **), *(*nested)(void *, 
 static const char *(*mname)(void *);
 static uint32_t (*pcount)(void *);
 static uint8_t (*is_gen)(void *);
-static void *mainflow_k, *qsui_k, *esv_k, *usmc_k, *button_k, *unit_k;
+static void *mainflow_k, *qsui_k, *esv_k, *button_k, *unit_k;
 static void *m_find_any, *m_find_all, *m_go_find, *m_get_comp, *m_name, *m_go, *m_active_h, *m_active_self, *m_tr, *m_parent,
             *m_tr_find, *m_onclick, *m_invoke, *m_skill_key, *m_go_tr;
 static int32_t f_slots, f_selected, f_tabs, f_guid, f_key;
@@ -136,8 +136,9 @@ static void my_tick(Obj self, const void *mi) {
     FILE *f = fopen(req_path, "r");
     if (!f) return;
     char line[256] = ""; if (!fgets(line, sizeof line, f)) line[0] = 0; fclose(f);
-    char done[1100]; snprintf(done, sizeof done, "%s.done", req_path); rename(req_path, done);
     line[strcspn(line, "\r\n")] = 0;
+    if (!line[0]) return;
+    if ((f = fopen(req_path, "w"))) fclose(f);        /* emptied = done (a rename onto an old .done fails on Windows) */
     Obj mf = MC(m_find_any, Obj, Obj, int32_t, void *)(tobj(ctype(mainflow_k)), 0, m_find_any);
     int32_t o_eq = fofs(mainflow_k, "_eventQueue");
     Obj eq = mf && o_eq >= 0 ? AT(mf, o_eq, Obj) : NULL;
@@ -157,7 +158,7 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     *(void **)&nested = H->il2cpp_fn("il2cpp_class_get_nested_types");
     *(void **)&add_event = H->find_method_address("Refactor.Main", "EventQueue", "AddEvent", 1);
     mainflow_k = H->find_class("Refactor.Main", "MainFlow"); qsui_k = H->find_class("Refactor.UI", "QuickSlotUI");
-    esv_k = H->find_class("Refactor.UI", "EntitySummaryUIView"); usmc_k = H->find_class("Refactor.Main.Processor", "UseSkillModeContext");
+    esv_k = H->find_class("Refactor.UI", "EntitySummaryUIView");
     button_k = H->find_class("UnityEngine.UI", "Button"); unit_k = H->find_class("Refactor", "UnitEntity");
     void *ko = H->find_class("UnityEngine", "Object"), *kc = H->find_class("UnityEngine", "Component"), *kg = H->find_class("UnityEngine", "GameObject");
     void *kt = H->find_class("UnityEngine", "Transform"), *ke = H->find_class("UnityEngine.Events", "UnityEvent");
