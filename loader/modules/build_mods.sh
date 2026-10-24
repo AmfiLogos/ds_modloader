@@ -122,7 +122,10 @@ if [[ -z $MP_WIN_TREE && $(cat $WT/CM_PINNED 2>/dev/null) != $CSHA ]]; then
   mkdir -p $WT/custom.tmp; git -C $CM_REPO archive $CSHA | tar -x -C $WT/custom.tmp; mv $WT/custom.tmp $WT/custom
   print -r -- $CSHA > $WT/CM_PINNED
 fi
-DSMP_TARGET=module DSL_SDK=$L/sdk DSL_MODJSON=$MD/multiplayer/mod.json CM_MODJSON=${CM_MODJSON:-} nice -n 19 zsh $WT/win/build_win.sh | grep -v "^ABI \|^warning" | tail -6
+# the loader SDK goes inside the tree build_win.sh maps to /mp: with $L/sdk its folder path was in the debug info and so
+# in the DLL's build id (8 bytes differed between build folders, v0.1.24/25); now the same bytes from any folder
+mkdir -p $WT/win/build/dsl_sdk; cp -p $L/sdk/*.h $WT/win/build/dsl_sdk/
+DSMP_TARGET=module DSL_SDK=$WT/win/build/dsl_sdk DSL_MODJSON=$MD/multiplayer/mod.json CM_MODJSON=${CM_MODJSON:-} nice -n 19 zsh $WT/win/build_win.sh | grep -v "^ABI \|^warning" | tail -6
 cp -R $WT/win/build/mods/multiplayer $OUT/win/
 [[ -d $WT/win/build/mods/custom-modes ]] && cp -R $WT/win/build/mods/custom-modes $OUT/win/
 [[ -d $OUT/mac/custom-modes/art ]] && cp -R $OUT/mac/custom-modes/art $OUT/win/custom-modes/   # card pictures (DPS check): same files on Windows
