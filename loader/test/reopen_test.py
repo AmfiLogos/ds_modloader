@@ -58,6 +58,8 @@ def one_mode(pw, S):
     T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), f'{tag}: A title'); time.sleep(3)
     V.ui('open'); time.sleep(1.5)
     n1 = V.logs_all().count('prewarm B ready and waiting')
+    if 'mod:gcd-cdr' not in {c['name'] for c in V.ui('state').get('controls', [])}:   # a fix (mod.json "category": "fix", owner
+        V.ui('click', target='tab-mods:fixes'); time.sleep(1)                         # 2026-10-24) is on its own tab; this copy may keep an older one
     V.ui('click', target='mod:gcd-cdr')
     if pw: check(f'{tag}: prewarm B ready before Apply', V.wait_count('prewarm B ready and waiting', n1, 120))
     else: time.sleep(3)

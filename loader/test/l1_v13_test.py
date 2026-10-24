@@ -44,7 +44,8 @@ def ui(op, **kw):
     t0 = time.time()
     while time.time() - t0 < 20:
         try:
-            j = json.load(open(os.path.join(UI, 'result.json')))
+            # the window's test registry keeps 160 bytes of each text: a Russian / Japanese text can end mid-character
+            j = json.load(open(os.path.join(UI, 'result.json'), encoding='utf-8', errors='replace'))
             if j.get('seq') == seq: return j
         except Exception: pass
         time.sleep(0.1)
@@ -133,6 +134,7 @@ def main():
         T.clear_flags()
         ui('open'); time.sleep(1.5)
         n1, n2 = logs_all().count('reg: prewarm: a hidden game starts'), logs_all().count('prewarm B ready and waiting')
+        ui('click', target='tab-mods:fixes'); time.sleep(1)       # gcd-cdr is a fix: its own tab (owner 2026-10-24)
         t_ch = time.time(); ui('click', target='mod:gcd-cdr')
         check('prewarm starts 1.5 s after the change', wait_count('reg: prewarm: a hidden game starts', n1, 10))
         S['prewarm_start_after_change'] = round(time.time() - t_ch, 2)

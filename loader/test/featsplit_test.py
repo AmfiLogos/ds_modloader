@@ -64,7 +64,7 @@ def one_run(n, enabled, key, S):
         check('Mods window: two tabs "%s" + "%s"' % (L_GAME, L_LAUNCH), c.get('tab-mods:game', {}).get('text') == L_GAME
               and c.get('tab-mods:launcher', {}).get('text') == L_LAUNCH, {k: v.get('text') for k, v in c.items() if k.startswith('tab')})
         game = mods_of(st)
-        check('Game mods tab opens first: game mods only', 'gcd-cdr' in game and not (set(game) & FEAT), game)
+        check('Game mods tab opens first: game mods only (fixes such as gcd-cdr have their own tab)', 'hell-difficulty' in game and 'gcd-cdr' not in game and not (set(game) & FEAT), game)
         T.shot('1a_game_tab')
         st = V.ui('click', target='tab-mods:launcher'); time.sleep(1); st = V.ui('state')
         feat = mods_of(st); S['run1_launcher_tab'] = list(ctl(st))

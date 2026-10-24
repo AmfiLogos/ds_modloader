@@ -54,8 +54,9 @@ def main():
             time.sleep(1); st = state()
             if st.get('open'): break
         S['note_open'] = control(st, 'status')
-        check('Mods window lists the new mod', control(st, 'mod:gcd-cdr') is not None and control(st, 'mod:gcd-cdr')['on'] == 0, [c['name'] for c in st.get('controls', [])])
         check('note: 1 new mod, turn it on + Apply', control(st, 'status') and 'Found 1 new mod' in control(st, 'status')['text'], control(st, 'status'))
+        V.ui('click', target='tab-mods:fixes'); time.sleep(1); st = state()   # gcd-cdr is a fix: its own tab (owner 2026-10-24)
+        check('Mods window lists the new mod', control(st, 'mod:gcd-cdr') is not None and control(st, 'mod:gcd-cdr')['on'] == 0, [c['name'] for c in st.get('controls', [])])
         check('zip installed (.installed, loader copy with marker)', os.path.exists(os.path.join(UM, '.installed', os.path.basename(zp))) and os.path.exists(os.path.join(APPMODS, 'gcd-cdr', '.player_mod')))
         T.shot('2_new_mod')
         open(os.path.join(UM, 'not-a-mod.zip'), 'wb').write(b'this is not a zip')
