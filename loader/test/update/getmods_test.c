@@ -29,6 +29,7 @@ void dsi_utf8_fix_end(char *s) { (void)s; }
 const DSLUi *dsl_ui_kit(void) { return NULL; }
 void dsl_ui_place_tr(DSLObj w, float r, float t, float wd, float h) { (void)w; (void)r; (void)t; (void)wd; (void)h; }
 int dsl_ui_title_shown(void) { return 0; }
+int dsl_ui_widget_rect(DSLObj o, float r[4]) { (void)o; (void)r; return 0; }   /* dsl_update_corner_rect (the Load list's filter panel) */
 int dsl_reg_scene(void) { return 1; }
 int dsl_soft_title_idle(void) { return 0; }
 int dsl_soft_wanted(void) { return 0; }
