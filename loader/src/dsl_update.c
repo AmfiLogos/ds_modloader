@@ -542,6 +542,19 @@ static void corner_frame(void) {
     if (want_r != c_rbtn_on) { u->set_active(rbtn, want_r); c_rbtn_on = want_r; if (want_r) dsl_log("update: corner button \"Restart and update now\" shown"); }
 }
 
+/* the screen rect (pixels, y up) of the corner's widgets that show now (dsl_rows.c: the Load list's filter panel keeps out
+   of it); 0 = none shows */
+int dsl_ui_widget_rect(DSLObj o, float r[4]);
+int dsl_update_corner_rect(float r[4]) {
+    uintptr_t all[5] = { c_tog, c_ver, c_txt, c_btn, c_rbtn }; int n = 0;
+    for (int i = 0; i < 5; i++) {
+        float q[4]; if (!all[i] || dsl_ui_widget_rect((DSLObj)all[i], q) != 1) continue;
+        if (!n++) memcpy(r, q, sizeof q);
+        else { if (q[0] < r[0]) r[0] = q[0]; if (q[1] < r[1]) r[1] = q[1]; if (q[2] > r[2]) r[2] = q[2]; if (q[3] > r[3]) r[3] = q[3]; }
+    }
+    return n > 0;
+}
+
 /* test (uikit-demo driver, dlsym): the corner's Auto-update switch, NULL before the title showed it */
 __attribute__((visibility("default"))) DSLObj dsl_update_test_toggle(void) { return (DSLObj)c_tog; }
 

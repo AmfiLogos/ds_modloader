@@ -529,6 +529,18 @@ int dsl_world_mods_all(const char *guid, const char **ids, int max) {
     }
     return n;
 }
+/* the Load list's filter panel (dsl_rows.c, owner 2026-10-24): 1 = the world plays with a mod that changes the gameplay
+   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only mods that
+   change nothing in the gameplay ("Vanilla & Vanilla+"). Launcher features are not world mods. */
+int dsl_world_is_modded(const char *guid) {
+    const char *ids[MAXM]; int n = dsl_world_mods(guid, ids, MAXM);
+    for (int i = 0; i < n; i++) {
+        if (dsl_mod_is_feature(ids[i])) continue;
+        const DSLModInfo *m = mod_by_id(ids[i]);
+        if (!m || strcmp(m->scope, "client")) return 1;
+    }
+    return 0;
+}
 /* the launcher features that are on (the same for every world) */
 int dsl_features_on(const char **ids, int max) {
     int n = 0; mods_scan();
@@ -936,6 +948,7 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "warn_cancel")) dsl_saves_test_answer(0);   /* ... answered Cancel */
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
+    else if (c && (!strcmp(c, "lf") || !strncmp(c, "lf_", 3))) { void dsl_rows_test_cmd(const char *, const JNode *); dsl_rows_test_cmd(c, j); }   /* the Load list's filter panel */
     json_free(j);
 }
 

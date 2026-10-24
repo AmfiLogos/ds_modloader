@@ -7,7 +7,7 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "29dec4f2169faeeff36f56f38ebf41504891ad4e",
+ "mp_pin": "829f577a555958649ff23300fa619f483eb84c7d",
  "cm_pin": "7638bbeb20d3b2db44a6eb955cbdaa5e0376b05b",
  "fields": {
   "owner": "loader or the mod id",
@@ -126,6 +126,40 @@
    "label": "loader il2cpp_init_utf16",
    "source": "ds_modloader:loader/src/dsl_main.c",
    "key": "loader|dsl_main.c|my_il2cpp_init_utf16|loader il2cpp_init_utf16"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.SaveLoadPresenter$$ClickLoadButton",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf6f778"
+    },
+    "win-x64": {
+     "rva": "0xc81f30"
+    }
+   },
+   "active": "always",
+   "label": "loader rows SaveLoadPresenter.ClickLoadButton",
+   "source": "ds_modloader:loader/src/dsl_rows.c",
+   "key": "loader|dsl_rows.c|h_click_load|loader rows SaveLoadPresenter.ClickLoadButton"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.SaveLoadPresenter$$ClickRemoveButton",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf6ffd4"
+    },
+    "win-x64": {
+     "rva": "0xc82450"
+    }
+   },
+   "active": "always",
+   "label": "loader rows SaveLoadPresenter.ClickRemoveButton",
+   "source": "ds_modloader:loader/src/dsl_rows.c",
+   "key": "loader|dsl_rows.c|h_click_remove|loader rows SaveLoadPresenter.ClickRemoveButton"
   },
   {
    "owner": "loader",
