@@ -9,7 +9,7 @@ Checks: the guard hooks install on Windows; the panel shows right of the Load wi
 corner; kinds; the multiplayer box under the list is gone; the data guard (a selected save hidden by Latest save only
 or by a kind box: Remove File + Yes to every box removes nothing); the choices come back after a restart.
 Exit 0 = every check passed."""
-import argparse, json, os, sys, time
+import argparse, json, ntpath, os, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.environ.get('WINBOT_DIR') or os.path.expanduser('~/ds_multiplayer/win/winbot'))
@@ -79,7 +79,7 @@ def main():
     w.kill_all()
     kept = []
     for p in (W.PROF + r'\mp_tags.txt', W.DATA + r'\Mods\loadlist.json'):
-        if w.exists(p): w.move(p, TO_DEL + '\\kept_' + os.path.basename(p)); kept.append(p)
+        if w.exists(p): w.move(p, TO_DEL + '\\kept_' + ntpath.basename(p)); kept.append(p)
     try:
         w.prepare(lang=0, consent='no', active=['multiplayer', 'gcd-cdr'], saves=files)
         w.write(W.DATA + r'\Mods\worlds.json', json.dumps({'worlds': {G_V: 'vanilla', G_M: 'gcd-cdr'}}))
@@ -137,8 +137,8 @@ def main():
         for name in files:                                    # the test saves: moved away, never deleted
             if w.exists(W.DATA + '\\Saves\\' + name): w.move(W.DATA + '\\Saves\\' + name, TO_DEL + '\\' + name)
         for p in (W.PROF + r'\mp_tags.txt', W.DATA + r'\Mods\loadlist.json'):
-            if w.exists(p): w.move(p, TO_DEL + '\\test_' + os.path.basename(p))
-        for p in kept: w.move(TO_DEL + '\\kept_' + os.path.basename(p), p)
+            if w.exists(p): w.move(p, TO_DEL + '\\test_' + ntpath.basename(p))
+        for p in kept: w.move(TO_DEL + '\\kept_' + ntpath.basename(p), p)
         json.dump(checks, open(os.path.join(a.out, 'summary.json'), 'w'), indent=1)
         log(f"RESULT {sum(c['ok'] for c in checks)}/{len(checks)} checks")
     sys.exit(0 if checks and all(c['ok'] for c in checks) else 1)
