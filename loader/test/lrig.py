@@ -8,7 +8,7 @@ Two-instance test rig for Dungeon Settlers (build 25846389).
   rig.py stop  A|B|both               quit (socket), then kill by PID if still alive
   rig.py cmd   A|B '<json>'           send one command, print the answer
   rig.py status                       pid / alive / socket per instance
-  rig.py check-prefs                  owner's prefs plist + UserSetting.json byte-identical to the backup?
+  rig.py check-prefs                  owner's settings as at this process's snapshot? (a new process takes it: identical)
   rig.py smoke                        full smoke test (A alone, then A and B at once)
   rig.py lease <lane> [--pid N]       take a free pair (AB, CD, EF, GH or IJ); prints the pair name
   rig.py release <pair>               give a pair back
@@ -22,11 +22,11 @@ install, saves or prefs is written. Copies run under nice 5 (no background QoS: 
 DSRIG_BG=1 in the environment of `rig.py start` restores nice 19 + background QoS.
 A guard process per copy kills it (by PID) if it ever shows a visible window or becomes frontmost.
 """
-import json, os, signal, socket, subprocess, sys, time, shutil, hashlib, glob
+import json, os, signal, socket, subprocess, sys, time, shutil, hashlib, glob, plistlib
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path: sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ctl_token import token_line as ctl_token_line     # noqa: E402  test control channel token (first line)
 
-ROOT = os.path.expanduser('~/ds_multiplayer')            # read only here (prefs backup, tools)
+ROOT = os.path.expanduser('~/ds_multiplayer')            # read only here (prefs backup, tools), except the owner-prefs snapshots (rig/prefs_snap, rig/prefs_overwritten)
 LROOT = os.path.expanduser('~/ds_launcher/loader')
 INST = os.path.join(LROOT, 'test_env', 'instances')
 DYLIB_REL = 'DungeonSettlers.app/Contents/Frameworks/dsload.dylib'
@@ -163,30 +163,151 @@ def file_sha(p):
         return None
 
 
+# The owner's own settings: his prefs domains (stock + the app's .Modded game) and the stock UserSetting.json. A test run
+# takes a snapshot of them at its start (first check_prefs() or start() of the process, only while his game is closed) in
+# rig/prefs_snap/<time>-<pid>/ and compares at its end. Until 2026-10-24 the guard compared with a fixed 10-11 backup and
+# put it back over every setting he had changed in his game since. A test copy with his bundle id (dmg_start: .Modded)
+# writes his real domain: CFFIXED_USER_HOME does not move preferences. Unity's per-start counters are not settings.
+# Test: prefs_guard_test.py in ds_multiplayer rig/ (path of this file as argument): DSRIG_PREFS_TEST_ROOT = a folder for
+# fake owner files + the snapshot folders, DSRIG_PREFS_FAKE_GAME = 1 / 0 (his game open / closed).
+PREFS_TEST = os.environ.get('DSRIG_PREFS_TEST_ROOT')
+OWNER_DATA = os.path.join(PREFS_TEST, 'owner') if PREFS_TEST else REAL_DATA
+OWNER_DOMAINS = [os.path.join(OWNER_DATA, d) if PREFS_TEST else d                 # a plist path is a domain for `defaults`
+                 for d in ('com.CanOpener.Dungeon-Settlers', 'com.CanOpener.Dungeon-Settlers.Modded')]
+PREFS_SNAP = os.path.join(PREFS_TEST or os.path.join(ROOT, 'rig'), 'prefs_snap')
+PREFS_KEPT = os.path.join(PREFS_TEST or os.path.join(ROOT, 'rig'), 'prefs_overwritten')   # kept for good, never ToDelete
+SESSION_KEYS = ('unity.player_session_count', 'unity.player_sessionid')
+_SNAP = {}                                                 # this process's run snapshot: dir, t
+
+
+def _owner_items():
+    """(name in a snapshot, domain or None, file or None) per owner settings file"""
+    return [(os.path.basename(d) + '.plist', d, None) for d in OWNER_DOMAINS] + [('UserSetting.json', None, os.path.join(OWNER_DATA, 'UserSetting.json'))]
+
+
+def _read_domain(dom):
+    r = subprocess.run(['defaults', 'export', dom, '-'], capture_output=True)           # what cfprefsd holds ({} if none)
+    return plistlib.loads(r.stdout) if r.returncode == 0 and r.stdout else {}
+
+
+def _values(name, dom, f, snap=None):
+    """the item now (snap None) or in a snapshot: domain values without Unity's counters, or the file's bytes; None = no file"""
+    p = os.path.join(snap, name) if snap else f
+    try:
+        if dom:
+            d = plistlib.load(open(p, 'rb')) if snap else _read_domain(dom)
+            return {k: v for k, v in d.items() if k not in SESSION_KEYS}
+        return open(p, 'rb').read()
+    except FileNotFoundError:
+        return None
+
+
+def _diff(old, new, n=20):
+    """'key: old -> new' lines for a person (domain keys, UserSetting.json keys as Section.Key)"""
+    def flat(v, p=''):
+        if isinstance(v, bytes):
+            try:
+                v = json.loads(v)
+            except ValueError:
+                return {p or 'contents': hashlib.sha256(v).hexdigest()[:12]}
+        if isinstance(v, dict):
+            return {k2: v2 for k, x in v.items() for k2, v2 in flat(x, f'{p}.{k}' if p else str(k)).items()}
+        return {p: v}
+    a, b, no = flat(old) if old is not None else {}, flat(new) if new is not None else {}, '(none)'
+    out = [f'{k}: {str(a.get(k, no))[:60]} -> {str(b.get(k, no))[:60]}' for k in sorted(set(a) | set(b)) if a.get(k, no) != b.get(k, no)]
+    return out[:n] + ([f'... {len(out) - n} more'] if len(out) > n else [])
+
+
+def prefs_snapshot():
+    """this run's snapshot folder of the owner's settings, taken once and only while his game is closed; None while it is open"""
+    if _SNAP:
+        return _SNAP['dir']
+    if owner_game_running():
+        return None
+    t = time.time(); d = os.path.join(PREFS_SNAP, time.strftime('%Y%m%d-%H%M%S') + f'-{os.getpid()}'); os.makedirs(d, exist_ok=True)
+    for name, dom, f in _owner_items():
+        if dom:
+            subprocess.run(['defaults', 'export', dom, os.path.join(d, name)], check=True)
+        elif os.path.exists(f):
+            shutil.copy2(f, os.path.join(d, name))
+    _SNAP.update(dir=d, t=t)
+    print(f'owner prefs: run snapshot {d}', file=sys.stderr)
+    return d
+
+
+def _keep_overwritten(name, dom, f):
+    """copy of the owner's current file before the snapshot goes over it, + one line in prefs_overwritten/overwritten.log"""
+    if not dom and not os.path.exists(f):
+        return '(no file to keep)'
+    os.makedirs(PREFS_KEPT, exist_ok=True); ts = time.strftime('%Y%m%d-%H%M%S')
+    dst = os.path.join(PREFS_KEPT, f'{ts}-{name}')
+    if os.path.exists(dst):
+        dst = os.path.join(PREFS_KEPT, f'{ts}-{os.getpid()}-{name}')
+    if dom:
+        subprocess.run(['defaults', 'export', dom, dst], check=True)
+    else:
+        shutil.copy2(f, dst)
+    with open(os.path.join(PREFS_KEPT, 'overwritten.log'), 'a') as lg:
+        lg.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")} pid {os.getpid()} {os.path.basename(sys.argv[0])}: {dom or f} differed from '
+                 f'run snapshot {_SNAP["dir"]}: kept as {dst}, snapshot put back\n')
+    return dst
+
+
+def _put_back(name, dom, f, snap):
+    src = os.path.join(snap, name)
+    if dom:
+        for k in set(_read_domain(dom)) - set(plistlib.load(open(src, 'rb'))):      # `defaults import` merges: a key the
+            subprocess.run(['defaults', 'delete', dom, k], capture_output=True)      # test added would stay
+        subprocess.run(['defaults', 'import', dom, src], check=True)
+    else:
+        shutil.copy2(src, f + '.rigtmp'); os.replace(f + '.rigtmp', f)
+
+
 def check_prefs(restore=True):
-    """True if the owner's prefs plist and UserSetting.json match the backup. Restores if not and his game is closed."""
-    pairs = [(REAL_PLIST, os.path.join(BACKUP, 'com.CanOpener.Dungeon-Settlers.plist')),
-             (os.path.join(REAL_DATA, 'UserSetting.json'), os.path.join(BACKUP, 'UserSetting.json'))]
+    """True if the owner's settings are as at the start of this test run (the first call takes the run's snapshot). A difference
+    while his game stayed closed came from the test: the snapshot is put back (restore=True), the file it replaces is kept in
+    prefs_overwritten/. A difference after his game ran is his own: printed for a person, never put back."""
+    snap = _SNAP.get('dir')
+    if not snap:
+        if not prefs_snapshot():
+            print('owner prefs: his game is open: no snapshot, nothing compared', file=sys.stderr)
+        return True
+    ran = owner_game_ran_since(_SNAP['t'])
     ok = True
-    for real, bak in pairs:
-        if file_sha(real) == file_sha(bak):
+    for name, dom, f in _owner_items():
+        old, new = _values(name, dom, f, snap), _values(name, dom, f)
+        if old == new:
             continue
         ok = False
-        print(f'PREFS CHANGED: {real}')
-        if restore and not owner_game_running():
-            if real.endswith('.plist'):
-                subprocess.run(['defaults', 'import', 'com.CanOpener.Dungeon-Settlers', bak])
-            else:
-                shutil.copy2(bak, real + '.rigtmp'); os.replace(real + '.rigtmp', real)
-            print(f'  restored from {bak}: now identical = {file_sha(real) == file_sha(bak)}')
-        elif restore:
-            print('  his game is running: he may have changed it himself; NOT restored, check by hand')
+        print(f'PREFS CHANGED since the run snapshot {snap}: {dom or f}')
+        for line in _diff(old, new):
+            print('  ' + line)
+        if not restore:
+            continue
+        if ran:
+            print('  his game ran during this run: he may have changed it himself; NOT restored, check by hand')
+        elif old is None:
+            print('  not in the run snapshot: NOT restored, check by hand')
+        else:
+            kept = _keep_overwritten(name, dom, f); _put_back(name, dom, f, snap)
+            print(f'  restored from the run snapshot (the replaced one is kept: {kept}): now identical = {_values(name, dom, f) == old}')
     return ok
 
 
 def owner_game_running():
-    out = subprocess.run(['pgrep', '-fl', 'Dungeon Settlers'], capture_output=True, text=True).stdout
-    return any(INST not in line and 'DungeonSettlers.app' in line for line in out.splitlines())
+    """his stock game (Steam) or his modded game (the app's game copy) runs"""
+    if PREFS_TEST:
+        return os.environ.get('DSRIG_PREFS_FAKE_GAME') == '1'
+    return subprocess.run(['pgrep', '-f', 'steamapps/common/Dungeon Settlers/|DSModLauncher/games/'], capture_output=True).returncode == 0
+
+
+def owner_game_ran_since(t):
+    """his game runs, or ran since t: while it runs it writes these files in its data folder (stock, or the app's profiles)"""
+    if owner_game_running():
+        return True
+    dirs = [OWNER_DATA] + ([] if PREFS_TEST else glob.glob(os.path.expanduser('~/Library/Application Support/DSModLauncher/profiles/*/data')))
+    return any(os.path.exists(p) and os.path.getmtime(p) >= t
+               for d in dirs for p in (os.path.join(d, n) for n in ('ErrorLog.txt', 'eventcache', 'SaveHeaderCache.json', 'UserCampaignLog.json')))
 
 
 # ------------------------------------------------------------------ instance data
@@ -345,6 +466,7 @@ def start(x, window=False, fps=30, show=None):
     """show='left'|'right': VISIBLE window on that half of the screen (owner demo only; tests never pass it)."""
     if alive(read_pid(x)):
         print(f'{x}: already running (pid {read_pid(x)})'); return read_pid(x)
+    prefs_snapshot()                                           # the run's snapshot of the owner's settings, before its first copy
     cap_wait(f'{x}: start')
     exe = os.path.join(idir(x), EXE_REL)
     if not os.path.exists(exe):
