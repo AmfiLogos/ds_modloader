@@ -15,6 +15,15 @@ const DSLUi *dsl_ui_kit(void);                  /* NULL before il2cpp_init retur
 void dsl_ui_field_number(DSLObj f, int max_chars);   /* a kit field takes digits only (TMP IntegerNumber), max_chars long */
 int dsl_ui_field_focused(DSLObj f);                 /* the kit field has the keyboard */
 void dsl_ui_field_multiline(DSLObj f, int max_chars);   /* a kit field takes many lines (Enter = new line), max_chars long */
+/* the Load list's filter panel (dsl_rows.c): screen rects in pixels (y up), 1 = shown; a child by path; scale; width */
+int dsl_ui_screen_rect(DSLObj o, float r[4]);       /* a kit widget or any RectTransform */
+int dsl_ui_widget_rect(DSLObj o, float r[4]);       /* a kit widget kept as a plain pointer: 0 once the kit forgot it */
+void dsl_ui_screen_size(float *w, float *h);
+DSLObj dsl_ui_child(DSLObj parent, const char *path);   /* Transform.Find */
+void dsl_ui_set_scale(DSLObj o, float s);
+float dsl_ui_width(DSLObj o);                       /* RectTransform.rect.width, local units */
+int dsl_update_corner_rect(float r[4]);             /* dsl_update.c: the title corner's widgets that show (0 = none) */
+int dsl_world_is_modded(const char *guid);          /* dsl_reg.c: a gameplay mod (or one not installed) in the world's set */
 
 /* installed mods (every <mods>/<id>/mod.json seen at start, code or not) */
 typedef struct DSLModInfo {

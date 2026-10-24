@@ -9,7 +9,7 @@ import l1_test as t
 OUT = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else '~/ds_launcher/loader/test_env/l1_out/rows')
 t.OUT = OUT; os.makedirs(OUT, exist_ok=True)
 MD = os.path.join(t.I, 'DungeonSettlers.app/Contents/Resources/mods')
-SRC = os.path.expanduser('~/ds_launcher_l1core/loader/build/test_mods/rows-demo')
+SRC = os.environ.get('ROWS_DEMO_DIR') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'build', 'test_mods', 'rows-demo')   # built from test/mods_src/rows-demo (rowsdemo() in the gate)
 
 
 def main():

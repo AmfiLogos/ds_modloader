@@ -582,6 +582,44 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
 - Tests: `test/saves_hidden/run.sh` (host; the Windows and Mac branches of the notice count: 3 checks);
   `test/l1_hidden_test.py` (copy Y, hidden): M multiplayer filter + unreadable game save, EN and DE, box ticked = line
   gone; F hooks off; B other build (status message); G crash guard: 19 + 2 checks, screenshots M_en / M_de / F_en / F_de.
+## Load list filter panel (owner 2026-10-24, kit v0.1.23, branch feat/load-filters) - `src/dsl_rows.c`
+Owner: "add filters for worlds, on the right of the load campaign window ... vanilla & vanilla+ worlds (with changes not
+modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show multiple saves or only the latest one."
+- Panel (kit widgets, a child of the Load window `Panel_SaveLoadUI`): title "Filters", boxes Vanilla & Vanilla+, Modded,
+  Multiplayer, then Latest save only; each with a hover card. Place from the screen each poll: right of the window, top
+  level with the list's top (`ScrollView_SettingData`), below the title corner when they would overlap
+  (`dsl_update_corner_rect`: Auto-update switch, version, status line, buttons), inside the screen; too narrow = scaled
+  down (min 0.5; measured 0.89 at 16:10 UI 1.4). Measured fits: 960x540 UI 0.75 / 1.4, 960x600 UI 1.0 / 1.4.
+- Kinds, one per world: Multiplayer = the multiplayer mod's tag (its export `dsl_loadlist_world_mp`), else Modded = a mod
+  of the world's set with scope gameplay or not installed (`dsl_world_is_modded`, dsl_reg.c), else Vanilla & Vanilla+.
+  A world shows when its kind's box is ticked; the world being played always shows. Defaults = the old list: Vanilla &
+  Modded on, Multiplayer off. Choices in `<data>/Mods/loadlist.json` (vanilla, modded, multiplayer, latest_only).
+- The multiplayer mod's box "Show multiplayer worlds" under the single-player list is replaced: with a loader that
+  exports `dsl_loadlist_panel`, multiplayer 0.1.22 shows every world there and draws no box (its filter stays for Your
+  save and the Expedition pick, which export `dsl_loadlist_own` = 1: the panel is hidden then). Its box was off at every
+  opening, so there was no saved value to carry over. Old multiplayer + new loader: the panel has no Multiplayer box and
+  the old box stays; new multiplayer + old loader: no box, every world shows.
+- Latest save only: per open world row, save rows after the first off (the game lists a world's saves newest first:
+  `SaveLoadView.<RefreshLoadPanel>b__31_1` orders by save time), and `SubUI_SettlerNameCase._buttonCount` = 1 + its
+  `RefreshSize` so the row leaves no empty band (RefreshSize turns the save rows on: it runs first). Checked every frame
+  while on (a world the player opens shows its older saves for one frame at most). Off: the stock count back.
+- Hidden line: "N worlds are hidden by the filters on the right." (rows the panel hid); the toggles under the list keep
+  "by a filter under the list"; the multiplayer mod's own modes keep their lines.
+- Data guard (the one real break): Load and Remove File act on `SaveLoadPresenter._selectedSaveName` (set by a click on a
+  save row), not on the view's selected row; `SaveLoadView.UnselectAllSlots` + `LockLoadButtons` change only the view. So:
+  (1) a selected save that a filter or Latest save only hides is unselected and both buttons locked (each apply + each
+  poll); (2) hooks on `SaveLoadPresenter.ClickRemoveButton` / `ClickLoadButton` (delegates of its update table, never
+  inlined) refuse the click while `_selectedSaveName` is hidden by the filters (no box, no load; log "rows: Remove File
+  refused"). Without (2) the first test run removed the hidden game save after the view was unselected.
+- Test requests (DSL_SOFT_TEST, reg_request.json): `{"cmd":"lf", "vanilla"|"modded"|"multiplayer"|"latest_only": 0/1}`,
+  `lf_select` (name), `lf_remove`, `lf_state`; each writes `<log dir>/softrestart/lf_state.json`.
+- Tests: `test/l1_filter_test.py` (copy V): guard (filter + Latest save only, Remove File then Yes to every box: the
+  hidden saves stay), kinds, defaults, MP box gone, Latest save only (newest shown, row count 1), restart keeps the
+  choices, place at 4 sizes / UI scales in en/de/ru/ja: 50 + 28 checks. `test/l1_hidden_test.py` M ported to the panel.
+- Copy signing trap: codesign refuses a test copy whose Frameworks holds `lang/` (not code); a copy whose Info.plist
+  changed after its last signature is then killed at start (Code Signature Invalid, no log). l1_filter_test puts lang
+  aside while it signs.
+
 ## Mod settings (v0.1.14, lane modsettings, 2026-10-18)
 Owner: "add a way to adjust mod settings in the modloader". First user: ZET-U Mod Suite.
 - mod.json `"settings"`: list of {id, type toggle | int (min, max, step) | choice (choices [{id, label, i18n}]), default,

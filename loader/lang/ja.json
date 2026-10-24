@@ -29,6 +29,9 @@
  "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
   "ワールド%d個が一覧の下のフィルターで非表示になっています。"
  ],
+ "%d world is hidden by the filters on the right.||%d worlds are hidden by the filters on the right.": [
+  "ワールド%d個が右のフィルターで非表示になっています。"
+ ],
  "%s %s": "%s%s",
  "%s %s is not available for download. Your mods stay as they were.": "%s %s はダウンロードできません。MODは元のままです。",
  "%s (not installed)": "%s（未インストール）",
@@ -110,6 +113,8 @@
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded：今回はBepInExのMODがオフです",
  "Dungeon Settlers: mods are off": "Dungeon Settlers：MODはオフです",
  "Each world keeps its own set of these mods.": "これらのMODはワールドごとに設定が保存されます。",
+ "Each world shows only its newest save. Off: every save.": "各ワールドの最新のセーブだけを表示します。オフ：すべてのセーブ。",
+ "Filters": "フィルター",
  "For example: I opened the shop and the game froze. I expected to buy a sword.": "例：ショップを開いたらゲームが固まりました。剣を買うつもりでした。",
  "Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply.": [
   "新しいMODを%d件見つけました。オンにしてから適用をクリックしてください。"
@@ -126,6 +131,7 @@
  "Include a screenshot": "スクリーンショットを含める",
  "Include logs": "ログを含める",
  "Installed mods": "インストール済みMOD",
+ "Latest save only": "最新のセーブだけ",
  "Launcher features (every world):": "ランチャー機能（全ワールド共通）:",
  "Launcher mods": "ランチャーMOD",
  "Load": "読み込む",
@@ -139,6 +145,7 @@
  "MelonLoader mod: not running in this start": "MelonLoaderのMOD：今回の起動では動いていません",
  "Mod updates are available.": "MODのアップデートがあります。",
  "Mod updates install the next time you start the game.": "MODのアップデートは次回ゲーム起動時にインストールされます。",
+ "Modded": "MODあり",
  "Modded saves: only in Dungeon Settlers Modded": "MOD版のセーブ：Dungeon Settlers Moddedだけ",
  "Mods": "MOD",
  "Mods cannot be downloaded in this start.": "この起動ではMODをダウンロードできません。",
@@ -148,6 +155,7 @@
  "Mods of this world": "このワールドのMOD",
  "Mods:": "MOD：",
  "Mods: %s": "MOD：%s",
+ "Multiplayer": "マルチプレイ",
  "No": "いいえ",
  "No game mods installed.": "ゲームMODはインストールされていません。",
  "No groups yet. Set the switches, then save them as a group.": "まだグループがありません。\nスイッチを設定してから保存してください。",
@@ -280,8 +288,12 @@
  "Updating Dungeon Settlers Modded": "Dungeon Settlers Moddedをアップデート中",
  "Updating Dungeon Settlers Modded to %s": "Dungeon Settlers Moddedを%sにアップデート中",
  "Updating mods: %s": "MODをアップデート中：%s",
+ "Vanilla & Vanilla+": "バニラ & バニラ+",
  "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "Steamを待っています。Steamからサインインを求められたら、サインインしてください。その後、ゲームが起動します。",
  "What happened? What did you expect?": "何が起きましたか？ 何を期待していましたか？",
+ "Worlds with at least one mod that changes the gameplay.": "ゲームプレイを変えるMODが1つ以上あるワールドです。",
+ "Worlds with no mods, or only mods that do not change the gameplay.": "MODがないか、ゲームプレイを変えないMODだけのワールドです。",
+ "Worlds you played with friends.": "フレンドと遊んだワールドです。",
  "Yes": "はい",
  "Your mods already match the host's.": "MODはすでにホストと同じです。",
  "Your mods could not be changed: %s": "MODを変更できませんでした：%s",
