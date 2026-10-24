@@ -5949,6 +5949,342 @@
    "label": "zetu-suite SubUI_ExpeditionPlanLowerPanel.OnSetUnit",
    "source": "ds_modloader:loader/modules/zetu-suite/zetu_ui.c",
    "key": "zetu-suite|zetu_ui.c|my_lower_setunit|"
+  },
+  {
+   "owner": "sound-fix",
+   "kind": "detour",
+   "method": "Refactor.Setting.SoundSetting$$SetSoundMute",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x89d430"
+    },
+    "win-x64": {
+     "rva": "0x620fb0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "sound-fix SoundSetting.SetSoundMute",
+   "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
+   "key": "sound-fix|sound_fix.c|my_set_mute|"
+  },
+  {
+   "owner": "sound-fix",
+   "kind": "detour",
+   "method": "Refactor.Setting.SoundSetting$$SetSoundVolume",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x89d23c"
+    },
+    "win-x64": {
+     "rva": "0x621140"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "sound-fix SoundSetting.SetSoundVolume",
+   "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
+   "key": "sound-fix|sound_fix.c|my_set_volume|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xf22174"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xc2c930"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "multi-bar",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_click|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__1",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xf22214"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xc2ca30"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "multi-bar",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_hover|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.PlayerControlEventHandler$$OnEvent",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xdbe600"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xac8be0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "multi-bar",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_useqs|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.PlayerControlEventHandler$$OnEvent",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xdc03e0"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xac8030"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "multi-bar",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_tbo|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.EntitySummaryOptionUI.<>c__DisplayClass13_0$$<Init>b__0",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xec70b8"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xbd4930"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "multi-bar",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_optclick|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.CombatInfoViewPresenter$$RefreshOnFrame",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x7f32a0"
+    },
+    "win-x64": {
+     "rva": "0x572650"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar CombatInfoViewPresenter.RefreshOnFrame",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_civp|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.ItemQuickSlotUI$$HandleSelect",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf1f82c"
+    },
+    "win-x64": {
+     "rva": "0xbb5b50",
+     "shared_with": [
+      "Refactor.UI.SubUI_PolicyRow$$OnPressSetAll"
+     ]
+    }
+   },
+   "active": "always",
+   "label": "multi-bar ItemQuickSlotUI.HandleSelect",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_itemsel|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.PlayerControlEventHandler$$TryResolveSingleSelectedUnit",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xdbfd3c"
+    },
+    "win-x64": {
+     "rva": "0xacb7d0"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar PlayerControlEventHandler.TryResolveSingleSelectedUnit",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_single|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.PlayerUnitShortCutPresenter$$SwapShortCut",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf1a324"
+    },
+    "win-x64": {
+     "rva": "0xc1f810"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar PlayerUnitShortCutPresenter.SwapShortCut",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_swap|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$OnFrame",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf23ad8"
+    },
+    "win-x64": {
+     "rva": "0xc21fe0"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.OnFrame",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_frame|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$OnInitializeView",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf227b8"
+    },
+    "win-x64": {
+     "rva": "0xc22270"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.OnInitializeView",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_init|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$OnUseSkill",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf23d54"
+    },
+    "win-x64": {
+     "rva": "0xc225b0"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.OnUseSkill",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_useskill|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$RefreshOnBehaviorChanged",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf23a18"
+    },
+    "win-x64": {
+     "rva": "0xc23260"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.RefreshOnBehaviorChanged",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_behavchg|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$RefreshOnInventoryChanged",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf23a28"
+    },
+    "win-x64": {
+     "rva": "0xc23270"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.RefreshOnInventoryChanged",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_invchg|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$RefreshOnSelect",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf22bfc"
+    },
+    "win-x64": {
+     "rva": "0xc23330"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.RefreshOnSelect",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_select|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUIPresenter$$RefreshOnSkillChanged",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf2396c"
+    },
+    "win-x64": {
+     "rva": "0xc23840"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar QuickSlotUIPresenter.RefreshOnSkillChanged",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_skillchg|"
+  },
+  {
+   "owner": "multi-bar",
+   "kind": "detour",
+   "method": "Refactor.UI.SkillSlotUI$$OnDrop",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf246b8"
+    },
+    "win-x64": {
+     "rva": "0xc26290"
+    }
+   },
+   "active": "always",
+   "label": "multi-bar SkillSlotUI.OnDrop",
+   "source": "ds_modloader:loader/modules/multi-bar/multi_bar.c",
+   "key": "multi-bar|multi_bar.c|hk_drop|"
   }
  ],
  "notes": []
