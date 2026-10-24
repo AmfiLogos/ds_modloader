@@ -296,6 +296,11 @@ empty default is in dsl_ui.c so the loader links before dsl_reg.c defines it). L
 - Templates (button, image, text) are cloned from `TitleMenuView._creditButton` the first time the title is seen, kept under
   a hidden DontDestroyOnLoad holder; the text field from the load list prefab (`UIFactory._prefabs.GetUIPrefab(5)._saveNameInputField`,
   no popup flash). Widgets need the title to have been seen once (always true: the game starts there).
+- Text look (owner 2026-10-24: "not the same as the rest of the menus"; replaces the plain-material rule of 2026-10-13):
+  body text, buttons, toggles, value rows = the language's body font + LanguageSetting.GetMaterial(EasyRead, SoftOutline16)
+  ("Lora-Regular SDF OutLine16", as the game's title column, Options and Load Campaign); DSL_TXT_TITLE under 24 = the title
+  font + its SoftOutline16 (section heads, as Options' "Language"); titles of 24 and up and text fields = the font's own
+  plain material (as the Options title and the game's name fields). Measured with ds_custommodes home/test/font_probe.
 - `parent == NULL` = the kit's own screen layer: overlay canvas, sorting 30900 (under MP panels 31000+), scaler copied from
   the game UI (ScaleWithScreenSize 1920x1080). The notice view is raised to 32040, the tooltip canvas to 32050 when shown.
 - Title buttons: clone of the stock Credits button, label size 22 (as MP's clones), always the LAST children of the stock

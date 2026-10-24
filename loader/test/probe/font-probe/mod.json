@@ -1,0 +1,22 @@
+{
+ "id": "font-probe",
+ "name": "Font probe (test only)",
+ "version": "0.1.0",
+ "author": "ds_modloader tests",
+ "kind": "code",
+ "api": 3,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "font-probe.dylib"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "conflicts": [],
+ "description": "Test module of loader/test/look_test.py: drives Units Laboratory's windows and lists the font of every text. Never shipped.",
+ "scope": "client"
+}
