@@ -82,6 +82,20 @@ put $Z/zetu-suite.dylib
 cp modules/zetu-suite/mod.json $Z/
 echo "built $Z"
 
+# sound-fix (Sound settings fix): one source, every hook by il2cpp name (no per-build table)
+S=build/mods/sound-fix; mkdir -p $S
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/sound-fix.dylib -o $S/sound-fix.dylib.tmp modules/sound-fix/sound_fix.c
+put $S/sound-fix.dylib
+cp modules/sound-fix/mod.json $S/
+echo "built $S"
+
+# multi-bar (Multi-unit view): one source, every hook by il2cpp name (no per-build table)
+B=build/mods/multi-bar; mkdir -p $B
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/multi-bar.dylib -o $B/multi-bar.dylib.tmp modules/multi-bar/multi_bar.c
+put $B/multi-bar.dylib
+cp modules/multi-bar/mod.json $B/
+echo "built $B"
+
 # weapon-slot (Weapon skill slot): one source, every hook by il2cpp name (no per-build table)
 W=build/mods/weapon-slot; mkdir -p $W
 nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/weapon-slot.dylib -o $W/weapon-slot.dylib.tmp modules/weapon-slot/weapon_slot.c

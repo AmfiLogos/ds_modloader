@@ -1,0 +1,77 @@
+{
+ "id": "multi-bar",
+ "name": "Multi-unit view",
+ "short_name": "Multi-unit view",
+ "version": "0.1.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "api": 3,
+ "scope": "client",
+ "default_on": false,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "multi-bar.dylib"
+  },
+  "win-x64": {
+   "entry": "multi-bar.dll"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "optional": [
+  "weapon-slot"
+ ],
+ "conflicts": [],
+ "description": "With 2 to 4 units selected, each unit gets its own card at the bottom of the screen: portrait, name, mood and status bars, behaviour buttons, status effects, item slot and its full skill bar. Click a skill on a card to use it with that unit. With 2 or more units selected, the skill keys do nothing (use the mouse).",
+ "i18n": {
+  "fr": {
+   "name": "Vue multi-unités",
+   "short_name": "Vue multi-unités",
+   "description": "Avec 2 à 4 unités sélectionnées, chaque unité a sa propre carte en bas de l'écran : portrait, nom, humeur et barres d'état, boutons de comportement, effets d'état, emplacement d'objet et sa barre de compétences complète. Cliquez sur une compétence d'une carte pour l'utiliser avec cette unité. Avec 2 unités ou plus sélectionnées, les touches de compétences ne font rien (utilisez la souris)."
+  },
+  "de": {
+   "name": "Mehrfach-Einheitenansicht",
+   "short_name": "Mehrfach-Einheitenansicht",
+   "description": "Mit 2 bis 4 ausgewählten Einheiten bekommt jede Einheit unten am Bildschirm ihre eigene Karte: Porträt, Name, Stimmung und Statusleisten, Verhaltensknöpfe, Statuseffekte, Gegenstandsplatz und ihre ganze Skillleiste. Klicke auf einen Skill einer Karte, um ihn mit dieser Einheit zu nutzen. Mit 2 oder mehr ausgewählten Einheiten tun die Skilltasten nichts (nutze die Maus)."
+  },
+  "es": {
+   "name": "Vista de varias unidades",
+   "short_name": "Vista de varias unidades",
+   "description": "Con 2 a 4 unidades seleccionadas, cada unidad tiene su propia tarjeta en la parte inferior de la pantalla: retrato, nombre, ánimo y barras de estado, botones de comportamiento, efectos de estado, casilla de objeto y su barra de habilidades completa. Haz clic en una habilidad de una tarjeta para usarla con esa unidad. Con 2 o más unidades seleccionadas, las teclas de habilidad no hacen nada (usa el ratón)."
+  },
+  "pt-BR": {
+   "name": "Visão de várias unidades",
+   "short_name": "Visão de várias unidades",
+   "description": "Com 2 a 4 unidades selecionadas, cada unidade ganha seu próprio cartão na parte de baixo da tela: retrato, nome, humor e barras de status, botões de comportamento, efeitos de status, espaço de item e sua barra de habilidades completa. Clique em uma habilidade de um cartão para usá-la com essa unidade. Com 2 ou mais unidades selecionadas, as teclas de habilidade não fazem nada (use o mouse)."
+  },
+  "ru": {
+   "name": "Вид нескольких юнитов",
+   "short_name": "Вид нескольких юнитов",
+   "description": "Когда выбрано от 2 до 4 юнитов, у каждого юнита внизу экрана своя карточка: портрет, имя, настроение и полосы состояния, кнопки поведения, эффекты состояния, ячейка предмета и полная панель навыков. Нажмите на навык на карточке, чтобы применить его этим юнитом. Когда выбрано 2 юнита или больше, клавиши навыков ничего не делают (используйте мышь)."
+  },
+  "ja": {
+   "name": "複数ユニット表示",
+   "short_name": "複数ユニット表示",
+   "description": "ユニットを2～4体選択すると、画面下部にユニットごとのカードが表示されます：肖像、名前、気分とステータスバー、行動ボタン、状態効果、アイテムスロット、そしてスキルバー全体。カードのスキルをクリックすると、そのユニットが使います。2体以上を選択しているときは、スキルキーは何もしません（マウスを使ってください）。"
+  },
+  "ko": {
+   "name": "다중 유닛 보기",
+   "short_name": "다중 유닛 보기",
+   "description": "유닛을 2~4명 선택하면 화면 아래에 유닛마다 카드가 표시됩니다: 초상화, 이름, 기분과 상태 바, 행동 버튼, 상태 효과, 아이템 칸, 그리고 전체 스킬 바. 카드의 스킬을 클릭하면 그 유닛이 사용합니다. 2명 이상 선택했을 때는 스킬 키가 작동하지 않습니다(마우스를 사용하세요)."
+  },
+  "zh-Hans": {
+   "name": "多单位视图",
+   "short_name": "多单位视图",
+   "description": "选中 2 到 4 个单位时，每个单位在屏幕底部都有自己的卡片：头像、名字、心情和状态条、行为按钮、状态效果、物品栏位以及完整的技能栏。点击卡片上的技能即可让该单位使用。选中 2 个或更多单位时，技能按键不起作用（请使用鼠标）。"
+  },
+  "zh-Hant": {
+   "name": "多單位檢視",
+   "short_name": "多單位檢視",
+   "description": "選取 2 到 4 個單位時，每個單位在畫面底部都有自己的卡片：頭像、名字、心情與狀態條、行為按鈕、狀態效果、物品欄位以及完整的技能列。點擊卡片上的技能即可讓該單位使用。選取 2 個或更多單位時，技能按鍵不會作用（請使用滑鼠）。"
+  }
+ }
+}
