@@ -279,7 +279,8 @@ static int spr_ok(int k, Obj sp) {
     R4 r = CALL(m_spr_rect, R4, Obj)(sp, m_spr_rect);
     return r.w > 9.5f && r.w < 10.5f && r.h > 9.5f && r.h < 10.5f;
 }
-static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat;   /* title font, body font + its plain material (per language) */
+static uintptr_t h_spr[S_N], h_cinzel, h_body_font, h_body_mat, h_plain_mat, h_title_mat;   /* per language: title font, body font,
+                                                                     body / field / small-title materials (the game's look) */
 static int64_t frames, scan_last = -100000; static int scans, scan_done, kit_used;
 static Obj ui_prefab(int type);
 static void prefab_touch(int type) { (void)ui_prefab(type); }
@@ -324,8 +325,18 @@ static Obj spr(int k) { Obj s = hget(h_spr[k]); if (!s && h_spr[k]) { hfree(&h_s
 
 static Obj notice_view(void);
 static Obj asset_mat(Obj font) { return !alive(font) ? NULL : m_asset_mat ? CALL(m_asset_mat, Obj, Obj)(font, m_asset_mat) : f_asset_mat > 0 ? AT(font, f_asset_mat, Obj) : NULL; }
-/* body text: the language's body font (LanguageSetting.GetFont(EasyRead)), else the stock window body font
-   (CommonNoticeView Txt_Notice), with its font asset's own plain material (no outline), as mpmenu's txt_body */
+/* The game's look per text role (owner 2026-10-24: "not the same as the rest of the menus"; it replaces the plain-material
+   rule of 2026-10-13). Measured in the game's own menus (title column, Options, Load Campaign): body text, buttons, check
+   box labels and choice values = the language's body font (LanguageSetting.GetFont(EasyRead)) + its SoftOutline16 material
+   (LanguageSetting.GetMaterial(EasyRead, SoftOutline16), "Lora-Regular SDF OutLine16" in English); section heads = the title
+   font + its SoftOutline16 material; window titles (24 and up, as the game's Options and Rename titles) and the name fields = the font's own
+   plain material. Without LanguageSetting (an older game): the stock window body font (CommonNoticeView Txt_Notice) and the
+   plain materials, as before. */
+static Obj lang_mat(int style, int mat) {                            /* LanguageSetting.GetMaterial(FontStyleType, FontMaterialType) */
+    if (!m_ls_mat || !kit_ready_fonts) return NULL;
+    Obj m = CALL(m_ls_mat, Obj, int32_t, int32_t)(style, mat, m_ls_mat);
+    return alive(m) ? m : NULL;
+}
 static int64_t body_last = -1000;
 static void body_font(void) {
     if (hget(h_body_mat)) return;
@@ -335,8 +346,17 @@ static void body_font(void) {
         Obj v = notice_view(); Obj nt = v && f_nv_text >= 0 ? AT(v, f_nv_text, Obj) : NULL;
         font = isa(nt, K.TMP_Text) ? CALL(m_tmp_getfont, Obj, Obj)(nt, m_tmp_getfont) : NULL; from = "the notice box";
     }
-    Obj m = asset_mat(font);
-    if (alive(m)) { hset(&h_body_mat, m); hset(&h_body_font, font); char nm[96]; obj_name(m, nm, sizeof nm); dsl_log("ui: body text font from %s (%s), material \"%s\"", from, dsi_code(), nm); }
+    Obj plain = asset_mat(font), m = font ? lang_mat(0, 1) : NULL;
+    if (!alive(plain)) return;
+    hset(&h_plain_mat, plain); hset(&h_body_mat, m ? m : plain); hset(&h_body_font, font);
+    char nm[96], pn[96]; obj_name(hget(h_body_mat), nm, sizeof nm); obj_name(plain, pn, sizeof pn);
+    dsl_log("ui: body text font from %s (%s), material \"%s\" (fields \"%s\")", from, dsi_code(), nm, pn);
+}
+static Obj title_mat(void) {                                         /* section heads: the title font's SoftOutline16 material */
+    Obj m = hget(h_title_mat); if (m) return m;
+    if (!title_font() || !(m = lang_mat(2, 1))) return NULL;
+    hset(&h_title_mat, m); char nm[96]; obj_name(m, nm, sizeof nm); dsl_log("ui: title text material \"%s\" (under 24)", nm);
+    return m;
 }
 /* a clone of a stock DASText (title buttons): the font + material its own style has in the current language, as the
    game's DASText.RefreshOnRunTime sets them (without its text and wrap resets) */
@@ -348,18 +368,24 @@ static void das_lang_font(Obj t) {
     Obj m = m_ls_mat ? CALL(m_ls_mat, Obj, int32_t, int32_t)(st, fm, m_ls_mat) : NULL;
     if (alive(m) && m_tmp_shmat) CALL(m_tmp_shmat, void, Obj, Obj)(t, m, m_tmp_shmat);
 }
-static void txt_body(Obj t) {
+static void txt_body_mat(Obj t, uintptr_t hm) {
     if (!isa(t, K.TMP_Text)) return;
     body_font();
-    Obj f = hget(h_body_font), m = hget(h_body_mat);
+    Obj f = hget(h_body_font), m = hget(hm);
     if (f) CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
     if (m && m_tmp_shmat) CALL(m_tmp_shmat, void, Obj, Obj)(t, m, m_tmp_shmat);
 }
+static void txt_body(Obj t) { txt_body_mat(t, h_body_mat); }        /* body text, buttons, toggles, value rows */
+static void txt_field(Obj t) { body_font(); txt_body_mat(t, h_plain_mat); }   /* text fields: plain, as the game's name fields */
 static void fit_style(Obj t, float size, int wrap);
 static void txt_style(Obj t, int cinzel, float size, int align, int wrap) {
     if (!isa(t, K.TMP_Text)) return;
     Obj f = cinzel ? title_font() : NULL;
-    if (f) CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
+    if (f) {
+        CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font);
+        Obj m = size < 24 ? title_mat() : NULL; if (!m) m = asset_mat(f);   /* section head: SoftOutline16; window title: plain */
+        if (alive(m) && m_tmp_shmat) CALL(m_tmp_shmat, void, Obj, Obj)(t, m, m_tmp_shmat);
+    }
     CALL(m_tmp_auto, void, Obj, bool)(t, false, m_tmp_auto);
     CALL(m_tmp_size, void, Obj, float)(t, size, m_tmp_size);
     CALL(m_tmp_align, void, Obj, int)(t, align, m_tmp_align);         /* 513 middle-left, 514 centre, 516 middle-right, 257.. top */
@@ -1008,11 +1034,11 @@ static DSLObj k_field(DSLObj parent, float x, float y, float w, float h, const c
     if (fim && bs) { CALL(m_img_sprite, void, Obj, Obj)(fim, bs, m_img_sprite); gr_color(fim, C_FIELD); btn_frame(fim); }
     float fs = h >= 40 ? 18 : 16;
     Obj tc = m_in_tc ? CALL(m_in_tc, Obj, Obj)(fc, m_in_tc) : NULL;
-    if (isa(tc, K.TMP_Text)) { txt_body(tc); txt_style(tc, 0, fs, 513, 0); gr_color(tc, C_MAIN); }
+    if (isa(tc, K.TMP_Text)) { txt_field(tc); txt_style(tc, 0, fs, 513, 0); gr_color(tc, C_MAIN); }
     if (m_in_limit) CALL(m_in_limit, void, Obj, int)(fc, 256, m_in_limit);
     if (m_in_ctype) CALL(m_in_ctype, void, Obj, int)(fc, 0, m_in_ctype);   /* Standard */
     Obj ph = m_in_ph ? CALL(m_in_ph, Obj, Obj)(fc, m_in_ph) : NULL;
-    if (isa(ph, K.TMP_Text)) { tmp_set(ph, placeholder ? placeholder : ""); txt_body(ph); txt_style(ph, 0, fs - 2, 513, 0); gr_color(ph, C_SUB); }
+    if (isa(ph, K.TMP_Text)) { tmp_set(ph, placeholder ? placeholder : ""); txt_field(ph); txt_style(ph, 0, fs - 2, 513, 0); gr_color(ph, C_SUB); }
     in_settext(fc, text ? text : "");
     field_area(fc, 10, -1);
     place_tl(fc, x, y, w, h);
@@ -1935,7 +1961,7 @@ static int in_tick; static int32_t last_frame = -1;
 /* the game's language changed (the title's Options): fonts of the new language, title clones made again (their stock
    font and material for that language), then the loader relabels its texts and rebuilds an open Mods window */
 static void kit_lang_changed(void) {
-    hfree(&h_cinzel); hfree(&h_body_font); hfree(&h_body_mat); body_last = -1000;
+    hfree(&h_cinzel); hfree(&h_body_font); hfree(&h_body_mat); hfree(&h_plain_mat); hfree(&h_title_mat); body_last = -1000;
     for (int i = 0; i < ntbs; i++) hfree(&tbs[i].h_view);            /* title_frame clones them again */
     dsl_log("ui: language %s: fonts and title buttons renewed", dsi_code());
 }
