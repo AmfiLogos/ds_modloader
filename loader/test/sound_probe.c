@@ -158,8 +158,9 @@ static void my_tick(Obj self, const void *mi) {
     FILE *f = fopen(req_path, "r");
     if (!f) return;
     char line[256] = ""; if (!fgets(line, sizeof line, f)) line[0] = 0; fclose(f);
-    char done[1100]; snprintf(done, sizeof done, "%s.done", req_path); rename(req_path, done);
     line[strcspn(line, "\r\n")] = 0;
+    if (!line[0]) return;
+    if ((f = fopen(req_path, "w"))) fclose(f);        /* emptied = done (a rename onto an old .done fails on Windows) */
     char cmd[32] = ""; int g = 0; float v = 0; sscanf(line, "%31s %d %f", cmd, &g, &v);
     if (!strcmp(cmd, "state")) do_state();
     else if (!strcmp(cmd, "open")) do_open();
