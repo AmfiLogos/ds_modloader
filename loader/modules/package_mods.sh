@@ -6,7 +6,7 @@
 #
 #   package_mods.sh [mods_all dir] [out dir]
 # Release assets: multiplayer + dsmp-bridge -> ds_multiplayer, custom-modes -> ds_custommodes, gcd-cdr + hell-difficulty
-# (+ zetu-suite, sound-fix, multi-bar) -> ds_modloader, and hooks.json + hooks.tsv (the hook list, docs/) -> ds_modloader.
+# (+ zetu-suite, sound-fix, multi-bar, weapon-slot) -> ds_modloader, and hooks.json + hooks.tsv (the hook list, docs/) -> ds_modloader.
 set -e; cd "${0:A:h}"; L=${PWD:h}
 SRC=${1:-$L/build/mods_all}; OUT=${2:-$L/build/packages}
 zsh ./build_mods.sh --check $SRC >/dev/null || { zsh ./build_mods.sh --check $SRC; echo "package_mods: $SRC is not a good built set" >&2; exit 1; }

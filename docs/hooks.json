@@ -5987,6 +5987,23 @@
   {
    "owner": "weapon-slot",
    "kind": "detour",
+   "method": "Refactor.Main.Event.CampaignLoadingEventHandler$$FinalizeCampaignLoad",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xd6e784"
+    },
+    "win-x64": {
+     "rva": "0xa6faf0"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot CampaignLoadingEventHandler.FinalizeCampaignLoad",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_finalize|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
    "method": "Refactor.Task.DecidePlayerCombatBehaviour$$DecideSkill",
    "platforms": {
     "mac-arm64": {
