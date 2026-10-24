@@ -1,7 +1,8 @@
 # Hand-kept facts for tools/hooks/hooklist.py, one row per hook site: owner <TAB> source file <TAB> replacement function
 # (as the hook call names it) <TAB> target <TAB> note.
 # target: what the scanner cannot follow in the source: Namespace.Class$$Method/argc as Il2CppDumper's script.json
-# names it (* and ? match several methods: one hook per match), export:<symbol>, or "-" (the scanner's own target).
+# names it (* and ? match several methods: one hook per match; Name/argc(Type) = the overload with a parameter of class Type),
+# export:<symbol>, or "-" (the scanner's own target).
 # note "active: <text>": when the hook is installed (what the source shows; read the cited condition before changing).
 # The generator and the release gate stop on a site the scanner cannot follow and this file does not name.
 loader	dsl_main.c	my_il2cpp_init	-	active: always (the loader's start: dsl_plugin_init runs after il2cpp_init)
@@ -36,3 +37,8 @@ zetu-suite	zetu_ui.c	*	-	active: setting max_units not 4 (default 4: not install
 multiplayer	ui_tip.c	hk_etc_show	-	active: from the first tooltip the multiplayer window shows (installed on first use)
 multiplayer	ui_tip.c	hk_set_align	-	active: from the first tooltip the multiplayer window shows (installed on first use)
 hell-difficulty	hell.c	*	-	active: always (mod enabled)
+multi-bar	multi_bar.c	hk_click	Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0/0	active: always (mod enabled)
+multi-bar	multi_bar.c	hk_hover	Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__1/1	active: always (mod enabled)
+multi-bar	multi_bar.c	hk_useqs	Refactor.Main.Event.PlayerControlEventHandler$$OnEvent/1(UseQuickSlotSkillRequested)	active: always (mod enabled)
+multi-bar	multi_bar.c	hk_tbo	Refactor.Main.Event.PlayerControlEventHandler$$OnEvent/1(ToggleBehaviourOption)	active: always (mod enabled)
+multi-bar	multi_bar.c	hk_optclick	Refactor.UI.EntitySummaryOptionUI.<>c__DisplayClass13_0$$<Init>b__0/1	active: always (mod enabled)

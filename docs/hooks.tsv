@@ -299,3 +299,20 @@ zetu-suite	detour	Refactor.UI.EntityStatusUI$$Init	0xebecd0	0xbc4780	setting max
 zetu-suite	detour	Refactor.UI.EntityStatusUIPresenter$$RefreshSelectedEntityUI	0xebf528	0xbc3620	setting max_units not 4 (default 4: not installed)	zetu-suite EntityStatusUIPresenter.RefreshSelectedEntityUI	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
 zetu-suite	detour	Refactor.UI.ExpeditionPlanView$$Init	0xee0708	0xbeb980	setting max_units not 4 (default 4: not installed)	zetu-suite ExpeditionPlanView.Init	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
 zetu-suite	detour	Refactor.UI.SubUI_ExpeditionPlanLowerPanel$$OnSetUnit	0xef2284	0xc011a0	setting max_units not 4 (default 4: not installed)	zetu-suite SubUI_ExpeditionPlanLowerPanel.OnSetUnit	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
+multi-bar	detour	Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0	0xf22174	0xc2c930	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__1	0xf22214	0xc2ca30	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.Main.Event.PlayerControlEventHandler$$OnEvent	0xdbe600	0xac8be0	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.Main.Event.PlayerControlEventHandler$$OnEvent	0xdc03e0	0xac8030	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.EntitySummaryOptionUI.<>c__DisplayClass13_0$$<Init>b__0	0xec70b8	0xbd4930	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.CombatInfoViewPresenter$$RefreshOnFrame	0x7f32a0	0x572650	always	multi-bar CombatInfoViewPresenter.RefreshOnFrame	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.ItemQuickSlotUI$$HandleSelect	0xf1f82c	0xbb5b50	always	multi-bar ItemQuickSlotUI.HandleSelect	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.Main.Event.PlayerControlEventHandler$$TryResolveSingleSelectedUnit	0xdbfd3c	0xacb7d0	always	multi-bar PlayerControlEventHandler.TryResolveSingleSelectedUnit	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.PlayerUnitShortCutPresenter$$SwapShortCut	0xf1a324	0xc1f810	always	multi-bar PlayerUnitShortCutPresenter.SwapShortCut	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$OnFrame	0xf23ad8	0xc21fe0	always	multi-bar QuickSlotUIPresenter.OnFrame	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$OnInitializeView	0xf227b8	0xc22270	always	multi-bar QuickSlotUIPresenter.OnInitializeView	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$OnUseSkill	0xf23d54	0xc225b0	always	multi-bar QuickSlotUIPresenter.OnUseSkill	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$RefreshOnBehaviorChanged	0xf23a18	0xc23260	always	multi-bar QuickSlotUIPresenter.RefreshOnBehaviorChanged	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$RefreshOnInventoryChanged	0xf23a28	0xc23270	always	multi-bar QuickSlotUIPresenter.RefreshOnInventoryChanged	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$RefreshOnSelect	0xf22bfc	0xc23330	always	multi-bar QuickSlotUIPresenter.RefreshOnSelect	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.QuickSlotUIPresenter$$RefreshOnSkillChanged	0xf2396c	0xc23840	always	multi-bar QuickSlotUIPresenter.RefreshOnSkillChanged	ds_modloader:loader/modules/multi-bar/multi_bar.c
+multi-bar	detour	Refactor.UI.SkillSlotUI$$OnDrop	0xf246b8	0xc26290	always	multi-bar SkillSlotUI.OnDrop	ds_modloader:loader/modules/multi-bar/multi_bar.c
