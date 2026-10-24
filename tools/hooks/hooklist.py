@@ -227,7 +227,8 @@ def components(mp, cm):
     out.append(("loader", "mac", L, core + L.glob("start/mac/*.c") + L.glob("start/mac/*.m"), {"__APPLE__": 1, "__aarch64__": 1}, "mac"))
     out.append(("loader", "win", L, [f for f in core if not f.endswith("/dsl_engine.c")] + L.glob("start/win/*.c"),
                 {"_WIN32": 1, "_WIN64": 1, "__x86_64__": 1, "__MINGW32__": 1, "__MINGW64__": 1}, "win"))
-    for mid in ("gcd-cdr", "hell-difficulty", "zetu-suite", "sound-fix"):
+    # every simple module = a folder of loader/modules with C sources (multiplayer is the pin's tree, below)
+    for mid in sorted({f.split("/")[1] for f in L.glob("modules/*/*.c")} - {"multiplayer"}):
         fs = L.glob(f"modules/{mid}/*.c")
         out.append((mid, "mac", L, fs, {"__APPLE__": 1, "__aarch64__": 1}, "mac"))
         out.append((mid, "win", L, fs, {"_WIN32": 1, "_WIN64": 1, "__x86_64__": 1}, "win"))
@@ -638,8 +639,10 @@ def load_overrides():
         note = f[4] if len(f) > 4 else ""
         if tgt == "-": t = None
         elif tgt.startswith("export:"): t = ("export", tgt[7:])
-        elif "/" in tgt:
-            nm, argc = tgt.rsplit("/", 1); t = ("full", nm, int(argc) if argc != "*" else None)
+        elif "/" in tgt:                         # Name/argc, or Name/argc(Type) for one overload: Type = a parameter class
+            nm, argc = tgt.rsplit("/", 1); ptype = None
+            if argc.endswith(")") and "(" in argc: argc, ptype = argc[:-1].split("(", 1)
+            t = ("full", nm, int(argc) if argc != "*" else None, ptype)
         else: t = ("full", tgt, None)
         ov[(owner, fn, repl)] = dict(target=t, note=note)
     return ov
@@ -775,6 +778,7 @@ def build_records(sites, dumps, wmap, mp_sha, cm_sha, files=None, exps=None):
                 if ms: ent["name"] = ms[0]["Name"]
             elif t[0] == "full":
                 ms = dumps[plat].glob(t[1], t[2]) if any(c in t[1] for c in "*?[") else [x for x in dumps[plat].by_name.get(t[1], []) if t[2] is None or Dump.argc(x) == t[2]]
+                if len(t) > 3 and t[3]: ms = [x for x in ms if re.search(r"[_ (]" + re.escape(t[3]) + r"_o\* ", x["Signature"])]
                 if not ms: notes.append(f"{k} ({plat}): {t[1]} not in the dump")
                 ent["rvas"] = ["%#x" % x["Address"] for x in ms] if len(ms) > 1 else None
                 ent["rva"] = "%#x" % ms[0]["Address"] if len(ms) == 1 else None
