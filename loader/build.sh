@@ -96,6 +96,13 @@ put $B/multi-bar.dylib
 cp modules/multi-bar/mod.json $B/
 echo "built $B"
 
+# weapon-slot (Weapon skill slot): one source, every hook by il2cpp name (no per-build table)
+W=build/mods/weapon-slot; mkdir -p $W
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/weapon-slot.dylib -o $W/weapon-slot.dylib.tmp modules/weapon-slot/weapon_slot.c
+put $W/weapon-slot.dylib
+cp modules/weapon-slot/mod.json $W/
+echo "built $W"
+
 # hell-difficulty: code half + table half (hell_data.c rebuilds the Hell table bundle from the player's stock one and the
 # delta rva/<build>_mac_tables.dsdelta; without the delta the module turns Hell off). The delta is made from the stock
 # Mac table bundle (game file, read only; HELL_STOCK_MAC) by modules/hell-difficulty/tools/hell_delta.py, as build_mods.sh does.

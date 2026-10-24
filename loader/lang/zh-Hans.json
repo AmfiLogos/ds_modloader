@@ -29,6 +29,9 @@
  "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
   "%d 个世界被列表下方的筛选隐藏。"
  ],
+ "%d world is hidden by the filters on the right.||%d worlds are hidden by the filters on the right.": [
+  "%d 个世界被右侧的筛选隐藏。"
+ ],
  "%s %s": "%s%s",
  "%s %s is not available for download. Your mods stay as they were.": "%s %s 无法下载。你的模组保持不变。",
  "%s (not installed)": "%s（未安装）",
@@ -111,6 +114,8 @@
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded：本次 BepInEx 模组已关闭",
  "Dungeon Settlers: mods are off": "Dungeon Settlers：模组已关闭",
  "Each world keeps its own set of these mods.": "每个世界各自保存这些模组的组合。",
+ "Each world shows only its newest save. Off: every save.": "每个世界只显示最新的存档。关闭：显示所有存档。",
+ "Filters": "筛选",
  "For example: I opened the shop and the game froze. I expected to buy a sword.": "例如：我打开商店后游戏卡住了。我本想买一把剑。",
  "Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply.": [
   "找到 %d 个新模组。开启后点击“应用”。"
@@ -127,6 +132,7 @@
  "Include a screenshot": "附带截图",
  "Include logs": "附带日志",
  "Installed mods": "已安装的模组",
+ "Latest save only": "仅最新存档",
  "Launcher features (every world):": "启动器功能（所有世界）：",
  "Launcher mods": "启动器模组",
  "Load": "读取",
@@ -140,6 +146,7 @@
  "MelonLoader mod: not running in this start": "MelonLoader 模组：本次启动未运行",
  "Mod updates are available.": "有可用的模组更新。",
  "Mod updates install the next time you start the game.": "模组更新将在下次启动游戏时安装。",
+ "Modded": "有模组",
  "Modded saves: only in Dungeon Settlers Modded": "模组存档：仅在 Dungeon Settlers Modded 中",
  "Mods": "模组",
  "Mods cannot be downloaded in this start.": "本次启动无法下载模组。",
@@ -149,6 +156,7 @@
  "Mods of this world": "本世界的模组",
  "Mods:": "模组：",
  "Mods: %s": "模组：%s",
+ "Multiplayer": "多人游戏",
  "No": "否",
  "No game mods installed.": "未安装任何游戏模组。",
  "No groups yet. Set the switches, then save them as a group.": "还没有组合。请先设置开关，再将其保存为组合。",
@@ -281,8 +289,12 @@
  "Updating Dungeon Settlers Modded": "正在更新 Dungeon Settlers Modded",
  "Updating Dungeon Settlers Modded to %s": "正在将 Dungeon Settlers Modded 更新至 %s",
  "Updating mods: %s": "正在更新模组：%s",
+ "Vanilla & Vanilla+": "原版 & 原版+",
  "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "正在等待 Steam。如果 Steam 要求登录，请登录。之后游戏会启动。",
  "What happened? What did you expect?": "发生了什么？你原本期望什么？",
+ "Worlds with at least one mod that changes the gameplay.": "至少有一个改变玩法的模组的世界。",
+ "Worlds with no mods, or only mods that do not change the gameplay.": "没有模组，或只有不改变玩法的模组的世界。",
+ "Worlds you played with friends.": "你和朋友一起玩过的世界。",
  "Yes": "是",
  "Your mods already match the host's.": "你的模组已与房主相同。",
  "Your mods could not be changed: %s": "无法更改你的模组：%s",

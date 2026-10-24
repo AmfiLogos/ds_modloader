@@ -29,6 +29,9 @@
  "%d world is hidden by a filter under the list.||%d worlds are hidden by a filter under the list.": [
   "월드 %d개가 목록 아래의 필터로 숨겨져 있습니다."
  ],
+ "%d world is hidden by the filters on the right.||%d worlds are hidden by the filters on the right.": [
+  "월드 %d개가 오른쪽 필터로 숨겨져 있습니다."
+ ],
  "%s %s": "%s %s",
  "%s %s is not available for download. Your mods stay as they were.": "%s %s은(는) 다운로드할 수 없습니다. 모드는 그대로 유지됩니다.",
  "%s (not installed)": "%s (설치 안 됨)",
@@ -111,6 +114,8 @@
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded: 이번에는 BepInEx 모드가 꺼져 있습니다",
  "Dungeon Settlers: mods are off": "Dungeon Settlers: 모드가 꺼져 있습니다",
  "Each world keeps its own set of these mods.": "각 월드는 이 모드들을 따로 저장합니다.",
+ "Each world shows only its newest save. Off: every save.": "각 월드에 가장 최근 세이브만 표시합니다. 끄면 모든 세이브를 표시합니다.",
+ "Filters": "필터",
  "For example: I opened the shop and the game froze. I expected to buy a sword.": "예: 상점을 열었더니 게임이 멈췄습니다. 검을 사려고 했습니다.",
  "Found %d new mod. Turn it on, then click Apply.||Found %d new mods. Turn them on, then click Apply.": [
   "새 모드 %d개를 찾았습니다. 켠 다음 적용을 누르십시오."
@@ -127,6 +132,7 @@
  "Include a screenshot": "스크린샷 포함",
  "Include logs": "로그 포함",
  "Installed mods": "설치된 모드",
+ "Latest save only": "최근 세이브만",
  "Launcher features (every world):": "런처 기능 (모든 월드):",
  "Launcher mods": "런처 모드",
  "Load": "불러오기",
@@ -140,6 +146,7 @@
  "MelonLoader mod: not running in this start": "MelonLoader 모드: 이번 시작에서는 실행되지 않습니다",
  "Mod updates are available.": "모드 업데이트가 있습니다.",
  "Mod updates install the next time you start the game.": "모드 업데이트는 다음에 게임을 시작할 때 설치됩니다.",
+ "Modded": "모드",
  "Modded saves: only in Dungeon Settlers Modded": "모드 세이브: Dungeon Settlers Modded 전용",
  "Mods": "모드",
  "Mods cannot be downloaded in this start.": "이번 실행에서는 모드를 다운로드할 수 없습니다.",
@@ -149,6 +156,7 @@
  "Mods of this world": "이 월드의 모드",
  "Mods:": "모드:",
  "Mods: %s": "모드: %s",
+ "Multiplayer": "멀티플레이",
  "No": "아니요",
  "No game mods installed.": "설치된 게임 모드가 없습니다.",
  "No groups yet. Set the switches, then save them as a group.": "아직 그룹이 없습니다. 스위치를 설정한 뒤 그룹으로 저장하십시오.",
@@ -281,8 +289,12 @@
  "Updating Dungeon Settlers Modded": "Dungeon Settlers Modded 업데이트 중",
  "Updating Dungeon Settlers Modded to %s": "Dungeon Settlers Modded 업데이트 중: %s 버전",
  "Updating mods: %s": "모드 업데이트 중: %s",
+ "Vanilla & Vanilla+": "바닐라 & 바닐라+",
  "Waiting for Steam. Sign in to Steam if it asks you to. The game starts after that.": "Steam을 기다리는 중입니다. Steam에서 로그인을 요청하면 로그인하십시오. 그 후 게임이 시작됩니다.",
  "What happened? What did you expect?": "무슨 일이 있었나요? 무엇을 기대했나요?",
+ "Worlds with at least one mod that changes the gameplay.": "게임플레이를 바꾸는 모드가 하나 이상 있는 월드입니다.",
+ "Worlds with no mods, or only mods that do not change the gameplay.": "모드가 없거나, 게임플레이를 바꾸지 않는 모드만 있는 월드입니다.",
+ "Worlds you played with friends.": "친구와 함께 플레이한 월드입니다.",
  "Yes": "예",
  "Your mods already match the host's.": "모드가 이미 호스트와 같습니다.",
  "Your mods could not be changed: %s": "모드를 변경하지 못했습니다: %s",

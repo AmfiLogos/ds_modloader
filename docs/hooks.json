@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "29dec4f2169faeeff36f56f38ebf41504891ad4e",
- "cm_pin": "7638bbeb20d3b2db44a6eb955cbdaa5e0376b05b",
+ "mp_pin": "829f577a555958649ff23300fa619f483eb84c7d",
+ "cm_pin": "45b7004247ae96579398e70600d2f2c783456dfc",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -126,6 +126,40 @@
    "label": "loader il2cpp_init_utf16",
    "source": "ds_modloader:loader/src/dsl_main.c",
    "key": "loader|dsl_main.c|my_il2cpp_init_utf16|loader il2cpp_init_utf16"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.SaveLoadPresenter$$ClickLoadButton",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf6f778"
+    },
+    "win-x64": {
+     "rva": "0xc81f30"
+    }
+   },
+   "active": "always",
+   "label": "loader rows SaveLoadPresenter.ClickLoadButton",
+   "source": "ds_modloader:loader/src/dsl_rows.c",
+   "key": "loader|dsl_rows.c|h_click_load|loader rows SaveLoadPresenter.ClickLoadButton"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.SaveLoadPresenter$$ClickRemoveButton",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf6ffd4"
+    },
+    "win-x64": {
+     "rva": "0xc82450"
+    }
+   },
+   "active": "always",
+   "label": "loader rows SaveLoadPresenter.ClickRemoveButton",
+   "source": "ds_modloader:loader/src/dsl_rows.c",
+   "key": "loader|dsl_rows.c|h_click_remove|loader rows SaveLoadPresenter.ClickRemoveButton"
   },
   {
    "owner": "loader",
@@ -5949,6 +5983,261 @@
    "label": "sound-fix SoundSetting.SetSoundVolume",
    "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
    "key": "sound-fix|sound_fix.c|my_set_volume|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Task.DecidePlayerCombatBehaviour$$DecideSkill",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xb24de8"
+    },
+    "win-x64": {
+     "rva": "0x851600"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot DecidePlayerCombatBehaviour.DecideSkill",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_decide|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.Processor.ItemControlProcessor$$ProcessUnequip",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xd4abb0"
+    },
+    "win-x64": {
+     "rva": "0xa5a550"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot ItemControlProcessor.ProcessUnequip",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_unequip|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.PlayerUnitDataContainer$$OnPlayerUnitSpawned",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc07a8"
+    },
+    "win-x64": {
+     "rva": "0x9e45c0"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot PlayerUnitDataContainer.OnPlayerUnitSpawned",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_spawned|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.PlayerUnitDataContainer$$OnRemoveExtraSkill",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc1868"
+    },
+    "win-x64": {
+     "rva": "0x9e4950"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot PlayerUnitDataContainer.OnRemoveExtraSkill",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_remextra|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.PlayerUnitDataContainer$$ResetSkill",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc193c"
+    },
+    "win-x64": {
+     "rva": "0x9e4a10"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot PlayerUnitDataContainer.ResetSkill",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_resetskill|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.UI.QuickSlotUI$$Init",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf1f858"
+    },
+    "win-x64": {
+     "rva": "0xc24140"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot QuickSlotUI.Init",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_ui_init|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.UI.SkillSlotUI$$CanDrop",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf24628"
+    },
+    "win-x64": {
+     "rva": "0xc25db0"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot SkillSlotUI.CanDrop",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_candrop|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.UI.SkillSlotUI$$GetPayload",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf24558"
+    },
+    "win-x64": {
+     "rva": "0xc25e30"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot SkillSlotUI.GetPayload",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_payload|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitQuickSlotContainer$$AddQuickSlotAt",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc42e8"
+    },
+    "win-x64": {
+     "rva": "0x9f17f0"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitQuickSlotContainer.AddQuickSlotAt",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_addat|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitQuickSlotContainer$$Deserialize",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc2cc4"
+    },
+    "win-x64": {
+     "rva": "0x9f1970"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitQuickSlotContainer.Deserialize",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_qsc_deser|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitQuickSlotContainer$$GetAll",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc45e8"
+    },
+    "win-x64": {
+     "rva": "0x9f1cd0"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitQuickSlotContainer.GetAll",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_getall|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitQuickSlotContainer$$RemoveQuickSlotAt",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc4390"
+    },
+    "win-x64": {
+     "rva": "0x9f2130"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitQuickSlotContainer.RemoveQuickSlotAt",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_remat|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitQuickSlotContainer$$Serialize",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc203c"
+    },
+    "win-x64": {
+     "rva": "0x9f2330"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitQuickSlotContainer.Serialize",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_qsc_ser|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitQuickSlotContainer$$TryRegisterQuickSlot",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc15fc"
+    },
+    "win-x64": {
+     "rva": "0x9f2680"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitQuickSlotContainer.TryRegisterQuickSlot",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_tryreg|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.UnitSkillContainer$$Deserialize",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xcc29c0"
+    },
+    "win-x64": {
+     "rva": "0x9f2e40"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot UnitSkillContainer.Deserialize",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_skc_deser|"
   },
   {
    "owner": "multi-bar",
