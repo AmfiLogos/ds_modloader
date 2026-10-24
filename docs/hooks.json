@@ -5917,6 +5917,40 @@
    "key": "zetu-suite|zetu_ui.c|my_lower_setunit|"
   },
   {
+   "owner": "sound-fix",
+   "kind": "detour",
+   "method": "Refactor.Setting.SoundSetting$$SetSoundMute",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x89d430"
+    },
+    "win-x64": {
+     "rva": "0x620fb0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "sound-fix SoundSetting.SetSoundMute",
+   "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
+   "key": "sound-fix|sound_fix.c|my_set_mute|"
+  },
+  {
+   "owner": "sound-fix",
+   "kind": "detour",
+   "method": "Refactor.Setting.SoundSetting$$SetSoundVolume",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x89d23c"
+    },
+    "win-x64": {
+     "rva": "0x621140"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "sound-fix SoundSetting.SetSoundVolume",
+   "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
+   "key": "sound-fix|sound_fix.c|my_set_volume|"
+  },
+  {
    "owner": "multi-bar",
    "kind": "detour",
    "method": "Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0",
