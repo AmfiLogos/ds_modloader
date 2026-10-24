@@ -59,6 +59,9 @@ def main():
         # 3 the world's set
         V.ui('click', target='mod:gcd-cdr'); V.ui('click', target='apply'); time.sleep(1)
         check('Save for this world -> world set without gcd-cdr', worlds().get(guid) == 'vanilla', worlds())
+        # gcd-cdr is a fix "On in all worlds" (default): switched off here = this world's own off, which must hold
+        fo = json.load(open(os.path.join(T.MODS, 'worlds.json'))).get('fix_off', {})
+        check("the fix switched off is this world's own off", fo.get(guid) == 'gcd-cdr', fo)
         V.ui('close'); time.sleep(1)
         T.clear_flags(); t_req = time.time(); T.request({'cmd': 'apply', 'ids': ['multiplayer', 'gcd-cdr']})
         dt, b = T.wait_swap(a, t_req, 1)

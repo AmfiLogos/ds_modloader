@@ -136,6 +136,8 @@ void dsl_newworld_label(char *out, size_t cap);                      /* "Mods fo
 void dsl_newworld_change(void);
 int dsl_worlds_bad(const char **kept);                     /* dsl_reg.c: worlds.json unreadable at start (kept path) */
 int dsl_key_same(const char *a, const char *b);            /* gameplay keys equal (old keys with "multiplayer" too) */
+void dsl_world_key_eff(const char *guid, const char *stored, char *out, size_t cap);   /* dsl_reg.c: the set the world plays
+                                                              with (its stored key + fixes on in all worlds - its offs) */
 void dsl_world_mismatch(const char *save_name, const char *guid, const char *key);   /* dsl_world.c refused: ask (flow K) */
 const char *dsl_reg_data_dir(void);
 struct DSLHost; struct DSLPlugin;

@@ -29,7 +29,7 @@ int dsl_ui_children(DSLObj parent, DSLObj *out, int max);  /* direct children (T
 int dsl_ui_shown(DSLObj o);                         /* active in the hierarchy */
 int dsl_ui_text_rendered(DSLObj o, float *w, float *h);   /* test: TMP renderedWidth / renderedHeight (local units) */
 int dsl_update_corner_rect(float r[4]);             /* dsl_update.c: the title corner's widgets that show (0 = none) */
-int dsl_world_is_modded(const char *guid);          /* dsl_reg.c: a gameplay mod (or one not installed) in the world's set */
+int dsl_world_is_modded(const char *guid);          /* dsl_reg.c: a gameplay mod that is not a fix (or one not installed) in the world's set */
 
 /* installed mods (every <mods>/<id>/mod.json seen at start, code or not) */
 typedef struct DSLModInfo {
@@ -41,11 +41,17 @@ typedef struct DSLModInfo {
     const char *kind;                            /* mod.json "kind": "code" | "bepinex" | "data" ...; never NULL */
     int feature;                                 /* mod.json "category": "feature" = launcher feature (on for every world,
                                                     never in a world's mod set); "game" (default) = per world */
+    int fix;                                     /* mod.json "category": "fix" = a fix for a bug of the game: per world
+                                                    like a game mod, own tab, never makes a world "Modded" */
 } DSLModInfo;
 int dsl_mods_count(void);
 const DSLModInfo *dsl_mods_at(int i);
 int dsl_mod_is_feature(const char *id);                      /* launcher feature (mod.json "category": "feature") */
 int dsl_features_on(const char **ids, int max);              /* the launcher features that are on (every world) */
+/* fixes "On in all worlds" (Fixes tab, default on; <data>/Mods/fixes.json): every world plays with the fix unless its
+   Change window turned it off (worlds.json "fix_off"). set: saved at once, 0 = ok. Only for fixes of scope gameplay. */
+int dsl_fix_all_worlds(const char *id);
+int dsl_fix_set_all_worlds(const char *id, int on);
 
 /* groups (<data>/Mods/groups.json {"groups":[{"name","mods":[ids]}]}) */
 int dsl_groups_count(void);

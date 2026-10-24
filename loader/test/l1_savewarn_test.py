@@ -50,6 +50,9 @@ def main():
         for _ in range(15):
             time.sleep(1); st = V.ui('state')
             if st.get('open'): break
+        # "Show only active mods" (on by default, owner 2026-10-24) hides Hell, which is off in this world: show every mod
+        if any(c['name'] == 'active-only' and c.get('on') == 1 for c in st.get('controls', [])):
+            V.ui('click', target='active-only'); time.sleep(1); st = V.ui('state')
         w = warn_text(st); S['warn_off'] = w
         check('Hell off: warning line hidden', w == [''], w)
         V.ui('click', target='mod:hell-difficulty'); time.sleep(0.5); st = V.ui('state')

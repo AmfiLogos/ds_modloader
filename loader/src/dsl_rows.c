@@ -381,8 +381,8 @@ static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);   /*
    "add filters for worlds, on the right of the load campaign window ... vanilla & vanilla+ worlds (with changes not
    modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show multiple saves or only the latest one."
    Each world is of ONE kind: Multiplayer (the multiplayer mod's tag, its export dsl_loadlist_world_mp), else Modded (a mod
-   that changes the gameplay, or one not installed: dsl_world_is_modded), else Vanilla & Vanilla+ (no mod, or only mods of
-   scope "client"). A world shows when the box of its kind is ticked; the world being played always shows. Defaults = the
+   that changes the gameplay, or one not installed: dsl_world_is_modded), else Vanilla & Vanilla+ (no mod, or only fixes
+   (mod.json "category": "fix") and mods of scope "client"). A world shows when the box of its kind is ticked; the world being played always shows. Defaults = the
    list as it was: Vanilla & Vanilla+ and Modded on, Multiplayer off (the multiplayer mod's own box under the list was off
    at every opening: no saved value to carry over).
    Latest save only: each world shows its first save row (the game lists a world's saves newest first); the world row's
@@ -540,8 +540,8 @@ static const char *pn_label(int k) {
     return k == LK_VAN ? TR("Vanilla & Vanilla+") : k == LK_MOD ? TR("Modded") : k == LK_MP ? TR("Multiplayer") : TR("Latest save only");
 }
 static const char *pn_tip(int k) {
-    return k == LK_VAN ? TR("Worlds with no mods, or only mods that do not change the gameplay.")
-         : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay.")
+    return k == LK_VAN ? TR("Worlds with no mods, or only fixes and mods that do not change the gameplay.")
+         : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay. Fixes do not count.")
          : k == LK_MP ? TR("Worlds you played with friends.")
          : TR("Each world shows only its newest save. Off: every save.");
 }

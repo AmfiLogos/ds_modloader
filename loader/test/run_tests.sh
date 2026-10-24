@@ -91,6 +91,18 @@ print -r -- "{\"world\":null,\"modset\":\"aaa\",\"rule\":\"mods\",\"worlds\":{\"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_feat.json" DSML_MODSET=aaa)
 check "world saved with launcher features loads without them" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: save2 (world 22222222-2222-2222-2222-222222222222) uses this mod set: allowed"'
 mv "$M/lab-feature" "$OUT/lab-feature.off"
+# fixes (owner 2026-10-24): a fix "On in all worlds" is in every world's set unless that world's Change window turned it
+# off (worlds.json "fix_off"); unticked = the stored set only. Breaks caught: an old world loads without the fix the
+# player wants in all worlds (or asks "Load it with them?" at every load), or a world loads with the fix it turned off.
+print "== T1d fixes on in all worlds, a world's own off"
+mod fixmod none '{"id":"fixmod","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"gameplay","category":"fix"}'
+print -r -- "{\"world\":null,\"modset\":\"aaa\",\"rule\":\"mods\",\"worlds\":{\"11111111-1111-1111-1111-111111111111\":\"aaa\",\"22222222-2222-2222-2222-222222222222\":\"aaa\"},\"fix_off\":{\"22222222-2222-2222-2222-222222222222\":\"fixmod\"}}" > "$OUT/session_fix.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_fix.json" DSML_MODSET=aaa+fixmod)
+check "ticked (default): an old world plays with the fix; a world that turned it off plays without it" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1"* ]] && log | grep -q "world check: save1 (world 11111111-1111-1111-1111-111111111111) uses this mod set: allowed" && log | grep -q "world check: REFUSED save2 (world 22222222-2222-2222-2222-222222222222): the world.s mod set aaa, this copy aaa+fixmod"'
+print -r -- '{"all_worlds": {"fixmod": false}}' > "$M/fixes.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_fix.json" DSML_MODSET=aaa)
+check "unticked: each world plays with its own set" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
+mv "$M/fixmod" "$OUT/fixmod.off"; mv "$M/fixes.json" "$OUT/fixes.json.off"
 
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")

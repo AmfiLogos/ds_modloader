@@ -33,6 +33,9 @@
 // Hooks may be installed in any phase; after il2cpp_init they go to a separate stub page.
 //
 // mod.json "scope": "gameplay" (default: every multiplayer player needs it) or "client" (only this player).
+// mod.json "category": absent / "game" = a game mod (per world), "fix" = a fix for a bug of the game (per world, own
+// tab, "On in all worlds" box, never makes a world "Modded" in the Load list filters), "feature" = a launcher mod (on for
+// every world, never in a world's mod set). See ../NOTES.md "Fixes" and "Launcher features vs game mods".
 // A module may export `int dsl_world_check_skip(void)`: 1 = the world check (mods per world) lets the current load
 // through (multiplayer guest loading the host's world).
 // A module that hides world rows of the stock Load list itself may export `int dsl_loadlist_hidden(int *kind)`: the

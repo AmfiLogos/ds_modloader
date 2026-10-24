@@ -155,7 +155,7 @@ static void unreg_all(void) { nreg = 0; }
 
 /* ---------------------------------------------------------------- the Mods tab */
 #define NM 64
-static struct { const DSLModInfo *m; int on, base; DSLObj row, warn; } mods[NM]; static int nmods;   /* base: running set, or the world's; warn: save warning line (owner item 9) */
+static struct { const DSLModInfo *m; int on, base; DSLObj row, warn, allw; } mods[NM]; static int nmods;   /* base: running set, or the world's; warn: save warning line (owner item 9); allw: a fix's "On in all worlds" */
 static int world_mode; static char world_guid[80], world_name[120];   /* Mods tab bound to one world (Load list "Change") */
 static DSLObj m_status, m_apply, m_undo, m_save, m_field, m_fsave, m_fcancel, m_glist, m_gmark, m_gnone;
 static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applying_seen_busy;
@@ -163,11 +163,35 @@ static double applying_t;
 static char carry_note[300];                                           /* shown when the window opens again (failed Apply) */
 static int slogel_files(void);
 static void destroy_all(void);
+static void keep_switches(void);
+static void mods_tab_reload(void);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
-static int m_tab;                                                      /* Mods window tab: 0 Game mods, 1 Launcher mods (owner 2026-10-20) */
-static DSLObj m_sub[2];                                                /* the two tab buttons in the window's tab strip (title, not world) */
+static int m_tab;                                                      /* Mods window tab: 0 Game mods, 1 Fixes, 2 Launcher mods (owner 2026-10-20, 2026-10-24) */
+static DSLObj m_sub[3];                                                /* the three tab buttons in the window's tab strip (title, not world) */
+static int tab_of(const DSLModInfo *m) { return m->feature ? 2 : m->fix ? 1 : 0; }
+/* a world's Mods window (owner 2026-10-24): "Show only active mods" under the status line, on by default; the choice is
+   kept in <data>/Mods/modswin.json. The rows are filtered when the window opens and when the toggle changes, never on a
+   switch (a row never goes from under the click). */
+static int w_active_only = -1;
+static int active_only(void) {
+    if (w_active_only >= 0) return w_active_only;
+    w_active_only = 1;
+    char p[1300]; snprintf(p, sizeof p, "%s/modswin.json", dsl_reg_data_dir());
+    FILE *f = fopen(p, "rb"); if (!f) return w_active_only;
+    char b[1024]; size_t n = fread(b, 1, sizeof b - 1, f); fclose(f); b[n] = 0;
+    JNode *j = json_parse(b), *v = json_get(j, "world_active_only");
+    if (v && v->t == JN_BOOL) w_active_only = v->b != 0;
+    json_free(j);
+    return w_active_only;
+}
+static void active_only_save(void) {
+    char p[1300], tmp[1340]; snprintf(p, sizeof p, "%s/modswin.json", dsl_reg_data_dir()); snprintf(tmp, sizeof tmp, "%s.tmp", p);
+    FILE *f = fopen(tmp, "w"); int bad = !f || fprintf(f, "{\"world_active_only\": %s}\n", w_active_only ? "true" : "false") < 0;
+    if (f) bad |= fclose(f) != 0;
+    if (bad || rename(tmp, p)) dsl_log("win: %s not saved", p);
+}
 static char set_page[64];                                              /* the Settings page of this mod is open ("" = the list) */
 static size_t cols_at(const char *s, int cols);
 static int changed(void) {
@@ -232,7 +256,10 @@ static void mods_sync(void) {
     U->set_enabled(m_apply, ch && (world_mode || !busy) && !applying && !read_only);
     U->set_enabled(m_undo, ch && !applying && !read_only);
     U->set_enabled(m_save, !applying && !read_only);
-    for (int i = 0; i < nmods; i++) if (mods[i].row) U->set_enabled(mods[i].row, !applying && !read_only);
+    for (int i = 0; i < nmods; i++) {
+        if (mods[i].row) U->set_enabled(mods[i].row, !applying && !read_only);
+        if (mods[i].allw) U->set_enabled(mods[i].allw, !applying && !read_only);
+    }
     void settings_sync(void); settings_sync();
     for (int g = 0; g < ng_rows; g++) { U->set_enabled(g_row[g], !read_only); U->set_enabled(g_del[g], !read_only); }
     int cur_g = -1;
@@ -246,6 +273,22 @@ static void mod_change(void *ud, DSLObj w) {
     for (int k = 0; k < nreg; k++) if (reg[k].w == w) snprintf(reg[k].text, sizeof reg[k].text, "%s", mods[i].on ? "on" : "off");
     mods_sync(); draft();
 }
+/* a fix's "On in all worlds" (Fixes tab): saved at once (it changes the set of every world that did not turn the fix off).
+   Ticked: the fix's own switch goes on too (waits for Apply), so new worlds start with it. */
+static void allw_change(void *ud, DSLObj w) {
+    int i = (int)(intptr_t)ud, on = U->toggle_get(w) != 0;
+    if (dsl_fix_set_all_worlds(mods[i].m->id, on)) { U->toggle_set(w, !on); on = !on; snprintf(m_note, sizeof m_note, "%s", TR("The setting could not be saved.")); }
+    else {
+        m_note[0] = 0;
+        if (on && !mods[i].on) {
+            mods[i].on = 1;
+            for (int k = 0; k < nreg; k++) if (reg[k].w && reg[k].w == mods[i].row) snprintf(reg[k].text, sizeof reg[k].text, "on");
+        }
+    }
+    for (int k = 0; k < nreg; k++) if (reg[k].w == w) snprintf(reg[k].text, sizeof reg[k].text, "%s", on ? "on" : "off");
+    dsl_log("win: fix %s: %s in all worlds", mods[i].m->id, on ? "on" : "not on");
+    mods_sync(); draft();
+}
 static void groups_build(void);
 static void group_pick(void *ud, DSLObj w) {
     (void)w; int g = (int)(intptr_t)ud;
@@ -253,6 +296,7 @@ static void group_pick(void *ud, DSLObj w) {
     for (int i = 0; i < nmods; i++) { int in = 0; for (int k = 0; k < n; k++) if (!strcmp(ids[k], mods[i].m->id)) in = 1; mods[i].on = in; }
     m_note[0] = 0;
     dsl_log("win: group %s chosen", dsl_group_name(g));
+    if (world_mode && active_only()) { keep_switches(); mods_tab_reload(); return; }   /* the list shows the group's mods */
     mods_sync(); draft();
 }
 static char del_name[80];
@@ -343,7 +387,9 @@ static void undo_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
     for (int i = 0; i < nmods; i++) mods[i].on = mods[i].base;
     dsl_settings_undo(); settings_values();
-    m_note[0] = 0; mods_sync(); draft();
+    m_note[0] = 0;
+    if (world_mode && active_only()) { keep_switches(); mods_tab_reload(); return; }   /* the list shows the world's mods again */
+    mods_sync(); draft();
 }
 static void num_commit_all(int quiet);
 static void apply_click(void *ud, DSLObj w) {
@@ -395,50 +441,54 @@ static size_t cols_at(const char *s, int cols) {
 static void settings_open(DSLObj root, float w, float h);
 static void bottom_bar(DSLObj root, float w, float h);
 /* the line on how the open tab's mods work, at the top of its list; returns its height */
-static float tab_desc(DSLObj list, int feature) {
-    const char *d = feature ? TR("One setting for all worlds. They start from the title screen, never from inside a world.")
-                            : TR("Each world keeps its own set of these mods.");
+static float tab_desc(DSLObj list, int tab) {
+    const char *d = tab == 2 ? TR("One setting for all worlds. They start from the title screen, never from inside a world.")
+                  : tab == 1 ? TR("Fixes for bugs in the game. On in all worlds: every world uses the fix, unless that world turns it off.")
+                             : TR("Each world keeps its own set of these mods.");
     float dw = m_lw - 56, dh = 20;
     DSLObj dt = U->text(list, 12, 6, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);   /* 6 px under the box's top border (CJK ink touched it at 960) */
     { float ph = dt && U->text_height ? U->text_height(dt, dw) : 0; if (ph > dh + 2) { dh = ph; U->place(dt, 12, 6, dw, dh); } }
-    named(dt, 3, feature ? "section-desc:features" : "section-desc:game", NULL, NULL, d);
+    named(dt, 3, tab == 2 ? "section-desc:features" : tab == 1 ? "section-desc:fixes" : "section-desc:game", NULL, NULL, d);
     return dh + 18;
 }
 static void keep_switches(void);
-/* "Game mods" / "Launcher mods": the switches of both tabs stay as the player left them (one mods[] list, one Apply) */
+/* "Game mods" / "Fixes" / "Launcher mods": the switches of every tab stay as the player left them (one mods[] list, one Apply) */
 static void subtab_click(void *ud, DSLObj w) {
     (void)w; int t = (int)(intptr_t)ud;
     if (t == m_tab && !set_page[0]) return;
     keep_switches(); set_page[0] = 0; m_tab = t; m_note[0] = 0;
-    dsl_log("win: Mods tab %s", t ? "launcher" : "game");
+    dsl_log("win: Mods tab %s", t == 2 ? "launcher" : t == 1 ? "fixes" : "game");
     mods_tab_reload();
 }
 #define SUB_W 236.0f
-/* the window's tab strip: "Mods" in a world's Mods tab (only game mods there), else the two tabs; gold mark under the open one */
+/* the window's tab strip: "Mods" in a world's Mods tab (game mods and fixes there), else the three tabs; gold mark under the open one */
 static void subtabs_show(void) {
     if (w_tab[0]) U->set_active(w_tab[0], world_mode);
     if (world_mode) { if (w_mark) U->place(w_mark, 24, TAB_Y + TAB_H + 3, TAB_W, 3); return; }
-    static const char *const ids[2] = { "tab-mods:game", "tab-mods:launcher" };
-    for (int t = 0; t < 2; t++) {
-        const char *l = t ? TR("Launcher mods") : TR("Game mods");
+    static const char *const ids[3] = { "tab-mods:game", "tab-mods:fixes", "tab-mods:launcher" };
+    for (int t = 0; t < 3; t++) {
+        const char *l = t == 2 ? TR("Launcher mods") : t == 1 ? TR("Fixes") : TR("Game mods");
         m_sub[t] = named(U->button(w_win, 24 + t * (SUB_W + 8), TAB_Y, SUB_W, TAB_H, l, subtab_click, (void *)(intptr_t)t), 0, ids[t], subtab_click, (void *)(intptr_t)t, l);
     }
     if (w_mark) U->place(w_mark, 24 + m_tab * (SUB_W + 8), TAB_Y + TAB_H + 3, SUB_W, 3);
 }
 static void settings_click(void *ud, DSLObj w);
+static float mod_row(DSLObj list, int i, float y);
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
     snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0;
     if (!world_mode && nkeep < 0) { char fail[400]; int n = dsl_pkg_refresh(fail, sizeof fail); if (n || fail[0]) refresh_note(n, fail); }
-    /* game mods first, then launcher mods (owner 2026-10-20: Multiplayer, Units Laboratory start from the title, never
-       from a world); each has its own tab, all in one list so a change on one tab stays when the other opens. A world's
-       Mods tab shows only the game mods (no tabs): launcher mods are not per world. */
-    for (int pass = 0; pass < 2; pass++)
+    /* game mods, fixes, then launcher mods (owner 2026-10-20: Multiplayer, Units Laboratory start from the title, never
+       from a world; 2026-10-24: fixes for bugs of the game apart); each has its own tab, all in one list so a change on
+       one tab stays when another opens. A world's Mods tab shows its fixes and game mods (no tabs): launcher mods are not
+       per world, and a fix of scope client is on or off for all worlds together (its switch in the Fixes tab). */
+    for (int pass = 0; pass < 3; pass++)
         for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
             const DSLModInfo *m = dsl_mods_at(i);
-            if (!m || m->hidden || (m->feature != 0) != pass || (pass && world_mode)) continue;
-            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = NULL; nmods++;
+            if (!m || m->hidden || tab_of(m) != pass) continue;
+            if (world_mode && (pass == 2 || (pass == 1 && m->scope && !strcmp(m->scope, "client")))) continue;
+            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = mods[nmods].allw = NULL; nmods++;
         }
     if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
         const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
@@ -453,11 +503,12 @@ static void mods_open(DSLObj root, float w, float h) {
         for (int i = 0; i < nmods; i++) for (int k = 0; k < nkeep; k++) if (!strcmp(keep_ids[k], mods[i].m->id)) mods[i].on = keep_on[k];
         nkeep = -1;
     }
-    m_sub[0] = m_sub[1] = NULL;
+    m_sub[0] = m_sub[1] = m_sub[2] = NULL;
     subtabs_show();
     if (set_page[0] && !world_mode) { settings_open(root, w, h); return; }
     m_lw = 620; m_rx = 650; m_rw = w - m_rx;
-    float lh = h - 40 - 76;
+    float tb = world_mode ? 42 : 0;                                    /* a world's bottom bar has "Show only active mods" */
+    float lh = h - 40 - 76 - tb;
     /* the world's name, cut to fit the heading box (620 wide, size 20: about 40 characters with "Mods for ") */
     char wn[160]; snprintf(wn, sizeof wn, "%s", world_name[0] ? world_name : TR("this world"));
     { int c = 0; for (char *p = wn; *p; p++) if ((*p & 0xC0) != 0x80 && ++c > 30) { *p = 0; strcat(wn, "..."); break; } }
@@ -472,53 +523,29 @@ static void mods_open(DSLObj root, float w, float h) {
     U->panel(root, 0, 40, m_lw, lh, 0);
     flat(U->panel(root, 4, 44, m_lw - 8, lh - 8, 0), 0x2D2A31FFu);     /* one colour inside the frame (its sprite has a lighter top band that ended mid-list) */
     DSLObj list = U->scroll(root, 8, 48, m_lw - 16, lh - 16);
-    float y = 0, rh = 74;
-    int shown = 0, tab = world_mode ? 0 : m_tab;
-    for (int i = 0; i < nmods; i++) if ((mods[i].m->feature != 0) == tab) shown++;
-    if (!world_mode && shown) y = tab_desc(list, tab);
-    for (int i = 0; i < nmods; i++, y += rh) {
-        rh = 0;
-        const DSLModInfo *m = mods[i].m;
-        if ((m->feature != 0) != tab) continue;                         /* on the other tab: no row (row stays NULL) */
-        rh = 74;
-        char lb[160], nm[100];
-        snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
-        int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
-        mods[i].row = U->toggle(list, 0, y, m_lw - 32 - (has_set ? 132 : 0), lb, mods[i].on, mod_change, (void *)(intptr_t)i);
-        if (has_set) {
-            DSLObj sb = U->button(list, m_lw - 32 - 124, y, 124, 36, TR("Settings"), settings_click, (void *)(intptr_t)i);
-            snprintf(nm, sizeof nm, "settings:%s", m->id); named(sb, 0, nm, settings_click, (void *)(intptr_t)i, TR("Settings"));
-            U->tooltip(sb, m->name, TR("Change the settings of this mod."));
-        }
-        snprintf(nm, sizeof nm, "mod:%s", m->id); named(mods[i].row, 1, nm, mod_change, (void *)(intptr_t)i, mods[i].on ? "on" : "off");
-        int bad = m->enabled && m->active != 1 && m->reason && m->reason[0];
-        char d[1200];
-        if (bad) snprintf(d, sizeof d, TR("Not running: %s"), TR(m->reason));   /* reason: an English key (or a starter's text) */
-        else snprintf(d, sizeof d, "%s", m->description ? m->description : "");
-        dsi_utf8_fix_end(d);                                          /* the whole text: the row grows to it (it was cut at two lines) */
-        /* owner: BepInEx plugins with a small mark; MelonLoader mods (kind "melon") the same way */
-        const char *mk = !m->kind ? NULL : !strcmp(m->kind, "bepinex") ? "BepInEx" : !strcmp(m->kind, "melon") ? "MelonLoader" : NULL;
-        float mw = mk && mk[0] == 'M' ? 100 : 64;
-        if (mk) { snprintf(nm, sizeof nm, "mark:%s", m->id); named(U->text(list, 12, y + 38, mw, 18, mk, 13, DSL_TXT_LEFT, GOLD), 3, nm, NULL, NULL, mk); }
-        float dx = mk ? 16 + mw : 12, dw = m_lw - (mk ? 60 + mw : 56), dh = rh - 40;
-        DSLObj t = U->text(list, dx, y + 38, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
-        /* the game's way for long text: the box grows to the text (two CJK lines are taller than two Lora lines) */
-        { float ph = t && U->text_height ? U->text_height(t, dw) : 0; if (ph > dh) { dh = ph; U->place(t, dx, y + 38, dw, dh); rh = 40 + dh; } }
-        snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
-        /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent"): one orange line under the
-           description while it is switched on */
-        int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
-        char wr[300]; const char *one = m->id;
-        if (dsl_save_warning(&one, 1, wr, sizeof wr)) {
-            float wh = 20;                                            /* one line; wraps and grows when longer (de / fr / ru) */
-            mods[i].warn = U->text(list, 12, y + rh, m_lw - 56, wh, wr, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, WARN);
-            { float ph = mods[i].warn && U->text_height ? U->text_height(mods[i].warn, m_lw - 56) : 0; if (ph > wh + 2) { wh = ph; U->place(mods[i].warn, 12, y + rh, m_lw - 56, wh); } }
-            snprintf(nm, sizeof nm, "savewarn:%s", m->id); named(mods[i].warn, 3, nm, NULL, NULL, wr);
-            rh += wh + 2;
+    float y = 0;
+    int shown = 0;
+    if (!world_mode) {                                                 /* the open tab's mods; another tab's rows stay NULL */
+        for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == m_tab) shown++;
+        if (shown) y = tab_desc(list, m_tab);
+        for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == m_tab) y += mod_row(list, i, y);
+    } else {                                                           /* "Fixes", then "Mods"; only the ones on (at the opening) */
+        for (int sec = 1; sec >= 0; sec--) {
+            int n = 0; for (int i = 0; i < nmods; i++) n += tab_of(mods[i].m) == sec && (!active_only() || mods[i].on);
+            if (!n) continue;
+            const char *st = sec ? TR("Fixes") : TR("Mods");
+            named(U->text(list, 12, y + 6, m_lw - 56, 28, st, 18, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD), 3, sec ? "section:fixes" : "section:mods", NULL, NULL, st);
+            y += 40;
+            for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == sec && (!active_only() || mods[i].on)) y += mod_row(list, i, y);
+            shown += n;
         }
     }
-    if (!shown) { const char *e = world_mode ? TR("No mods are installed.") : tab ? TR("No launcher mods installed.") : TR("No game mods installed.");
-                  named(U->text(list, 12, 8, m_lw - 56, 40, e, 16, DSL_TXT_LEFT, SUB), 3, "mods-empty", NULL, NULL, e); }
+    if (!shown) { const char *e = world_mode && nmods ? TR("No mods are on for this world. Switch off \"Show only active mods\" to see every mod.")
+                                : world_mode ? TR("No mods are installed.") : m_tab == 2 ? TR("No launcher mods installed.")
+                                : m_tab == 1 ? TR("No fixes installed.") : TR("No game mods installed.");
+                  DSLObj et = U->text(list, 12, 8, m_lw - 56, 40, e, 16, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
+                  { float ph = et && U->text_height ? U->text_height(et, m_lw - 56) : 0; if (ph > 40) U->place(et, 12, 8, m_lw - 56, ph); }
+                  named(et, 3, "mods-empty", NULL, NULL, e); }
     U->scroll_height(list, y);
     /* groups */
     U->text(root, m_rx, 0, m_rw, 32, TR("Groups"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
@@ -530,7 +557,7 @@ static void mods_open(DSLObj root, float w, float h) {
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: the switch the column's width, Privacy under it
                                                                           (side by side, ru / fr wrapped the switch's label on its frame) */
-    m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - (crash ? 98 : 0));
+    m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - tb - (crash ? 98 : 0));
     groups_build();
     if (crash) {
         DSLObj ct = named(U->toggle(root, m_rx, h - 162, m_rw, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
@@ -541,11 +568,81 @@ static void mods_open(DSLObj root, float w, float h) {
     }
     bottom_bar(root, w, h);
 }
+/* one mod's row in the list at y: its switch (+ Settings), its description or why it does not run, the save warning,
+   and for a fix in the Fixes tab "On in all worlds"; returns the row's height */
+static float mod_row(DSLObj list, int i, float y) {
+    float rh = 74;
+    const DSLModInfo *m = mods[i].m;
+    char lb[160], nm[100];
+    snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
+    int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
+    mods[i].row = U->toggle(list, 0, y, m_lw - 32 - (has_set ? 132 : 0), lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+    if (has_set) {
+        DSLObj sb = U->button(list, m_lw - 32 - 124, y, 124, 36, TR("Settings"), settings_click, (void *)(intptr_t)i);
+        snprintf(nm, sizeof nm, "settings:%s", m->id); named(sb, 0, nm, settings_click, (void *)(intptr_t)i, TR("Settings"));
+        U->tooltip(sb, m->name, TR("Change the settings of this mod."));
+    }
+    snprintf(nm, sizeof nm, "mod:%s", m->id); named(mods[i].row, 1, nm, mod_change, (void *)(intptr_t)i, mods[i].on ? "on" : "off");
+    int bad = m->enabled && m->active != 1 && m->reason && m->reason[0];
+    char d[1200];
+    if (bad) snprintf(d, sizeof d, TR("Not running: %s"), TR(m->reason));   /* reason: an English key (or a starter's text) */
+    else snprintf(d, sizeof d, "%s", m->description ? m->description : "");
+    dsi_utf8_fix_end(d);                                          /* the whole text: the row grows to it (it was cut at two lines) */
+    /* owner: BepInEx plugins with a small mark; MelonLoader mods (kind "melon") the same way */
+    const char *mk = !m->kind ? NULL : !strcmp(m->kind, "bepinex") ? "BepInEx" : !strcmp(m->kind, "melon") ? "MelonLoader" : NULL;
+    float mw = mk && mk[0] == 'M' ? 100 : 64;
+    if (mk) { snprintf(nm, sizeof nm, "mark:%s", m->id); named(U->text(list, 12, y + 38, mw, 18, mk, 13, DSL_TXT_LEFT, GOLD), 3, nm, NULL, NULL, mk); }
+    float dx = mk ? 16 + mw : 12, dw = m_lw - (mk ? 60 + mw : 56), dh = rh - 40;
+    DSLObj t = U->text(list, dx, y + 38, dw, dh, d, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, bad ? WARN : SUB);
+    /* the game's way for long text: the box grows to the text (two CJK lines are taller than two Lora lines) */
+    { float ph = t && U->text_height ? U->text_height(t, dw) : 0; if (ph > dh) { dh = ph; U->place(t, dx, y + 38, dw, dh); rh = 40 + dh; } }
+    snprintf(nm, sizeof nm, "desc:%s", m->id); named(t, 3, nm, NULL, NULL, d);
+    /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent"): one orange line under the
+       description while it is switched on */
+    int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
+    char wr[300]; const char *one = m->id;
+    if (dsl_save_warning(&one, 1, wr, sizeof wr)) {
+        float wh = 20;                                            /* one line; wraps and grows when longer (de / fr / ru) */
+        mods[i].warn = U->text(list, 12, y + rh, m_lw - 56, wh, wr, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, WARN);
+        { float ph = mods[i].warn && U->text_height ? U->text_height(mods[i].warn, m_lw - 56) : 0; if (ph > wh + 2) { wh = ph; U->place(mods[i].warn, 12, y + rh, m_lw - 56, wh); } }
+        snprintf(nm, sizeof nm, "savewarn:%s", m->id); named(mods[i].warn, 3, nm, NULL, NULL, wr);
+        rh += wh + 2;
+    }
+    /* a fix (Fixes tab of the title's window): "On in all worlds" under its text; a fix of scope client is on or off for
+       every world together with its switch, so it has no box, only that line */
+    if (!world_mode && m->fix) {
+        float ay = y + rh + 4;
+        if (m->scope && !strcmp(m->scope, "client")) {
+            const char *s = TR("The same in all worlds.");
+            snprintf(nm, sizeof nm, "allworlds:%s", m->id); named(U->text(list, 12, ay, m_lw - 56, 20, s, 14, DSL_TXT_LEFT, GOLD), 3, nm, NULL, NULL, s);
+            rh += 26;
+        } else {
+            const char *l = TR("On in all worlds"); int on = dsl_fix_all_worlds(m->id);
+            mods[i].allw = U->toggle(list, 12, ay, 400, l, on, allw_change, (void *)(intptr_t)i);
+            U->tooltip(mods[i].allw, l, TR("Every world uses this fix, old saves and new ones. A world's Change window can still turn it off for that world. Not ticked: each world keeps its own choice."));
+            snprintf(nm, sizeof nm, "allworlds:%s", m->id); named(mods[i].allw, 1, nm, allw_change, (void *)(intptr_t)i, on ? "on" : "off");
+            rh += 44;
+        }
+    }
+    return rh;
+}
+/* "Show only active mods" (a world's window): the list is built again with the switches as the player left them */
+static void active_only_change(void *ud, DSLObj w) {
+    (void)ud; w_active_only = U->toggle_get(w) != 0; active_only_save();
+    dsl_log("win: show only active mods %s", w_active_only ? "on" : "off");
+    keep_switches(); mods_tab_reload();
+}
 static void bottom_bar(DSLObj root, float w, float h) {
-    flat(U->panel(root, 0, h - 66, w, 1, 0), 0x633D33FF);
+    float tb = world_mode ? 42 : 0;                                    /* a world: "Show only active mods" under the status line */
+    flat(U->panel(root, 0, h - 66 - tb, w, 1, 0), 0x633D33FF);
     /* Undo 250 wide: the long texts (fr, de) wrapped to two lines at 134 (zetu lane 2026-10-18); de now "Änderungen verwerfen" */
     float ux = w - 200 - 10 - 250;
-    m_status = named(U->text(root, 0, h - 58, ux - 12, 58, "", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "status", NULL, NULL, "");
+    m_status = named(U->text(root, 0, h - 58 - tb, ux - 12, 58, "", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "status", NULL, NULL, "");
+    if (tb) {
+        const char *l = TR("Show only active mods");
+        DSLObj t = named(U->toggle(root, 0, h - 40, 420, l, active_only(), active_only_change, NULL), 1, "active-only", active_only_change, NULL, active_only() ? "on" : "off");
+        U->tooltip(t, l, TR("On: the list shows only the mods that are on for this world. Off: every mod."));
+    }
     m_undo = named(U->button(root, ux, h - 52, 250, 44, TR("Undo changes"), undo_click, NULL), 0, "undo", undo_click, NULL, TR("Undo changes"));
     const char *al = world_mode ? TR("Save for this world") : TR("Apply");
     m_apply = named(U->button(root, w - 200, h - 52, 200, 44, al, apply_click, NULL), 0, "apply", apply_click, NULL, al);
@@ -741,7 +838,7 @@ static void tab_close(void) {
     if (cur < 0) return;
     if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->close) t->close(t->ud); }
     U->destroy(w_body); w_body = NULL;
-    for (int t = 0; t < 2; t++) if (m_sub[t]) { U->destroy(m_sub[t]); m_sub[t] = NULL; }
+    for (int t = 0; t < 3; t++) if (m_sub[t]) { U->destroy(m_sub[t]); m_sub[t] = NULL; }
     for (int k = 0; k < nreg; k++) if (strncmp(reg[k].name, "tab:", 4) && strcmp(reg[k].name, "close")) reg[k].w = NULL;
     cur = -1;
 }

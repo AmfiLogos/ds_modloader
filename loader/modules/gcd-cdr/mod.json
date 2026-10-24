@@ -2,9 +2,10 @@
  "id": "gcd-cdr",
  "name": "Global cooldown fix",
  "short_name": "Global cooldown fix",
- "version": "0.1.6",
+ "version": "0.1.7",
  "author": "AmfiLogos",
  "kind": "code",
+ "category": "fix",
  "api": 2,
  "sim": true,
  "game_builds": [

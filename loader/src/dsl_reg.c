@@ -7,6 +7,8 @@
 //     gameplay mod ids joined by "+" ("vanilla" if none), launcher features left out (see dsl_mod_is_feature). A world is registered with the running key the first time it
 //     is open in this process; a world with another key: dsl_world.c refuses the load, then this file asks
 //     "This world uses: <names>. Load it with them?" and Load = soft restart straight into that save (flow K).
+//   - fixes (mod.json "category": "fix", owner 2026-10-24): "On in all worlds" adds a fix to every world's set unless the
+//     world turned it off (worlds.json "fix_off"); key_eff gives the set a world plays with (see "fixes" below)
 // Everything here runs on the main thread (dsl_frame_hook from the kit's EventSystem.Update tick, or host calls made
 // by modules from their own main-thread code).
 #include "dsl_internal.h"
@@ -151,7 +153,7 @@ static void mods_scan(void) {
         const char *kd = json_str(m, "kind"); if (!kd) kd = json_str(m, "type");
         x->kind = xstrdup(kd ? kd : "code");
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
-        { const char *ca = json_str(m, "category"); x->feature = ca ? !strcmp(ca, "feature") : feature_builtin(id); }
+        { const char *ca = json_str(m, "category"); x->feature = ca ? !strcmp(ca, "feature") : feature_builtin(id); x->fix = ca && !strcmp(ca, "fix"); }
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         JNode *sb = json_get(m, "save_backup"); MI_savebak[nmi - 1] = sb && sb->t == JN_BOOL && sb->b;
@@ -411,11 +413,109 @@ static void worlds_load(void) {
     JNode *w = json_get(worlds_doc, "worlds");
     if (w && w->t == JN_OBJ) { for (JNode *c = w->child; c; c = c->next) strip_mp(c); migrate_save_keys(w); }
 }
+/* ------------------------------------------------------------------ fixes (owner 2026-10-24)
+   mod.json "category": "fix" = a fix for a bug of the game (Global cooldown fix, Sound settings fix). Per world like a game
+   mod, but in its own tab of the Mods window, and a world with only fixes (and client mods) stays "Vanilla & Vanilla+" on
+   the Load list. "On in all worlds" (Fixes tab, default on; <data>/Mods/fixes.json {"all_worlds": {"<id>": bool}}): every
+   world plays with that fix, old saves and new ones, except a world whose Change window turned it off (worlds.json
+   "fix_off": {guid: "<ids joined by +>"}). The set a world plays with = its stored key + the fixes on in all worlds - its
+   own offs (key_eff). world_key gives that set to every reader, and dsl_world.c's check asks key_eff, so the Load list
+   label, the filter kind, the world check / flow K and the multiplayer set (the running set after flow K) agree.
+   Fixes of scope "client" are never in a key (on or off for all worlds together with their switch). */
+static char fx_un[MAXM][64]; static int fx_nun, fx_read;            /* fixes NOT on in all worlds (unticked) */
+static void fixes_load(void) {
+    if (fx_read) return; fx_read = 1;
+    char p[1200]; dpath(p, sizeof p, "fixes.json");
+    char *t = slurp(p, 1 << 16); JNode *j = t ? json_parse(t) : NULL; free(t);
+    JNode *a = json_get(j, "all_worlds");
+    if (a && a->t == JN_OBJ) for (JNode *c = a->child; c && fx_nun < MAXM; c = c->next)
+        if (c->key && c->t == JN_BOOL && !c->b) snprintf(fx_un[fx_nun++], 64, "%s", c->key);
+    json_free(j);
+}
+int dsl_fix_all_worlds(const char *id) {
+    fixes_load(); if (!id) return 0;
+    for (int i = 0; i < fx_nun; i++) if (!strcmp(fx_un[i], id)) return 0;
+    return 1;
+}
+int dsl_fix_set_all_worlds(const char *id, int on) {
+    if (!id || !*id) return -1;
+    fixes_load();
+    int i = 0; while (i < fx_nun && strcmp(fx_un[i], id)) i++;
+    if (on && i < fx_nun) { memmove(fx_un[i], fx_un[i + 1], (size_t)(fx_nun - i - 1) * sizeof fx_un[0]); fx_nun--; }
+    if (!on && i == fx_nun) { if (fx_nun >= MAXM) return -1; snprintf(fx_un[fx_nun++], 64, "%s", id); }
+    /* every installed fix of scope gameplay with its state, plus the unticked ones that are not installed now */
+    char b[8192], e[200]; size_t k = 0; int n = 0;
+    k += (size_t)snprintf(b + k, sizeof b - k, "{\"all_worlds\": {");
+    mods_scan();
+    for (int m = 0; m < nmi && k + 300 < sizeof b; m++) if (MI[m].fix && !strcmp(MI[m].scope, "gameplay")) {
+        jesc(e, sizeof e, MI[m].id); k += (size_t)snprintf(b + k, sizeof b - k, "%s\"%s\": %s", n++ ? ", " : "", e, dsl_fix_all_worlds(MI[m].id) ? "true" : "false"); }
+    for (int u = 0; u < fx_nun && k + 300 < sizeof b; u++) if (!mod_by_id(fx_un[u])) {
+        jesc(e, sizeof e, fx_un[u]); k += (size_t)snprintf(b + k, sizeof b - k, "%s\"%s\": false", n++ ? ", " : "", e); }
+    snprintf(b + k, sizeof b - k, "}}\n");
+    char p[1200]; dpath(p, sizeof p, "fixes.json");
+    int r = put_file(p, b);
+    dsl_log("reg: fix %s %s in all worlds%s", id, on ? "on" : "not on", r ? " (fixes.json NOT written)" : "");
+    if (!r) dsl_rows_refresh();
+    return r;
+}
+static int in_plus(const char *list, const char *id) {             /* "a+b+c" holds id */
+    size_t L = strlen(id);
+    for (const char *p = list; p && *p; ) {
+        const char *e = strchr(p, '+'); size_t n = e ? (size_t)(e - p) : strlen(p);
+        if (n == L && !strncmp(p, id, L)) return 1;
+        p = e ? e + 1 : NULL;
+    }
+    return 0;
+}
+static void plus_add(char *list, size_t cap, const char *id) { if (in_plus(list, id)) return; if (*list) strlcat(list, "+", cap); strlcat(list, id, cap); }
+/* a fix every world plays with unless it turned it off: ticked, scope gameplay, and not failing in this start (a fix that
+   cannot run here would make every load ask "Load it with them?" again and again) */
+static int fix_default(int i) { return MI[i].fix && !strcmp(MI[i].scope, "gameplay") && MI[i].active != -1 && dsl_fix_all_worlds(MI[i].id); }
+static const char *world_offs(const char *guid) {                  /* worlds.json "fix_off": fixes the world turned off */
+    worlds_load();
+    JNode *w = json_get(worlds_doc, "fix_off");
+    if (w && w->t == JN_OBJ && guid) for (JNode *c = w->child; c; c = c->next)
+        if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR && c->str) return c->str;
+    return "";
+}
+/* the next worlds_save writes it ("" = none) */
+static void world_offs_put(const char *guid, const char *ids) {
+    worlds_load();
+    if (worlds_bad || !guid) return;
+    if (!worlds_doc) { worlds_doc = calloc(1, sizeof *worlds_doc); worlds_doc->t = JN_OBJ; }
+    JNode *w = json_get(worlds_doc, "fix_off");
+    if (!w) {
+        if (!*ids) return;
+        w = calloc(1, sizeof *w); w->t = JN_OBJ; w->key = strdup("fix_off");
+        JNode **e = &worlds_doc->child; while (*e) e = &(*e)->next; *e = w;
+    }
+    JNode *c = w->child; while (c && !(c->key && !strcasecmp(c->key, guid))) c = c->next;
+    if (!c) { if (!*ids) return; c = calloc(1, sizeof *c); c->key = strdup(guid); JNode **e = &w->child; while (*e) e = &(*e)->next; *e = c; }
+    if (c->t == JN_STR) free(c->str);
+    c->t = JN_STR; c->str = strdup(ids);
+}
+static void key_eff(const char *guid, const char *stored, char *out, size_t cap) {
+    char b[512], offs[512]; snprintf(b, sizeof b, "%s", stored ? stored : ""); snprintf(offs, sizeof offs, "%s", world_offs(guid));
+    const char *v[MAXM]; int k = 0;
+    for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && k < MAXM; t = strtok_r(NULL, "+", &sv))
+        if (*t && strcmp(t, "vanilla") && !dsl_mod_is_feature(t) && !in_plus(offs, t)) v[k++] = t;
+    mods_scan();
+    for (int i = 0; i < nmi && k < MAXM; i++) {
+        if (!fix_default(i) || in_plus(offs, MI[i].id)) continue;
+        int dup = 0; for (int j = 0; j < k; j++) dup |= !strcmp(v[j], MI[i].id);
+        if (!dup) v[k++] = MI[i].id;
+    }
+    qsort(v, (size_t)k, sizeof *v, cmpstr);
+    out[0] = 0; for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
+    if (!k) snprintf(out, cap, "vanilla");
+}
+void dsl_world_key_eff(const char *guid, const char *stored, char *out, size_t cap) { key_eff(guid, stored, out, cap); }
+/* the set the world plays with (key_eff of its stored key); NULL = not registered */
 static const char *world_key(const char *guid) {
     worlds_load();
     JNode *w = json_get(worlds_doc, "worlds");
     static char nk[512];
-    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR) { key_norm(c->str, nk, sizeof nk); return nk; }
+    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, guid) && c->t == JN_STR) { key_eff(guid, c->str, nk, sizeof nk); return nk; }
     return NULL;
 }
 /* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save. Launcher features
@@ -451,7 +551,12 @@ static void worlds_save(const char *add_guid, const char *add_key) {
     if (st && st->t == JN_OBJ) for (JNode *c = st->child; c; c = c->next) {     /* keep every other member as it is */
         if (!c->key || !strcmp(c->key, "worlds") || !strcmp(c->key, "modset") || !strcmp(c->key, "modset_lines")) continue;
         jesc(e1, sizeof e1, c->key); PUT("%s\"%s\":", first ? "" : ",", e1); first = 0;
-        jdump(c, &b, &n, &cap);
+        if (!strcmp(c->key, "fix_off") && c->t == JN_OBJ) {                   /* a world's offs: "" = none, left out */
+            int k = 0; PUT("{");
+            for (JNode *o = c->child; o; o = o->next) if (o->key && o->t == JN_STR && o->str && *o->str) {
+                jesc(e1, sizeof e1, o->key); jesc(e2, sizeof e2, o->str); PUT("%s\"%s\":\"%s\"", k++ ? "," : "", e1, e2); }
+            PUT("}");
+        } else jdump(c, &b, &n, &cap);
     }
     /* top-level "modset" = what the multiplayer HELLO sends: "" when no gameplay mod (its "none"), else the key */
     /* "modset_lines": <id>@<version>:<sha256s of every platform's files> of each running gameplay mod (multiplayer
@@ -530,13 +635,14 @@ int dsl_world_mods_all(const char *guid, const char **ids, int max) {
     return n;
 }
 /* the Load list's filter panel (dsl_rows.c, owner 2026-10-24): 1 = the world plays with a mod that changes the gameplay
-   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only mods that
-   change nothing in the gameplay ("Vanilla & Vanilla+"). Launcher features are not world mods. */
+   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only fixes and
+   mods that change nothing in the gameplay ("Vanilla & Vanilla+"). Launcher features are not world mods. */
 int dsl_world_is_modded(const char *guid) {
     const char *ids[MAXM]; int n = dsl_world_mods(guid, ids, MAXM);
     for (int i = 0; i < n; i++) {
         if (dsl_mod_is_feature(ids[i])) continue;
         const DSLModInfo *m = mod_by_id(ids[i]);
+        if (m && m->fix) continue;                                    /* a fix for a bug of the game (owner 2026-10-24) */
         if (!m || strcmp(m->scope, "client")) return 1;
     }
     return 0;
@@ -550,7 +656,22 @@ int dsl_features_on(const char **ids, int max) {
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
     if (!guid || !*guid) return -1;
     char k[512]; key_of(ids, n, k, sizeof k);
-    worlds_save(guid, k); dsl_log("reg: world %s set to %s", guid, k);
+    /* fixes: one switched off here that was on in this world becomes the world's own off (it holds while the fix is on in
+       all worlds); an off stays while the fix stays off; on = no off. Offs of fixes not installed now are kept. */
+    char offs[512] = "", old[512], was[512]; snprintf(old, sizeof old, "%s", world_offs(guid));
+    { const char *wk = world_key(guid); snprintf(was, sizeof was, "%s", wk ? wk : run_key); }
+    for (char *sv = NULL, *t = strtok_r(old, "+", &sv); t; t = strtok_r(NULL, "+", &sv)) {
+        const DSLModInfo *m = mod_by_id(t);
+        int on = 0; for (int j = 0; j < n; j++) on |= !strcmp(ids[j], t);
+        if (*t && (!m || (m->fix && !on))) plus_add(offs, sizeof offs, t);
+    }
+    for (int i = 0; i < nmi; i++) {
+        if (!MI[i].fix || strcmp(MI[i].scope, "gameplay")) continue;
+        int on = 0; for (int j = 0; j < n; j++) on |= !strcmp(ids[j], MI[i].id);
+        if (!on && in_plus(was, MI[i].id)) plus_add(offs, sizeof offs, MI[i].id);
+    }
+    world_offs_put(guid, offs);
+    worlds_save(guid, k); dsl_log("reg: world %s set to %s%s%s", guid, k, offs[0] ? ", fixes off: " : "", offs);
     dsl_rows_refresh(); return 0;
 }
 void dsl_world_change(const char *guid, const char *save_name) {
@@ -863,7 +984,12 @@ static void world_frame(void) {
     char g[40]; if (!world_guid(g) || !strcmp(g, seen_guid)) return;
     snprintf(seen_guid, sizeof seen_guid, "%s", g);
     const char *k = world_key(g);
-    if (!k) { worlds_save(g, run_key); dsl_log("reg: world %s registered with this mod set (%s)", g, run_key); }
+    if (!k) {                                       /* a fix on in all worlds that does not run now: off for this world, so
+                                                       the world keeps the set it was made with */
+        char offs[512] = ""; for (int i = 0; i < nmi; i++) if (fix_default(i) && !in_plus(run_key, MI[i].id)) plus_add(offs, sizeof offs, MI[i].id);
+        world_offs_put(g, offs);
+        worlds_save(g, run_key); dsl_log("reg: world %s registered with this mod set (%s)%s%s", g, run_key, offs[0] ? ", fixes off: " : "", offs);
+    }
     else if (strcmp(k, run_key)) dsl_log("reg: world %s is open with %s, registered with %s (multiplayer guest or a launcher load)", g, run_key, k);
 }
 
@@ -1073,6 +1199,11 @@ void dsl_reg_after_init(void) {
     int nb = 0, nm = 0; for (int i = 0; i < nmi; i++) { nb += !strcmp(MI[i].kind, "bepinex") && MI[i].active == 1; nm += !strcmp(MI[i].kind, "melon") && MI[i].active == 1; }
     dsl_log("reg: running gameplay set %s (%d installed mod(s), %d BepInEx plugin(s) running, BepInEx state %d, %d MelonLoader mod(s) running, MelonLoader state %d)",
             run_key, nmi, nb, dsl_bie_state(), nm, dsl_ml_state());
+    { char fx[600] = ""; for (int i = 0; i < nmi; i++) if (MI[i].fix) {
+          char one[160]; snprintf(one, sizeof one, "%s%s (%s)", fx[0] ? ", " : "", MI[i].id,
+                                  strcmp(MI[i].scope, "gameplay") ? "client: the same in all worlds" : fix_default(i) ? "on in all worlds" : "per world");
+          strlcat(fx, one, sizeof fx); }
+      if (fx[0]) dsl_log("reg: fixes: %s", fx); }
     dsl_moddata_after_init();                                          /* data folder per mod + moddata.json */
     dsl_update_start();
     dsl_crash_start();

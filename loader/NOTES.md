@@ -597,6 +597,7 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   down (min 0.5; measured 0.89 at 16:10 UI 1.4). Measured fits: 960x540 UI 0.75 / 1.4, 960x600 UI 1.0 / 1.4.
 - Kinds, one per world: Multiplayer = the multiplayer mod's tag (its export `dsl_loadlist_world_mp`), else Modded = a mod
   of the world's set with scope gameplay or not installed (`dsl_world_is_modded`, dsl_reg.c), else Vanilla & Vanilla+.
+  Fixes (mod.json `"category": "fix"`, kit v0.1.26) never count: a world with only fixes is Vanilla & Vanilla+.
   A world shows when its kind's box is ticked; the world being played always shows. Defaults = the old list: Vanilla &
   Modded on, Multiplayer off. Choices in `<data>/Mods/loadlist.json` (vanilla, modded, multiplayer, latest_only).
 - The multiplayer mod's box "Show multiplayer worlds" under the single-player list is replaced: with a loader that
@@ -803,6 +804,37 @@ world; they must not mix with the per-world mods.
   A world's Mods tab ([Change]) lists only game mods, with the old single "Mods" tab and no tabs of its own. World rows: the line names only game mods; the hover card names
   the features that are on in a block of their own.
 - Proof: host test T1c (fails on the old code: world refused); rig `test/featsplit_test.py` 13/13 on copy S.
+
+## Fixes (owner 2026-10-24, kit v0.1.26, branch feat/fixes-tab)
+Owner: "some of the mods that we have can be considered not even mods but more game fix ... put them in a different
+category like bug fixes"; Modded off in the Load list filters hid every world (each had Global cooldown fix on).
+- mod.json `"category": "fix"` (absent = a game mod; `"feature"` = launcher mod, above). Fixes today: Global cooldown
+  fix (gcd-cdr 0.1.7, scope gameplay) and Sound settings fix (sound-fix 0.1.1, scope client). No built-in id list: an
+  older mod.json without the field is a game mod (pre-launch, no compatibility work).
+- A fix is per world like a game mod (in a world's key if scope gameplay; in the HELLO lines as before), but the Load
+  list filter counts it as Vanilla & Vanilla+ (`dsl_world_is_modded` skips it). Tooltips say so.
+- Mods window, title: a third tab, order Game mods | Fixes | Launcher mods (`tab_of`, one `mods[]` list as before), with
+  its own line on top. Each fix of scope gameplay has the box "On in all worlds" under its text (default ticked);
+  ticking it also switches the fix on (an Apply change), so new worlds start with it. A fix of scope client has the
+  line "The same in all worlds." (its switch is already one value for every world; it is not in any key).
+- "On in all worlds": `<data>/Mods/fixes.json` `{"all_worlds": {"<id>": bool}}` (absent = ticked; written at once,
+  temp + fsync + rename). Every world plays with a ticked fix, old saves and new ones, unless its own Change window turned
+  it off: worlds.json `"fix_off": {guid: "<ids joined by +>"}` (a member of its own, so older loaders keep it and the
+  multiplayer mod, which reads the first `"modset"`, never sees it). The set a world plays with = its stored key + the
+  ticked fixes - its offs (`key_eff`); `world_key` returns it, and dsl_world.c's check asks `dsl_world_key_eff`, so the
+  Load list label, the filter kind, the world check / flow K and the multiplayer set (the running set after flow K)
+  agree. A fix that fails in this start (`active == -1`) is not added (else every load would ask "Load it with them?").
+- Offs: a world's Change window (`dsl_world_set_mods`) records an off for a fix switched off there that was on in that
+  world; an off stays while the fix stays off; switched on = no off. Offs of fixes not installed now are kept. A new world
+  (first open, `world_frame`) gets an off for each ticked fix the running set lacks, so it keeps the set it was made with.
+  Unticked = each world as before (stored key only; offs then change nothing).
+- A world's Change window: no tabs; a "Fixes" title over its fixes of scope gameplay, then a "Mods" title over its game
+  mods (a title only over a part with rows). Under the status line the toggle "Show only active mods" (default on,
+  `<data>/Mods/modswin.json` `world_active_only`): on = only the mods switched on for that world. Rows are filtered when
+  the window opens, when the toggle changes, and after a group pick or Undo (clicks that are not on a row), never on a
+  switch. Nothing on = "No mods are on for this world. Switch off "Show only active mods" to see every mod.".
+- Log: `reg: fixes: gcd-cdr (on in all worlds), sound-fix (client: the same in all worlds)` at start; `reg: world <guid>
+  set to <key>, fixes off: <ids>`; the world check logs the set it compares (with the fixes).
 
 ## Startup time: stock vs patched file vs loader vs BepInEx / MelonLoader (lane modguide, 2026-10-20)
 Mac M4 Max, one hidden copy (BT), 3 rounds round-robin, process start -> title ready (MainFlow scene Title + `_bootReady`,

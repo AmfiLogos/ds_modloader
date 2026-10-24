@@ -89,10 +89,11 @@ static void *my_load(void *self, void *name, const void *mi) {
     JNode *worlds = json_get(s, "worlds"), *w = NULL;
     if (worlds && worlds->t == JN_OBJ) for (JNode *c = worlds->child; c; c = c->next) if (c->key && !strcasecmp(c->key, g)) w = c;
     if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return gate(self, it, nm); }
-    if (mine && dsl_key_same(w->str, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
-    dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, w->str, mine ? mine : "?");
+    char ek[512]; dsl_world_key_eff(g, w->str, ek, sizeof ek);          /* + fixes on in all worlds - the world's offs */
+    if (mine && dsl_key_same(ek, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
+    dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, ek, mine ? mine : "?");
     int in_world = dsl_reg_scene() == 2;
-    if (!in_world) dsl_world_mismatch(nm, g, w->str);   /* asks "Load it with them?" (flow K, dsl_reg.c) */
+    if (!in_world) dsl_world_mismatch(nm, g, ek);       /* asks "Load it with them?" (flow K, dsl_reg.c) */
     json_free(s);
     dsl_world_refusals++;
     if (it) *(int32_t*)((char*)it + 0x10) = -2;      /* <>1__state: MoveNext returns false at once */
