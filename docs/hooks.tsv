@@ -299,3 +299,18 @@ zetu-suite	detour	Refactor.UI.EntityStatusUI$$Init	0xebecd0	0xbc4780	setting max
 zetu-suite	detour	Refactor.UI.EntityStatusUIPresenter$$RefreshSelectedEntityUI	0xebf528	0xbc3620	setting max_units not 4 (default 4: not installed)	zetu-suite EntityStatusUIPresenter.RefreshSelectedEntityUI	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
 zetu-suite	detour	Refactor.UI.ExpeditionPlanView$$Init	0xee0708	0xbeb980	setting max_units not 4 (default 4: not installed)	zetu-suite ExpeditionPlanView.Init	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
 zetu-suite	detour	Refactor.UI.SubUI_ExpeditionPlanLowerPanel$$OnSetUnit	0xef2284	0xc011a0	setting max_units not 4 (default 4: not installed)	zetu-suite SubUI_ExpeditionPlanLowerPanel.OnSetUnit	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
+weapon-slot	detour	Refactor.Task.DecidePlayerCombatBehaviour$$DecideSkill	0xb24de8	0x851600	always	weapon-slot DecidePlayerCombatBehaviour.DecideSkill	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.Processor.ItemControlProcessor$$ProcessUnequip	0xd4abb0	0xa5a550	always	weapon-slot ItemControlProcessor.ProcessUnequip	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.PlayerUnitDataContainer$$OnPlayerUnitSpawned	0xcc07a8	0x9e45c0	always	weapon-slot PlayerUnitDataContainer.OnPlayerUnitSpawned	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.PlayerUnitDataContainer$$OnRemoveExtraSkill	0xcc1868	0x9e4950	always	weapon-slot PlayerUnitDataContainer.OnRemoveExtraSkill	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.PlayerUnitDataContainer$$ResetSkill	0xcc193c	0x9e4a10	always	weapon-slot PlayerUnitDataContainer.ResetSkill	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.UI.QuickSlotUI$$Init	0xf1f858	0xc24140	always	weapon-slot QuickSlotUI.Init	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.UI.SkillSlotUI$$CanDrop	0xf24628	0xc25db0	always	weapon-slot SkillSlotUI.CanDrop	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.UI.SkillSlotUI$$GetPayload	0xf24558	0xc25e30	always	weapon-slot SkillSlotUI.GetPayload	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$AddQuickSlotAt	0xcc42e8	0x9f17f0	always	weapon-slot UnitQuickSlotContainer.AddQuickSlotAt	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$Deserialize	0xcc2cc4	0x9f1970	always	weapon-slot UnitQuickSlotContainer.Deserialize	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$GetAll	0xcc45e8	0x9f1cd0	always	weapon-slot UnitQuickSlotContainer.GetAll	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$RemoveQuickSlotAt	0xcc4390	0x9f2130	always	weapon-slot UnitQuickSlotContainer.RemoveQuickSlotAt	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$Serialize	0xcc203c	0x9f2330	always	weapon-slot UnitQuickSlotContainer.Serialize	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$TryRegisterQuickSlot	0xcc15fc	0x9f2680	always	weapon-slot UnitQuickSlotContainer.TryRegisterQuickSlot	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+weapon-slot	detour	Refactor.Main.UnitSkillContainer$$Deserialize	0xcc29c0	0x9f2e40	always	weapon-slot UnitSkillContainer.Deserialize	ds_modloader:loader/modules/weapon-slot/weapon_slot.c

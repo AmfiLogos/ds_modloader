@@ -88,6 +88,7 @@ simple() {   # id src
 simple gcd-cdr gcd_cdr.c
 simple hell-difficulty hell.c
 simple zetu-suite zetu.c
+simple weapon-slot weapon_slot.c
 # Hell table half: deltas from the stock table bundles (game files, read only; only the delta ships)
 HW=${HELL_STOCK_WIN:-"$HOME/Library/Application Support/CrossOver/Bottles/DSMP/drive_c/DSW/DungeonSettlers_Data/StreamingAssets/aa/StandaloneWindows64/table_assets_all_ea6555cd907771d454adb127292fd425.bundle"}
 HM=${HELL_STOCK_MAC:-$HOME/DungeonSettlers_HellDifficulty/b25846389/stock/table_assets_all_ee685f7db1494c1e6bf42e948951b8dc.bundle}

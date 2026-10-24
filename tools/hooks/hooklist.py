@@ -227,7 +227,7 @@ def components(mp, cm):
     out.append(("loader", "mac", L, core + L.glob("start/mac/*.c") + L.glob("start/mac/*.m"), {"__APPLE__": 1, "__aarch64__": 1}, "mac"))
     out.append(("loader", "win", L, [f for f in core if not f.endswith("/dsl_engine.c")] + L.glob("start/win/*.c"),
                 {"_WIN32": 1, "_WIN64": 1, "__x86_64__": 1, "__MINGW32__": 1, "__MINGW64__": 1}, "win"))
-    for mid in ("gcd-cdr", "hell-difficulty", "zetu-suite"):
+    for mid in ("gcd-cdr", "hell-difficulty", "zetu-suite", "weapon-slot"):
         fs = L.glob(f"modules/{mid}/*.c")
         out.append((mid, "mac", L, fs, {"__APPLE__": 1, "__aarch64__": 1}, "mac"))
         out.append((mid, "win", L, fs, {"_WIN32": 1, "_WIN64": 1, "__x86_64__": 1}, "win"))
@@ -843,12 +843,12 @@ def pick_method(label, names, plats):
     if len(mac) == 1: return mac[0]
     return None
 
-OWN_ORDER = {"loader": 0, "multiplayer": 1, "custom-modes": 2, "gcd-cdr": 3, "hell-difficulty": 4, "zetu-suite": 5}
+OWN_ORDER = {"loader": 0, "multiplayer": 1, "custom-modes": 2, "gcd-cdr": 3, "hell-difficulty": 4, "zetu-suite": 5, "weapon-slot": 6}
 
 def src_name(s):
     f = s["file"]
     if s.get("from_table"): return "ds_modloader:loader/" + s["from_table"]
-    if s["owner"] in ("loader", "gcd-cdr", "hell-difficulty", "zetu-suite") or f.startswith("modules/"): return "ds_modloader:loader/" + f
+    if s["owner"] in ("loader", "gcd-cdr", "hell-difficulty", "zetu-suite", "weapon-slot") or f.startswith("modules/"): return "ds_modloader:loader/" + f
     return ("ds_multiplayer:" if s["owner"] == "multiplayer" else "ds_custommodes:") + f
 
 # ------------------------------------------------------------------------------------------------ main
