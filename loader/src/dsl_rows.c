@@ -46,8 +46,6 @@ static int ok;
 static void *k_slv, *k_case, *k_btn, *k_str, *k_cs;
 typedef struct { float x, y, w, h; } URect;
 static URect (*rt_rect)(Obj t, const void *mi);
-static void dsl_rows_place(Obj cs, DSLObj line, DSLObj chg);
-static int dsl_rows_line_chars(Obj cs);
 static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn);
 static int32_t o_cases = -1, o_dict = -1, o_slots = -1, o_title_name = -1, o_cur = -1, o_lowload = -1;
 static Obj (*find_obj)(Obj type, int inactive, const void *mi);
@@ -230,10 +228,6 @@ static void build_rows(Obj slv) {
 void dsl_mod_short(const char *id, char *out, size_t cap);
 const char *dsl_mod_name(const char *id);
 int dsl_reg_scene(void);
-static int cols_of(const char *s) {                                  /* display columns (as dsl_mod_short: a 3-byte character = 2) */
-    int c = 0; for (const unsigned char *p = (const unsigned char *)s; *p; p++) if ((*p & 0xC0) != 0x80) c += *p >= 0xE0 ? 2 : 1;
-    return c;
-}
 /* launcher features (owner 2026-10-20) are not the world's mods: not on the row; the card names the ones that are on in a
    block of their own (owner v13 #5 wanted Multiplayer in the card) */
 static void features_card(char *all, size_t acap) {
@@ -241,28 +235,37 @@ static void features_card(char *all, size_t acap) {
     strlcat(all, "\n\n<color=#A69085>", acap); strlcat(all, TR("Launcher features (every world):"), acap); strlcat(all, "</color>", acap);
     for (int i = 0; i < nf; i++) { const char *nm = dsl_mod_name(f[i]); strlcat(all, "\n", acap); strlcat(all, nm ? nm : f[i], acap); }
 }
-static void world_texts(const char *guid, int maxc, char *line, size_t lcap, char *all, size_t acap) {
+/* the row's line with at most kmax mod names (then "+N"); cut > 0 = the first name cut to that many columns + "…";
+   kmax 0 = "Mods: +N" only. all = the hover card (every mod, one per line). Returns the number of mods. */
+static void cut_cols(char *s, size_t cap, int cols) {                             /* whole characters up to cols columns, then an ellipsis */
+    size_t b = 0; int c = 0;
+    while (s[b]) { unsigned char u = (unsigned char)s[b]; int w = u >= 0xE0 ? 2 : 1; if (c + w > cols) break; c += w; b++; while (s[b] && ((unsigned char)s[b] & 0xC0) == 0x80) b++; }
+    if (!s[b]) return;
+    while (b && s[b - 1] == ' ') b--;
+    if (b + 4 <= cap) snprintf(s + b, cap - b, "\xE2\x80\xA6");
+}
+static int world_texts(const char *guid, int kmax, int cut, char *line, size_t lcap, char *all, size_t acap) {
     int dsl_world_mods_all(const char *guid, const char **ids, int max);
     const char *ids[64]; int n = dsl_world_mods_all(guid, ids, 64);
     all[0] = 0; line[0] = 0;
     if (!n) { snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), TR("none")); snprintf(all, acap, "%s", TR("No mods."));
-              features_card(all, acap); return; }
-    int used = 6, k = 0;                                                  /* "Mods: " */
-    char shown[600] = "";
+              features_card(all, acap); return 0; }
+    char shown[600] = ""; int k = 0;
     for (int i = 0; i < n; i++) {
         const char *nm = dsl_mod_name(ids[i]);
         char one[300]; if (nm) snprintf(one, sizeof one, "%s", nm); else snprintf(one, sizeof one, TR("%s (not installed)"), ids[i]);
         if (i) strlcat(all, "\n", acap);
         strlcat(all, one, acap);
+        if (k >= kmax) continue;
         char sh[128]; dsl_mod_short(ids[i], sh, sizeof sh);
-        int len = cols_of(sh) + (k ? 3 : 0), plus = i + 1 < n ? 4 : 0;   /* columns, not bytes (ru / CJK were counted double) */
-        if (k && used + len + plus > maxc) continue;                      /* the first one always shows */
+        if (!k && cut > 0) cut_cols(sh, sizeof sh, cut);
         if (k) strlcat(shown, " \xC2\xB7 ", sizeof shown);
-        strlcat(shown, sh, sizeof shown); used += len; k++;
+        strlcat(shown, sh, sizeof shown); k++;
     }
-    if (k < n) { char pl[16]; snprintf(pl, sizeof pl, "  +%d", n - k); strlcat(shown, pl, sizeof shown); }
+    if (k < n) { char pl[16]; snprintf(pl, sizeof pl, k ? "  +%d" : "+%d", n - k); strlcat(shown, pl, sizeof shown); }
     snprintf(line, lcap, "<color=#A69085>%s</color> %s", TR("Mods:"), shown); dsi_utf8_fix_end(line);
     features_card(all, acap);
+    return n;
 }
 /* owner item 9: a mod whose saves need the loader (mod.json "save_dependent") gets one warning line at the card's end */
 static void world_warning(const char *guid, char *all, size_t acap) {
@@ -272,26 +275,60 @@ static void world_warning(const char *guid, char *all, size_t acap) {
     n += dsl_features_on(ids + n, 64 - n);                                /* a feature's save warning still counts */
     if (dsl_save_warning(ids, n, wr, sizeof wr)) { strlcat(all, "\n\n<color=#EA9F3D>", acap); strlcat(all, wr, acap); strlcat(all, "</color>", acap); }
 }
+static float row_line_place(Obj cs, DSLObj line, DSLObj chg);
+/* one line, never two (owner 2026-10-24: Russian names took 3 lines and ran out of the row): the most mod names that fit
+   on one line at the kit's smallest size (0.75 of 14), then the first name cut with "…", then "+N" only; the other
+   modules' row texts only when they still fit. The hover card always lists every mod. */
+static int line_fits(DSLObj line, float lw) { float x = dsl_ui_text_line_w_min(line); return x > 0 && x <= lw - 2; }
+static int line_fit(const char *guid, const char *extra, DSLObj line, float lw, char *all, size_t acap) {   /* 0 = empty */
+    const DSLUi *u = dsl_ui_kit(); char txt[1200];
+    if (lw < 40) { u->set_text(line, ""); world_texts(guid, 0, 0, txt, sizeof txt, all, acap); return 0; }   /* no room left of [Change] */
+    int n = world_texts(guid, 64, 0, txt, sizeof txt, all, acap), tries = 0;
+    for (int pass = 0; pass < 2; pass++) {                                /* with the other modules' texts, then without */
+        const char *ex = pass ? "" : extra;
+        for (int k = n ? n : 1, cut = 0; ; tries++) {
+            world_texts(guid, k, cut, txt, sizeof txt, all, acap); strlcat(txt, ex, sizeof txt); dsi_utf8_fix_end(txt);
+            u->set_text(line, txt);
+            if (line_fits(line, lw)) { if (k < n || cut || pass) dsl_log("rows: Mods line of %s shortened to fit %.0f units: %d of %d name(s)%s%s", guid, lw, k, n, cut ? ", first cut" : "", pass ? ", module texts left out" : ""); return 1; }
+            if (!n) break;
+            if (k > 1) k--;
+            else if (k == 1 && (cut == 0 || cut > 4)) cut = cut ? cut - 2 : 14;
+            else if (k == 1) { k = 0; cut = 0; }
+            else break;
+        }
+    }
+    dsl_log("rows: Mods line of %s does not fit %.0f units even as \"+N\" (%d tries): no line, the mods are in the [Change] card", guid, lw, tries);
+    u->set_text(line, ""); return 0;
+}
 static void decorate(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
     int at_title = dsl_reg_scene() != 2;                                  /* in a world mods do not change (owner #10) */
     for (int i = 0; i < nw; i++) {
         WRow *w = &W[i]; Obj cs = gc_get(w->cs); if (!live(cs) || w->hid) continue;
-        char txt[1200], all[1400], one[400];
-        world_texts(w->guid, dsl_rows_line_chars(cs), txt, sizeof txt, all, sizeof all);
+        char extra[800] = "", all[1400], one[400], txt[1200];
+        int n0 = world_texts(w->guid, 64, 0, txt, sizeof txt, all, sizeof all); (void)n0;
         for (int r = 0; r < nr; r++) {
             one[0] = 0; R[r].r.text(R[r].r.ud, w->guid, w->save, one, sizeof one);
-            if (one[0]) { strlcat(txt, "   ", sizeof txt); strlcat(txt, one, sizeof txt); strlcat(all, "\n", sizeof all); strlcat(all, one, sizeof all); }
+            if (one[0]) { strlcat(extra, "   ", sizeof extra); strlcat(extra, one, sizeof extra); }
         }
-        world_warning(w->guid, all, sizeof all);
         Obj tr = comp_tr(cs, NULL);
-        if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, txt, 14, DSL_TXT_RIGHT, 0xD9C7B0FF);
-        else u->set_text(w->line, txt);
-        dsi_utf8_fix_end(all); u->tooltip(w->line, TR("Mods of this world"), all);
+        if (!w->line) w->line = u->text(tr, 0, 0, 10, 10, "", 14, DSL_TXT_RIGHT, 0xD9C7B0FF);
         if (!w->chg) { w->chg = u->button(tr, 0, 0, 10, 10, TR("Change"), change_click, (void *)(intptr_t)i);
                        u->tooltip(w->chg, TR("Change"), TR("Choose the mods this world loads with.")); }
         u->set_active(w->chg, at_title);
-        dsl_rows_place(cs, w->line, at_title ? w->chg : NULL);
+        float lw = row_line_place(cs, w->line, at_title ? w->chg : NULL);
+        int shown_line = line_fit(w->guid, extra, w->line, lw, all, sizeof all);
+        for (int r = 0; r < nr; r++) {                                    /* the card: every module text too */
+            one[0] = 0; R[r].r.text(R[r].r.ud, w->guid, w->save, one, sizeof one);
+            if (one[0]) { strlcat(all, "\n", sizeof all); strlcat(all, one, sizeof all); }
+        }
+        world_warning(w->guid, all, sizeof all);
+        dsi_utf8_fix_end(all); u->tooltip(w->line, TR("Mods of this world"), all);
+        if (at_title) {                                                   /* no line (a long multiplayer tag): [Change]'s card lists them */
+            char cb[1800]; snprintf(cb, sizeof cb, "%s", TR("Choose the mods this world loads with."));
+            if (!shown_line) { strlcat(cb, "\n\n", sizeof cb); strlcat(cb, all, sizeof cb); dsi_utf8_fix_end(cb); }
+            u->tooltip(w->chg, TR("Change"), cb);
+        }
     }
 }
 
@@ -300,12 +337,37 @@ static void decorate(void) {
 #define LINE_X 0.5f
 #define CHG_W 64.f
 static float row_w(Obj cs) { Obj t = comp_tr(cs, NULL); return t && rt_rect ? rt_rect(t, NULL).w : 0; }
-static int dsl_rows_line_chars(Obj cs) { float w = row_w(cs) * (1 - LINE_X) - CHG_W - 12; return w > 60 ? (int)(w / 7.0f) : 10; }
-static void dsl_rows_place(Obj cs, DSLObj line, DSLObj chg) {
-    const DSLUi *u = dsl_ui_kit(); float w = row_w(cs); if (!u || w <= 0) return;
-    float x0 = w * LINE_X, bx = chg ? w - CHG_W - 4 : w - 4;
-    u->place(line, x0, 1, bx - x0 - 8, 20);
+/* the right end (row-local units) of what the header shows on its left: the world name as drawn, with what the
+   multiplayer mod writes into it (its "Multiplayer" tag, "with <names>"), and that mod's "Remove tag" link (a child of
+   the row, "<u>...</u>") when it sits on the line's height. The "Mods:" line starts after it (it ran over "with <names>",
+   owner 2026-10-24). Screen y is up: the line's band is 1..21 units under the row's top. */
+static float header_left_end(Obj cs, DSLObj line, DSLObj chg, float w) {
+    Obj tr = comp_tr(cs, NULL); float C[4];
+    if (!tr || dsl_ui_screen_rect((DSLObj)tr, C) != 1 || C[2] - C[0] < 1) return 0;
+    float s = (C[2] - C[0]) / w, end = 0;
+    Obj nt = o_title_name >= 0 ? AT(cs, o_title_name, Obj) : NULL; Obj ntr = live(nt) ? comp_tr(nt, NULL) : NULL; float N[4];
+    if (ntr && dsl_ui_screen_rect((DSLObj)ntr, N) == 1) {
+        float nw = dsl_ui_width((DSLObj)ntr), pw = dsl_ui_text_line_w((DSLObj)nt), sn = nw > 1 ? (N[2] - N[0]) / nw : s;
+        end = (N[0] + pw * sn - C[0]) / s;                                  /* left-aligned; drawn past its rect when longer */
+    }
+    DSLObj ch[64]; int k = dsl_ui_children((DSLObj)tr, ch, 64);
+    for (int i = 0; i < k; i++) {
+        if (ch[i] == line || ch[i] == chg || !dsl_ui_shown(ch[i])) continue;
+        char t[16]; if (!dsl_ui_text_get(ch[i], t, sizeof t) || strncmp(t, "<u>", 3)) continue;
+        float R4[4], ytop = C[3] - 1 * s, ybot = C[3] - 21 * s;              /* only on the line's own height (it may sit lower) */
+        if (dsl_ui_screen_rect(ch[i], R4) == 1 && R4[1] < ytop - 2 * s && R4[3] > ybot + 2 * s) { float e = (R4[2] - C[0]) / s; if (e > end) end = e; }
+    }
+    return end < w ? end : w;
+}
+/* "Mods: ..." from after the left part (at least the row's middle) to [Change]; returns the line's width */
+static float row_line_place(Obj cs, DSLObj line, DSLObj chg) {
+    const DSLUi *u = dsl_ui_kit(); float w = row_w(cs); if (!u || w <= 0) return 0;
+    float x0 = w * LINE_X, bx = chg ? w - CHG_W - 4 : w - 4, e = header_left_end(cs, line, chg, w);
+    if (e + 12 > x0) x0 = e + 12;
+    float lw = bx - x0 - 8; if (lw < 0) lw = 0;
+    u->place(line, x0, 1, lw > 1 ? lw : 1, 20);
     if (chg) u->place(chg, bx, 2, CHG_W, 18);
+    return lw;
 }
 static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn) {
     const DSLUi *u = dsl_ui_kit(); Obj t = comp_tr(cs, NULL); if (!u || !t || !rt_rect) return;
@@ -844,8 +906,19 @@ static void lf_state_write(Obj slv) {
             }
         }
         jesc_(names, sizeof names, W[i].name); char g[60]; jesc_(g, sizeof g, W[i].guid);
-        fprintf(f, "%s{\"guid\": \"%s\", \"name\": \"%s\", \"kind\": %d, \"shown\": %d, \"saves_shown\": %d, \"saves\": %d, \"button_count\": %d, \"shown_names\": [%s]}",
-                i ? ", " : "", g, names, W[i].kind, on, sh_, sn, live(cs) && o_bcount >= 0 ? AT(cs, o_bcount, int32_t) : -1, list);
+        /* the "Mods:" line: its rect, where the header's left part ends, the size TMP drew its text at (screen px) */
+        float LR[4] = { 0 }, C[4] = { 0 }, le = 0, rw = 0, rh = 0, lw_ = 0; int lon = 0;
+        if (on && W[i].line && dsl_ui_screen_rect(W[i].line, LR) == 1) {
+            lon = 1; float w = row_w(cs); Obj ctr = comp_tr(cs, NULL);
+            if (w > 0 && dsl_ui_screen_rect((DSLObj)ctr, C) == 1) le = C[0] + header_left_end(cs, W[i].line, W[i].chg, w) * (C[2] - C[0]) / w;
+            lw_ = dsl_ui_width(W[i].line); float sx = lw_ > 0 ? (LR[2] - LR[0]) / lw_ : 1;
+            if (dsl_ui_text_rendered(W[i].line, &rw, &rh)) { rw *= sx; rh *= sx; }
+        }
+        char lt[700] = "", lte[1400] = ""; if (lon) { dsl_ui_text_get(W[i].line, lt, sizeof lt); jesc_(lte, sizeof lte, lt); }
+        fprintf(f, "%s{\"guid\": \"%s\", \"name\": \"%s\", \"kind\": %d, \"shown\": %d, \"saves_shown\": %d, \"saves\": %d, \"button_count\": %d, \"shown_names\": [%s], "
+                   "\"line_shown\": %d, \"line_rect\": [%.1f, %.1f, %.1f, %.1f], \"left_end\": %.1f, \"rendered\": [%.1f, %.1f], \"line_text\": \"%s\"}",
+                i ? ", " : "", g, names, W[i].kind, on, sh_, sn, live(cs) && o_bcount >= 0 ? AT(cs, o_bcount, int32_t) : -1, list,
+                lon, LR[0], LR[1], LR[2], LR[3], le, rw, rh, lte);
     }
     fprintf(f, "]}\n"); fclose(f); rename(tmp, p);
 }

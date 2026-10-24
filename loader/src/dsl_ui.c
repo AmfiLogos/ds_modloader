@@ -1736,6 +1736,46 @@ int dsl_ui_screen_rect(DSLObj o, float r[4]) {
 }
 /* the same for a kit widget kept as a plain pointer (dsl_update.c's corner): 0 once the kit forgot it (destroyed) */
 int dsl_ui_widget_rect(DSLObj o, float r[4]) { return w_of(o) ? dsl_ui_screen_rect(o, r) : 0; }
+/* the Load list's world rows (dsl_rows.c, owner 2026-10-24: the "Mods:" line never overlaps the name, never wraps):
+   the TMP text of a kit widget or any object with a TMP_Text */
+static Obj any_tmp(DSLObj o) {
+    W *wd = w_of(o); Obj t = wd ? hget(wd->h_label) : NULL;
+    if (!t && o && alive((Obj)o)) t = isa((Obj)o, K.TMP_Text) ? (Obj)o : comp_get((Obj)o, K.TMP_Text);
+    return isa(t, K.TMP_Text) ? t : NULL;
+}
+/* its one-line preferred width (local units) at its design size (a fitted kit text: no wrap, no auto size while measured,
+   then its fit as it was); any other text: at its current size */
+static float text_line_w(DSLObj o, int at_min) {
+    Obj t = any_tmp(o); if (!t || !m_tmp_pw) return 0;
+    void *pw = vmi(t, m_tmp_pw);
+    FitE *e = fit_find(t, 0);
+    if (!e || e->size < 1) return CALL(pw, float, Obj)(t, pw);
+    fit_set(t, 0, at_min ? fit_min(e->size) : e->size, 0); float x = CALL(pw, float, Obj)(t, pw);
+    if (!e->on || e->on == 4) fit_set(t, 0, e->size, e->on == 4 ? 1 : e->wrap);
+    else { CALL(m_tmp_wrap, void, Obj, int)(t, e->on == 2 ? 1 : e->wrap, m_tmp_wrap); fit_auto(t, 1); }
+    return x;
+}
+float dsl_ui_text_line_w(DSLObj o) { return text_line_w(o, 0); }
+/* ... at the kit's smallest fit size (0.75 of the design size): one line at that width = no wrap (CJK widths do not
+   scale exactly with the size, so it is measured, not computed) */
+float dsl_ui_text_line_w_min(DSLObj o) { return text_line_w(o, 1); }
+/* the text a TMP text holds (rich-text tags included) */
+size_t dsl_ui_text_get(DSLObj o, char *out, size_t cap) { Obj t = any_tmp(o); out[0] = 0; if (t) utf8_of(tmp_get(t), out, cap); return strlen(out); }
+/* the direct children of a transform (their Transforms), at most max */
+int dsl_ui_children(DSLObj parent, DSLObj *out, int max) {
+    Obj p = parent && alive((Obj)parent) ? tr_of((Obj)parent) : NULL; int n = p ? child_count(p) : 0, k = 0;
+    for (int i = 0; i < n && k < max; i++) { Obj c = child_at(p, i); if (c) out[k++] = (DSLObj)c; }
+    return k;
+}
+int dsl_ui_shown(DSLObj o) { Obj t = o && alive((Obj)o) ? (Obj)o : NULL; return t && on_tree(t); }
+/* test (dsl_rows.c lf_state): the size TMP drew the text at (TMP_Text.renderedWidth / renderedHeight, local units) */
+int dsl_ui_text_rendered(DSLObj o, float *w, float *h) {
+    static void *m_rw, *m_rh; Obj t = any_tmp(o); *w = *h = 0;
+    if (!m_rw && K.TMP_Text) { m_rw = mth_(0, K.TMP_Text, "get_renderedWidth", 0, NULL); m_rh = mth_(0, K.TMP_Text, "get_renderedHeight", 0, NULL); }
+    if (!t || !m_rw || !m_rh) return 0;
+    void *a = vmi(t, m_rw), *b = vmi(t, m_rh); *w = CALL(a, float, Obj)(t, a); *h = CALL(b, float, Obj)(t, b);
+    return 1;
+}
 void dsl_ui_screen_size(float *w, float *h) { *w = screen_w(); *h = m_scr_h ? (float)CALL0(m_scr_h, int)(m_scr_h) : 1080.f; }
 DSLObj dsl_ui_child(DSLObj parent, const char *path) { Obj t = parent ? tr_find((Obj)parent, path) : NULL; return alive(t) ? (DSLObj)t : NULL; }
 void dsl_ui_set_scale(DSLObj o, float s) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; if (r) tr_scale(r, s); }

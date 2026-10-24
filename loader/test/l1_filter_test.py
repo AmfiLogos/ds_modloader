@@ -12,7 +12,7 @@ come back after a restart.
 Worlds: Elven (game save, gcd-cdr = Modded), Template (the wiki's public base save, no mod = Vanilla, two saves),
 Moonlight (tagged Multiplayer).
 Usage: l1_filter_test.py <out dir>   (env DSL_TEST_MODS = built mods, default this tree's loader/build/mods;
-LF_RUNS = comma list of runs, default all: main,restart,sizes)"""
+LF_RUNS = comma list of runs, default main,restart,sizes; langs = every language's rows, one shot each)"""
 import json, os, sys, time, shutil, glob, threading, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 os.environ.setdefault('DSL_TEST_COPY', 'V')
@@ -28,7 +28,7 @@ ELVEN_GUID, MOON_GUID = S.GUID, '41e9c1bb-8790-492c-bdc1-0f4dcad22179'
 TPL_SRC = os.path.expanduser('~/dungeonsettlersdb/site/assets/saves/base_25846389.json')   # public (the wiki's base save)
 TPL_GUID = '491bc260-98aa-4cd1-b63f-82da78369aaf'
 TPL_NEW, TPL_OLD = 'Template__AutoSave_491bc26098aa4cd1b63f82da78369aaf_0', 'Template older'
-LANG = {'en': 0, 'de': 3, 'ru': 4, 'ja': 7}
+LANG = {'en': 0, 'ko': 1, 'fr': 2, 'de': 3, 'ru': 4, 'zh-Hans': 5, 'zh-Hant': 6, 'ja': 7, 'es': 8, 'pt-BR': 9}
 STATE = os.path.join(T.SDIR, 'lf_state.json')
 GFILE = os.path.join(GSAVES, ELVEN + '.json')
 
@@ -143,6 +143,19 @@ def place_checks(tag, st):
     check(f'{tag}: the panel is not scaled below 0.6', st.get('scale', 0) >= 0.6, st.get('scale'))
 
 
+def row_checks(tag, st):
+    """each shown world row's "Mods:" line (owner 2026-10-24): its text starts after the name + multiplayer tag + "Remove tag"
+    (it ran over "with <names>"), and it is one line (a Russian name took 3 lines and ran out of the row)"""
+    rows = [w for w in st.get('worlds', []) if w.get('shown') and w.get('line_shown')]
+    check(f'{tag}: world rows with a Mods line measured', rows, st.get('worlds'))
+    for w in rows:
+        lr, (rw, rh) = w['line_rect'], w['rendered']
+        if not w.get('line_text'): continue                          # no room: the line is empty (the card has it)
+        check(f'{tag}: {w["name"]}: the Mods line starts after the name / tag', lr[2] - rw >= w['left_end'] - 1.5,
+              (round(lr[2] - rw, 1), w['left_end'], w['line_text'][:80]))
+        check(f'{tag}: {w["name"]}: the Mods line is one line', rh <= (lr[3] - lr[1]) * 1.35, (rh, lr[3] - lr[1], w['line_text'][:80]))
+
+
 def run_main():
     seed(); start()
     T.request({'cmd': 'warn_cancel'}); time.sleep(1)
@@ -158,6 +171,7 @@ def run_main():
     ml = mp('mpm_list')
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,
           {k: ml.get(k) for k in ('open', 'mode', 'toggle', 'hidden', 'shown')})
+    row_checks('main 960x540', st)
     shot('main_defaults')
     # ---------------------------------------------------------------- the data guard: filter
     lf('lf_select', name=ELVEN); time.sleep(1); st = lf()            # the click reaches the game's presenter a frame later
@@ -210,10 +224,21 @@ def run_sizes():
     for size, scale, lang in (((960, 540), 0.75, 'en'), ((960, 540), 1.4, 'de'), ((960, 600), 1.0, 'ru'), ((960, 600), 1.4, 'ja')):
         tag = f'{size[0]}x{size[1]} UI {scale} {lang}'
         start(size, scale, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
-        open_list(); st = lf()
+        open_list(); st = lf('lf', multiplayer=1); time.sleep(1); st = lf()   # the multiplayer world's row too (its tag + names)
         log(tag, 'screen', st.get('screen'), 'window', st.get('window'), 'panel', st.get('panel'), 'scale', st.get('scale'), 'corner', st.get('corner'))
         place_checks(tag, st)
+        row_checks(tag, st)
         shot(f'size_{size[0]}x{size[1]}_ui{scale}_{lang}')
+        S.stop_all()
+
+
+def run_langs():
+    """every language at 960x540, UI 1.0, the multiplayer world shown: the rows' Mods lines (one shot each)"""
+    for lang in [l for l in LANG if l in os.environ.get('LF_LANGS', ','.join(LANG)).split(',')]:
+        start((960, 540), 1.0, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+        open_list(); lf('lf', multiplayer=1); time.sleep(1); st = lf()
+        row_checks(f'rows {lang}', st)
+        shot(f'rows_{lang}')
         S.stop_all()
 
 
@@ -226,7 +251,7 @@ def main():
     which = os.environ.get('LF_RUNS', 'main,restart,sizes').split(',')
     try:
         for w in which:
-            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes}[w]()
+            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs}[w]()
             for f in ('dsload.log',):
                 if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f'{w}_{f}'))
     except Exception as e:

@@ -616,6 +616,14 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
 - Tests: `test/l1_filter_test.py` (copy V): guard (filter + Latest save only, Remove File then Yes to every box: the
   hidden saves stay), kinds, defaults, MP box gone, Latest save only (newest shown, row count 1), restart keeps the
   choices, place at 4 sizes / UI scales in en/de/ru/ja: 50 + 28 checks. `test/l1_hidden_test.py` M ported to the panel.
+- World row "Mods:" line (owner 2026-10-24, kit v0.1.25): it starts after the header's left part = the name text's own
+  one-line width (the multiplayer mod writes its "Multiplayer" tag and "with <names>" into that text) and that mod's
+  "Remove tag" link when it sits on the line's height (a row child whose text starts "<u>"); at least the row's middle as
+  before. It is always one line: the most names that fit at the kit's smallest size (measured at 0.75, CJK widths do not
+  scale exactly), then the first name cut with "…", then "Mods: +N"; the other modules' row texts only while they fit.
+  No room at all: no line, the [Change] card lists the mods. Before: it ran over "with <names>", and a Russian name took
+  3 lines out of the row. Test: l1_filter_test row_checks (text left of the line >= the left part's end, TMP rendered
+  height one line), every language (LF_RUNS=langs): 99/99 with main.
 - Copy signing trap: codesign refuses a test copy whose Frameworks holds `lang/` (not code); a copy whose Info.plist
   changed after its last signature is then killed at start (Code Signature Invalid, no log). l1_filter_test puts lang
   aside while it signs.

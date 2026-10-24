@@ -22,6 +22,12 @@ void dsl_ui_screen_size(float *w, float *h);
 DSLObj dsl_ui_child(DSLObj parent, const char *path);   /* Transform.Find */
 void dsl_ui_set_scale(DSLObj o, float s);
 float dsl_ui_width(DSLObj o);                       /* RectTransform.rect.width, local units */
+float dsl_ui_text_line_w(DSLObj o);                 /* a TMP text's one-line preferred width (kit text: at its design size) */
+float dsl_ui_text_line_w_min(DSLObj o);             /* ... at the kit's smallest fit size (0.75): one line there = never wraps */
+size_t dsl_ui_text_get(DSLObj o, char *out, size_t cap);   /* the text a TMP text holds (rich-text tags included) */
+int dsl_ui_children(DSLObj parent, DSLObj *out, int max);  /* direct children (Transforms) */
+int dsl_ui_shown(DSLObj o);                         /* active in the hierarchy */
+int dsl_ui_text_rendered(DSLObj o, float *w, float *h);   /* test: TMP renderedWidth / renderedHeight (local units) */
 int dsl_update_corner_rect(float r[4]);             /* dsl_update.c: the title corner's widgets that show (0 = none) */
 int dsl_world_is_modded(const char *guid);          /* dsl_reg.c: a gameplay mod (or one not installed) in the world's set */
 
