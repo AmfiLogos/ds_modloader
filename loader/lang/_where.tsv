@@ -136,7 +136,7 @@
 "No screenshot could be taken."	dsl_bugrep.c:481
 "No world can be loaded now."	dsl_world.c:78
 "Not running: %s"	dsl_win.c:496
-"OK"	dsl_reg.c:656 dsl_reg.c:842 dsl_reg.c:852 dsl_reg.c:854 dsl_reg.c:991 dsl_reg.c:995 dsl_saves.c:732 dsl_saves.c:762 dsl_ui.c:1439 mac/dsl_start_mac.c:68 ds_modded.c:87 ds_play_start.c:103
+"OK"	dsl_reg.c:656 dsl_reg.c:842 dsl_reg.c:852 dsl_reg.c:854 dsl_reg.c:991 dsl_reg.c:995 dsl_saves.c:732 dsl_saves.c:762 dsl_ui.c:1465 mac/dsl_start_mac.c:68 ds_modded.c:87 ds_play_start.c:103
 "Off"	dsl_settings.c:407
 "On"	dsl_settings.c:407
 "One setting for all worlds. They start from the title screen, never from inside a world."	dsl_win.c:399
