@@ -22,6 +22,8 @@ H = os.path.expanduser('~')
 SAVE = os.path.join(H, 'dungeonsettlersdb', 'site', 'assets', 'saves', 'base_25846389.json')
 STOPF = os.path.join(I, 'multibar_stop')
 ZERO = '00000000-0000-0000-0000-000000000000'
+WITH = tuple(m for m in os.environ.get('MULTIBAR_WITH', '').split(',') if m)   # other mods on in the run, e.g. weapon-slot
+WS = 'weapon-slot' in WITH                         # the weapon slot = bar slot 5 (quick slot 4), shown after the basic attack
 checks = []
 
 
@@ -65,11 +67,14 @@ def probe(line, want='multibar-probe: ', limit=20):
 def state():
     L = probe('state', 'multibar-probe: state: ')
     s = next((l for l in L if 'state: ' in l), '')
-    bars = [dict(name=m[0], active=int(m[1]), slots=int(m[2]), unit=m[3]) for m in re.findall(r'\[(\S+) active=(\d) slots=(\d+) unit=(\S+)\]', s)]
+    bars = [dict(name=m[0], active=int(m[1]), slots=int(m[2]), unit=m[3], keys=m[4].split(','))
+            for m in re.findall(r'bar \[(\S+) active=(\d) slots=(\d+) unit=(\S+) keys=(\S*)\]', '\n'.join(L))]
+    s = ' '.join('[%s %s %s]' % (b['name'], b['unit'][:8], ','.join(b['keys'])) for b in bars) + ' ' + s
     body = re.search(r'summary_body=(-?\d) tabs_in_body=(-?\d)', s)
     real = [b for b in bars if not b['name'].startswith('QuickSlotUI_Multi')]
     cards = sorted((b for b in bars if b['name'].startswith('QuickSlotUI_Multi') and b['active']), key=lambda b: b['name'])
     return dict(real=real[0] if real else None, cards=[c['unit'] for c in cards], card_slots=[c['slots'] for c in cards],
+                card_keys=[c['keys'] for c in cards],
                 body=int(body.group(1)) if body else None, tabs_in_body=int(body.group(2)) if body else None, raw=s[-600:])
 
 
@@ -118,14 +123,14 @@ def up(out):
     if os.path.exists(md): aside(md, out)
     os.makedirs(md)
     src = os.environ.get('MULTIBAR_MODS') or os.path.join(LB, 'build', 'mods')   # e.g. build/mods_all/mac = the files that ship
-    for m in ('multiplayer', 'multi-bar'): shutil.copytree(os.path.join(src, m), os.path.join(md, m))
+    for m in ('multiplayer', 'multi-bar') + WITH: shutil.copytree(os.path.join(src, m), os.path.join(md, m))
     pd = os.path.join(md, 'multibar-probe'); os.makedirs(pd)
     subprocess.run(['clang', '-arch', 'arm64', '-O2', '-Wall', '-I', os.path.join(LB, 'sdk'), '-dynamiclib', '-install_name', '@rpath/multibar-probe.dylib',
                     '-o', os.path.join(pd, 'multibar-probe.dylib'), os.path.join(HERE, 'multibar_probe.c')], check=True)
     subprocess.run(['codesign', '-f', '-s', '-', os.path.join(pd, 'multibar-probe.dylib')], capture_output=True)
     json.dump({'id': 'multibar-probe', 'name': 'multibar probe (test)', 'version': '0.0.1', 'kind': 'code', 'api': 2, 'scope': 'client',
                'game_builds': ['25846389'], 'platforms': {'mac-arm64': {'entry': 'multibar-probe.dylib'}}}, open(os.path.join(pd, 'mod.json'), 'w'), indent=1)
-    en = ['multiplayer', 'multi-bar', 'multibar-probe']
+    en = ['multiplayer'] + list(WITH) + ['multi-bar', 'multibar-probe']
     prof = os.path.join(out, 'profile.json')
     json.dump({'enabled': en, 'order': en}, open(prof, 'w'))
     for p in ('mp.json', 'dsload.log', 'player.log', 'multibar_probe_req.txt', os.path.join('data', 'Saves'), os.path.join('data', 'SaveHeaderCache.json'),
@@ -179,12 +184,22 @@ def flow():
         check('%d units (Shift-select): %d cards in party order' % (n, n), s['cards'] == party[:n], s['raw'])
         check('%d units: the cards have the real bar\'s slots (%s)' % (n, real_slots), s['card_slots'] and all(x == real_slots for x in s['card_slots']), s['card_slots'])
         check('%d units: summary card body hidden, its tabs kept' % n, s['body'] == 0 and s['tabs_in_body'] == 0, s['raw'][-80:])
+        if WS:
+            ks = s['card_keys']
+            check('%d units, weapon slot on: every card has 6 slots and a weapon skill in slot 5' % n,
+                  len(ks) == n and all(len(x) == 6 and x[5] != '-' for x in ks), ks)
         for k in sorted({0, n - 1, n // 2}):
-            for slot in (0, 1):
+            keys = s['card_keys'][k] if k < len(s['card_keys']) else []
+            skill_slots = [5] if WS else []
+            skill_slots += [j for j in range(1, min(len(keys), 5)) if keys[j] != '-'][:1] or ([] if WS else [1])
+            for slot in [0] + skill_slots:
                 adds, mod = click_units(k, slot)
                 users = [a[0] for a in adds]
-                S['click_%d_%d_%d' % (n, k, slot)] = {'adds': adds, 'mod': mod}
-                check('%d units: card %d slot %d uses unit %d only' % (n, k, slot, k), users == [party[k]], (adds, mod))
+                want = keys[slot] if slot > 0 and slot < len(keys) and keys[slot] != '-' else None
+                S['click_%d_%d_%d' % (n, k, slot)] = {'adds': adds, 'mod': mod, 'slot_key': want}
+                what = 'weapon slot' if WS and slot == 5 else 'slot %d' % slot
+                check('%d units: card %d %s uses unit %d only%s' % (n, k, what, k, (' (' + want + ')') if want else ''),
+                      users == [party[k]] and (want is None or [a[1] for a in adds] == [want]), (adds, mod))
     # ---- Shift-select removes a unit again; then one unit = stock
     probe('add 3', 'add 3:')
     s = wait_state(lambda s: len(s['cards']) == 3)
@@ -199,13 +214,15 @@ def flow():
     # mouse at once (stock rule, same in the module); in a hidden copy the mouse is off the map and the game's
     # TaskSystem.ForceTickDirectOrder throws. Those errors are the environment when the stock key gives them too.
     def exc(): return re.findall(r'(\w+Exception)[^\n]*\n\s+at ([\w.]+)', plog())
-    probe('sel 0', 'sel 0:'); wait_state(lambda s: s['real'] and s['real']['unit'] == party[0])
+    probe('sel 0', 'sel 0:'); s = wait_state(lambda s: s['real'] and s['real']['unit'] == party[0])
+    rk = (s['real'] or {}).get('keys') or []
+    ck = next((j for j in ([5] if WS else []) + list(range(1, len(rk))) if j < len(rk) and rk[j] != '-'), 1)
     n0 = len(exc()); mark = len(dlog())
-    probe('key 1', 'key 1:'); time.sleep(3)
+    probe('key %d' % ck, 'key %d:' % ck); time.sleep(3)
     stock_adds = re.findall(r'multibar-probe: AddUseSkill (\S+) (\S*)', dlog()[mark:])
     stock_exc = exc()[n0:]
     S['stock_key'] = {'adds': stock_adds, 'exc': stock_exc}
-    check('control: the stock key uses unit 0\'s slot-1 skill', [a[0] for a in stock_adds] == [party[0]], stock_adds)
+    check('control: the stock key uses unit 0\'s slot-%d skill' % ck, [a[0] for a in stock_adds] == [party[0]], stock_adds)
     env = 'Refactor.Tick.TaskSystem.ForceTickDirectOrder'
     stock_env = any(e[1] == env for e in stock_exc)
     S['exceptions'] = exc()

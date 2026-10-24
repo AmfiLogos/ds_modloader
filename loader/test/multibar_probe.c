@@ -34,7 +34,7 @@ static uint8_t (*is_gen)(void *);
 static void *mainflow_k, *qsui_k, *esv_k, *button_k, *unit_k;
 static void *m_find_any, *m_find_all, *m_go_find, *m_get_comp, *m_name, *m_go, *m_active_h, *m_active_self, *m_tr, *m_parent,
             *m_tr_find, *m_onclick, *m_invoke, *m_skill_key, *m_go_tr;
-static int32_t f_slots, f_selected, f_tabs, f_guid, f_key;
+static int32_t f_slots, f_selected, f_tabs, f_guid, f_key, f_slot_key;
 
 static void *msig(void *k, const char *name, int argc) {
     void *(*parent)(void *) = H->il2cpp_fn("il2cpp_class_get_parent");
@@ -72,12 +72,19 @@ static void my_add(Obj ctx, Obj unit, Obj skill, const void *mi) {
 static void do_state(void) {
     Obj arr = MC(m_find_all, Obj, Obj, uint8_t, void *)(tobj(ctype(qsui_k)), 1, m_find_all);   /* FindObjectsOfType(Type, true) */
     int n = arr ? (int)AT(arr, 0x18, uintptr_t) : 0;
-    char line[1500]; size_t o = 0;
+    size_t o = 0;
     for (int i = 0; i < n; i++) {
         Obj v = AT(arr, 0x20 + 8 * i, Obj); if (!v) continue;
         char nm[64], g[40]; obj_name(go_of(v), nm, sizeof nm); guid_str((uint8_t *)v + f_selected, g);
-        o += (size_t)snprintf(line + o, o < sizeof line ? sizeof line - o : 0, "%s[%s active=%d slots=%d unit=%s]", i ? " " : "", nm, active_h(v),
-                              list_n(AT(v, f_slots, Obj)), g);
+        Obj sl = AT(v, f_slots, Obj);
+        char keys[400] = ""; size_t ko = 0;                    /* each slot's skill key (SkillSlotUI._key), "-" = empty */
+        for (int j = 0; j < list_n(sl) && f_slot_key >= 0; j++) {
+            Obj s = list_at(sl, j); char kk[96] = "-";
+            if (s && AT(s, f_slot_key, Obj)) { u8(AT(s, f_slot_key, Obj), kk, sizeof kk); if (!kk[0]) strcpy(kk, "-"); }
+            ko += (size_t)snprintf(keys + ko, ko < sizeof keys ? sizeof keys - ko : 0, "%s%s", j ? "," : "", kk);
+        }
+        H->log(ME, "multibar-probe: bar [%s active=%d slots=%d unit=%s keys=%s]", nm, active_h(v), list_n(sl), g, keys);   /* one line each: log lines stop at 1 KB */
+        o++;
     }
     Obj esv = MC(m_find_any, Obj, Obj, int32_t, void *)(tobj(ctype(esv_k)), 1, m_find_any);
     int body = -1, tabs_in_body = -1;
@@ -88,7 +95,7 @@ static void do_state(void) {
         Obj tabs = AT(esv, f_tabs, Obj);
         if (tabs && panel) tabs_in_body = MC(m_parent, Obj, Obj, void *)(MC(m_tr, Obj, Obj, void *)(tabs, m_tr), m_parent) == panel;
     }
-    H->log(ME, "multibar-probe: state: bars %s | summary_body=%d tabs_in_body=%d", line, body, tabs_in_body);
+    H->log(ME, "multibar-probe: state: %d bars | summary_body=%d tabs_in_body=%d", (int)o, body, tabs_in_body);
 }
 
 static void do_click(int k, int s) {
@@ -168,6 +175,7 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     m_parent = msig(kt, "get_parent", 0); m_tr_find = msig(kt, "Find", 1); m_onclick = msig(button_k, "get_onClick", 0); m_invoke = msig(ke, "Invoke", 0);
     f_slots = fofs(qsui_k, "_skillSlots"); f_selected = fofs(qsui_k, "_selected"); f_tabs = fofs(esv_k, "_toggleButtons");
     f_guid = fofs(unit_k, "<Guid>k__BackingField"); f_key = fofs(H->find_class("Refactor", "Skill_Base"), "<Key>k__BackingField");
+    f_slot_key = fofs(H->find_class("Refactor.UI", "SkillSlotUI"), "_key");
     (void)m_skill_key; (void)nested;
     if (!obj_new || !add_event || !mainflow_k || !qsui_k || !m_find_any || !m_find_all || !m_go_find || !m_onclick || !m_invoke || !m_go_tr || f_slots < 0 || f_selected < 0) {
         H->log(ME, "multibar-probe: names missing"); return 4;
