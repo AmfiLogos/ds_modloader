@@ -102,7 +102,13 @@ check "ticked (default): an old world plays with the fix; a world that turned it
 print -r -- '{"all_worlds": {"fixmod": false}}' > "$M/fixes.json"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_fix.json" DSML_MODSET=aaa)
 check "unticked: each world plays with its own set" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
-mv "$M/fixmod" "$OUT/fixmod.off"; mv "$M/fixes.json" "$OUT/fixes.json.off"
+mv "$M/fixes.json" "$OUT/fixes.json.off"
+# the start after flow K asked for the fix (DSML_MODSET) and the fix failed (no binary): the old world must still match,
+# else the next start (fix off) asks again and the two starts loop on "Load it with them?"
+cp "$M/profile.json" "$OUT/profile.json.keep"; print '{"enabled":["fixmod"],"provided":["notch-fix"]}' > "$M/profile.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_fix.json" DSML_MODSET=aaa+fixmod DSL_MODSET_OWN=1)
+check "a fix asked for that failed to start: the old world still loads (no loop)" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1"* ]]'
+mv "$OUT/profile.json.keep" "$M/profile.json"; mv "$M/fixmod" "$OUT/fixmod.off"
 
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")

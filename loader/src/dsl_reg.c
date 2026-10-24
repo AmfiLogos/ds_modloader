@@ -469,8 +469,11 @@ static int in_plus(const char *list, const char *id) {             /* "a+b+c" ho
 }
 static void plus_add(char *list, size_t cap, const char *id) { if (in_plus(list, id)) return; if (*list) strlcat(list, "+", cap); strlcat(list, id, cap); }
 /* a fix every world plays with unless it turned it off: ticked, scope gameplay, and not failing in this start (a fix that
-   cannot run here would make every load ask "Load it with them?" again and again) */
-static int fix_default(int i) { return MI[i].fix && !strcmp(MI[i].scope, "gameplay") && MI[i].active != -1 && dsl_fix_all_worlds(MI[i].id); }
+   cannot run here would make every load ask "Load it with them?" again and again). A fix in the running key counts even
+   when it failed: after flow K the key is the set asked for (DSML_MODSET), and the world must match it. */
+static int fix_default(int i) {
+    return MI[i].fix && !strcmp(MI[i].scope, "gameplay") && (MI[i].active != -1 || in_plus(run_key, MI[i].id)) && dsl_fix_all_worlds(MI[i].id);
+}
 static const char *world_offs(const char *guid) {                  /* worlds.json "fix_off": fixes the world turned off */
     worlds_load();
     JNode *w = json_get(worlds_doc, "fix_off");
@@ -656,8 +659,9 @@ int dsl_features_on(const char **ids, int max) {
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
     if (!guid || !*guid) return -1;
     char k[512]; key_of(ids, n, k, sizeof k);
-    /* fixes: one switched off here that was on in this world becomes the world's own off (it holds while the fix is on in
-       all worlds); an off stays while the fix stays off; on = no off. Offs of fixes not installed now are kept. */
+    /* fixes: one switched off here becomes the world's own off when it is on in all worlds or was on in this world (the
+       world plays as the window showed it); an off stays while the fix stays off; on = no off. Offs of fixes not
+       installed now are kept. */
     char offs[512] = "", old[512], was[512]; snprintf(old, sizeof old, "%s", world_offs(guid));
     { const char *wk = world_key(guid); snprintf(was, sizeof was, "%s", wk ? wk : run_key); }
     for (char *sv = NULL, *t = strtok_r(old, "+", &sv); t; t = strtok_r(NULL, "+", &sv)) {
@@ -668,7 +672,7 @@ int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
     for (int i = 0; i < nmi; i++) {
         if (!MI[i].fix || strcmp(MI[i].scope, "gameplay")) continue;
         int on = 0; for (int j = 0; j < n; j++) on |= !strcmp(ids[j], MI[i].id);
-        if (!on && in_plus(was, MI[i].id)) plus_add(offs, sizeof offs, MI[i].id);
+        if (!on && (in_plus(was, MI[i].id) || dsl_fix_all_worlds(MI[i].id))) plus_add(offs, sizeof offs, MI[i].id);
     }
     world_offs_put(guid, offs);
     worlds_save(guid, k); dsl_log("reg: world %s set to %s%s%s", guid, k, offs[0] ? ", fixes off: " : "", offs);

@@ -823,9 +823,11 @@ category like bug fixes"; Modded off in the Load list filters hid every world (e
   multiplayer mod, which reads the first `"modset"`, never sees it). The set a world plays with = its stored key + the
   ticked fixes - its offs (`key_eff`); `world_key` returns it, and dsl_world.c's check asks `dsl_world_key_eff`, so the
   Load list label, the filter kind, the world check / flow K and the multiplayer set (the running set after flow K)
-  agree. A fix that fails in this start (`active == -1`) is not added (else every load would ask "Load it with them?").
-- Offs: a world's Change window (`dsl_world_set_mods`) records an off for a fix switched off there that was on in that
-  world; an off stays while the fix stays off; switched on = no off. Offs of fixes not installed now are kept. A new world
+  agree. A fix that fails in this start (`active == -1`) is not added (else every load would ask "Load it with them?"),
+  unless it is in the running key: after flow K that key is the set asked for (`DSML_MODSET`), failed fix included.
+- Offs: a world's Change window (`dsl_world_set_mods`) records an off for a fix switched off there when the fix is on in
+  all worlds or was on in that world (the world plays as the window showed it, also a world never opened yet, whose
+  window shows the running set); an off stays while the fix stays off; switched on = no off. Offs of fixes not installed now are kept. A new world
   (first open, `world_frame`) gets an off for each ticked fix the running set lacks, so it keeps the set it was made with.
   Unticked = each world as before (stored key only; offs then change nothing).
 - A world's Change window: no tabs; a "Fixes" title over its fixes of scope gameplay, then a "Mods" title over its game
