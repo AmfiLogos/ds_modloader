@@ -2,7 +2,7 @@
 """Windows VM run of test/multibar_test.py (Multi-unit view, mod multi-bar): the same flow (the wiki base save, 2 / 3 / 4
 units by Shift-select, a click on card k = unit k, back to one unit) through winrig (ds_multiplayer win/winbot,
 WINBOT_DIR), VM running visibly with the agent up.
-  python3 multibar_vm.py --mods <build/mods_all/win> [--out DIR]
+  python3 multibar_vm.py --mods <build/mods_all/win> [--out DIR] [--with weapon-slot]
 The test files go into the profile's mods folder for the run (multi-bar from --mods, multibar-probe built here with
 llvm-mingw); anything installed under those two names is moved aside and moved back after (never deleted).
 Exit 0 = every check passed."""
@@ -17,7 +17,7 @@ import multibar_test as M  # noqa: E402
 KEEP = r'C:\dsm\ToDelete'
 WORK = r'C:\dsm\multibar_vm'
 CC = os.path.expanduser('~/tools/llvm-mingw/bin/x86_64-w64-mingw32-clang')
-IDS = ('multi-bar', 'multibar-probe')
+IDS = ['multi-bar', 'multibar-probe']
 
 
 class VmT:
@@ -45,8 +45,8 @@ def swap_in(w, mods, out):
     keep = KEEP + r'\multibar_vm_' + time.strftime('%Y%m%d-%H%M%S')
     w.kill_all()
     pd = probe_dll(out)
-    files = {'multi-bar': {f: os.path.join(mods, 'multi-bar', f) for f in ('multi-bar.dll', 'mod.json')},
-             'multibar-probe': {'multibar-probe.dll': pd}}
+    files = {m: {f: os.path.join(mods, m, f) for f in (m + '.dll', 'mod.json')} for m in ('multi-bar',) + M.WITH}
+    files['multibar-probe'] = {'multibar-probe.dll': pd}
     for mid, fs in files.items():
         md = W.ROOT + '\\mods\\' + mid
         for f in list(fs) + ['mod.json']:
@@ -76,7 +76,9 @@ def swap_back(w, keep):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--mods', required=True); ap.add_argument('--out', default='multibar_vm_out')
+    ap.add_argument('--with', dest='with_', default='', help='other mods from --mods on in the run, e.g. weapon-slot')
     a = ap.parse_args()
+    M.WITH = tuple(m for m in a.with_.split(',') if m); M.WS = 'weapon-slot' in M.WITH; IDS.extend(M.WITH)
     os.makedirs(a.out, exist_ok=True)
     w = W.Win(); w.up()
     M.T = VmT(w)
@@ -84,7 +86,7 @@ def main():
     S = {}
     try:
         try:
-            w.prepare(lang=0, consent='no', active=['multiplayer', 'multi-bar', 'multibar-probe'], settings={})
+            w.prepare(lang=0, consent='no', active=['multiplayer'] + list(M.WITH) + ['multi-bar', 'multibar-probe'], settings={})
             w.start(env={'DSL_CLOUD': '0'})
             L = M.dlog()
             M.check('module ready (every name found, 17 hooks)', 'multi-bar: ready (17 hooks' in L, [l for l in L.splitlines() if 'multi-bar' in l][-6:])
