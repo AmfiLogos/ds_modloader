@@ -5,6 +5,7 @@ lease, one copy at a time. The owner's saves and backups are only READ (copied i
 
   weapon_slot_test.py run [out]       every step below; exit 1 on a failed check
   weapon_slot_test.py cmd '<json>'    rig socket command to the running copy
+  env WS_MODS=<dir>                   take weapon-slot from <dir>/weapon-slot (the unzipped release package)
 
 Real breaks it catches (data loss, an exception that stops the bar, a slot that the game or the player changes):
  A  mod on, a 4-slot save (the owner's world, played without the mod): every unit gets 5 slots; the weapon skill
@@ -83,15 +84,19 @@ def expect_new(u, old_layout=False):
 
 
 def live(guids):
-    return {g: cmd({'cmd': 'ord_read', 'guid': g}).get('quick') for g in guids}
+    """units on the shown map only: ord_read finds no unit of another map (the save file check covers every unit)"""
+    out = {g: cmd({'cmd': 'ord_read', 'guid': g}).get('quick') for g in guids}
+    return {g: q for g, q in out.items() if q is not None}
 
 
 def save_now(name):
     p = os.path.join(I, 'data', 'Saves', name + '.json')
     aside(p, OUT)
     cmd({'cmd': 'ord_save', 'name': name})
-    for _ in range(60):
-        if os.path.exists(p) and os.path.getsize(p) > 1000: time.sleep(1); return p
+    for _ in range(60):                           # kept in <out>: the game deletes older saves of the same world
+        if os.path.exists(p) and os.path.getsize(p) > 1000:
+            time.sleep(1); k = os.path.join(OUT, 'saves', name + '.json'); os.makedirs(os.path.dirname(k), exist_ok=True)
+            aside(k, OUT); shutil.copy2(p, k); return k
         time.sleep(1)
     return None
 
@@ -108,7 +113,9 @@ def up(out, enabled):
     md = os.path.join(out, 'mods')
     if os.path.exists(md): aside(md, out)
     os.makedirs(md)
-    for m in enabled: shutil.copytree(os.path.join(LB, 'build', 'mods', m), os.path.join(md, m))
+    for m in enabled:                             # WS_MODS = a folder with the shipped weapon-slot (unzipped package)
+        src = os.path.join(os.environ['WS_MODS'], m) if m == 'weapon-slot' and os.environ.get('WS_MODS') else os.path.join(LB, 'build', 'mods', m)
+        shutil.copytree(src, os.path.join(md, m))
     prof = os.path.join(out, 'profile.json')
     json.dump({'enabled': list(enabled), 'order': list(enabled)}, open(prof, 'w'))
     for p in ('mp.json', 'dsload.log', 'player.log', os.path.join('data', 'SaveHeaderCache.json'),
@@ -172,18 +179,18 @@ def run_a(out):
     check('A: the module reads the 8 weapon skills from the game table (same as the wiki table)', mods == W, (sorted(mods), sorted(W)))
     got = live(list(before))
     exp = {g: expect_new(u) for g, u in before.items()}
-    check('A: live slots = 4-slot save migrated (weapon skill to slot 4, other skills in place)', got == exp,
-          {g[:8]: (before[g]['quick'], got.get(g), exp[g]) for g in before if got.get(g) != exp[g]})
+    check('A: live slots (units on the map) = 4-slot save migrated (weapon skill to slot 4, other skills in place)',
+          len(got) >= 2 and all(got[g] == exp[g] for g in got), {g[:8]: (before[g]['quick'], got.get(g), exp[g]) for g in got if got[g] != exp[g]} or len(got))
     moved = sum(1 for g in before if exp[g][4])
     log('migrated units:', {g[:8]: (before[g]['quick'], got.get(g)) for g in before})
     check('A: the bar has its weapon slot', 'skill bar: weapon slot added' in dlog(), [l for l in dlog().splitlines() if 'skill bar' in l][-3:])
     p = save_now('ws_a')
     after = units_of(p) if p else {}
-    check('A: the save written has the same 5 slots', {g: u['quick'] for g, u in after.items()} == got,
-          {g[:8]: (after.get(g, {}).get('quick'), got.get(g)) for g in got if after.get(g, {}).get('quick') != got.get(g)})
+    check('A: the save written: every unit migrated, 5 slots', {g: u['quick'] for g, u in after.items()} == exp,
+          {g[:8]: (after.get(g, {}).get('quick'), exp[g]) for g in exp if after.get(g, {}).get('quick') != exp[g]})
     # game events never change the weapon slot
     st = status(); mp = st.get('map', 0)
-    g = next((g for g in before if exp[g][4]), None)
+    g = next((g for g in got if exp[g][4]), None)
     if g:
         w = exp[g][4]; free = next((i for i in range(4) if not exp[g][i]), None)
         cmd({'cmd': 'ord_select', 'guids': g, 'group': 3003}); time.sleep(1)
@@ -195,10 +202,13 @@ def run_a(out):
             q2 = live([g])[g]
             want = list(exp[g]); want[free] = w            # the old mod's behaviour (the Set handler may also refuse an extra skill)
             check('A: the weapon skill set into free slot %d stays in the weapon slot' % free, q2 in (want, exp[g]), (q2, want))
+        inject('SelectPlayerUnitRequested', i32_16=-1, guid_20=g); time.sleep(2)   # the bar shows this unit
+        sp = os.path.join(out, 'bar_selected.png'); aside(sp, out)
+        cmd({'cmd': 'ui_teams', 'action': 'shot', 'path': sp}); time.sleep(2)
         e0 = len(errors(mark))
         inject('UseQuickSlotSkillRequested', i32_16=5); time.sleep(2)
         check('A: a click on bar slot 5 (UseQuickSlotSkill Index 5) throws nothing', len(errors(mark)) == e0, errors(mark)[e0:][:3])
-        sp = os.path.join(out, 'bar_a.png'); aside(sp, out)
+        sp = os.path.join(out, 'bar_click5.png'); aside(sp, out)
         cmd({'cmd': 'ui_teams', 'action': 'shot', 'path': sp}); time.sleep(2)
         log('shot', sp, os.path.exists(sp))
     check('A: no exception', not errors(mark), errors(mark)[:5])
@@ -213,9 +223,12 @@ def run_d(out):
     load(src, out)
     got = live(list(before))
     exp = {g: expect_new(u, old_layout=True) for g, u in before.items()}
-    check('D: an old binary-mod save (weapon skill at 0) gets the new layout', got == exp,
-          {g[:8]: (before[g]['quick'], got.get(g), exp[g]) for g in before if got.get(g) != exp[g]})
-    p0 = save_now('ws_d0'); u0 = units_of(p0)[EQ_UNIT] if p0 else {}
+    p0 = save_now('ws_d0'); s0 = units_of(p0) if p0 else {}
+    check('D: an old binary-mod save (weapon skill at 0) gets the new layout (live + saved)',
+          all(got[g] == exp[g] for g in got) and {g: u['quick'] for g, u in s0.items()} == exp,
+          {g[:8]: (before[g]['quick'], got.get(g), s0.get(g, {}).get('quick'), exp[g]) for g in before if s0.get(g, {}).get('quick') != exp[g] or got.get(g, exp[g]) != exp[g]})
+    check('D: the test unit is on the shown map', EQ_UNIT in got, list(got))
+    u0 = s0.get(EQ_UNIT, {})
     idx = (u0.get('inv') or []).index(EQ_ITEM) if EQ_ITEM in (u0.get('inv') or []) else -1
     check('D: the test unit has a WoodClub to equip', idx >= 0, u0.get('inv'))
     if idx >= 0:
@@ -241,10 +254,11 @@ def run_b(out, a_save):
     before = units_of(src)
     load(src, out)
     got = live(list(before))
-    check('B: mod off, 5-slot save: the world loads, units keep the first 4 slots', got == {g: u['quick'][:4] for g, u in before.items()},
-          {g[:8]: (before[g]['quick'], got.get(g)) for g in before if got.get(g) != before[g]['quick'][:4]})
     p = save_now('ws_b')
     after = units_of(p) if p else {}
+    check('B: mod off, 5-slot save: the world loads, units keep the first 4 slots (live + saved)',
+          len(got) >= 2 and all(got[g] == before[g]['quick'][:4] for g in got) and all(after.get(g, {}).get('quick') == u['quick'][:4] for g, u in before.items()),
+          {g[:8]: (before[g]['quick'], got.get(g), after.get(g, {}).get('quick')) for g in before if after.get(g, {}).get('quick') != before[g]['quick'][:4] or got.get(g, before[g]['quick'][:4]) != before[g]['quick'][:4]})
     diff = {g[:8]: [k for k in SAME if after.get(g, {}).get(k) != u[k]] for g, u in before.items()}
     check('B: nothing but the bar changes (skill trees, extra skills, skills, items equal)', not any(diff.values()),
           {g: (k, {kk: (before[gg][kk], after.get(gg, {}).get(kk)) for kk in k}) for gg in before for g, k in [(gg[:8], diff[gg[:8]])] if k})
@@ -260,10 +274,12 @@ def run_c(out, b_save):
     load(src, out)
     got = live(list(before))
     exp = {g: expect_new(u) for g, u in before.items()}
+    p = save_now('ws_c'); after = units_of(p) if p else {}
     check('C: back on, the 4-slot save of B: every unit has 5 slots, free slots as saved',
-          all(len(got.get(g) or []) == 5 and got[g][:4] == exp[g][:4] for g in before),
-          {g[:8]: (before[g]['quick'], got.get(g), exp[g]) for g in before if (got.get(g) or [])[:4] != exp[g][:4]})
-    log('C slots:', {g[:8]: got.get(g) for g in before})
+          len(got) >= 2 and all(len(got[g]) == 5 and got[g][:4] == exp[g][:4] for g in got)
+          and all(len(after.get(g, {}).get('quick') or []) == 5 and after[g]['quick'][:4] == exp[g][:4] for g in before),
+          {g[:8]: (before[g]['quick'], got.get(g), after.get(g, {}).get('quick'), exp[g]) for g in before})
+    log('C saved slots:', {g[:8]: after.get(g, {}).get('quick') for g in before})
     check('C: no exception', not errors(mark), errors(mark)[:5])
     down()
 
