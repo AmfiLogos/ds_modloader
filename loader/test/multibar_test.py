@@ -28,23 +28,36 @@ checks = []
 def log(*a): print(time.strftime('%H:%M:%S'), *a, flush=True)
 def check(name, ok, detail=''):
     checks.append({'name': name, 'ok': bool(ok), 'detail': str(detail)[:500]}); log('PASS' if ok else 'FAIL', name, '' if ok else detail)
-def dlog():
-    try: return open(os.path.join(I, 'dsload.log'), errors='replace').read()
-    except OSError: return ''
-def plog():
-    try: return open(os.path.join(I, 'player.log'), errors='replace').read()
-    except OSError: return ''
+class MacT:                                        # the test copy on this Mac (win/multibar_vm.py: the Windows VM)
+    def dlog(self):
+        try: return open(os.path.join(I, 'dsload.log'), errors='replace').read()
+        except OSError: return ''
+    def plog(self):
+        try: return open(os.path.join(I, 'player.log'), errors='replace').read()
+        except OSError: return ''
+    def req(self, line):
+        p = os.path.join(I, 'multibar_probe_req.txt'); open(p + '.tmp', 'w').write(line + '\n'); os.replace(p + '.tmp', p)
+    def gone(self):
+        return None if r.alive(r.read_pid(X)) else open(os.path.join(I, 'guard.log'), errors='replace').read()[-200:]
+    def load_world(self, out):
+        src = os.path.join(out, 'save_in', 'MultiBarTest__ManualSave_0.json'); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(SAVE, src)
+        log('load', cmd({'cmd': 'load_save', 'file': src}))
+        r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
+T = MacT()
+def dlog(): return T.dlog()
+def plog(): return T.plog()
 def cmd(o, timeout=60): return r.send(X, o, timeout=timeout, connect_wait=5)
 def status(): return cmd({'cmd': 'status'}, 10)
 def probe(line, want='multibar-probe: ', limit=20):
     """send one request; the new probe lines once one contains `want`"""
     mark = len(dlog())
-    p = os.path.join(I, 'multibar_probe_req.txt'); open(p + '.tmp', 'w').write(line + '\n'); os.replace(p + '.tmp', p)
+    T.req(line)
     t0 = time.time()
     while time.time() - t0 < limit:
         L = [l for l in dlog()[mark:].splitlines() if 'multibar-probe: ' in l]
         if any(want in l for l in L): return L
-        if not r.alive(r.read_pid(X)): raise RuntimeError('the test copy is gone (crash?): ' + open(os.path.join(I, 'guard.log'), errors='replace').read()[-200:])
+        g = T.gone()
+        if g is not None: raise RuntimeError('the test copy is gone (crash?): ' + g)
         time.sleep(0.25)
     return []
 
@@ -128,9 +141,7 @@ def up(out):
     L = dlog()
     check('module ready (every name found, 17 hooks)', 'multi-bar: ready (17 hooks' in L, [l for l in L.splitlines() if 'multi-bar' in l][-6:])
     check('probe ready', 'multibar-probe: ready' in L, [l for l in L.splitlines() if 'probe' in l][-3:])
-    src = os.path.join(out, 'save_in', 'MultiBarTest__ManualSave_0.json'); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(SAVE, src)
-    log('load', cmd({'cmd': 'load_save', 'file': src}))
-    r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
+    T.load_world(out)
     return g0
 
 
@@ -141,8 +152,13 @@ def down():
 
 
 def run(out):
-    S = {}
     g0 = up(out)
+    return flow(), g0
+
+
+def flow():
+    """the checks, on a copy in the world with the base save (Mac: up(); Windows: win/multibar_vm.py)"""
+    S = {}
     time.sleep(3)
     # ---- party order: one unit at a time = the stock bar, its unit = party unit i
     party = []
@@ -196,7 +212,7 @@ def run(out):
     other = [e for e in S['exceptions'] if not (stock_env and e[1] == env)]
     log('exceptions: %d, from %s: %d (stock key gave it too: %s)' % (len(S['exceptions']), env, len(S['exceptions']) - len(other), stock_env))
     check('no exception in player.log (except the one the stock key gives in a hidden copy)', not other, other[:4])
-    return S, g0
+    return S
 
 
 def main():
