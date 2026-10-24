@@ -125,6 +125,7 @@ def main():
             w.prepare(lang=0, consent='no', active=['multiplayer', 'weapon-slot'], settings={})
             w.start(env={'DSL_CLOUD': '0'})
             phase_a(w, out)
+            w.stop(); w.start(env={'DSL_CLOUD': '0'})     # a fresh game per world, as the Mac test does
             phase_d(w, out)
         except Exception as e:
             check('run finished', False, repr(e))
