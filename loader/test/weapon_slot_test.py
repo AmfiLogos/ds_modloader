@@ -18,7 +18,12 @@ Real breaks it catches (data loss, an exception that stops the bar, a slot that 
     StunCharge and no longer WhirlwindSlash (the unequip still removes the old weapon's skill).
  B  mod off (loader + multiplayer only), the 5-slot save of A: the world loads, units keep the first 4 slots, and
     nothing else of the units changes in the save it writes (skill trees, extra skills, skills, items).
- C  mod on again, the 4-slot save of B: the world loads with 5 slots and no exception."""
+ C  mod on again, the 4-slot save of B: the world loads with 5 slots, the empty weapon slots are filled from the
+    equipped weapons (0.1.1 fill on load), no exception.
+ F  fill on load (0.1.1), a 4-slot world made from the backup where weapon skills are missing: from the bar only
+    (a world played without the mod), also from the unit's skills (equipped while the 4 free slots were full), also
+    from its extra skills. After the load every armed unit has its weapon's skill in the weapon slot, once in its skills
+    and once in its extra skills; the save keeps it; no exception."""
 import json, os, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
@@ -53,11 +58,12 @@ def aside(p, out):                                # never delete: old copy files
 def jload(p): return json.load(open(p, encoding='utf-8-sig'))
 
 
-def weapon_skills():                              # Equipment_ItemDefaultSkills[1] of every item (wiki table, same build)
+def item_skills():                                # item key -> Equipment_ItemDefaultSkills[1] (wiki table, same build)
     d = jload(ITEMS); rows = d if isinstance(d, list) else d.get('rows', d)
     rows = list(rows.values()) if isinstance(rows, dict) else rows
-    return {s[1] for x in rows if isinstance(x, dict) for s in [x.get('Equipment_ItemDefaultSkills')] if isinstance(s, list) and len(s) > 1 and s[1] != 'NULL'}
-W = weapon_skills()
+    return {x['Key']: s[1] for x in rows if isinstance(x, dict) for s in [x.get('Equipment_ItemDefaultSkills')] if isinstance(s, list) and len(s) > 1 and s[1] != 'NULL'}
+ITEM_W = item_skills()
+W = set(ITEM_W.values())
 
 
 def units_of(save):
@@ -73,14 +79,38 @@ def units_of(save):
 
 
 def expect_new(u, old_layout=False):
-    """the module's migration rule on one unit of a save file"""
+    """the module's rules on one unit of a save file: migration, then the fill of an empty weapon slot at load end"""
     q = list(u['quick']) + [None] * (5 - len(u['quick']))
     w = next((s for s in (u['tree'] or {}).get('ExtraSkills') or [] if s in W), None)
     if not old_layout:
         if w and w in q[:4]: q = [None if s == w else s for s in q[:4]] + [w]
-        return q
-    if w and q[0] == w and q[4] != w: q = q[1:5] + [w]
+    elif w and q[0] == w and q[4] != w: q = q[1:5] + [w]
+    ew = next((ITEM_W[k] for k in u['equip'] if k in ITEM_W), None)
+    if not q[4] and ew: q = [None if s == ew else s for s in q[:4]] + [ew]
     return q
+
+
+def make_fill_fixture(dst):
+    """a 4-slot world from the 2026-10-11 backup (old layout): the free slots kept, the weapon slot cut (a world played
+    without the mod). acd20405: its weapon skill also out of its skills (equipped with a full bar); 92be08ca: also out
+    of its extra skills. Returns {guid: equipped weapon skill}."""
+    d = jload(OLD_SAVE); P = d['PlayerUnitsSaveData']; E = d['EntityComponentSaveData']['EntityComponents']
+    want = {}
+    for g, q in P['QuickSlots'].items():
+        c = {e['Type']: e['Data'] for e in E.get(g, [])}
+        ew = next((ITEM_W[s.get('Key')] for s in c.get(6, {}).get('ItemSlots', []) if s.get('Key') in ITEM_W), None)
+        old = q['QuickSlots']
+        q['QuickSlots'] = old[1:5] if len(old) == 5 else old
+        q['QuickSlots'] = [None if s == ew else s for s in q['QuickSlots']]
+        if ew: want[g] = ew
+        if g[:8] in ('acd20405', '92be08ca') and ew:
+            sk = c[8]
+            sk['ActiveSkills'] = [s for s in sk.get('ActiveSkills') or [] if s != ew]
+            for k in ('AutoUse', 'Cooldowns', 'SkillDurations'):
+                if isinstance(sk.get(k), dict): sk[k].pop(ew, None)
+            if g[:8] == '92be08ca': P['SkillTrees'][g]['ExtraSkills'] = [s for s in P['SkillTrees'][g]['ExtraSkills'] if s != ew]
+    json.dump(d, open(dst, 'w'))
+    return want
 
 
 def live(guids):
@@ -166,7 +196,7 @@ def inject(ev, **k):
 def run_a(out):
     mark = up(out, ['multiplayer', 'weapon-slot'])
     L = dlog()
-    check('A: module on (14 hooks + AI order)', 'weapon skill slot on (15 hooks; AI auto-use order weapon skill first)' in L,
+    check('A: module on (15 hooks + AI order)', 'weapon skill slot on (16 hooks; AI auto-use order weapon skill first)' in L,
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
     if not checks[-1]['ok']: raise SystemExit('module not on: stop')
     src = os.path.join(out, 'save_in', 'owner_4slot.json'); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(OWNER_SAVE, src)
@@ -275,12 +305,35 @@ def run_c(out, b_save):
     got = live(list(before))
     exp = {g: expect_new(u) for g, u in before.items()}
     p = save_now('ws_c'); after = units_of(p) if p else {}
-    check('C: back on, the 4-slot save of B: every unit has 5 slots, free slots as saved',
-          len(got) >= 2 and all(len(got[g]) == 5 and got[g][:4] == exp[g][:4] for g in got)
-          and all(len(after.get(g, {}).get('quick') or []) == 5 and after[g]['quick'][:4] == exp[g][:4] for g in before),
+    check('C: back on, the 4-slot save of B: 5 slots, free slots as saved, empty weapon slots filled from the weapons',
+          len(got) >= 2 and all(got[g] == exp[g] for g in got) and all(after.get(g, {}).get('quick') == exp[g] for g in before),
           {g[:8]: (before[g]['quick'], got.get(g), after.get(g, {}).get('quick'), exp[g]) for g in before})
     log('C saved slots:', {g[:8]: after.get(g, {}).get('quick') for g in before})
     check('C: no exception', not errors(mark), errors(mark)[:5])
+    down()
+
+
+def run_f(out):
+    mark = up(out, ['multiplayer', 'weapon-slot'])
+    src = os.path.join(out, 'save_in', 'fill_fixture.json'); os.makedirs(os.path.dirname(src), exist_ok=True)
+    want = make_fill_fixture(src)
+    before = units_of(src)
+    dm = len(dlog())
+    load(src, out)
+    L = [l for l in dlog()[dm:].splitlines() if 'load end' in l]
+    log('fill:', L[-8:])
+    got = live(list(before))
+    after = units_of(save_now('ws_f'))
+    exp = {g: expect_new(u) for g, u in before.items()}
+    once = lambda lst, w: (lst or []).count(w) == 1
+    check('F: every armed unit has its weapon skill in the weapon slot (live + saved), free slots as saved',
+          len(got) >= 2 and all(got[g] == exp[g] for g in got) and all(after.get(g, {}).get('quick') == exp[g] for g in before)
+          and all(after[g]['quick'][4] == w for g, w in want.items()),
+          {g[:8]: (before[g]['quick'], got.get(g), after.get(g, {}).get('quick'), exp[g]) for g in before})
+    check('F: the weapon skill is once in the unit\'s skills and once in its extra skills (incl. the full-bar and no-extra units)',
+          all(once((after[g]['skills'] or {}).get('ActiveSkills'), w) and once((after[g]['tree'] or {}).get('ExtraSkills'), w) for g, w in want.items()),
+          {g[:8]: ((after[g]['skills'] or {}).get('ActiveSkills'), (after[g]['tree'] or {}).get('ExtraSkills')) for g in want})
+    check('F: no exception', not errors(mark), errors(mark)[:5])
     down()
 
 
@@ -305,6 +358,7 @@ def main():
         a, moved = run_a(OUT)
         log('units whose weapon skill moved:', moved)
         run_d(OUT)
+        run_f(OUT)
         if a:
             b = run_b(OUT, a)
             if b: run_c(OUT, b)

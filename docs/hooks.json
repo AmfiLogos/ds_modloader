@@ -7,7 +7,7 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "829f577a555958649ff23300fa619f483eb84c7d",
+ "mp_pin": "abc75c082d7f0547e5de62038f15272e418f92f2",
  "cm_pin": "45b7004247ae96579398e70600d2f2c783456dfc",
  "fields": {
   "owner": "loader or the mod id",
@@ -5983,6 +5983,23 @@
    "label": "sound-fix SoundSetting.SetSoundVolume",
    "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
    "key": "sound-fix|sound_fix.c|my_set_volume|"
+  },
+  {
+   "owner": "weapon-slot",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.CampaignLoadingEventHandler$$FinalizeCampaignLoad",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xd6e784"
+    },
+    "win-x64": {
+     "rva": "0xa6faf0"
+    }
+   },
+   "active": "always",
+   "label": "weapon-slot CampaignLoadingEventHandler.FinalizeCampaignLoad",
+   "source": "ds_modloader:loader/modules/weapon-slot/weapon_slot.c",
+   "key": "weapon-slot|weapon_slot.c|my_finalize|"
   },
   {
    "owner": "weapon-slot",

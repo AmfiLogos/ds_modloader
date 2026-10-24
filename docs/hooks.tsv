@@ -303,6 +303,7 @@ zetu-suite	detour	Refactor.UI.ExpeditionPlanView$$Init	0xee0708	0xbeb980	setting
 zetu-suite	detour	Refactor.UI.SubUI_ExpeditionPlanLowerPanel$$OnSetUnit	0xef2284	0xc011a0	setting max_units not 4 (default 4: not installed)	zetu-suite SubUI_ExpeditionPlanLowerPanel.OnSetUnit	ds_modloader:loader/modules/zetu-suite/zetu_ui.c
 sound-fix	detour	Refactor.Setting.SoundSetting$$SetSoundMute	0x89d430	0x620fb0	always (mod enabled)	sound-fix SoundSetting.SetSoundMute	ds_modloader:loader/modules/sound-fix/sound_fix.c
 sound-fix	detour	Refactor.Setting.SoundSetting$$SetSoundVolume	0x89d23c	0x621140	always (mod enabled)	sound-fix SoundSetting.SetSoundVolume	ds_modloader:loader/modules/sound-fix/sound_fix.c
+weapon-slot	detour	Refactor.Main.Event.CampaignLoadingEventHandler$$FinalizeCampaignLoad	0xd6e784	0xa6faf0	always	weapon-slot CampaignLoadingEventHandler.FinalizeCampaignLoad	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
 weapon-slot	detour	Refactor.Task.DecidePlayerCombatBehaviour$$DecideSkill	0xb24de8	0x851600	always	weapon-slot DecidePlayerCombatBehaviour.DecideSkill	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
 weapon-slot	detour	Refactor.Main.Processor.ItemControlProcessor$$ProcessUnequip	0xd4abb0	0xa5a550	always	weapon-slot ItemControlProcessor.ProcessUnequip	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
 weapon-slot	detour	Refactor.Main.PlayerUnitDataContainer$$OnPlayerUnitSpawned	0xcc07a8	0x9e45c0	always	weapon-slot PlayerUnitDataContainer.OnPlayerUnitSpawned	ds_modloader:loader/modules/weapon-slot/weapon_slot.c

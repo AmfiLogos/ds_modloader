@@ -4,7 +4,9 @@ skill is used, a weapon is swapped and an order tries to write the weapon slot. 
 (guest), one rig lease, never the owner's game: refused while it runs (2 copies). The world: a copy of the 2026-10-11
 backup (old weapon-slot layout: converted on load, 4 units in the dungeon).
 
-  weapon_slot_pair.py [--minutes 5] [out]          exit 1 on a failed check
+  weapon_slot_pair.py [--minutes 5] [--world fill] [out]          exit 1 on a failed check
+  --world fill: the world of weapon_slot_test F (weapon slots empty, two weapon skills also missing from the units):
+                the fill at load end runs on both players (0.1.1)
   env WS_MODS=<dir>   weapon-slot from <dir>/weapon-slot (the unzipped release package), else ../build/mods
 
 Real break caught: a desync (mp desync counters, DESYNC / FULL-STATE / deep lines, det tick errors, fp.log), or the
@@ -17,6 +19,7 @@ H_, G_ = 'X', 'U'
 H = os.path.expanduser('~')
 arg = lambda n, d: type(d)(sys.argv[sys.argv.index(n) + 1]) if n in sys.argv else d
 MINUTES = arg('--minutes', 5.0)
+WORLD = arg('--world', 'old')
 log, check = T.log, T.check
 
 
@@ -62,7 +65,7 @@ def prep(x, out, mp):
 
 
 def main():
-    out = os.path.abspath(next((a for a in sys.argv[1:] if not a.startswith('--') and not a.replace('.', '').isdigit()),
+    out = os.path.abspath(next((a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--') and sys.argv[i - 1] not in ('--minutes', '--world')),
                                os.path.join(T.LB, 'test_env', 'weapon_slot_pair')))
     os.makedirs(out, exist_ok=True); T.OUT = out
     if r.owner_game_running(): raise SystemExit('refused: the owner\'s game runs (this test needs 2 copies)')
@@ -85,7 +88,11 @@ def main():
         if busy: raise SystemExit(f'port {port} in use: {busy[:200]}')
         prep(H_, out, {'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True, 'full_check_steps': 1800})
         prep(G_, out, {'role': 'client', 'host': '127.0.0.1', 'port': port, 'name': 'Guest', 'partial_resync': False})
-        src = os.path.join(out, 'save_in', 'old_layout.json'); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(T.OLD_SAVE, src)
+        os.makedirs(os.path.join(out, 'save_in'), exist_ok=True)
+        if WORLD == 'fill':
+            src = os.path.join(out, 'save_in', 'fill_fixture.json'); want = T.make_fill_fixture(src)
+        else:
+            src = os.path.join(out, 'save_in', 'old_layout.json'); shutil.copy2(T.OLD_SAVE, src); want = {}
         os.environ['DSML_DATA'] = os.path.join(r.idir(H_), 'data')
         r.start(H_, window=True)
         r.wait_for(H_, lambda s: s.get('scene') == 1 and not s.get('busy'), 'host title', timeout=900)
@@ -100,6 +107,9 @@ def main():
         log('units on the map', [u['guid'][:8] for u in mine])
         gq = {x: {u['guid']: c(x, cmd='ord_read', guid=u['guid']).get('quick') for u in mine} for x in (H_, G_)}
         check('pair: both players have the same 5-slot bars after the join', gq[H_] == gq[G_] and all(len(q or []) == 5 for q in gq[H_].values()), gq)
+        if want:
+            check('pair: the fill at load end gave both players the same weapon slots (equipped weapon skill)',
+                  all((gq[x].get(g) or [None] * 5)[4] == w for x in (H_, G_) for g, w in want.items() if g in gq[H_]), {g[:8]: (gq[H_].get(g), gq[G_].get(g), w) for g, w in want.items()})
         claim = [u['guid'] for u in mine if u['guid'] != T.EQ_UNIT][:1]
         for g in claim: c(G_, cmd='mp_claim', guid=g)
         for x in (H_, G_): c(x, cmd='ord_hover', n=0); c(x, cmd='det_frame_reset')

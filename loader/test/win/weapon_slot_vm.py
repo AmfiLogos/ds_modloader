@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Windows VM run of the weapon-slot checks (test/weapon_slot_test.py phases A and D) through winrig (ds_multiplayer
-win/winbot, WINBOT_DIR), the VM running visibly with the agent up. The mod-off phases (B, C) run the stock quick-slot
-code, the same on both systems: Mac only.
+"""Windows VM run of the weapon-slot checks (test/weapon_slot_test.py phases A, D and F = the 0.1.1 fill on load)
+through winrig (ds_multiplayer win/winbot, WINBOT_DIR), the VM running visibly with the agent up. The mod-off phases
+(B, C) run the stock quick-slot code, the same on both systems: Mac only.
   python3 weapon_slot_vm.py --mods <dir with weapon-slot/> [--out DIR]
 weapon-slot goes into the profile's mods folder for the run; anything installed under that name is moved aside and
 moved back after (never deleted). Exit 0 = every check passed."""
@@ -54,7 +54,7 @@ def load(w, local, name):
 
 def phase_a(w, out):
     L = w.text(W.PROF + r'\dsload.log') or ''
-    check('A: module on (15 hooks, AI order)', 'weapon skill slot on (15 hooks; AI auto-use order weapon skill first)' in L,
+    check('A: module on (16 hooks, AI order)', 'weapon skill slot on (16 hooks; AI auto-use order weapon skill first)' in L,
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
     before = T.units_of(T.OWNER_SAVE)
     load(w, T.OWNER_SAVE, 'owner_4slot')
@@ -107,6 +107,24 @@ def phase_d(w, out):
     check('D: no exception', len(errors(w)) == e0, errors(w)[e0:][:4])
 
 
+def phase_f(w, out):
+    src = os.path.join(out, 'fill_fixture.json'); want = T.make_fill_fixture(src)
+    before = T.units_of(src)
+    e0 = len(errors(w))
+    load(w, src, 'fill_fixture')
+    exp = {g: T.expect_new(u) for g, u in before.items()}
+    got = live(w, list(before))
+    after = T.units_of(save_now(w, out, 'ws_vm_f'))
+    check('F: fill on load: every armed unit has its weapon skill in the weapon slot (live + saved)',
+          len(got) >= 2 and all(got[g] == exp[g] for g in got) and all(after.get(g, {}).get('quick') == exp[g] for g in before),
+          {g[:8]: (got.get(g), after.get(g, {}).get('quick'), exp[g]) for g in before})
+    once = lambda lst, s_: (lst or []).count(s_) == 1
+    check('F: the weapon skill once in the unit\'s skills and extra skills',
+          all(once((after[g]['skills'] or {}).get('ActiveSkills'), s_) and once((after[g]['tree'] or {}).get('ExtraSkills'), s_) for g, s_ in want.items()),
+          {g[:8]: ((after[g]['skills'] or {}).get('ActiveSkills'), (after[g]['tree'] or {}).get('ExtraSkills')) for g in want})
+    check('F: no exception', len(errors(w)) == e0, errors(w)[e0:][:4])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--mods', required=True); ap.add_argument('--out', default='weapon_slot_vm_out')
@@ -127,6 +145,8 @@ def main():
             phase_a(w, out)
             w.stop(); w.start(env={'DSL_CLOUD': '0'})     # a fresh game per world, as the Mac test does
             phase_d(w, out)
+            w.stop(); w.start(env={'DSL_CLOUD': '0'})
+            phase_f(w, out)
         except Exception as e:
             check('run finished', False, repr(e))
         finally:
