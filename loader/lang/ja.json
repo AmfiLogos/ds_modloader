@@ -105,6 +105,7 @@
  "Downloading %s...": "%sをダウンロード中...",
  "Downloading mod updates...": "MODのアップデートをダウンロード中...",
  "Dungeon Settlers Modded cannot create its folder in Application Support.": "Dungeon Settlers ModdedはApplication Supportにフォルダを作成できません。",
+ "Dungeon Settlers Modded was not found. Download it again, then open it.": "Dungeon Settlers Moddedが見つかりません。もう一度ダウンロードしてから開いてください。",
  "Dungeon Settlers Modded was updated but could not start. Open it again.": "Dungeon Settlers Moddedはアップデートされましたが、起動できませんでした。もう一度開いてください。",
  "Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut.": "Dungeon Settlers Moddedはアップデートされましたが、新しいバージョンを起動できませんでした。ショートカットからもう一度起動してください。",
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded：今回はBepInExのMODがオフです",

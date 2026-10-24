@@ -139,6 +139,16 @@ static int unpack(const char *file, const char *dst) {
     return run(av);
 }
 int dsl_uos_unpack(const char *zip, const char *dst) { return unpack(zip, dst); }
+/* the unpacked new app once it is no longer needed: its empty folder goes; one left with files (not installed) loses
+   ".app". A whole app there (same name, same bundle id) was listed by Spotlight and Launchpad and could be the one macOS
+   starts for the bundle id (owner 2026-10-24); so is the old app's backup below */
+static void drop_new(const char *napp) {
+    if (!napp[0] || rmdir(napp) == 0 || !dsl_uos_exists(napp)) return;
+    char t[1500]; snprintf(t, sizeof t, "%s", napp); size_t l = strlen(t);
+    if (l > 4 && !strcmp(t + l - 4, ".app")) t[l - 4] = 0;
+    strlcat(t, " (not installed)", sizeof t);
+    if (rename(napp, t)) dsl_log("update: move %s -> %s failed (%s)", napp, t, strerror(errno));
+}
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     const char *app = getenv("DSML_APP"), *root = dsl_uos_root();
     if (!app || !*app || !dsl_uos_exists(app)) { snprintf(why, wn, TR("the app's place is not known in this start")); return -1; }
@@ -153,21 +163,21 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     while (d && (e = readdir(d))) { size_t l = strlen(e->d_name); if (l > 4 && !strcmp(e->d_name + l - 4, ".app")) { snprintf(napp, sizeof napp, "%s/%s", u, e->d_name); break; } }
     if (d) closedir(d);
     char t[1600]; snprintf(t, sizeof t, "%s/Contents/Resources/dsml/dsload.dylib", napp);
-    if (!napp[0] || !dsl_uos_exists(t)) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded app")); return -1; }
+    if (!napp[0] || !dsl_uos_exists(t)) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded app")); drop_new(napp); return -1; }
     char rel[64]; snprintf(t, sizeof t, "%s/Contents/Resources/dsml/RELEASE", napp); first_line(t, rel, sizeof rel);
     if (strcmp(rel, ver)) {
         dsl_log("update: the v%s download says RELEASE %s", ver, rel[0] ? rel : "(none)");
-        snprintf(why, wn, TR("the download's version number is wrong")); return -1;
+        snprintf(why, wn, TR("the download's version number is wrong")); drop_new(napp); return -1;
     }
     char *xa[] = { "/usr/bin/xattr", "-cr", napp, NULL }; run(xa);
     char *cs[] = { "/usr/bin/codesign", "-v", "--deep", "--strict", napp, NULL };
-    if (run(cs)) { snprintf(why, wn, TR("the new app's signature is broken")); return -1; }
+    if (run(cs)) { snprintf(why, wn, TR("the new app's signature is broken")); drop_new(napp); return -1; }
     prog(mv, 60);
     /* the new ROOT/loader: the app's dsml folder + the player's own mods of the old one */
     char nl[1300], ol[1200], src[1600]; snprintf(nl, sizeof nl, "%s/loader.update", u); snprintf(ol, sizeof ol, "%s/loader", root);
     snprintf(src, sizeof src, "%s/Contents/Resources/dsml", napp);
     char *cp[] = { "/usr/bin/ditto", src, nl, NULL };
-    if (run(cp)) { snprintf(why, wn, TR("the new mod loader could not be copied")); return -1; }
+    if (run(cp)) { snprintf(why, wn, TR("the new mod loader could not be copied")); drop_new(napp); return -1; }
     char om[1300]; snprintf(om, sizeof om, "%s/mods", ol); d = opendir(om);
     while (d && (e = readdir(d))) {
         if (e->d_name[0] == '.') continue;
@@ -179,9 +189,13 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     if (d) closedir(d);
     char *x2[] = { "/usr/bin/xattr", "-cr", nl, NULL }; run(x2);
     prog(mv, 80);
+    /* the old app's files go to <backup>/app/<name> WITHOUT ".app" (drop_new); a rollback moves them back */
     char bk[1600], base[300]; snprintf(base, sizeof base, "%s", strrchr(app, '/') + 1);
+    size_t bl = strlen(base); if (bl > 4 && !strcmp(base + bl - 4, ".app")) base[bl - 4] = 0;
     snprintf(bk, sizeof bk, "%s/app/%s", backup, base);
-    if (swap_bundle(napp, app, bk, mv)) { snprintf(why, wn, TR("the app could not be replaced")); return -1; }
+    int sw = swap_bundle(napp, app, bk, mv);
+    drop_new(napp);                                          /* empty now: its files are in place (or rolled back) */
+    if (sw) { snprintf(why, wn, TR("the app could not be replaced")); return -1; }
     snprintf(bk, sizeof bk, "%s/loader", backup);
     if (swap_in(nl, ol, bk, mv)) { snprintf(why, wn, TR("the mod loader folder could not be replaced")); return -1; }
     dsl_log("update: Mac kit installed: %s and %s (old ones in %s)", app, ol, backup);

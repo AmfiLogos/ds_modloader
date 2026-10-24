@@ -322,6 +322,29 @@ fn copy_uuid(bundle_id: &str, i: usize) -> [u8; 16] {
     u
 }
 
+/// The play copy's own start file (app/stub/ds_play_start.c), next to the game binary in Contents/MacOS.
+pub const STARTER: &str = "dsml-start";
+
+/// Makes `starter` the copy's CFBundleExecutable: what macOS runs when it starts the copy as an app (the Dock icon kept
+/// from the running game, Spotlight, the loader's soft restart). A direct start then hands over to the app instead of
+/// running the game without mods (owner 2026-10-24); the app's stub still execs the game binary itself. The starter
+/// gets a UUID of its own per bundle id (as `own_identity`: no program shares one). Before the signatures.
+pub fn install_starter(app: &Path, starter: &[u8], bundle_id: &str) -> Result<()> {
+    let mut b = starter.to_vec();
+    for (i, o) in macho::uuid_offsets(&b)?.into_iter().enumerate() {
+        b[o..o + 16].copy_from_slice(&copy_uuid(bundle_id, 64 + i));
+    }
+    let dst = app.join("Contents/MacOS").join(STARTER);
+    let t = dst.with_extension("tmp");
+    std::fs::write(&t, &b)?;
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&t, std::fs::Permissions::from_mode(0o755))?;
+    std::fs::rename(&t, &dst)?;
+    run(Command::new("/usr/bin/plutil").args(["-replace", "CFBundleExecutable", "-string", STARTER])
+        .arg(app.join("Contents/Info.plist")))?;
+    Ok(())
+}
+
 /// Publisher helper: the byte patches that turn `stock` into `modded` (same size). Runs closer than 16 bytes
 /// are merged. `slice` "arm64" compares the arm64 slices only.
 pub fn diff_patches(stock: &[u8], modded: &[u8], file: &str, slice: &str) -> Result<Vec<crate::model::BytePatch>> {

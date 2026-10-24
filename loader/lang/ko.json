@@ -105,6 +105,7 @@
  "Downloading %s...": "%s을(를) 내려받는 중...",
  "Downloading mod updates...": "모드 업데이트를 내려받는 중...",
  "Dungeon Settlers Modded cannot create its folder in Application Support.": "Dungeon Settlers Modded가 Application Support에 폴더를 만들 수 없습니다.",
+ "Dungeon Settlers Modded was not found. Download it again, then open it.": "Dungeon Settlers Modded를 찾을 수 없습니다. 다시 내려받은 후 여십시오.",
  "Dungeon Settlers Modded was updated but could not start. Open it again.": "Dungeon Settlers Modded 업데이트는 완료되었지만 시작하지 못했습니다. 다시 여십시오.",
  "Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut.": "Dungeon Settlers Modded 업데이트는 완료되었지만 새 버전을 시작하지 못했습니다. 바로가기에서 다시 시작하십시오.",
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded: 이번에는 BepInEx 모드가 꺼져 있습니다",

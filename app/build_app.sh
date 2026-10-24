@@ -3,6 +3,7 @@
 # game copy from Steam's install on its first start (dsml-helper prepare).
 #   Contents/MacOS/DS Modded        stub (app/stub/ds_modded.c)
 #   Contents/MacOS/dsml-helper      core crate, release, arm64
+#   Contents/MacOS/dsml-start       the play copy's own start file (app/stub/ds_play_start.c; dsml-helper copies it in)
 #   Contents/Resources/AppIcon.icns app/icon/AppIcon.icns (make_icon.py)
 #   Contents/Resources/dsml/        loader/build/dsload.dylib + mods/{multiplayer,custom-modes,gcd-cdr,hell-difficulty} + VERSION
 #                                   (mods from loader/build/mods_all/mac: run loader/modules/build_mods.sh first)
@@ -18,6 +19,9 @@ mkdir -p "$OUTDIR"
 # 1. binaries
 clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation -I"$REPO/loader/src" \
   -o "$OUTDIR/ds_modded" "$HERE/stub/ds_modded.c"
+# __RESTRICT segment: dyld injects nothing into it and drops its DYLD_ variables (they come as DSML_KEEP_DYLD_*)
+clang -arch arm64 -O2 -Wall -mmacosx-version-min=11.0 -framework CoreFoundation -framework CoreServices -I"$REPO/loader/src" \
+  -Wl,-sectcreate,__RESTRICT,__restrict,/dev/null -o "$OUTDIR/dsml-start" "$HERE/stub/ds_play_start.c"
 # no build-machine paths in the shipped binary (panic locations hold the cargo registry and source paths)
 (cd "$REPO" && RUSTFLAGS="--remap-path-prefix=$HOME=/src --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.cargo/registry/src=crates --remap-path-prefix=$HOME/.rustup=rustup --remap-path-prefix=$REPO=dsml" \
   nice -n 19 cargo build -j 4 --release -p dsml-core --bin dsml-helper)
@@ -34,6 +38,7 @@ C="$TMP/Contents"
 mkdir -p "$C/MacOS" "$C/Resources/dsml/mods"
 cp "$OUTDIR/ds_modded" "$C/MacOS/DS Modded"
 cp "$HELPER" "$C/MacOS/dsml-helper"
+cp "$OUTDIR/dsml-start" "$C/MacOS/dsml-start"
 cp "$HERE/icon/AppIcon.icns" "$C/Resources/AppIcon.icns"
 mkdir -p "$C/Resources/licenses"                                  # licenses/: our license + third-party notices, in every release file
 cp "$REPO/licenses/LICENSE.txt" "$REPO/licenses/THIRD_PARTY_NOTICES.txt" "$C/Resources/licenses/"
@@ -50,7 +55,7 @@ for m in $MODS; do   # every shipped mod is required (one mod.json per module, m
 done
 
 # every Mach-O: minimum macOS 12.0 or lower (dyld refuses a library newer than the running macOS)
-for f in "$C/MacOS/DS Modded" "$C/MacOS/dsml-helper" ${(f)"$(find "$C/Resources/dsml" -type f)"}; do
+for f in "$C/MacOS/DS Modded" "$C/MacOS/dsml-helper" "$C/MacOS/dsml-start" ${(f)"$(find "$C/Resources/dsml" -type f)"}; do
   file -b "$f" | grep -q Mach-O || continue
   MINOS=$(xcrun vtool -show-build "$f" | awk '/minos/{print $2; exit}')
   if [[ ${MINOS%%.*} -gt 12 ]]; then
@@ -100,6 +105,7 @@ find "$C/Resources/dsml" -type f | while read -r f; do
   codesign -v "$f" 2>/dev/null || codesign -f -s - "$f"
 done
 codesign -f -s - "$C/MacOS/dsml-helper"
+codesign -f -s - "$C/MacOS/dsml-start"
 codesign -f -s - "$C/MacOS/DS Modded"
 codesign -f -s - "$TMP"
 codesign -v --deep --strict "$TMP" || die "signature check failed"
@@ -116,6 +122,9 @@ codesign -v "$APP" && echo "signature ok"
 Z="$OUTDIR/$NAME.zip"
 [[ -e $Z ]] && { mkdir -p "$HERE/old"; mv "$Z" "$HERE/old/$NAME-$(date +%Y%m%d-%H%M%S).zip"; }
 (cd "$OUTDIR" && nice -n 10 ditto -c -k --keepParent "$NAME.app" "$Z")
+# old builds (app/old) and this one are not apps the player starts: unregistered from LaunchServices, so Spotlight and
+# Launchpad show one "Dungeon Settlers Modded" (owner 2026-10-24)
+python3 "$HERE/test/ls_forget.py" "$HERE/old" "$OUTDIR" > /dev/null
 echo "built: $APP"
 echo "zip:   $Z ($(du -h "$Z" | cut -f1))"
 echo "dsml VERSION $(cat "$APP/Contents/Resources/dsml/VERSION")"

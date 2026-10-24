@@ -105,6 +105,7 @@
  "Downloading %s...": "正在下载 %s……",
  "Downloading mod updates...": "正在下载模组更新……",
  "Dungeon Settlers Modded cannot create its folder in Application Support.": "Dungeon Settlers Modded 无法在 Application Support 中创建其文件夹。",
+ "Dungeon Settlers Modded was not found. Download it again, then open it.": "找不到 Dungeon Settlers Modded。请重新下载，然后打开它。",
  "Dungeon Settlers Modded was updated but could not start. Open it again.": "Dungeon Settlers Modded 已更新，但无法启动。请重新打开。",
  "Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut.": "Dungeon Settlers Modded 已更新，但新版本无法启动。请从其快捷方式再次启动。",
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded：本次 BepInEx 模组已关闭",

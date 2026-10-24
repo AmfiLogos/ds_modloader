@@ -1,12 +1,14 @@
 //! dsml-helper: the work "Dungeon Settlers Modded.app" cannot do in its C stub. No window.
-//!   dsml-helper prepare --root <ROOT> [--icon <AppIcon.icns>]
+//!   dsml-helper prepare --root <ROOT> [--icon <AppIcon.icns>] [--starter <dsml-start>]
 //!     Makes the stock base copy of Steam's build (APFS clone, checked against Steam's seal) and the play copy
-//!     the stub starts (bundle id com.CanOpener.Dungeon-Settlers.Modded, the app icon, ad-hoc signed).
+//!     the stub starts (bundle id com.CanOpener.Dungeon-Settlers.Modded, the app icon, the starter as its
+//!     CFBundleExecutable (copy_mac::install_starter), ad-hoc signed). Icon and starter: default = the app's own.
 //!     stdout: "BUILD <id>" and "PLAY <path>" as the last two lines. Already present = printed at once.
 //!     Error: last line "ERROR <message for the player>", exit 1.
-//!   dsml-helper ident --app <play copy>
-//!     Gives a copy made before copy_mac::own_identity (Local Network privacy) its own identity, in place, and
-//!     signs it again. stdout: "IDENT <COPY_IDENT>" when done (also when nothing had to change).
+//!   dsml-helper ident --app <play copy> [--starter <dsml-start>]
+//!     Gives a copy made before copy_mac::own_identity (Local Network privacy) its own identity, in place, puts the
+//!     starter in (given), signs it again and tells LaunchServices (its record holds the old executable).
+//!     stdout: "IDENT <COPY_IDENT>" when done (also when nothing had to change).
 //! Steam's install is only READ. Replaced folders are moved to <ROOT>/retired, never deleted.
 use anyhow::{anyhow, bail, Context, Result};
 use dsml_core::copy_mac::{self, CopyOptions};
@@ -26,6 +28,7 @@ const KNOWN_STOCK: &[(&str, &str)] = &[
     ("25846389", "e50f729b63df79415b6b3e5753943ad186cba282bc058c739d01e409b3a76876"),
 ];
 const PLAY_DIR: &str = "play-modded";
+const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct PlayMarker {
@@ -34,6 +37,9 @@ struct PlayMarker {
     icon_sha256: String,
     #[serde(default)]
     ident: u32,
+    /// sha256 of the starter put in (the app's dsml-start), "" = none
+    #[serde(default)]
+    starter_sha256: String,
     created: u64,
 }
 
@@ -79,17 +85,18 @@ fn icon_sha(icon: Option<&Path>) -> Result<String> {
     Ok(match icon { Some(p) => crypto::sha256_file(p)?, None => String::new() })
 }
 
-fn play_is_complete(paths: &Paths, build: &str, icon: Option<&Path>) -> bool {
+fn play_is_complete(paths: &Paths, build: &str, icon: Option<&Path>, starter: Option<&Path>) -> bool {
     let Ok(b) = std::fs::read(marker_path(paths, build)) else { return false };
     let Ok(m) = serde_json::from_slice::<PlayMarker>(&b) else { return false };
     m.build == build && m.bundle_id == BUNDLE_ID && m.ident == copy_mac::COPY_IDENT && Some(m.icon_sha256) == icon_sha(icon).ok()
+        && Some(m.starter_sha256) == icon_sha(starter).ok()
         && play_app(paths, build).join(copy_mac::GAME_EXE).exists()
         && paths.game_dir(build).join("base.json").exists()
 }
 
 /// Play copy = clone of base + own name, bundle id and icon, then ad-hoc signatures (as copy_mac::build_play
 /// with no mods; the icon must go in BEFORE the signature, which build_play does not offer).
-fn build_play(paths: &Paths, build: &str, icon: Option<&Path>) -> Result<PathBuf> {
+fn build_play(paths: &Paths, build: &str, icon: Option<&Path>, starter: Option<&Path>) -> Result<PathBuf> {
     let gd = paths.game_dir(build);
     let base = copy_mac::base_app(paths, build);
     let tmp = gd.join(format!("{PLAY_DIR}.building"));
@@ -107,41 +114,59 @@ fn build_play(paths: &Paths, build: &str, icon: Option<&Path>) -> Result<PathBuf
         std::fs::copy(i, &dst)?;
         run(Command::new("/usr/bin/plutil").args(["-replace", "CFBundleIconFile", "-string", "AppIcon"]).arg(&pl))?;
     }
+    if let Some(s) = starter { copy_mac::install_starter(&app, &std::fs::read(s)?, BUNDLE_ID)?; }
     copy_mac::own_identity(&app, BUNDLE_ID)?;
     run(Command::new("/usr/bin/xattr").arg("-cr").arg(&app))?;
-    sign(&app)?;
+    sign(&app, BUNDLE_ID)?;
 
     let pd = gd.join(PLAY_DIR);
     if pd.exists() { paths.retire(&pd, &format!("{build}-{PLAY_DIR}"))?; }
     std::fs::rename(&tmp, &pd)?;
+    if starter.is_some() { ls_refresh(&play_app(paths, build)); }   // a copy before it at this path may be registered
     let m = PlayMarker { build: build.into(), bundle_id: BUNDLE_ID.into(), icon_sha256: icon_sha(icon)?,
-                         ident: copy_mac::COPY_IDENT, created: now_secs() };
+                         ident: copy_mac::COPY_IDENT, starter_sha256: icon_sha(starter)?, created: now_secs() };
     write_atomic(&marker_path(paths, build), &serde_json::to_vec_pretty(&m)?)?;
     Ok(play_app(paths, build))
 }
 
-/// The game binary loses Steam's hardened runtime so DYLD_INSERT_LIBRARIES can load the loader.
-fn sign(app: &Path) -> Result<()> {
-    run(Command::new("/usr/bin/codesign").args(["-f", "-s", "-"]).arg(app.join(copy_mac::GAME_EXE)))?;
+/// The game binary loses Steam's hardened runtime so DYLD_INSERT_LIBRARIES can load the loader. Its identifier stays
+/// the bundle id also when the starter is the bundle's main executable (signed alone, it would be its file name).
+fn sign(app: &Path, bundle_id: &str) -> Result<()> {
+    run(Command::new("/usr/bin/codesign").args(["-f", "-s", "-", "-i", bundle_id]).arg(app.join(copy_mac::GAME_EXE)))?;
     run(Command::new("/usr/bin/nice").args(["-n", "10", "/usr/bin/codesign", "-f", "-s", "-"]).arg(app))?;
     run(Command::new("/usr/bin/codesign").arg("-v").arg(app)).context("signature check of the new copy")?;
     Ok(())
 }
 
-/// `ident`: a pinned copy the stub keeps (copy.json) gets its own identity in place; its marker follows.
-fn ident(app: &Path) -> Result<()> {
+/// LaunchServices keeps the executable it read when it registered the copy (the game binary before the starter): a Dock
+/// click would still start that. The copy is registered again.
+fn ls_refresh(app: &Path) {
+    let _ = Command::new("/usr/bin/touch").arg(app).status();
+    let _ = Command::new(LSREGISTER).arg("-f").arg(app).output();
+}
+
+/// `ident`: a pinned copy the stub keeps (copy.json) gets its own identity and the starter in place; its marker follows.
+/// The stub runs it only while no game of its install runs (the game binary is signed again).
+fn ident(app: &Path, starter: Option<&Path>) -> Result<()> {
     let pl = plist::Value::from_file(app.join("Contents/Info.plist")).context("read the copy's Info.plist")?;
     let id = pl.as_dictionary().and_then(|d| d.get("CFBundleIdentifier")).and_then(|v| v.as_string())
         .ok_or_else(|| anyhow!("the copy has no bundle id"))?.to_string();
-    let changed = copy_mac::own_identity(app, &id)?;
+    if let Some(s) = starter { copy_mac::install_starter(app, &std::fs::read(s)?, &id)?; }
+    let changed = copy_mac::own_identity(app, &id)? || starter.is_some();
     // also when a former run changed the copy but could not sign it
     if changed || !Command::new("/usr/bin/codesign").arg("-v").arg(app).output().map(|o| o.status.success()).unwrap_or(false) {
-        sign(app)?;
+        sign(app, &id)?;
     }
+    if starter.is_some() { ls_refresh(app); }
     let mp = app.parent().and_then(|d| d.parent()).map(|g| g.join(format!("{PLAY_DIR}.json")));
     if let Some(mp) = mp.filter(|p| p.exists() && app.parent().map(|d| d.ends_with(PLAY_DIR)).unwrap_or(false)) {
         if let Ok(mut m) = serde_json::from_slice::<PlayMarker>(&std::fs::read(&mp)?) {
-            if m.ident != copy_mac::COPY_IDENT { m.ident = copy_mac::COPY_IDENT; write_atomic(&mp, &serde_json::to_vec_pretty(&m)?)?; }
+            let ss = icon_sha(starter)?;
+            if m.ident != copy_mac::COPY_IDENT || (starter.is_some() && m.starter_sha256 != ss) {
+                m.ident = copy_mac::COPY_IDENT;
+                if starter.is_some() { m.starter_sha256 = ss; }
+                write_atomic(&mp, &serde_json::to_vec_pretty(&m)?)?;
+            }
         }
     }
     Ok(())
@@ -165,12 +190,19 @@ fn default_icon() -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
-fn prepare(root: &Path, icon: Option<&Path>) -> Result<(String, PathBuf)> {
+/// The app's own starter, next to this helper (Contents/MacOS/dsml-start)
+fn default_starter() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let p = exe.parent()?.join(copy_mac::STARTER);
+    p.exists().then_some(p)
+}
+
+fn prepare(root: &Path, icon: Option<&Path>, starter: Option<&Path>) -> Result<(String, PathBuf)> {
     let paths = Paths::new(root);
     let inst = steam::find_install(&steam::default_steam_roots()).ok_or_else(|| anyhow!(
         "Dungeon Settlers is not installed by Steam on this Mac. Install it in Steam, then open Dungeon Settlers Modded again."))?;
     let build = inst.build_id.clone();
-    if play_is_complete(&paths, &build, icon) { return Ok((build.clone(), play_app(&paths, &build))) }
+    if play_is_complete(&paths, &build, icon, starter) { return Ok((build.clone(), play_app(&paths, &build))) }
     if inst.updating {
         bail!("Steam is updating Dungeon Settlers. Wait until the update is done, then open Dungeon Settlers Modded again.");
     }
@@ -182,39 +214,44 @@ fn prepare(root: &Path, icon: Option<&Path>) -> Result<(String, PathBuf)> {
         if s.contains("No space left") { anyhow!("Not enough free disk space to copy the game. Free some space, then try again.") }
         else { e }
     })?;
-    let app = build_play(&paths, &build, icon)?;
+    let app = build_play(&paths, &build, icon, starter)?;
     Ok((build, app))
 }
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    if a.first().map(String::as_str) == Some("ident") {
-        let Some(app) = a.get(2).filter(|_| a.get(1).map(String::as_str) == Some("--app")) else {
-            println!("ERROR usage: dsml-helper ident --app <play copy>");
-            std::process::exit(2);
-        };
-        match ident(Path::new(app)) {
-            Ok(()) => println!("IDENT {}", copy_mac::COPY_IDENT),
-            Err(e) => { eprintln!("dsml-helper: {e:#}"); println!("ERROR {}", format!("{e}").replace('\n', " ")); std::process::exit(1); }
-        }
-        return;
-    }
     let mut root: Option<PathBuf> = None;
     let mut icon: Option<PathBuf> = None;
+    let mut starter: Option<PathBuf> = None;
+    let mut app: Option<PathBuf> = None;
     let mut i = 1;
     while i < a.len() {
         match (a[i].as_str(), a.get(i + 1)) {
             ("--root", Some(v)) => { root = Some(v.into()); i += 2 }
             ("--icon", Some(v)) => { icon = Some(v.into()); i += 2 }
-            _ => { root = None; break }
+            ("--starter", Some(v)) => { starter = Some(v.into()); i += 2 }
+            ("--app", Some(v)) => { app = Some(v.into()); i += 2 }
+            _ => { root = None; app = None; break }
         }
     }
+    if a.first().map(String::as_str) == Some("ident") {
+        let Some(app) = app else {
+            println!("ERROR usage: dsml-helper ident --app <play copy> [--starter <dsml-start>]");
+            std::process::exit(2);
+        };
+        match ident(&app, starter.as_deref()) {
+            Ok(()) => println!("IDENT {}", copy_mac::COPY_IDENT),
+            Err(e) => { eprintln!("dsml-helper: {e:#}"); println!("ERROR {}", format!("{e}").replace('\n', " ")); std::process::exit(1); }
+        }
+        return;
+    }
     if a.first().map(String::as_str) != Some("prepare") || root.is_none() {
-        println!("ERROR usage: dsml-helper prepare --root <ROOT> [--icon <AppIcon.icns>]");
+        println!("ERROR usage: dsml-helper prepare --root <ROOT> [--icon <AppIcon.icns>] [--starter <dsml-start>]");
         std::process::exit(2);
     }
     let icon = icon.or_else(default_icon);
-    match prepare(root.as_deref().unwrap(), icon.as_deref()) {
+    let starter = starter.or_else(default_starter);
+    match prepare(root.as_deref().unwrap(), icon.as_deref(), starter.as_deref()) {
         Ok((build, app)) => {
             println!("BUILD {build}");
             println!("PLAY {}", app.display());
