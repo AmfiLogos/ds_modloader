@@ -5,6 +5,7 @@
 //   add <i>        ToggleSelectUnitRequested(i): Shift + portrait click (add / remove the i-th party unit)
 //   click <k> <s>  the Button.onClick of slot s of the multi-unit view's card k ("QuickSlotUI_Multi<k>"): the stock click
 //                  path from the button on (SkillSlotUI listener -> QuickSlotUI -> input -> event queue -> handler)
+//   key <i>        UseQuickSlotSkillRequested(i): the skill key of bar slot i (stock input path)
 //   state          every QuickSlotUI (the real bar + the cards): name, active, slots, shown unit; the summary card's body
 // and logs, as they happen, every UseSkillModeContext.AddUseSkill (unit, skill): who the game will use a skill with.
 // Each answer is one dsload.log line "multibar-probe: ...". Every game call by il2cpp name.
@@ -122,6 +123,7 @@ static void run_req(Obj eq, const char *line) {
     Obj ev = NULL;
     if (!strcmp(cmd, "sel")) ev = new_event("SelectPlayerUnitRequested", a);
     else if (!strcmp(cmd, "add")) ev = new_event("ToggleSelectUnitRequested", a);
+    else if (!strcmp(cmd, "key")) ev = new_event("UseQuickSlotSkillRequested", a);   /* a skill key (stock input) */
     else { H->log(ME, "multibar-probe: unknown request '%s'", line); return; }
     if (ev) add_event(eq, ev, NULL);
     H->log(ME, "multibar-probe: %s: %s", line, ev ? "sent" : "FAILED");

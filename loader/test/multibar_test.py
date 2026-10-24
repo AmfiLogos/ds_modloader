@@ -104,7 +104,8 @@ def up(out):
     md = os.path.join(out, 'mods')
     if os.path.exists(md): aside(md, out)
     os.makedirs(md)
-    for m in ('multiplayer', 'multi-bar'): shutil.copytree(os.path.join(LB, 'build', 'mods', m), os.path.join(md, m))
+    src = os.environ.get('MULTIBAR_MODS') or os.path.join(LB, 'build', 'mods')   # e.g. build/mods_all/mac = the files that ship
+    for m in ('multiplayer', 'multi-bar'): shutil.copytree(os.path.join(src, m), os.path.join(md, m))
     pd = os.path.join(md, 'multibar-probe'); os.makedirs(pd)
     subprocess.run(['clang', '-arch', 'arm64', '-O2', '-Wall', '-I', os.path.join(LB, 'sdk'), '-dynamiclib', '-install_name', '@rpath/multibar-probe.dylib',
                     '-o', os.path.join(pd, 'multibar-probe.dylib'), os.path.join(HERE, 'multibar_probe.c')], check=True)
@@ -178,8 +179,23 @@ def run(out):
     check('back to one unit: summary card body and its tabs back', s['body'] == 1 and s['tabs_in_body'] == 1, s['raw'][-80:])
     adds, mod = click_units(0, 0)
     check('no card to click with one unit', not adds and not mod, (adds, mod))
-    S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
-    check('no exception in player.log', not S['exceptions'], S['exceptions'][:4])
+    # ---- control: the STOCK path (one unit, the skill key) for unit 0's slot-1 skill. A self-target skill is cast at the
+    # mouse at once (stock rule, same in the module); in a hidden copy the mouse is off the map and the game's
+    # TaskSystem.ForceTickDirectOrder throws. Those errors are the environment when the stock key gives them too.
+    def exc(): return re.findall(r'(\w+Exception)[^\n]*\n\s+at ([\w.]+)', plog())
+    probe('sel 0', 'sel 0:'); wait_state(lambda s: s['real'] and s['real']['unit'] == party[0])
+    n0 = len(exc()); mark = len(dlog())
+    probe('key 1', 'key 1:'); time.sleep(3)
+    stock_adds = re.findall(r'multibar-probe: AddUseSkill (\S+) (\S*)', dlog()[mark:])
+    stock_exc = exc()[n0:]
+    S['stock_key'] = {'adds': stock_adds, 'exc': stock_exc}
+    check('control: the stock key uses unit 0\'s slot-1 skill', [a[0] for a in stock_adds] == [party[0]], stock_adds)
+    env = 'Refactor.Tick.TaskSystem.ForceTickDirectOrder'
+    stock_env = any(e[1] == env for e in stock_exc)
+    S['exceptions'] = exc()
+    other = [e for e in S['exceptions'] if not (stock_env and e[1] == env)]
+    log('exceptions: %d, from %s: %d (stock key gave it too: %s)' % (len(S['exceptions']), env, len(S['exceptions']) - len(other), stock_env))
+    check('no exception in player.log (except the one the stock key gives in a hidden copy)', not other, other[:4])
     return S, g0
 
 
