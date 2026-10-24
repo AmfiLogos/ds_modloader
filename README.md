@@ -109,7 +109,7 @@ For mod makers: declare the settings in `mod.json` ("settings") and read them wi
 
 For other mod makers (BepInEx, MelonLoader, patch audits): [docs/hooks.json](docs/hooks.json) lists every native
 hook and code patch that the loader and the official mods (multiplayer, custom-modes, gcd-cdr, hell-difficulty,
-zetu-suite) put into GameAssembly, for game build 25846389 on Mac (arm64) and Windows (x64).
+zetu-suite, sound-fix) put into GameAssembly, for game build 25846389 on Mac (arm64) and Windows (x64).
 [docs/hooks.tsv](docs/hooks.tsv) is the same list as a table. Each loader release has both files attached.
 
 Each entry gives the owner, the Il2Cpp name of the hooked method (`Namespace.Class$$Method`, as Il2CppDumper names

@@ -57,7 +57,7 @@ void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h);
 static const struct { const char *id, *repo; } MOD_REPOS[] = {
     { "multiplayer", "AmfiLogos/ds_multiplayer" }, { "custom-modes", "AmfiLogos/ds_custommodes" },
     { "gcd-cdr", "AmfiLogos/ds_modloader" }, { "hell-difficulty", "AmfiLogos/ds_modloader" },
-    { "zetu-suite", "AmfiLogos/ds_modloader" },
+    { "zetu-suite", "AmfiLogos/ds_modloader" }, { "sound-fix", "AmfiLogos/ds_modloader" },
     { "dsmp-bridge", "AmfiLogos/ds_multiplayer" },     /* hidden library for BepInEx mods: installed with the mods that need it */
 };
 

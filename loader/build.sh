@@ -82,6 +82,13 @@ put $Z/zetu-suite.dylib
 cp modules/zetu-suite/mod.json $Z/
 echo "built $Z"
 
+# sound-fix (Sound settings fix): one source, every hook by il2cpp name (no per-build table)
+S=build/mods/sound-fix; mkdir -p $S
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/sound-fix.dylib -o $S/sound-fix.dylib.tmp modules/sound-fix/sound_fix.c
+put $S/sound-fix.dylib
+cp modules/sound-fix/mod.json $S/
+echo "built $S"
+
 # hell-difficulty: code half + table half (hell_data.c rebuilds the Hell table bundle from the player's stock one and the
 # delta rva/<build>_mac_tables.dsdelta; without the delta the module turns Hell off). The delta is made from the stock
 # Mac table bundle (game file, read only; HELL_STOCK_MAC) by modules/hell-difficulty/tools/hell_delta.py, as build_mods.sh does.
