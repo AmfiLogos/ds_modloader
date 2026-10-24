@@ -6,6 +6,9 @@
 #       pinned copy.json, loader update retires the old folder
 #   (c) an existing active.json is never changed by the stub
 #   (f) player mods folder ROOT/mods: package zip installed, bad zip set aside, removal restores the app's own copy
+#   (g) the play copy started by itself (its Dock icon, Spotlight; LaunchServices) is a modded start through the app;
+#       the loader's soft restart (B through LaunchServices) still runs the game binary with the loader injected
+# At the end every app bundle of the run is unregistered from LaunchServices (ls_forget.py).
 # Needs app/build/Dungeon Settlers Modded.app (app/build_app.sh). Tmp ROOT under test_env/ (gitignored).
 set -u
 HERE="${0:A:h}"; REPO="${HERE:h:h}"
@@ -35,6 +38,7 @@ check "second call under 1 s" python3 -c "import sys; sys.exit(0 if $SECOND < 1 
 check "play copy codesign -v" codesign -v "$PLAY"
 check "play copy bundle id" test "$(plutil -extract CFBundleIdentifier raw "$PLAY/Contents/Info.plist")" = com.CanOpener.Dungeon-Settlers.Modded
 check "play copy icon" test -f "$PLAY/Contents/Resources/AppIcon.icns" -a "$(plutil -extract CFBundleIconFile raw "$PLAY/Contents/Info.plist")" = AppIcon
+check "play copy starts through its starter (Dock icon, Spotlight)" test "$(plutil -extract CFBundleExecutable raw "$PLAY/Contents/Info.plist")" = dsml-start
 check "Steam's app unchanged" test "$S0" = "$(steam_state)"
 
 echo "== (b) stub dry run from a copy"
@@ -59,9 +63,10 @@ ARGS=$(print -r -- "$OUT" | sed -n 's/^ARGV //p' | tr '\n' '|')
 check "argv (game, -logFile, args minus -psn_)" test "$ARGS" = "$PLAY/Contents/MacOS/Dungeon Settlers|-logFile|$P/player.log|-foo|"
 check "steam_appid.txt" test "$(cat "$P/steam_appid.txt")" = 2798330
 # default = every shipped mod (name order) except "default_on": false (Hell), as the Windows starter writes it
-check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["custom-modes","gcd-cdr","multiplayer"],"order":["custom-modes","gcd-cdr","multiplayer"]}'
+check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["custom-modes","gcd-cdr","multiplayer","sound-fix"],"order":["custom-modes","gcd-cdr","multiplayer","sound-fix"]}'
 check "worlds.json default" test "$(cat "$D/Mods/worlds.json")" = '{"worlds":{}}'
-check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY''','ident':'1'} else 1)"
+SSHA=$(shasum -a 256 "$APP/Contents/MacOS/dsml-start" | cut -c1-64)
+check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY''','ident':'1','starter':'$SSHA'} else 1)"
 # Local Network: the copy's own UUID (Steam's UUID = macOS blocks the copy and never asks); a copy pinned before
 # that (copy.json without ident) gets it in place on the next start
 uuids() { dwarfdump --uuid "$1/Contents/MacOS/Dungeon Settlers" | awk '{print $2}' | sort | tr '\n' ' '; }
@@ -76,6 +81,7 @@ check "old pinned copy: own UUID given" test "$(uuids "$OLD")" = "$(uuids "$PLAY
 check "old pinned copy: alert text" test -f "$OLD/Contents/Resources/de.lproj/InfoPlist.strings"
 check "old pinned copy: still signed" codesign -v "$OLD"
 check "old pinned copy: copy.json ident" grep -q '"ident": "1"' "$P/copy.json"
+check "old pinned copy: starter put in, copy.json says so" sh -c "test \"\$(plutil -extract CFBundleExecutable raw '$OLD/Contents/Info.plist')\" = dsml-start && grep -q '\"starter\": \"$SSHA\"' '$P/copy.json'"
 mv "$T/copy.json.keep" "$P/copy.json"
 check "loader VERSION copied" cmp "$ROOT/loader/VERSION" "$APP/Contents/Resources/dsml/VERSION"
 check "loader dylib copied" cmp "$ROOT/loader/dsload.dylib" "$APP/Contents/Resources/dsml/dsload.dylib"
@@ -148,6 +154,47 @@ OUTE=$(env HOME="$FH" DSMODDED_DRY_RUN=1 DSMODDED_ROOT="$T/root_err" DSMP_NO_DIA
 check "no Steam install: exit 1" test $rce -eq 1
 check "no Steam install: notice logged" grep -q "notice (not shown): Dungeon Settlers is not installed by Steam" "$FH/Library/Logs/DungeonSettlersModded.log"
 
+echo "== (g) the play copy started by itself (LaunchServices, as its Dock icon or Spotlight) is a modded start"
+# a test copy (own bundle id, background-only: no Dock icon, no window) whose game binary is fakegame.c; its own ROOT
+G="$T/g"; R2="$G/root"; FP="$R2/games/1/play-modded/DungeonSettlers.app"; FH2="$G/home"; DS="$HERE/direct_start"
+mkdir -p "$FP/Contents/MacOS" "$FH2/Library/Logs" "$R2/profiles/modded"
+clang -arch arm64 -O1 -o "$FP/Contents/MacOS/Dungeon Settlers" "$DS/fakegame.c" && \
+clang -arch arm64 -O1 -dynamiclib -o "$G/probe.dylib" "$DS/probe.c" && \
+clang -arch arm64 -O1 -fobjc-arc -framework AppKit -o "$G/lsopen" "$DS/lsopen.m" || bad "(g) test tools build"
+codesign -f -s - "$G/probe.dylib" 2>/dev/null
+cat > "$FP/Contents/Info.plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>Dungeon Settlers</string>
+  <key>CFBundleIdentifier</key><string>com.CanOpener.Dungeon-Settlers.Modded.starttest</string>
+  <key>CFBundleName</key><string>DS start test</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSBackgroundOnly</key><true/><key>LSUIElement</key><true/>
+</dict></plist>
+PL
+codesign -f -s - "$FP/Contents/MacOS/Dungeon Settlers" 2>/dev/null; codesign -f -s - "$FP" 2>/dev/null
+print -r -- "{\"build\": \"1\", \"app\": \"$FP\", \"ident\": \"1\"}" > "$R2/profiles/modded/copy.json"   # pinned, made before the starter
+outs() { ls "${FP:h}"/fakegame_*.txt 2>/dev/null | sort; }
+waitnew() { local before=$1 i; for i in {1..60}; do local n=$(outs | grep -vxF -f <(print -r -- "$before") | head -1); [[ -n $n ]] && { print -r -- "$n"; return; }; sleep 0.5; done; }
+# 1. the app's stub starts the game as always (no dry run, no Steam check): it remembers its place and puts the starter in
+B0=$(outs)
+env -i HOME="$FH2" PATH=/usr/bin:/bin TMPDIR="${TMPDIR:-/tmp}" DSMODDED_ROOT="$R2" DSMP_NO_DIALOG=1 DSMODDED_NO_STEAM=1 \
+  "$Q/Contents/MacOS/DS Modded" > "$G/stub1.txt" 2>&1
+O1=$(waitnew "$B0")
+check "stub start: modded game, app place in ROOT/app_path.txt, starter put into the pinned copy" sh -c "grep -q 'IMAGE .*/dsload.dylib' '$O1' && test \"\$(cat '$R2/app_path.txt')\" = '$QR' && test \"\$(plutil -extract CFBundleExecutable raw '$FP/Contents/Info.plist')\" = dsml-start && codesign -v '$FP'"
+# 2. the copy started by itself, as the Dock does (LaunchServices, no variable of the app): handed over to the app
+B0=$(outs)
+"$G/lsopen" "$FP" HOME="$FH2" DSMP_NO_DIALOG=1 DSMODDED_NO_STEAM=1 > "$G/lsopen2.txt" 2>&1
+O2=$(waitnew "$B0")
+check "copy started by itself: the app started the game with the loader" sh -c "test -n '$O2' && grep -q 'IMAGE .*/dsload.dylib' '$O2' && grep -qxF 'ENV DSML_APP=$QR' '$O2' && grep -qxF 'ENV DSMODDED_ROOT=$R2' '$O2'"
+# 3. the loader's soft restart: B through LaunchServices with DYLD_ variables (+ their DSML_KEEP_ copies, dsl_soft_mac.c)
+B0=$(outs)
+"$G/lsopen" "$FP" HOME="$FH2" DSMP_NO_DIALOG=1 DYLD_INSERT_LIBRARIES="$G/probe.dylib" DSML_KEEP_DYLD_INSERT_LIBRARIES="$G/probe.dylib" > "$G/lsopen3.txt" 2>&1
+O3=$(waitnew "$B0")
+check "soft restart through the starter: the game binary itself, injected library loaded, none in the starter" sh -c "test -n '$O3' && grep -q 'IMAGE $G/probe.dylib' '$O3' && grep -qxF 'ENV DSML_APP=' '$O3' && grep -qxF 'ENV DSML_KEEP_DYLD_INSERT_LIBRARIES=' '$O3' && ! grep -q dsml-start '$G/probe_hits.txt'"
+
 echo "first_prepare_seconds=$FIRST second_prepare_seconds=$SECOND" > "$T/times.txt"
+echo "LaunchServices: $(python3 "$HERE/ls_forget.py" "$T")"
 echo "== $fails failure(s); files in $T"
 exit $(( fails > 0 ))

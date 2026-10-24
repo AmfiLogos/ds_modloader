@@ -19,4 +19,5 @@ nice -n 10 hdiutil create -quiet -volname "$NAME" -srcfolder $ST -fs HFS+ -forma
 mv -f $OUT.tmp.dmg $OUT
 mv $ST $HERE/old/dmgstage-$(date +%Y%m%d-%H%M%S)
 hdiutil verify -quiet $OUT
+python3 $HERE/test/ls_forget.py $HERE/old > /dev/null      # the staged app copies: no extra "Dungeon Settlers Modded" in Spotlight
 echo "dmg: $OUT ($(du -h $OUT | cut -f1))"

@@ -6,10 +6,17 @@ aborts at start). Each test has its own ROOT (DSMODDED_ROOT), app copy in <work>
 runs for real (install + execv) and starts <instance app> (hidden, LSBackgroundOnly; pinned in copy.json), or runs dry
 (DSMODDED_DRY_RUN=1: the update steps, no game). The update window is made hidden (DSL_UPDATE_WINDOW=hidden). A local
 release server (relserver.py) stands in for GitHub.
-Tests (default all): on, off, restart, failed, crash, mismatch, dmg, xvol."""
-import glob, hashlib, json, os, re, shutil, signal, subprocess, sys, time
+Tests (default all): on, off, restart, failed, crash, mismatch, dmg, xvol.
+At the end every app bundle of the run is unregistered from LaunchServices (app/test/ls_forget.py)."""
+import glob, hashlib, json, os, plistlib, re, shutil, signal, subprocess, sys, time
 
 W, APPS, INST_APP = (os.path.abspath(a) for a in sys.argv[1:4])
+# the stub changes its pinned copy in place (identity, starter: dsml-helper ident): an APFS clone of the instance for
+# this run, so a shared test instance stays as it is
+_inst = os.path.join(W, 'inst', os.path.basename(INST_APP)); os.makedirs(os.path.dirname(_inst), exist_ok=True)
+if not os.path.exists(_inst):
+    subprocess.run(['/bin/cp', '-c', '-R', INST_APP, _inst], check=True)
+INST_APP = _inst
 TESTS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['on', 'off', 'restart', 'failed', 'crash', 'mismatch', 'dmg', 'xvol']
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = open(os.path.join(HERE, '../../src/dsl_update.c')).read()
@@ -184,6 +191,22 @@ class Run:
             self.server.terminate()
 
 
+def launchable(*dirs):
+    """app bundles with the app's bundle id under dirs: what Spotlight and Launchpad list as "Dungeon Settlers Modded"
+    (an update's backup or an unpacked download once made 77 of them, owner 2026-10-24)"""
+    out = []
+    for top in dirs:
+        for d, sub, _ in os.walk(top):
+            for x in [x for x in sub if x.endswith('.app')]:
+                sub.remove(x); pl = os.path.join(d, x, 'Contents/Info.plist')
+                try:
+                    if plistlib.load(open(pl, 'rb')).get('CFBundleIdentifier') == 'com.amfilogos.ds-modded':
+                        out.append(os.path.join(d, x))
+                except (OSError, plistlib.InvalidFileException):
+                    pass
+    return sorted(out)
+
+
 def last(t, s):
     return [l for l in t.splitlines() if s in l][-1:] or ['(none)']
 
@@ -352,6 +375,7 @@ if 'mismatch' in TESTS:
         r.seed_ready('0.1.6', NEW)
         r.stub(dry=True)
         check('mismatch: second failure -> not offered again', 'kit 0.1.6' in r.ufile('bad.txt'), r.ufile('bad.txt').strip())
+        check('mismatch: the refused download is no app bundle (only the installed app)', launchable(r.d) == [r.app], launchable(r.d))
     finally:
         r.stop()
 
@@ -363,6 +387,7 @@ if 'dmg' in TESTS:
         r.seed_ready(NEW, NEW, dmg=True)
         r.stub(dry=True)
         check('dmg: installed from the .dmg', r.release_of() == (NEW, NEW) and 'DONE' in r.pending(), str(r.release_of()) + ' ' + last(r.stublog(), 'update:')[0])
+        check('dmg: after the install only the installed app is an app bundle (backup, unpacked download: none)', launchable(r.d) == [r.app], launchable(r.d))
     finally:
         r.stop()
 
@@ -377,11 +402,14 @@ if 'xvol' in TESTS:
         r.seed_ready(NEW, NEW)
         r.stub(dry=True)                                       # install (app moves to the backup on the other volume) + 1st start
         check('xvol: installed across volumes', r.release_of() == (NEW, NEW) and r.pending().count('STARTED') == 1, str(r.release_of()))
+        check('xvol: after the install only the installed app is an app bundle', launchable(r.d, mnt) == [r.app], launchable(r.d, mnt))
         r.stub(dry=True); r.stub(dry=True)                     # never reached the title twice -> rollback across volumes
         check('xvol: rolled back across volumes', r.release_of() == (OLD, OLD) and not r.pending() and 'kit 0.1.4' in r.ufile('bad.txt'),
               str(r.release_of()) + ' ' + last(r.stublog(), 'rolled back')[0])
+        check('xvol: after the rollback only the installed app is an app bundle', launchable(r.d, mnt) == [r.app], launchable(r.d, mnt))
     finally:
         subprocess.run(['/usr/bin/hdiutil', 'detach', '-quiet', mnt])
 
+log(subprocess.run([sys.executable, os.path.join(HERE, '../../../app/test/ls_forget.py'), W, APPS], capture_output=True, text=True).stdout.strip())
 np = sum(ok for _, ok in results)
 print(f'RESULT {np}/{len(results)} pass')

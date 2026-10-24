@@ -122,6 +122,7 @@
  "Downloading %s...": "Téléchargement de %s...",
  "Downloading mod updates...": "Téléchargement des mises à jour des mods...",
  "Dungeon Settlers Modded cannot create its folder in Application Support.": "Dungeon Settlers Modded ne peut pas créer son dossier dans Application Support.",
+ "Dungeon Settlers Modded was not found. Download it again, then open it.": "Dungeon Settlers Modded est introuvable. Téléchargez-le de nouveau, puis ouvrez-le.",
  "Dungeon Settlers Modded was updated but could not start. Open it again.": "Dungeon Settlers Modded a été mis à jour mais n'a pas pu démarrer. Rouvrez-le.",
  "Dungeon Settlers Modded was updated, but the new version could not be started. Start it again from its shortcut.": "Dungeon Settlers Modded a été mis à jour, mais la nouvelle version n'a pas pu démarrer. Relancez-le depuis son raccourci.",
  "Dungeon Settlers Modded: BepInEx mods are off this time": "Dungeon Settlers Modded : les mods BepInEx sont désactivés cette fois",

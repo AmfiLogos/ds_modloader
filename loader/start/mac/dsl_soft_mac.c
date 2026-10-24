@@ -262,7 +262,8 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     /* environment = the one this process started with, with DSL_PROFILE and DSL_SOFT_HANDOFF replaced */
     int n = 0; while (env0 && env0[n]) n++;
     char **env = calloc((size_t)n + 4, sizeof *env); int k = 0;
-    for (int i = 0; i < n; i++) if (strncmp(env0[i], "DSL_PROFILE=", 12) && strncmp(env0[i], "DSL_SOFT_HANDOFF=", 17)) env[k++] = env0[i];
+    for (int i = 0; i < n; i++) if (strncmp(env0[i], "DSL_PROFILE=", 12) && strncmp(env0[i], "DSL_SOFT_HANDOFF=", 17)
+                                    && strncmp(env0[i], "DSML_KEEP_", 10)) env[k++] = env0[i];
     char e1[1300], e2[1300]; snprintf(e1, sizeof e1, "DSL_PROFILE=%s", profile); snprintf(e2, sizeof e2, "DSL_SOFT_HANDOFF=%s", handoff);
     env[k++] = e1; env[k++] = e2;
     /* caller's overrides "K=V" lines (e.g. DSML_MODSET of the new set) replace the same keys */
@@ -273,11 +274,20 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
         for (int i = 0; i < k; i++) if (!strncmp(env[i], l, kl)) { env[i] = env[--k]; i--; }
         extra[ne++] = l;
     }
-    env = realloc(env, ((size_t)k + (size_t)ne + 2) * sizeof *env);
+    env = realloc(env, ((size_t)k + (size_t)ne + 2 + 8) * sizeof *env);
     for (int i = 0; i < ne; i++) env[k++] = extra[i];
     char e3[1100]; snprintf(e3, sizeof e3, "DSL_SOFT_CWD=%s", cwd0);
     for (int i = 0; i < k; i++) if (!strncmp(env[i], "DSL_SOFT_CWD=", 13)) { env[i] = env[--k]; i--; }
     if (cwd0[0]) env[k++] = e3;
+    /* LaunchServices starts the app's CFBundleExecutable: in a player's copy that is its starter (dsml-start,
+       app/stub/ds_play_start.c), for which dyld drops every DYLD_ variable. They also go as DSML_KEEP_DYLD_<x>: the
+       starter puts them back before the game binary runs. A copy without the starter ignores them. */
+    char *keep[8]; int nk = 0;
+    for (int i = 0, m = k; i < m && nk < 8; i++) {
+        if (strncmp(env[i], "DYLD_", 5)) continue;
+        size_t l = strlen(env[i]) + 11; if (!(keep[nk] = malloc(l))) break;
+        snprintf(keep[nk], l, "DSML_KEEP_%s", env[i]); env[k++] = keep[nk++];
+    }
     env[k] = NULL;
     posix_spawnattr_t at; posix_spawnattr_init(&at);
     posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSID);
@@ -290,6 +300,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
         b_pid = lp; b_ls = 1;
         posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
         dsl_log("soft: A: B started by LaunchServices, pid %d (%s, profile %s)", b_pid, exe, profile);
+        for (int i = 0; i < nk; i++) free(keep[i]);
         free(env); free(extra); free(ov);
         return 0;
     }
@@ -297,6 +308,7 @@ int dsl_sos_spawn(const char *profile, const char *handoff, const char *env_line
     b_ls = 0;
     int r = posix_spawn(&b_pid, exe, &fa, &at, argv0, env);
     posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa);
+    for (int i = 0; i < nk; i++) free(keep[i]);
     if (r) { dsl_log("soft: A: posix_spawn %s failed (%d)", exe, r); b_pid = 0; free(env); free(extra); free(ov); return -1; }
     dsl_log("soft: A: B started, pid %d (%s, profile %s)", b_pid, exe, profile);
     free(env); free(extra); free(ov);

@@ -10,6 +10,10 @@
 //   3. game copy: PROFILE/copy.json {"build","app"} when that copy exists (pinned), else
 //      Contents/MacOS/dsml-helper prepare --root ROOT (last lines "BUILD <id>", "PLAY <path>" or "ERROR <msg>").
 //      A pinned copy without "ident" COPY_IDENT gets its own Local Network identity: dsml-helper ident --app <copy>.
+//      The copy's CFBundleExecutable is the app's starter (Contents/MacOS/dsml-start, app/stub/ds_play_start.c): a start
+//      of the copy itself (its Dock icon, Spotlight) hands over to this app. copy.json "starter" = its sha256; another
+//      one is put in by dsml-helper ident --starter, only while no game of this install runs. This app's place:
+//      ROOT/app_path.txt (where the starter looks).
 //   4. first run: COPY the normal saves (read only); default DATA/Mods/active.json + worlds.json. The Mods window is
 //      part of the loader itself (not a module), so no entry of active.json can switch it off.
 //   5. Steam (start it in the background when closed), env, execv of the play copy's game binary, cwd = PROFILE.
@@ -164,6 +168,14 @@ static int run_cmd(char *const av[], char *out, size_t cap) {
 
 static void stamp(char *out, size_t cap) {
     time_t t = time(NULL); strftime(out, cap, "%Y%m%d-%H%M%S", localtime(&t));
+}
+
+/* where the play copy's starter finds this app (app/stub/ds_play_start.c); a translocated app has a temporary place */
+static void remember_app(const char *root, const char *app) {
+    if (strstr(app, "/AppTranslocation/")) return;
+    char p[PATH_MAX], want[PATH_MAX + 2]; snprintf(p, sizeof p, "%s/app_path.txt", root); snprintf(want, sizeof want, "%s\n", app);
+    char *t = slurp(p); int same = t && !strcmp(t, want); free(t);
+    if (!same && write_atomic(p, want) != 0) logf_("cannot write %s (%s)", p, strerror(errno));
 }
 
 /* 2. loader files from the app (may be translocated / read only) to ROOT/loader when the version differs */
@@ -431,32 +443,41 @@ static void user_mods(const char *app, const char *root) {
     free(ents);
 }
 
-/* copy.json; ident = the copy has dsml-helper's identity (copy_mac::COPY_IDENT) */
+/* copy.json; ident = the copy has dsml-helper's identity (copy_mac::COPY_IDENT); starter = sha256 of the starter in it */
 #define COPY_IDENT "1"
-static void copy_json_write(const char *cj, const char *build, const char *play) {
-    char eb[256], ep[PATH_MAX * 2], txt[PATH_MAX * 3];
+static void copy_json_write(const char *cj, const char *build, const char *play, const char *starter) {
+    char eb[256], ep[PATH_MAX * 2], txt[PATH_MAX * 3], st[96] = "";
     json_esc(build, eb, sizeof eb); json_esc(play, ep, sizeof ep);
-    snprintf(txt, sizeof txt, "{\"build\": \"%s\", \"app\": \"%s\", \"ident\": \"" COPY_IDENT "\"}\n", eb, ep);
+    if (starter[0]) snprintf(st, sizeof st, ", \"starter\": \"%s\"", starter);
+    snprintf(txt, sizeof txt, "{\"build\": \"%s\", \"app\": \"%s\", \"ident\": \"" COPY_IDENT "\"%s}\n", eb, ep, st);
     if (write_atomic(cj, txt) != 0) logf_("cannot write %s (%s)", cj, strerror(errno));
 }
 
-/* 3. the play copy: the remembered one (pinned) or a new one made by dsml-helper */
-static int game_copy(const char *app, const char *root, const char *profile, char *play, size_t pcap,
+/* 3. the play copy: the remembered one (pinned) or a new one made by dsml-helper. running = a game of this install runs
+   (its copy is not changed then) */
+static int game_copy(const char *app, const char *root, const char *profile, int running, char *play, size_t pcap,
                      char *build, size_t bcap) {
     char cj[PATH_MAX]; snprintf(cj, sizeof cj, "%s/copy.json", profile);
+    char starter[PATH_MAX], ssha[65] = "";
+    snprintf(starter, sizeof starter, "%s/Contents/MacOS/dsml-start", app);
+    if (!exists(starter) || dsl_uos_sha256(starter, ssha)) ssha[0] = 0;   /* an app without one: copies stay as they are */
     char *j = slurp(cj);
     if (j && jtop(j, "build", build, bcap) && jtop(j, "app", play, pcap)) {
         char exe[PATH_MAX]; snprintf(exe, sizeof exe, "%s/Contents/MacOS/Dungeon Settlers", play);
-        char id[16] = "";
-        if (exists(exe) && jtop(j, "ident", id, sizeof id) && !strcmp(id, COPY_IDENT)) { free(j); return 0; }
+        char id[16] = "", js[72] = "";
+        int id_ok = jtop(j, "ident", id, sizeof id) && !strcmp(id, COPY_IDENT);
+        int st_ok = !ssha[0] || (jtop(j, "starter", js, sizeof js) && !strcmp(js, ssha));
+        if (exists(exe) && id_ok && st_ok) { free(j); return 0; }
         if (exists(exe)) {
-            /* copy made before the Local Network identity: macOS blocked it on the local network without asking */
+            /* copy made before the Local Network identity (macOS blocked it on the local network without asking), or
+               without this app's starter (a start from its Dock icon ran the game without mods) */
             free(j);
+            if (running) { logf_("copy %s: identity or starter to update, but a game of this install runs: next start", play); return 0; }
             char helper[PATH_MAX], out[4096];
             snprintf(helper, sizeof helper, "%s/Contents/MacOS/dsml-helper", app);
-            char *av[] = { helper, "ident", "--app", play, NULL };
+            char *av[] = { helper, "ident", "--app", play, ssha[0] ? "--starter" : NULL, starter, NULL };
             int st = run_cmd(av, out, sizeof out);
-            if (st == 0 && strstr(out, "IDENT " COPY_IDENT)) { logf_("copy %s: own identity given", play); copy_json_write(cj, build, play); }
+            if (st == 0 && strstr(out, "IDENT " COPY_IDENT)) { logf_("copy %s: own identity and starter given", play); copy_json_write(cj, build, play, ssha); }
             else logf_("copy %s: dsml-helper ident exit %d: %s", play, st, out);   /* the game still starts */
             return 0;
         }
@@ -466,9 +487,10 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
     char helper[PATH_MAX], icon[PATH_MAX];
     snprintf(helper, sizeof helper, "%s/Contents/MacOS/dsml-helper", app);
     snprintf(icon, sizeof icon, "%s/Contents/Resources/AppIcon.icns", app);
-    char *av[8]; int k = 0;
+    char *av[10]; int k = 0;
     av[k++] = helper; av[k++] = "prepare"; av[k++] = "--root"; av[k++] = (char *)root;
     if (exists(icon)) { av[k++] = "--icon"; av[k++] = icon; }
+    if (ssha[0]) { av[k++] = "--starter"; av[k++] = starter; }
     av[k] = NULL;
     static char out[65536];
     logf_("preparing the game copy (%s)", helper);
@@ -486,7 +508,7 @@ static int game_copy(const char *app, const char *root, const char *profile, cha
         return fail(err[0] ? err : TR("The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log."));   /* err: dsml-helper's English */
     }
     logf_("game copy ready in %ld s: build %s, %s", (long)(time(NULL) - t0), build, play);
-    copy_json_write(cj, build, play);
+    copy_json_write(cj, build, play, ssha);
     return 0;
 }
 
@@ -781,6 +803,7 @@ int main(int argc, char **argv) {
     setup_lang(app, root, data);                             /* before the first dialog */
     if (!exists(data)) { logf_("cannot create %s (%s)", data, strerror(errno));
                          return fail(TR("Dungeon Settlers Modded cannot create its folder in Application Support.")); }
+    if (!dry) remember_app(root, app);
 
     /* 1b. auto-update. ROOT/update/run.lock: the game of this install holds it (this fd stays open through execv) */
     setenv("DSML_ROOT", root, 1); setenv("DSML_APP", app, 1);
@@ -817,7 +840,7 @@ int main(int argc, char **argv) {
     if (sync_loader(app, root)) return 1;
     user_mods(app, root);
     char play[PATH_MAX], build[128];
-    if (game_copy(app, root, profile, play, sizeof play, build, sizeof build)) return 1;
+    if (game_copy(app, root, profile, running, play, sizeof play, build, sizeof build)) return 1;
 
     /* first run: COPY the normal game's settings and records (read only). Not its Saves: the loader lists the game's own
        save folder and plays those worlds in place (DSML_GAME_SAVES below, loader/src/dsl_saves.c) */
