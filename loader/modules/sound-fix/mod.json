@@ -1,0 +1,75 @@
+{
+ "id": "sound-fix",
+ "name": "Sound settings fix",
+ "short_name": "Sound settings fix",
+ "version": "0.1.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "api": 2,
+ "scope": "client",
+ "sim": false,
+ "default_on": true,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "sound-fix.dylib"
+  },
+  "win-x64": {
+   "entry": "sound-fix.dll"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "conflicts": [],
+ "description": "Fixes the Sound settings: the Volume sliders and Mute buttons now change the sound at once, not only after you go back to the title screen.",
+ "i18n": {
+  "fr": {
+   "name": "Correctif des paramètres de son",
+   "short_name": "Correctif du son",
+   "description": "Corrige les paramètres de son : les curseurs de Volume et les boutons Muet changent maintenant le son tout de suite, pas seulement après un retour à l'écran titre."
+  },
+  "de": {
+   "name": "Fix für Ton-Einstellungen",
+   "short_name": "Ton-Fix",
+   "description": "Korrigiert die Ton-Einstellungen: Die Lautstärkeregler und die Stummschalten-Knöpfe ändern den Ton jetzt sofort, nicht erst nach der Rückkehr zum Titelbildschirm."
+  },
+  "es": {
+   "name": "Corrección de los ajustes de sonido",
+   "short_name": "Corrección de sonido",
+   "description": "Corrige los ajustes de sonido: los controles de volumen y los botones de silencio ahora cambian el sonido al instante, no solo después de volver a la pantalla de título."
+  },
+  "pt-BR": {
+   "name": "Correção das configurações de som",
+   "short_name": "Correção do som",
+   "description": "Corrige as configurações de som: os controles de volume e os botões de mudo agora mudam o som na hora, não só depois de voltar à tela de título."
+  },
+  "ru": {
+   "name": "Исправление настроек звука",
+   "short_name": "Исправление звука",
+   "description": "Исправляет настройки звука: ползунки громкости и кнопки «Отключить звук» теперь меняют звук сразу, а не только после возврата на титульный экран."
+  },
+  "ja": {
+   "name": "サウンド設定の修正",
+   "short_name": "サウンド設定修正",
+   "description": "サウンド設定を修正します。音量スライダーとミュートボタンが、タイトル画面に戻った後だけでなく、すぐに音に反映されるようになります。"
+  },
+  "ko": {
+   "name": "사운드 설정 수정",
+   "short_name": "사운드 설정 수정",
+   "description": "사운드 설정을 수정합니다. 이제 음량 슬라이더와 음소거 버튼이 타이틀 화면으로 돌아간 뒤가 아니라 바로 소리에 적용됩니다."
+  },
+  "zh-Hans": {
+   "name": "声音设置修复",
+   "short_name": "声音设置修复",
+   "description": "修复声音设置：音量滑块和静音按钮现在会立即改变声音，而不是只在回到标题画面后才生效。"
+  },
+  "zh-Hant": {
+   "name": "聲音設定修正",
+   "short_name": "聲音設定修正",
+   "description": "修正聲音設定：音量滑桿與靜音按鈕現在會立即改變聲音，而不是只在回到標題畫面後才生效。"
+  }
+ }
+}

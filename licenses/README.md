@@ -14,7 +14,7 @@ What is in which release file:
 |---|---|
 | Mac .dmg | Rust crates in `dsml-helper`; musl (multiplayer); QuickJS and tinf (Custom Modes); the RimWorld Multiplayer timer logic (multiplayer) |
 | Windows Setup.exe | MinHook (`baselib.dll`); zlib; MinGW-w64 runtime and winpthreads (all .dll and .exe); musl, RimWorld Multiplayer (multiplayer); QuickJS, tinf (Custom Modes); NSIS (the installer itself) |
-| Mod zips | multiplayer: musl, RimWorld Multiplayer, MinGW-w64 runtime, zlib. custom-modes: QuickJS, tinf, MinGW-w64 runtime. gcd-cdr and hell-difficulty: MinGW-w64 runtime |
+| Mod zips | multiplayer: musl, RimWorld Multiplayer, MinGW-w64 runtime, zlib. custom-modes: QuickJS, tinf, MinGW-w64 runtime. gcd-cdr, hell-difficulty and sound-fix: MinGW-w64 runtime |
 
 `make_notices.py` writes `THIRD_PARTY_NOTICES.txt` from the license files in the source trees. Run it after a
 change of the dependencies and commit the result. `make_notices.py --check` tells you if the file is out of date.
