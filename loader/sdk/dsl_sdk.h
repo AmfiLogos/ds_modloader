@@ -38,6 +38,10 @@
 // A module that hides world rows of the stock Load list itself may export `int dsl_loadlist_hidden(int *kind)`: the
 // number of world rows it hides in the open list now; *kind 1 = multiplayer worlds, 2 = single-player worlds, else 0.
 // The loader writes one line under the list ("5 multiplayer worlds are hidden ...") so a player knows they are not lost.
+// The loader's filter panel on the right of the Load list (kit v0.1.23: Vanilla & Vanilla+, Modded, Multiplayer, Latest
+// save only) asks two more optional exports: `int dsl_loadlist_world_mp(const char *guid)` 1 = a multiplayer world (the
+// panel's Multiplayer kind; no module with it = no Multiplayer box), and `int dsl_loadlist_own(void)` 1 = this module
+// filters the open list itself now, so the panel stays away. The loader exports `int dsl_loadlist_panel(void)` (1).
 //
 // Log: <log dir>/dsload.log (DSL_LOG_DIR, else ~/Library/Application Support/CanOpener/Dungeon Settlers).
 #pragma once

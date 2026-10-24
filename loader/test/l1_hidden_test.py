@@ -5,10 +5,11 @@ lost"). Test copy DSL_TEST_COPY (default Y; hidden, muted, staged off screen; ta
 folder is <copy>/gameroot/data/Saves, the modded folder <copy>/data/Saves. The owner's saves and prefs: hash before/after.
 Real breaks this catches (each: the player thinks worlds are lost, or is told a wrong number):
  M  multiplayer + gcd-cdr + custom-modes, title Load list: the modded-only world tagged Multiplayer is hidden by the
-    multiplayer list filter -> bottom line "1 multiplayer world is hidden"; the box ticked -> the world shows, the line
-    goes. A game save the game cannot read stays in the game folder (never quarantined) -> top line "1 game save could
-    not be read". The box under the list must be SEEN in the frame (bright checkbox pixels): custom-modes' filter has no
-    toggle, and the loader's empty toggle strip covered the box with a dark bar (owner 2026-10-20, v0.1.17).
+    loader's filter panel (Multiplayer off, kit v0.1.23; before: the multiplayer mod's box under the list) -> bottom line
+    "1 world is hidden by the filters on the right"; Multiplayer ticked on the panel -> the world shows, the line goes.
+    A game save the game cannot read stays in the game folder (never quarantined) -> top line "1 game save could not be
+    read". The panel must be SEEN in the frame (bright checkbox pixels of its Multiplayer box): custom-modes' filter has
+    no toggle, and the loader's empty toggle strip once covered the multiplayer box with a dark bar (owner 2026-10-20).
  F  the game-saves hooks off this session (DSL_TEST_SAVES_OFF=1, as names missing / a hook refused) -> top line
     "1 of your game worlds is not listed".
  B  mods off for this game build (launcher pin of another build): dsload_status.json message (the start notice) says the
@@ -74,7 +75,8 @@ def install():
 def folders():
     old = os.path.join(I, 'old', time.strftime('%Y%m%d-%H%M%S')); os.makedirs(old, exist_ok=True)
     for d in (MSAVES, S.GROOT, os.path.join(I, 'data', 'SaveHeaderCache.json'), os.path.join(T.MODS, 'save_copies'),
-              os.path.join(I, 'mp_tags.txt'), os.path.join(I, 'dsload_state', '_codepatch.disabled')):
+              os.path.join(I, 'mp_tags.txt'), os.path.join(I, 'dsload_state', '_codepatch.disabled'),
+              os.path.join(T.MODS, 'loadlist.json')):                       # the filter panel's choices: defaults each run
         if os.path.exists(d): shutil.move(d, os.path.join(old, os.path.basename(d)))
     os.makedirs(GSAVES); os.makedirs(MSAVES)
     shutil.copy2(os.path.join(SEED, ELVEN + '.json'), GSAVES)
@@ -106,14 +108,24 @@ def png_gray(path):
     return w, h, rows
 
 
-def box_seen(name, lst):
-    """the toggle (box + label) is drawn: its rect in the frame has bright pixels. Covered by the dark strip: max ~44;
-    shown: 160+ (unticked box outline and label text)"""
-    p = os.path.join(OUT, name + '.png'); r = (lst or {}).get('box_rect'), (lst or {}).get('toggle_rect')
-    if not os.path.exists(p) or not r[0] or not r[1]: return False, f'no shot or no toggle rect {lst}'
-    w, h, g = png_gray(p); x0, x1 = int(r[0][0]), int(r[1][2]); y0, y1 = h - int(r[0][3]), h - int(r[0][1])   # the box's rows: the strip's border lies just outside them
+def box_seen(name, st):
+    """the filter panel is drawn: its rect in the frame has bright pixels (box outlines, label text). Covered by a dark
+    strip: max ~44; shown: 160+"""
+    p = os.path.join(OUT, name + '.png'); r = (st or {}).get('panel')
+    if not os.path.exists(p) or not r or not r[2]: return False, f'no shot or no panel rect {st}'
+    w, h, g = png_gray(p); x0, x1 = int(r[0]), int(r[2]); y0, y1 = h - int(r[3]), h - int(r[1])
     mx = max(max(row[x0:x1]) for row in g[y0:y1])
     return mx > 100, f'brightest pixel {mx} in x {x0}-{x1} y {y0}-{y1}'
+
+
+def lf(cmd='lf_state', **kw):
+    """a filter panel request (dsl_rows.c test cmd); returns the state file it writes"""
+    p = os.path.join(T.SDIR, 'lf_state.json')
+    if os.path.exists(p): os.replace(p, p + '.old')
+    T.request(dict(cmd=cmd, **kw)); t0 = time.time()
+    while time.time() - t0 < 10 and not os.path.exists(p): time.sleep(0.2)
+    try: return json.load(open(p))
+    except Exception as e: return {'error': repr(e)}
 
 
 def lines_log(mark):
@@ -132,17 +144,18 @@ def run_m(code):
     S.start_modded(('multiplayer', 'gcd-cdr', 'custom-modes'), worlds={})
     mark = open_list()
     L = T.dlog()[mark:]
-    check(f'M {code}: the multiplayer world is hidden by the list filter, the line says 1 multiplayer world',
-          'bottom 1 (kind 1, 1 by other filters' in L, lines_log(mark))
+    check(f'M {code}: the multiplayer world is hidden by the filter panel, the line says 1 world',
+          'bottom 1 (kind 0, 0 by other filters, 0 by ours, 1 by the panel)' in L, lines_log(mark))
     check(f'M {code}: the unreadable game save stays in the game folder and the top line says 1',
           os.path.exists(os.path.join(GSAVES, 'Broken save.json')) and 'unreadable 1)' in L, lines_log(0)[-4:])
     check(f'M {code}: screenshot', shot(f'M_{code}'))
-    ok, why = box_seen(f'M_{code}', r.send(X, {'cmd': 'mpm_list'}, timeout=20, connect_wait=0))
-    check(f'M {code}: the box under the list is visible (not covered by an empty dark strip)', ok, why)
+    ok, why = box_seen(f'M_{code}', lf())
+    check(f'M {code}: the filter panel is visible (not covered by an empty dark strip)', ok, why)
     mark = len(T.dlog())
-    st = r.send(X, {'cmd': 'mpm_list', 'flip': 1}, timeout=20, connect_wait=0); time.sleep(2.5)
+    st = lf('lf', multiplayer=1); time.sleep(2.5)
     L = T.dlog()[mark:]
-    check(f'M {code}: box ticked -> the world shows, the bottom line goes', 'bottom 0 (kind 0, 0 by other filters' in L, (st, lines_log(mark)))
+    check(f'M {code}: Multiplayer ticked -> the world shows, the bottom line goes', 'bottom 0 (kind 0, 0 by other filters' in L, (st.get('boxes'), lines_log(mark)))
+    lf('lf', multiplayer=0)                                          # the panel remembers it (loadlist.json): back to the default
     check(f'M {code}: screenshot (ticked)', shot(f'M_{code}_ticked'))
     S.stop_all()
 

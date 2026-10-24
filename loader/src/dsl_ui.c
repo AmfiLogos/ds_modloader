@@ -1725,6 +1725,24 @@ void dsl_ui_fit_screen(DSLObj w, float wd, float h, float ay) {
 void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h) {
     if (w) rt_set((Obj)w, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ wd, h }, (V2){ -right, -top });
 }
+static void tr_scale(Obj o, float s);
+static Obj tr_find(Obj t, const char *path);
+/* the Load list's filter panel (dsl_rows.c, owner 2026-10-24): screen rect (pixels, y up) of a kit widget or any
+   RectTransform, 1 = shown; the screen's size; a child by path; a widget's scale; a RectTransform's own width */
+int dsl_ui_screen_rect(DSLObj o, float r[4]) {
+    W *w = w_of(o); Obj t = w ? w_root(w) : (Obj)o;
+    if (!t || !alive(t) || !rect_screen(t, r)) return 0;
+    return on_tree(t);
+}
+/* the same for a kit widget kept as a plain pointer (dsl_update.c's corner): 0 once the kit forgot it (destroyed) */
+int dsl_ui_widget_rect(DSLObj o, float r[4]) { return w_of(o) ? dsl_ui_screen_rect(o, r) : 0; }
+void dsl_ui_screen_size(float *w, float *h) { *w = screen_w(); *h = m_scr_h ? (float)CALL0(m_scr_h, int)(m_scr_h) : 1080.f; }
+DSLObj dsl_ui_child(DSLObj parent, const char *path) { Obj t = parent ? tr_find((Obj)parent, path) : NULL; return alive(t) ? (DSLObj)t : NULL; }
+void dsl_ui_set_scale(DSLObj o, float s) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; if (r) tr_scale(r, s); }
+float dsl_ui_width(DSLObj o) {
+    Obj rt = o ? tr_of((Obj)o) : NULL;
+    return isa(rt, K.RectTransform) && m_rt_rect ? CALL(m_rt_rect, R4, Obj)(rt, m_rt_rect).w : 0;
+}
 
 /* ------------------------------------------------------------------ title brand (owner 2026-10-17)
    1. The word "ModLoader" under the game's title logo (TitleMenuUI/Img_BackGroundBox/Img_GameLogo), in the logo's
