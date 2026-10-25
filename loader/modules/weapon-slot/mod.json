@@ -9,6 +9,7 @@
  "scope": "gameplay",
  "sim": true,
  "save_dependent": false,
+ "vanilla_plus": true,
  "default_on": false,
  "game_builds": [
   "25846389"
