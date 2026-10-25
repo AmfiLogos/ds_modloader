@@ -133,6 +133,60 @@ def world_l3():
     win('close'); time.sleep(0.4)
 
 
+def std(s): return s.get('w', {}).get('std', {})
+def rule_lines(): return [l for l in E.dlog().splitlines() if 'UI-RULE ' in l]
+
+
+def template_cases():
+    """the templates (owner 2026-10-25 "templated rules"): dsl_window_std (a window and an in-game panel with every rule on),
+    dsl_card_toggle (CARD RULE), and the UI-RULE guard caught on a window and a panel that break the rules on purpose"""
+    j = ui('api', op='stdwin', a=1); s = until(lambda s: std(s).get('open') == 1, 4) or st()
+    check('template: dsl_window_std builds a window', j.get('rc') == 0 and std(s).get('open') == 1, (j.get('rc'), std(s)))
+    check('template: the window has the game\'s red X', w_of(s, 'std_x').get('on') == 1 and width(rect(s, 'std_x')) > 10, w_of(s, 'std_x'))
+    shot('en', '1.0', 'template_window')
+    E.press(); s = st()
+    check('template: 1st Escape = Back (a sub-page is open), the window stays', std(s).get('open') == 1 and std(s).get('backs') == 1, std(s))
+    E.press(); s = st()
+    check('template: 2nd Escape closes it', std(s).get('open') == 0, std(s))
+    ui('api', op='stdwin', a=1); until(lambda s: std(s).get('open') == 1, 4)
+    ui('click', target='std_x'); s = until(lambda s: std(s).get('open') == 0, 4) or st(); ui('api', op='mouse_off')
+    check('template: its red X closes it (no Back first)', std(s).get('open') == 0 and std(s).get('backs') == 1, std(s))
+    ui('api', op='stdwin', a=0); until(lambda s: std(s).get('open') == 1, 4); time.sleep(0.4)
+    ui('click', target='std_card'); s = until(lambda s: std(s).get('check') == 1, 3) or st()
+    check('card: a click on the card\'s text (not its box) ticks the box', std(s).get('check') == 1 and std(s).get('clicks') == 1, std(s))
+    ui('click', target='std_card'); s = until(lambda s: std(s).get('check') == 0, 3) or st()
+    check('card: a 2nd click there unticks it', std(s).get('check') == 0 and std(s).get('clicks') == 2, std(s))
+    ui('click', target='std_check'); s = until(lambda s: std(s).get('check') == 1, 3) or st()
+    check('card: the box itself still works', std(s).get('check') == 1 and std(s).get('clicks') == 3, std(s))
+    ui('hover', target='std_card'); time.sleep(1.2); s = st(); ui('api', op='mouse_off')
+    check('card: its hover card still shows', s.get('tip', {}).get('title') == 'A selectable card', s.get('tip'))
+    w1 = width(rect(st(), 'stdw')); set_scale(1.4); time.sleep(0.6); w2 = width(rect(st(), 'stdw')); set_scale(1.0)
+    check('template: the window follows UI Scale (1.4x)', w1 > 0 and near(w2 / w1, 1.4, 0.03), (w1, w2))
+    ui('click', target='std_x'); until(lambda s: std(s).get('open') == 0, 4); ui('api', op='mouse_off')
+    # the in-game panel of the template: never takes Escape (the demo panel under it does), moves, keeps its place
+    ui('api', op='open'); until(lambda s: s.get('built') == 1)
+    ui('api', op='stdpanel'); s = until(lambda s: std(s).get('panel') == 1, 4) or st()
+    check('template panel: built with a red X', std(s).get('panel') == 1 and w_of(s, 'stdp_x').get('on') == 1, (std(s), w_of(s, 'stdp_x')))
+    E.press(); s = st()
+    check('template panel: Escape passes it (the window under it closes)', std(s).get('panel') == 1 and s.get('built') == 0, (std(s), s.get('built')))
+    r0 = rect(st(), 'stdp'); ui('rdrag', target='stdp', dx=-200, dy=100); time.sleep(1.5); r1 = rect(st(), 'stdp')
+    check('template panel: a right-drag moves it, the place is kept', near(r1[0] - r0[0], -200, 4) and near(r1[1] - r0[1], 100, 4)
+          and 'ui: move: uikit-demo.stdpanel kept' in E.dlog(), (r0, r1))
+    ui('click', target='stdp_x'); s = until(lambda s: std(s).get('panel') == 0, 4) or st(); ui('api', op='mouse_off')
+    check('template panel: its red X closes it', std(s).get('panel') == 0, std(s))
+    # the guard: a window and a panel that break the rules on purpose
+    ui('api', op='badwin', a=1); time.sleep(2.5); ls = rule_lines()
+    has = lambda rule, who: any(f'UI-RULE {rule} "{who}"' in l for l in ls)
+    for rule in ('red-x', 'ui-scale', 'card'):
+        check(f'UI-RULE guard: the bad window logs {rule}', has(rule, 'Bad Window'), ls[-6:])
+    if 'foreign font set' in E.dlog(): check('UI-RULE guard: the bad window logs font', has('font', 'Bad Window'), ls[-6:])
+    else: log('info: no foreign font loaded in this copy: the font probe cannot run')
+    for rule in ('move', 'ui-scale'):
+        check(f'UI-RULE guard: the bad in-game panel logs {rule}', has(rule, 'Bad Panel'), ls[-6:])
+    check('UI-RULE guard: nothing for the template window and panel', not [l for l in ls if 'Template ' in l], [l for l in ls if 'Template ' in l])
+    ui('api', op='badwin', a=0); time.sleep(0.3)
+
+
 def lang_shots(lang):
     """one start in lang: the corner, Mods window, demo panel and bug report at UI 1.0 and 1.4 (local shots)"""
     for v in (1.0, 1.4):
@@ -164,7 +218,7 @@ def run(lang):
         wait_for(lambda: (lambda s: s if s.get('scene') == 1 and not s.get('busy') else None)(E.ctl({'cmd': 'status'}, 5)), 240, 1)
         wait_for(lambda: (lambda j: j if j.get('kit') == 1 else None)(st()), 60, 1)
         time.sleep(4)
-        if lang == 'en': red_x_cases(); scale_cases(); move_cases(); world_l3()
+        if lang == 'en': red_x_cases(); scale_cases(); move_cases(); template_cases(); world_l3()
         lang_shots(lang)
     except Exception as e:
         check(f'{lang}: run finished', False, repr(e))
@@ -197,8 +251,12 @@ def main():
     E.stop.set()
     for lang in ['en'] + [l for l in LANGS.split(',') if l in LANG and l != 'en']:   # the close rule's guard (dsl_ui.c close_x_guard)
         lf = os.path.join(OUT, f'{lang}_dsload.log')
-        tx = [l for l in open(lf, errors='replace').read().splitlines() if 'CLOSE-TEXT-X' in l] if os.path.exists(lf) else ['no dsload.log']
+        lines = open(lf, errors='replace').read().splitlines() if os.path.exists(lf) else ['UI-RULE CLOSE-TEXT-X no dsload.log']
+        probe = lambda l: '"Bad Window"' in l or '"Bad Panel"' in l     # template_cases' deliberate breaks
+        tx = [l for l in lines if 'CLOSE-TEXT-X' in l and not probe(l)]
         check(f'{lang}: no window of ours closes with a text X (CLOSE-TEXT-X)', not tx, tx[:3])
+        ur = [l for l in lines if 'UI-RULE ' in l and not probe(l)]
+        check(f'{lang}: no window of ours breaks a UI rule (UI-RULE)', not ur, ur[:4])
     fails = [c for c in E.checks if not c['ok']]
     json.dump({'checks': E.checks, 'violations': E.violations}, open(os.path.join(OUT, 'summary.json'), 'w'), indent=1)
     bad = len(fails) + (1 if E.violations else 0)

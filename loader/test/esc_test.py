@@ -305,8 +305,8 @@ def main():
         for f in ('dsload.log', 'player.log'):
             if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f))
     miss = [l for l in open(os.path.join(OUT, 'dsload.log'), errors='replace').read().splitlines()
-            if 'ESC-MISSING' in l and 'Guard probe' not in l] if os.path.exists(os.path.join(OUT, 'dsload.log')) else ['no dsload.log']
-    check('sweep: no ESC-MISSING line (every window of ours has its Escape registration)', not miss, miss[:3])
+            if ('ESC-MISSING' in l or 'UI-RULE ' in l) and 'Guard probe' not in l] if os.path.exists(os.path.join(OUT, 'dsload.log')) else ['no dsload.log']
+    check('sweep: no ESC-MISSING or UI-RULE line (every window of ours has its Escape registration and follows the UI rules)', not miss, miss[:3])
     fails = [c for c in checks if not c['ok']]
     check('copy never on screen / frontmost', not violations, violations)
     json.dump({'checks': checks, 'violations': violations}, open(os.path.join(OUT, 'summary.json'), 'w'), indent=1)

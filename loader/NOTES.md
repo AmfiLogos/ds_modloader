@@ -1084,6 +1084,34 @@ Tests (real Escape key events on the game's view, hidden copies): loader esc_tes
 notice, Mods window, name row, Settings page Back, Load list + a world's Mods window, Bug report; Esc menu / Load list under
 ours stay), Units Laboratory esc_test 46/46, multiplayer esc_kit_test 37/37 + esc_mini_pair 5/5.
 
+## New window? use dsl_window_std (the templates + the UI-RULE guard; owner 2026-10-25 "templated rules / pattern to keep applying everywhere"; kit 0.1.28, lane dskit) - `src/dsl_ui.c` "the templates"
+Every owner rule for our windows lives in ONE template; new work starts from it, never from scratch:
+- `dsl_window_std(ui, &o, &parts)` (DSLWinStd: size, kind, w, h, title, close, back, ud, flags, move_key, x, y, band_h,
+  title_x, title_size; DSLWinParts: win, backdrop, close_x, title, body_y). DSL_WIN_MODAL: dim click-blocking backdrop,
+  centred, header (title in the game's title font over the copper line, band 0x2D2A31, body 0x222025), the game's red X,
+  Escape (o->back first: a sub-page open -> Back one level, return 1; then o->close), UI Scale (DSL_WIN_OWN_SCALE when
+  the window scales itself). DSL_WIN_PANEL (in-game panel): no backdrop, at o->x, o->y, right-drag move with the place
+  kept under o->move_key, Escape never takes it (HUD), UI Scale, a red X when o->close is set. o->close ends with
+  `dsl_window_close(ui, win)` (window + backdrop + Escape entry); close NULL = the kit closes it. The red X runs the Close
+  (never Back).
+- `dsl_card_toggle(ui, card, check, click, ud)` (CARD RULE): a transparent full-card click layer under the card's content
+  (its texts and images stop taking clicks; its own buttons, toggles and fields keep theirs) = a click on the kit toggle
+  `check` (or click(ud, card)). Kit hover cards work by the pointer's place, so they still show. Call it after the content.
+- `dsl_rules_own(ui, win, DSL_RULE_SCALE | DSL_RULE_MOVE | DSL_RULE_X)`: the window applies that rule by its own code (Units
+  Laboratory's own UI Scale until it moves onto the template). DSL_RULE_X only for a popup that is not a window.
+- The guard: in test copies, each root panel of ours with an Escape registration, 30 frames after it showed, logs
+  `UI-RULE <rule> "<its first text>": <what to use>` for: red-x (a window without the red X), ui-scale (no scale_follow and
+  no rules_own), move (an in-game panel that is not full screen and not movable), card (a bare check box, no label, in a
+  card panel without card_toggle; a labelled toggle is a full-row click already), font (a text whose font is not the game's:
+  LanguageSetting fonts, the title font, the kit's text template). Loading overlays (full-screen HUD) are skipped.
+  loader esc_test and kitlook_test fail on any UI-RULE line; other repos' esc tests should sweep it too (as ESC-MISSING).
+- The loader's own windows are on it: the Mods window (title left at 104, band 88, its Mud Slogel on top) and the bug
+  report (title left at 32, band 80). Units Laboratory and multiplayer move in their own lanes.
+Test: kitlook_test template_cases (template window: red X, Escape Back then close, X closes without Back, card click on its
+text ticks the box, again unticks, the box itself works, hover card shows, UI Scale 1.4x; template panel: red X, Escape
+passes it, right-drag + kept place; the probe "Bad Window" / "Bad Panel" (uikit-demo op badwin) logs red-x, ui-scale,
+card, font, move): 49/0 with en/de/ru; main 83636d0: 17 FAIL.
+
 ## Red X, UI Scale, right-drag move (owner 2026-10-25, UX review L1 L2 L4 + MOVE RULE; kit 0.1.28, lane dskit) - `src/dsl_ui.c` "the game's look"
 Three DSLUi calls appended after esc_drop (dsl_sdk.h; wrappers `dsl_close_x`, `dsl_ui_scale`, `dsl_scale_follow`, `dsl_movable`
 give NULL / 1 / -1 with an older kit):
