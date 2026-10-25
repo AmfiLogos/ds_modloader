@@ -1637,9 +1637,9 @@ static int k_esc_push(DSLObj win, void (*close)(void *), void *ud, int flags) {
     if (i == nesc) {
         if (nesc == ESC_MAX) esc_sweep();
         if (nesc == ESC_MAX) { dsl_log("ui: Escape: more than %d windows pushed: refused", ESC_MAX); return -1; }
-        i = nesc++; memset(&escs[i], 0, sizeof escs[i]);
-        escs[i].h = x_weak ? x_weak(o, false) : hnew(o); escs[i].id = win;
+        i = nesc++; memset(&escs[i], 0, sizeof escs[i]); escs[i].id = win;
     }
+    hfree(&escs[i].h); escs[i].h = x_weak ? x_weak(o, false) : hnew(o);   /* always this object (a new one can sit where a dead one was) */
     escs[i].close = close; escs[i].ud = ud; escs[i].flags = flags; escs[i].seq = ++esc_seq;
     return 0;
 }
