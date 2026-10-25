@@ -177,7 +177,7 @@ def template_cases():
     # the guard: a window and a panel that break the rules on purpose
     ui('api', op='badwin', a=1); time.sleep(2.5); ls = rule_lines()
     has = lambda rule, who: any(f'UI-RULE {rule} "{who}"' in l for l in ls)
-    for rule in ('red-x', 'ui-scale', 'card'):
+    for rule in ('red-x', 'close-text-x', 'ui-scale', 'card'):
         check(f'UI-RULE guard: the bad window logs {rule}', has(rule, 'Bad Window'), ls[-6:])
     if 'foreign font set' in E.dlog(): check('UI-RULE guard: the bad window logs font', has('font', 'Bad Window'), ls[-6:])
     else: log('info: no foreign font loaded in this copy: the font probe cannot run')
@@ -251,10 +251,8 @@ def main():
     E.stop.set()
     for lang in ['en'] + [l for l in LANGS.split(',') if l in LANG and l != 'en']:   # the close rule's guard (dsl_ui.c close_x_guard)
         lf = os.path.join(OUT, f'{lang}_dsload.log')
-        lines = open(lf, errors='replace').read().splitlines() if os.path.exists(lf) else ['UI-RULE CLOSE-TEXT-X no dsload.log']
+        lines = open(lf, errors='replace').read().splitlines() if os.path.exists(lf) else ['UI-RULE no dsload.log']
         probe = lambda l: '"Bad Window"' in l or '"Bad Panel"' in l     # template_cases' deliberate breaks
-        tx = [l for l in lines if 'CLOSE-TEXT-X' in l and not probe(l)]
-        check(f'{lang}: no window of ours closes with a text X (CLOSE-TEXT-X)', not tx, tx[:3])
         ur = [l for l in lines if 'UI-RULE ' in l and not probe(l)]
         check(f'{lang}: no window of ours breaks a UI rule (UI-RULE)', not ur, ur[:4])
     fails = [c for c in E.checks if not c['ok']]

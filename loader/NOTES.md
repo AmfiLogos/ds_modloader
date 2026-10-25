@@ -1100,7 +1100,8 @@ Every owner rule for our windows lives in ONE template; new work starts from it,
 - `dsl_rules_own(ui, win, DSL_RULE_SCALE | DSL_RULE_MOVE | DSL_RULE_X)`: the window applies that rule by its own code (Units
   Laboratory's own UI Scale until it moves onto the template). DSL_RULE_X only for a popup that is not a window.
 - The guard: in test copies, each root panel of ours with an Escape registration, 30 frames after it showed, logs
-  `UI-RULE <rule> "<its first text>": <what to use>` for: red-x (a window without the red X), ui-scale (no scale_follow and
+  `UI-RULE <rule> "<its first text>": <what to use>` for: red-x (a window without the red X), close-text-x (a text "X" as a
+  window's close, logged when the button is made), ui-scale (no scale_follow and
   no rules_own), move (an in-game panel that is not full screen and not movable), card (a bare check box, no label, in a
   card panel without card_toggle; a labelled toggle is a full-row click already), font (a text whose font is not the game's:
   LanguageSetting fonts, the title font, the kit's text template). Loading overlays (full-screen HUD) are skipped.
@@ -1139,7 +1140,7 @@ give NULL / 1 / -1 with an older kit):
 Test: `test/kitlook_test.py` (hidden copy KIT, uikit-demo driver: rdrag / rclick fake right mouse, api follow / movable /
 uiscale): 19/19 on this kit; main 5e213f1: 13 FAIL (no red X, nothing follows UI Scale, the corner over Options, no move).
 The close rule's guard (owner rule "templates + guards", 2026-10-25): in test copies a kit button labelled "X" / "x" / "×"
-put straight on a root panel of ours (a window's close, not a list's delete "x") logs `CLOSE-TEXT-X "<window text>"`;
+put straight on a root panel of ours (a window's close, not a list's delete "x") logs `UI-RULE close-text-x "<window text>"`;
 kitlook_test fails on it (en, de, ru runs). Other repos' tests can sweep their dsload.log for the same line.
 UX L3 (2026-10-25): a world's Mods window leaves out every mod of scope client (Multi-unit view, the test uikit-demo), as it
 did for client fixes: a world's set holds gameplay mods only (dsl_reg.c key_of), so their switch said "Saved" and was
