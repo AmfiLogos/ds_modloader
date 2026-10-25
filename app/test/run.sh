@@ -63,8 +63,8 @@ ARGS=$(print -r -- "$OUT" | sed -n 's/^ARGV //p' | tr '\n' '|')
 check "argv (game, -logFile, args minus -psn_)" test "$ARGS" = "$PLAY/Contents/MacOS/Dungeon Settlers|-logFile|$P/player.log|-foo|"
 check "steam_appid.txt" test "$(cat "$P/steam_appid.txt")" = 2798330
 # default = every shipped mod (name order) except "default_on": false (Hell, ZET-U, Multi-unit view), as the Windows starter writes it
-# (Sound settings fix is on by default since the kit ships it, v0.1.23)
-check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["custom-modes","gcd-cdr","multiplayer","sound-fix"],"order":["custom-modes","gcd-cdr","multiplayer","sound-fix"]}'
+# (Sound settings fix is on by default since the kit ships it, v0.1.23; Live building HP the same)
+check "active.json default" test "$(cat "$D/Mods/active.json")" = '{"enabled":["custom-modes","gcd-cdr","live-hp","multiplayer","sound-fix"],"order":["custom-modes","gcd-cdr","live-hp","multiplayer","sound-fix"]}'
 check "worlds.json default" test "$(cat "$D/Mods/worlds.json")" = '{"worlds":{}}'
 SSHA=$(shasum -a 256 "$APP/Contents/MacOS/dsml-start" | cut -c1-64)
 check "copy.json pinned" python3 -c "import json,sys; j=json.load(open('$P/copy.json')); sys.exit(0 if j=={'build':'$BUILD','app':'''$PLAY''','ident':'1','starter':'$SSHA'} else 1)"

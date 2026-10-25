@@ -94,6 +94,13 @@ put $S/sound-fix.dylib
 cp modules/sound-fix/mod.json $S/
 echo "built $S"
 
+# live-hp (Live building HP): one source, every hook by il2cpp name (no per-build table)
+LH=build/mods/live-hp; mkdir -p $LH
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/live-hp.dylib -o $LH/live-hp.dylib.tmp modules/live-hp/live_hp.c
+put $LH/live-hp.dylib
+cp modules/live-hp/mod.json $LH/
+echo "built $LH"
+
 # multi-bar (Multi-unit view): one source, every hook by il2cpp name (no per-build table)
 B=build/mods/multi-bar; mkdir -p $B
 nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/multi-bar.dylib -o $B/multi-bar.dylib.tmp modules/multi-bar/multi_bar.c

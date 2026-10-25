@@ -12,6 +12,8 @@ menu in a world, the stock window under ours stays), and the next press does the
         stays; 2nd closes; owner 2026-10-25 "Go Back one level").
  world: Escape with none of ours opens the Esc menu (the key path works); demo panel (no Esc menu); Mods window (no Esc
         menu); Esc menu + Bug report (only ours closes); Esc menu > Load + a world's Mods window (only ours closes).
+Guard (the Escape rule for every future window): a root panel made with no Escape registration logs ESC-MISSING; the
+probe "Guard probe" must be caught, and no other ESC-MISSING line may appear in the whole run (sweep).
 Old loaders fail: Escape leaves the demo panel and the notice open, and in a world the game also opens or closes its menus.
   esc_test.py [out] [--no-build] [--title-only]     Exit 0 = PASS. <out>/summary.json, logs. ESC_DYLIB=<another dsload.dylib>."""
 import glob, json, os, shutil, signal, subprocess, sys, threading, time
@@ -27,6 +29,7 @@ SAVE = 'ElvenExpedition__AutoSave_f816ebc6195c432c9fff754b75ee3738_0'; GUID = 'f
 ESC = 53                                                              # macOS key code of Escape
 log = lambda *a: print(time.strftime('%H:%M:%S'), *a, flush=True)
 checks = []; violations = []; stop = threading.Event()
+EXTRA_ENV = {}                                                        # a test that imports this one adds its own (kitlook_test: DSML_ROOT)
 
 
 def check(name, ok, detail=''):
@@ -103,7 +106,7 @@ def start():
            'DSL_SOFT_STAGE': '-20000,-20000', 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0', 'DSL_UPDATE': '0',
            'DSL_CLOUD': '0', 'DSL_PREWARM': '0', 'DSL_CRASHREP_TEST': crd, 'DSL_BUGREP_DRY': '1',
            'DSL_UIKIT_TEST': UDRV, 'DSL_UI_TEST': WDRV, 'DSL_BUGREP_TEST': BDRV}
-    env.update(r.soft_test_env())
+    env.update(r.soft_test_env()); env.update(EXTRA_ENV)
     a = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(a, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
@@ -128,6 +131,11 @@ ui = lambda cmd, timeout=15, **kw: req(UDRV, 'req.json', 'resp.json', timeout, c
 win = lambda op, timeout=15, **kw: req(WDRV, 'cmd.json', 'result.json', timeout, op=op, **kw)
 bug = lambda op, timeout=15, **kw: req(BDRV, 'cmd.json', 'result.json', timeout, op=op, **kw)
 st = lambda: ui('state')
+
+
+def dlog():
+    try: return open(os.path.join(I, 'dsload.log'), errors='replace').read()
+    except OSError: return ''
 
 
 def ctl(obj, timeout=20):
@@ -212,6 +220,10 @@ def title_cases():
     press(); b = bug('state'); s = st()
     check('title 7: Escape closes the Bug report window', not b.get('open'), b)
     check('title 7: the title menu is still there', s.get('titlemenu') == 1, s.get('titlemenu'))
+    # 9. the guard: a root panel with no Escape registration is caught (the rule for every future window)
+    ui('api', op='bare', a=1); hit = wait_for(lambda: 'ESC-MISSING "Guard probe"' in dlog(), 8)
+    check('title 9: the guard logs ESC-MISSING for a window with no Escape registration', bool(hit), 'no line')
+    ui('api', op='bare', a=0)
     # 8. a mod's Settings page inside the Mods window (multiplayer's, a launcher mod): Escape = Back first
     names = lambda j: [c.get('name') for c in j.get('controls', [])]
     win('open'); wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10); time.sleep(0.5)
@@ -292,6 +304,9 @@ def main():
         stop.set()
         for f in ('dsload.log', 'player.log'):
             if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f))
+    miss = [l for l in open(os.path.join(OUT, 'dsload.log'), errors='replace').read().splitlines()
+            if 'ESC-MISSING' in l and 'Guard probe' not in l] if os.path.exists(os.path.join(OUT, 'dsload.log')) else ['no dsload.log']
+    check('sweep: no ESC-MISSING line (every window of ours has its Escape registration)', not miss, miss[:3])
     fails = [c for c in checks if not c['ok']]
     check('copy never on screen / frontmost', not violations, violations)
     json.dump({'checks': checks, 'violations': violations}, open(os.path.join(OUT, 'summary.json'), 'w'), indent=1)

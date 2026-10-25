@@ -89,6 +89,7 @@ simple gcd-cdr gcd_cdr.c
 simple hell-difficulty hell.c
 simple zetu-suite zetu.c
 simple sound-fix sound_fix.c
+simple live-hp live_hp.c
 simple multi-bar multi_bar.c
 simple weapon-slot weapon_slot.c
 simple locked-slots locked_slots.c

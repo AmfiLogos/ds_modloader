@@ -21,6 +21,7 @@
 // A crafted Action only queues the click; the module's callback runs from the frame tick (main thread, after
 // EventSystem.Update returned, never inside a game call chain).
 #include "dsl_internal.h"
+#include "dsl_os.h"
 #include "../sdk/dsl_sdk.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -814,6 +815,7 @@ static Obj parent_or_layer(DSLObj p) { Obj t = p ? tr_of((Obj)p) : layer(); retu
 static int ready_basic(void) { kit_used = 1; return templates_ready(); }
 
 /* ------------------------------------------------------------------ widgets */
+static void esc_guard_root(DSLObj root);
 static DSLObj k_panel(DSLObj parent, float x, float y, float w, float h, uint32_t rgba) {
     if (!ready_basic()) return NULL;
     Obj p = parent_or_layer(parent); Obj im = p ? inst(hget(h_tpl_img), p) : NULL;
@@ -825,7 +827,9 @@ static DSLObj k_panel(DSLObj parent, float x, float y, float w, float h, uint32_
     gr_raycast(im, 1);                                               /* a panel blocks clicks to what is under it */
     place_tl(im, x, y, w, h);
     W *wd = w_new(W_PANEL); if (!wd) { destroy_obj(go_of(im)); return NULL; }
-    return w_done(wd, tr_of(im), NULL);
+    DSLObj r = w_done(wd, tr_of(im), NULL);
+    if (!parent) esc_guard_root(r);                                  /* test copies: a window of ours must have an Escape registration */
+    return r;
 }
 static int txt_align(int flags) { int a = flags & 3; int wrap = flags & DSL_TXT_WRAP; return (wrap ? 256 : 512) + (a == DSL_TXT_CENTER ? 2 : a == DSL_TXT_RIGHT ? 4 : 1); }
 static Obj mk_text(Obj parent, float x, float y, float w, float h, const char *s, float size, int flags, Col c) {
@@ -1623,7 +1627,7 @@ static int esc_notice_up(const EscE *e) {                            /* the kit 
     return !strcmp(cur, NB.text);
 }
 static void esc_sweep(void) { for (int i = nesc - 1; i >= 0; i--) if (escs[i].notice ? !esc_notice_up(&escs[i]) : !hget(escs[i].h)) esc_free(i); }
-static int esc_shown(const EscE *e) { return e->notice || on_tree(hget(e->h)); }
+static int esc_shown(const EscE *e) { return e->notice || (!(e->flags & DSL_ESC_HUD) && on_tree(hget(e->h))); }   /* a HUD panel never takes Escape */
 static EscE *esc_top(void) {
     esc_sweep();
     EscE *t = NULL;
@@ -1632,7 +1636,7 @@ static EscE *esc_top(void) {
 }
 static int k_esc_push(DSLObj win, void (*close)(void *), void *ud, int flags) {
     W *w = w_of(win); Obj o = w ? w_root(w) : (Obj)win;
-    if (!close || !alive(o)) return -1;
+    if ((!close && !(flags & DSL_ESC_HUD)) || !alive(o)) return -1;
     int i = 0; while (i < nesc && (escs[i].notice || escs[i].id != win)) i++;
     if (i == nesc) {
         if (nesc == ESC_MAX) esc_sweep();
@@ -1676,6 +1680,50 @@ static int esc_holder(Obj field) {                                   /* the inne
     for (Obj t = tr_of(field); t; t = tr_parent(t))
         for (int i = 0; i < nesc; i++) if (!escs[i].notice) { Obj o = hget(escs[i].h); if (o && tr_of(o) == t && on_tree(o)) return i; }
     return -1;
+}
+/* The rule's guard (owner 2026-10-25: "make sure ... the escape button works like this in all future windows"). Test copies
+   only (background-only or DSRIG_CTL=1, dsl_soft_test_copy): every root panel of the kit (parent NULL: a window, its dim
+   backdrop, a HUD panel) is checked once it has shown for 30 frames: it must be pushed (itself or a part of it), or be
+   made in the same frame as a pushed one (the backdrop of a window), or be pushed as DSL_ESC_HUD. Else one line
+   "ESC-MISSING <its first text>"; the esc tests fail on it. No default registration: the kit cannot know a window's own
+   Close (the Unit Builder's Cancel asks first, the home page goes Back, Bring Units runs its callback, a HUD has none). */
+#define GUARD_MAX 64
+static struct { uintptr_t h; int64_t made; int done; } groots[GUARD_MAX]; static int ngroots, guard_on = -1;
+static void esc_guard_root(DSLObj root) {
+    if (guard_on < 0) guard_on = dsl_soft_test_copy() != NULL;
+    if (!guard_on || !root) return;
+    for (int i = ngroots - 1; i >= 0; i--) if (!hget(groots[i].h)) { hfree(&groots[i].h); groots[i] = groots[--ngroots]; }
+    if (ngroots == GUARD_MAX) return;
+    groots[ngroots].h = x_weak ? x_weak((Obj)root, false) : hnew((Obj)root); groots[ngroots].made = frames; groots[ngroots].done = 0; ngroots++;
+}
+static int guard_pushed(Obj root) {                                   /* an entry (HUD too) is this root or under it */
+    for (int i = 0; i < nesc; i++) {
+        if (escs[i].notice) continue;
+        for (Obj t = tr_of(hget(escs[i].h)); t; t = tr_parent(t)) if (t == tr_of(root)) return 1;
+    }
+    return 0;
+}
+static void guard_text(Obj t, char *out, size_t cap, int depth) {    /* the first non-empty text under t (its title) */
+    if (out[0] || !t || depth > 4) return;
+    Obj tx = comp_get(t, K.TMP_Text); if (tx) { utf8_of(tmp_get(tx), out, cap); if (out[0]) return; }
+    for (int i = 0, n = child_count(t); i < n && !out[0]; i++) guard_text(child_at(t, i), out, cap, depth + 1);
+}
+static void esc_guard_frame(void) {
+    if (guard_on != 1 || frames % 30) return;
+    for (int i = 0; i < ngroots; i++) {
+        Obj o = hget(groots[i].h);
+        if (!o || groots[i].done || frames - groots[i].made < 30 || !on_tree(o)) continue;
+        int ok = guard_pushed(o);
+        for (int k = 0; k < ngroots && !ok; k++) {                    /* its dim backdrop: made in the same frame as a pushed one */
+            Obj q = k != i && groots[k].made == groots[i].made ? hget(groots[k].h) : NULL;
+            ok = q && guard_pushed(q);
+        }
+        groots[i].done = 1;
+        if (ok) continue;
+        char t[200] = ""; guard_text(o, t, sizeof t, 0);
+        for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
+        dsl_log("ESC-MISSING \"%s\": a window of ours shows with no Escape registration (dsl_esc_push its Close; a HUD panel: DSL_ESC_HUD)", t[0] ? t : "(no text)");
+    }
 }
 static void esc_tick(void) {
     Obj had = hget(esc_foc), now = esc_focused();
@@ -1744,6 +1792,216 @@ __attribute__((visibility("default"))) int dsl_ui_test_esc(char *out, size_t cap
         o += (size_t)snprintf(out + o, cap - o, "%s%s|%d|%d|%d", i ? ";" : "", escs[i].notice ? "notice" : nm, esc_shown(&escs[i]), escs[i].flags, escs[i].seq);
     }
     return nesc;
+}
+
+/* ------------------------------------------------------------------ the game's look and settings for our windows (kit 0.1.28)
+   close_x: the game's red X (owner 2026-10-25: one close control, the game's). scale_follow: a window follows Settings >
+   UI Scale (opt-in: Units Laboratory and Bring Units scale themselves). movable: a right-click drag moves a panel, which
+   stays on the screen and keeps its place (owner 2026-10-25, MOVE RULE). */
+static void tr_scale(Obj o, float s);
+static int32_t f_slv_close = -1, f_das_targets = -1, f_das_ttype = -1, f_sel_trans = -1, f_sel_colors = -1;
+static int32_t colors_n;                                             /* sizeof(ColorBlock) */
+static void *m_usm_inst, *m_usm_scale, *m_input_mb, *m_input_mbd;
+static void *K_PopUp;                                                /* Refactor.UI.PopUpUI_Base: the game's windows */
+static uintptr_t h_tpl_x;
+/* the Load Campaign window's own close button (popup prefab 5, SaveLoadView._closeButton), cloned once into the template
+   holder with its Button turned off: a clone only draws; the click goes to the kit button it sits in */
+static Obj x_tpl(void) {
+    Obj x = hget(h_tpl_x); if (x) return x;
+    static int64_t last = -1000; static int said; if (frames - last < 60) return NULL;
+    last = frames;
+    Obj p = ui_prefab(5), b = p && f_slv_close >= 0 && isa(p, K.SaveLoadView) ? AT(p, f_slv_close, Obj) : NULL, hd = holder();
+    if (!alive(b) || !hd) { if (!said++) dsl_log("ui: red X: the Load window's close button not found (prefab %p, field %d): text X stays", p, f_slv_close); return NULL; }
+    Obj c = inst(go_of(b), hd); if (!c) return NULL;
+    Obj sel = comp_get(c, K.Selectable);
+    if (sel && m_beh_enabled) CALL(m_beh_enabled, void, Obj, bool)(sel, false, m_beh_enabled);
+    hset(&h_tpl_x, c);
+    char nm[64] = "", kids[300] = ""; Obj im = first_image(tr_of(c), 0), sp = img_sprite(im); obj_name(sp, nm, sizeof nm);
+    for (int i = 0, n = child_count(c); i < n && strlen(kids) < 250; i++) { char k[64]; obj_name(go_of(child_at(c, i)), k, sizeof k); strlcat(kids, " ", sizeof kids); strlcat(kids, k, sizeof kids); }
+    V2 s = rt_size(b);
+    dsl_log("ui: red X: the Load window's close button (%.0f x %.0f, sprite \"%s\", children:%s) kept as the template", s.x, s.y, nm, kids[0] ? kids : " none");
+    return c;
+}
+static EscE *esc_of(DSLObj win) {                                    /* the Escape registration of win (not a notice) */
+    EscE *e = NULL;
+    for (int i = 0; win && i < nesc; i++) if (!escs[i].notice && escs[i].id == win && (!e || escs[i].seq > e->seq)) e = &escs[i];
+    return e;
+}
+static void x_click(void *ud, DSLObj w) {
+    (void)w; EscE *e = esc_of((DSLObj)ud);
+    if (!e || !e->close || (e->flags & DSL_ESC_HUD)) { dsl_log("ui: red X: its window has no Escape registration: nothing closes"); return; }
+    EscE c = *e; char nm[96] = ""; obj_name(go_of(hget(c.h)), nm, sizeof nm);   /* a copy: close() drops the entry */
+    dsl_log("ui: red X closes %s (its Escape close)", nm[0] ? nm : "a window");
+    c.close(c.ud);
+}
+static DSLObj k_close_x(DSLObj parent, float x, float y, float size, DSLObj win) {
+    if (!ready_basic()) return NULL;
+    Obj tpl = x_tpl(), p = parent_or_layer(parent); if (!tpl || !p) return NULL;
+    W *wd = w_new(W_BUTTON); if (!wd) return NULL;
+    Obj b = mk_btn(p, x, y, size, size, "", 14, TOKEN(wd->id, P_CLICK), &wd->h_act[0]);
+    Obj c = b ? inst(tpl, b) : NULL;
+    if (!c) { if (b) destroy_obj(go_of(b)); w_free(nws - 1); return NULL; }
+    Obj l = btn_label(b); if (l) go_active(l, 0);
+    Obj bg = first_image(tr_of(b), 0);                               /* the menu frame: off (the copy draws, its images take the click) */
+    if (bg && m_beh_enabled) CALL(m_beh_enabled, void, Obj, bool)(bg, false, m_beh_enabled);
+    go_active(c, 1); stretch(c);
+    Obj im = first_image(tr_of(c), 0); if (im) gr_raycast(im, 1);
+    /* the game's hover / press look: the kit button's transition drives the copy's images with the close button's colours */
+    Obj src = comp_get(tpl, K.Selectable);
+    if (src && f_das_targets >= 0 && f_sel_colors >= 0 && f_sel_trans >= 0 && f_das_ttype >= 0 && colors_n > 0 && colors_n <= 128) {
+        Obj cs = comp_get(c, K.Selectable), arr = cs ? AT(cs, f_das_targets, Obj) : NULL;
+        if (arr) {
+            AT(b, f_das_targets, Obj) = arr;                         /* also held by the copy's own button: no GC gap */
+            memcpy((char *)b + f_sel_colors, (char *)src + f_sel_colors, (size_t)colors_n);
+            AT(b, f_sel_trans, int32_t) = AT(src, f_sel_trans, int32_t); AT(b, f_das_ttype, int32_t) = AT(src, f_das_ttype, int32_t);
+        }
+    }
+    wd->cb = x_click; wd->ud = win; wd->w = size; wd->h = size;
+    hset(&wd->h_btn, b);
+    return w_done(wd, tr_of(b), NULL);
+}
+
+static float k_ui_scale(void) {
+    if (!m_usm_inst || !m_usm_scale) return 1.f;
+    Obj m = CALL0(m_usm_inst, Obj)(m_usm_inst); if (!alive(m)) return 1.f;
+    float s = CALL(m_usm_scale, float, Obj)(m, m_usm_scale);
+    return s >= 0.5f && s <= 2.f ? s : 1.f;
+}
+#define SF_MAX 32
+static struct { uintptr_t h; DSLObj id; } sfs[SF_MAX]; static int nsf; static float sf_u = -1;
+static void sf_apply(Obj o, float u) {                               /* UI Scale, less when the window would not fit in its parent */
+    Obj p = tr_parent(o); float s = u;
+    if (p && m_rt_rect && isa(tr_of(p), K.RectTransform) && isa(tr_of(o), K.RectTransform)) {
+        R4 r = CALL(m_rt_rect, R4, Obj)(tr_of(p), m_rt_rect), me = CALL(m_rt_rect, R4, Obj)(tr_of(o), m_rt_rect);
+        if (r.w >= 100 && r.h >= 100 && me.w > 1 && me.h > 1) { float f = r.w / me.w, g = r.h / me.h; if (g < f) f = g; if (f < s) s = f; }
+    }
+    tr_scale(o, s);
+}
+static int k_scale_follow(DSLObj win) {
+    W *w = w_of(win); Obj o = w ? w_root(w) : (Obj)win;
+    if (!alive(o) || !isa(tr_of(o), K.RectTransform)) return -1;
+    int i = 0; while (i < nsf && sfs[i].id != win) i++;
+    if (i == nsf) {
+        for (int k = nsf - 1; k >= 0 && nsf == SF_MAX; k--) if (!hget(sfs[k].h)) { hfree(&sfs[k].h); sfs[k] = sfs[--nsf]; }
+        if (nsf == SF_MAX) { dsl_log("ui: UI Scale: more than %d windows follow it: refused", SF_MAX); return -1; }
+        i = nsf++; memset(&sfs[i], 0, sizeof sfs[i]); sfs[i].id = win;
+    }
+    hfree(&sfs[i].h); sfs[i].h = x_weak ? x_weak(o, false) : hnew(o);
+    sf_apply(o, k_ui_scale());
+    return 0;
+}
+static void sf_frame(void) {
+    if (!nsf) return;
+    float u = k_ui_scale(); int changed = u != sf_u;
+    if (!changed && frames % 30) return;                             /* else: the game window may have been resized */
+    if (changed && sf_u > 0) dsl_log("ui: UI Scale %.2f -> %.2f: %d window(s) follow it", sf_u, u, nsf);
+    sf_u = u;
+    for (int i = nsf - 1; i >= 0; i--) { Obj o = hget(sfs[i].h); if (!o) { hfree(&sfs[i].h); sfs[i] = sfs[--nsf]; continue; } sf_apply(o, u); }
+}
+
+#define MV_MAX 32
+#define MVP_MAX 128
+static struct { uintptr_t h; DSLObj id; char key[64]; int seq; } mvs[MV_MAX]; static int nmv, mv_seq;
+static struct { char key[64]; float x, y; } mvp[MVP_MAX]; static int nmvp, mvp_loaded;
+static DSLObj mv_id; static int mv_on; static float mv_x0, mv_y0, mv_lx, mv_ly;
+static const char *mvp_file(void) { static char p[1200]; if (!p[0]) snprintf(p, sizeof p, "%s/ui_places.tsv", dsl_reg_data_dir()); return p; }
+static void mvp_load(void) {
+    if (mvp_loaded) return; mvp_loaded = 1;
+    FILE *f = fopen(mvp_file(), "r"); if (!f) return;
+    char line[256];
+    while (nmvp < MVP_MAX && fgets(line, sizeof line, f)) {
+        char *t1 = strchr(line, '\t'), *t2 = t1 ? strchr(t1 + 1, '\t') : NULL; if (!t2 || t1 - line >= 64 || t1 == line) continue;
+        *t1 = 0; snprintf(mvp[nmvp].key, sizeof mvp[nmvp].key, "%s", line); mvp[nmvp].x = strtof(t1 + 1, NULL); mvp[nmvp].y = strtof(t2 + 1, NULL); nmvp++;
+    }
+    fclose(f);
+}
+static void mvp_save(void) {
+    char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", mvp_file());
+    FILE *f = fopen(tmp, "w"); if (!f) { dsl_log("ui: move: %s cannot be written", mvp_file()); return; }
+    for (int i = 0; i < nmvp; i++) fprintf(f, "%s\t%.1f\t%.1f\n", mvp[i].key, mvp[i].x, mvp[i].y);
+    if (fclose(f) == 0) dsl_os_replace(tmp, mvp_file());
+}
+static float scr_h(void) { return m_scr_h ? (float)CALL0(m_scr_h, int)(m_scr_h) : 1080.f; }
+static void mv_clamp(Obj o) {                                        /* all of it on the screen (its top-left when it is bigger) */
+    float r[4], W = screen_w(), H = scr_h(), dx = 0, dy = 0;
+    if (!rect_screen(o, r) || r[2] - r[0] < 1) return;
+    if (r[0] < 0 || r[2] - r[0] >= W) dx = -r[0]; else if (r[2] > W) dx = W - r[2];
+    if (r[3] > H || r[3] - r[1] >= H) dy = H - r[3]; else if (r[1] < 0) dy = -r[1];
+    if (dx != 0 || dy != 0) rt_move_screen(o, dx, dy);
+}
+static int k_movable(DSLObj panel, const char *key) {
+    W *w = w_of(panel); Obj o = w ? w_root(w) : (Obj)panel;
+    if (!alive(o) || !isa(tr_of(o), K.RectTransform) || !key || !*key || strlen(key) >= 64 || strchr(key, '\t') || strchr(key, '\n')) return -1;
+    int i = 0; while (i < nmv && mvs[i].id != panel) i++;
+    if (i == nmv) {
+        for (int k = nmv - 1; k >= 0 && nmv == MV_MAX; k--) if (!hget(mvs[k].h)) { hfree(&mvs[k].h); mvs[k] = mvs[--nmv]; }
+        if (nmv == MV_MAX) { dsl_log("ui: move: more than %d movable panels: refused", MV_MAX); return -1; }
+        i = nmv++; memset(&mvs[i], 0, sizeof mvs[i]); mvs[i].id = panel;
+    }
+    hfree(&mvs[i].h); mvs[i].h = x_weak ? x_weak(o, false) : hnew(o);
+    snprintf(mvs[i].key, sizeof mvs[i].key, "%s", key); mvs[i].seq = ++mv_seq;
+    mvp_load();
+    for (int k = 0; k < nmvp; k++) if (!strcmp(mvp[k].key, key) && m_rt_pos) {
+        CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ mvp[k].x, mvp[k].y }, m_rt_pos);
+        dsl_log("ui: move: %s put back at %.0f, %.0f", key, mvp[k].x, mvp[k].y);
+        break;
+    }
+    mv_clamp(o);
+    return 0;
+}
+static int mv_find(DSLObj id) { for (int i = 0; id && i < nmv; i++) if (mvs[i].id == id) return i; return -1; }
+static void mv_keep(int i) {                                         /* the place, under its key */
+    Obj o = hget(mvs[i].h); if (!o || !m_rt_getpos) return;
+    V2 p = rt_pos(o); int k = 0; while (k < nmvp && strcmp(mvp[k].key, mvs[i].key)) k++;
+    if (k == nmvp) { if (nmvp == MVP_MAX) { dsl_log("ui: move: %d places kept: %s not kept", MVP_MAX, mvs[i].key); return; } nmvp++; }
+    snprintf(mvp[k].key, sizeof mvp[k].key, "%s", mvs[i].key); mvp[k].x = p.x; mvp[k].y = p.y;
+    mvp_save();
+    dsl_log("ui: move: %s kept at %.0f, %.0f", mvs[i].key, p.x, p.y);
+}
+static void mv_frame(void) {
+    if (!nmv || !m_input_mb || !m_input_mbd || !m_input_mouse) return;
+    V3 m = CALL0(m_input_mouse, V3)(m_input_mouse);
+    if (!mv_id && CALL(m_input_mbd, bool, int)(1, m_input_mbd)) {   /* a right press on a movable panel (the top-most: the newest) */
+        int best = -1;
+        for (int i = nmv - 1; i >= 0; i--) if (!hget(mvs[i].h)) { hfree(&mvs[i].h); mvs[i] = mvs[--nmv]; }
+        for (int i = 0; i < nmv; i++) {
+            Obj o = hget(mvs[i].h); float r[4];
+            if (!o || !on_tree(o) || !rect_screen(o, r) || m.x < r[0] || m.x > r[2] || m.y < r[1] || m.y > r[3]) continue;
+            if (best < 0 || mvs[i].seq > mvs[best].seq) best = i;
+        }
+        if (best >= 0) { mv_id = mvs[best].id; mv_on = 0; mv_x0 = mv_lx = m.x; mv_y0 = mv_ly = m.y; }
+    }
+    int i = mv_find(mv_id); Obj o = i >= 0 ? hget(mvs[i].h) : NULL;
+    if (mv_id && (!o || !CALL(m_input_mb, bool, int)(1, m_input_mb))) {   /* let go (or the panel is gone) */
+        if (o && mv_on) mv_keep(i);
+        mv_id = NULL; mv_on = 0;
+    } else if (o) {
+        float dx = m.x - mv_x0, dy = m.y - mv_y0;
+        if (!mv_on && dx * dx + dy * dy >= 36) { mv_on = 1; dsl_log("ui: move: %s follows the right-drag", mvs[i].key); }   /* 6 px: a right-click stays a click */
+        if (mv_on && (m.x != mv_lx || m.y != mv_ly)) { rt_move_screen(o, m.x - mv_lx, m.y - mv_ly); mv_clamp(o); mv_lx = m.x; mv_ly = m.y; }
+    }
+    if (frames % 30 == 0)                                            /* the game window was resized: back on the screen */
+        for (int k = 0; k < nmv; k++) { Obj q = hget(mvs[k].h); if (q && on_tree(q) && mvs[k].id != mv_id) mv_clamp(q); }
+}
+/* the loader's own: a stock window of the game shows (Options, Load Campaign, New Game, Credits, a notice ...) */
+int dsl_ui_game_window_shown(void) {
+    if (!K_PopUp || !m_obj_finds) return 0;
+    Obj a = CALL(m_obj_finds, Obj, Obj)(type_of(K_PopUp), m_obj_finds); int n = arr_n(a);
+    for (int i = 0; i < n; i++) if (on_tree(arr_at(a, i))) return 1;
+    return 0;
+}
+/* the loader's own (dsl_update.c title corner): an empty group on the screen layer that takes no clicks; its widgets are
+   placed in it, and it is scaled as one */
+DSLObj dsl_ui_group(DSLObj parent, float x, float y, float w, float h) {
+    if (!ready_basic()) return NULL;
+    Obj p = parent_or_layer(parent), rt = p ? new_rect("dsl_ui_group", p) : NULL; if (!rt) return NULL;
+    place_tl(rt, x, y, w, h);
+    W *wd = w_new(W_PANEL); if (!wd) { destroy_obj(go_of(rt)); return NULL; }
+    return w_done(wd, rt, NULL);
+}
+/* test only: the place kept under key (1 = kept) */
+__attribute__((visibility("default"))) int dsl_ui_test_place(const char *key, float *x, float *y) {
+    mvp_load(); for (int i = 0; i < nmvp; i++) if (!strcmp(mvp[i].key, key)) { *x = mvp[i].x; *y = mvp[i].y; return 1; } return 0;
 }
 
 /* ------------------------------------------------------------------ place / active / enabled / destroy / clipboard */
@@ -1824,7 +2082,8 @@ static DSLUi KIT = {
     .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .notice_close = k_notice_close, .place = k_place, .set_active = k_set_active,
     .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
     .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
-    .esc_push = k_esc_push, .esc_drop = k_esc_drop
+    .esc_push = k_esc_push, .esc_drop = k_esc_drop, .close_x = k_close_x, .ui_scale = k_ui_scale, .scale_follow = k_scale_follow,
+    .movable = k_movable
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -2245,6 +2504,9 @@ static void tick(void) {
     run_queue();
     fields_frame();
     esc_tick();
+    esc_guard_frame();
+    sf_frame();
+    mv_frame();
     sliders_frame();
     tips_frame();
     if (!o_cur_perform) tip_place_frame();                          /* else right before the UI is drawn (h_cur_perform) */
@@ -2466,6 +2728,13 @@ void dsl_ui_install(void) {
         m_sl_setmin = OPT(K.Slider, "set_minValue", 1); m_sl_setmax = OPT(K.Slider, "set_maxValue", 1); m_sl_whole = OPT(K.Slider, "set_wholeNumbers", 1);
         m_sl_get = OPT(K.Slider, "get_value", 0); m_sl_set = OPT(K.Slider, "set_value", 1);
     }
+    { void *kUSM = dsl_find_class("Refactor", "UIScaleManager"), *kDAS = dsl_find_class(RU, "DASButton"), *kCB = dsl_find_class(UI, "ColorBlock");
+      m_usm_inst = OPT(kUSM, "get_Instance", 0); m_usm_scale = OPT(kUSM, "get_Scale", 0);           /* scale_follow, ui_scale */
+      m_input_mb = OPTSIG(kInput, "GetMouseButton", 1, "System.Int32"); m_input_mbd = OPTSIG(kInput, "GetMouseButtonDown", 1, "System.Int32");   /* movable */
+      f_slv_close = fld(K.SaveLoadView, "_closeButton"); f_das_targets = fld(kDAS, "_targets"); f_das_ttype = fld(kDAS, "_transitionType");   /* close_x */
+      f_sel_trans = fld(K.Selectable, "m_Transition"); f_sel_colors = fld(K.Selectable, "m_Colors");
+      colors_n = kCB && I.class_value_size ? I.class_value_size(kCB, NULL) : 0;
+      K_PopUp = dsl_find_class(RU, "PopUpUI_Base"); }
     f_uif_prefabs = fld(K.UIFactory, "_prefabs"); f_slv_field = fld(K.SaveLoadView, "_saveNameInputField"); f_cs_field = fld(K.CampaignSetting, "_campaignNameInputField");
     if (miss_core) { dsl_log("ui: %d core game names missing (%s): kit off", miss_core, miss_list); return; }
     if (miss_opt) dsl_log("ui: %d optional names missing (%s): those parts are off", miss_opt, miss_list);

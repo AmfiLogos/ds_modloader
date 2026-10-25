@@ -43,6 +43,7 @@ static void destroy_ui(void) { if (root) U->destroy(root); root = fill = step_t 
 /* design B: bottom strip (reference 1920x1080, the game's NOW LOADING sits at the bottom right below it) */
 static void build_strip(void) {
     root = U->panel(NULL, 0, 0, 1920, 1080, 0x00000001); if (!root) return;  /* the game's loading screen shows through */
+    U->esc_push(root, NULL, NULL, DSL_ESC_HUD);                       /* a loading overlay, not a window: never takes Escape */
     dsl_ui_flat(root, 0x00000001);
     U->text(root, 128, 886, 700, 44, TR("Applying mods"), 30, DSL_TXT_LEFT | DSL_TXT_TITLE, TITLE_C);
     step_t = U->text(root, 820, 888, 972, 44, "", 26, DSL_TXT_RIGHT, BODY_C);
@@ -54,6 +55,7 @@ static void build_strip(void) {
 /* design C: ornament bar (title, a thin bar between two copper diamonds, "Step n of m · step") */
 static void build_ornament(void) {
     root = U->panel(NULL, 0, 0, 1920, 1080, 0x00000001); if (!root) return;
+    U->esc_push(root, NULL, NULL, DSL_ESC_HUD);                       /* a loading overlay, not a window: never takes Escape */
     dsl_ui_flat(root, 0x00000001);
     float w = 960, x = (1920 - w) / 2, y = 540;
     flat_at(root, 0, y - 170, 1920, 280, 0x222025FFu);                    /* the loading screen's colour over its tip text */
@@ -83,6 +85,7 @@ static void step_of(const char *key, const char *text, char *out, size_t cap) {
 /* design A: centered panel */
 static void build_panel(void) {
     root = U->panel(NULL, 0, 0, 1920, 1080, 0x00000001); if (!root) return;  /* the game's loading screen shows through */
+    U->esc_push(root, NULL, NULL, DSL_ESC_HUD);                       /* a loading overlay, not a window: never takes Escape */
     dsl_ui_flat(root, 0x00000001);
     float w = 840, h = 330, x = (1920 - w) / 2, y = (1080 - h) / 2;
     flat_at(root, x - 8, y - 8, w + 16, h + 16, 0x5E4231FFu);               /* outer ring */

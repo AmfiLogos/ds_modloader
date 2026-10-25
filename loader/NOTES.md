@@ -856,7 +856,8 @@ world; they must not mix with the per-world mods.
 Owner: "some of the mods that we have can be considered not even mods but more game fix ... put them in a different
 category like bug fixes"; Modded off in the Load list filters hid every world (each had Global cooldown fix on).
 - mod.json `"category": "fix"` (absent = a game mod; `"feature"` = launcher mod, above). Fixes today: Global cooldown
-  fix (gcd-cdr 0.1.7, scope gameplay) and Sound settings fix (sound-fix 0.1.1, scope client). No built-in id list: an
+  fix (gcd-cdr 0.1.7, scope gameplay), Sound settings fix (sound-fix 0.1.1, scope client) and Live building HP (live-hp
+  0.1.0, scope client; section below). No built-in id list: an
   older mod.json without the field is a game mod (pre-launch, no compatibility work).
 - A fix is per world like a game mod (in a world's key if scope gameplay; in the HELLO lines as before), but the Load
   list filter counts it as Vanilla & Vanilla+ (`dsl_world_is_modded` skips it). Tooltips say so.
@@ -884,6 +885,26 @@ category like bug fixes"; Modded off in the Load list filters hid every world (e
   switch. Nothing on = "No mods are on for this world. Switch off "Show only active mods" to see every mod.".
 - Log: `reg: fixes: gcd-cdr (on in all worlds), sound-fix (client: the same in all worlds)` at start; `reg: world <guid>
   set to <key>, fixes off: <ids>`; the world check logs the set it compares (with the fixes).
+
+## Live building HP (owner 2026-10-25, branch feat/live-hp) - `modules/live-hp/live_hp.c`
+Owner's pick: the DPS Check dummy's live HP (Units Laboratory 0.1.26) for ALL buildings, as a Fix like Sound settings fix.
+- Stock bug (decomp 25846389): a building's bottom panel (EntitySummaryUIView: UpdateBuildingEntityUI -> SetDurabilityUI)
+  and its Inspect window rows (SubUI_EntityInspectionStatus.SetBuildingStatus) are filled when the selection changes or the
+  window opens, never after (UpdateOnStatusChanged refreshes units only; RefreshOnFrame refreshes a building's work text,
+  not its durability). Damage or repair while it stays selected: the old number and bar stay.
+- Fix (client, category fix, default on): one hook, EntitySummaryUIPresenter.RefreshOnFrame (the panel's per-frame refresh,
+  a delegate target: not inlined on Windows). For one selected BuildingEntity (summary Building / Storage / WorkPlan /
+  Research) or FarmEntity (Farming), it reads Durability / MaxDurability from the entity's own StatusReader
+  (EntityComponent._components -> ComponentList.TryGetReader(Status), weak handle per guid, looked up again every 120
+  frames) and, on a change (and once more 10 frames after a new selection or window), calls the game's own
+  UpdateBuildingEntityUI(reader) and, while the Inspect window shows (_currentToggled = EntityInspect), SetBuildingStatus(
+  reader, quality as RefreshBuilding works it out). Game calls through il2cpp_runtime_invoke (an exception is caught).
+- One owner per site: custom-modes hooks UpdateBuildingEntityUI and SetBuildingStatus (the DPS Check's number form and
+  fit); this mod only calls them, so that form runs on every live change. custom-modes' own per-frame copies of the
+  follow (tf_dps.c live_tick / ins_tick) are not needed with this fix.
+- Proof: `test/live_hp_test.py` (one hidden copy, base map, test module `test/hp_probe.c`: selects the support wagon the
+  game's way, changes its durability with StatusComponent.AddValue, and logs per frame when the panel / window first match).
+  Stock: no match in 3 s (damage, repair, window, second building); with the fix: match in 33 ms each (one frame).
 
 ## Hell always loaded, New Game switch shows it (owner 2026-10-25, branch feat/hell-toggle) - `ui/dsl_newgame.c`, `src/dsl_reg.c`
 Owner, first ask: "a toggle in the difficulty selection screen, to its right ... which then keeps turned on the custom
@@ -1027,3 +1048,65 @@ Discord ping (receiver side: lane bugrecv; its spec is crashrep/README.md "kind 
   too big -> screenshot dropped; fails when the base64 is scrubbed). Rig: `test/bugrep_test.py [out] [--send]
   [--title-only]` on copy R with test module `bugrep-probe` (fake mouse on the stock buttons; OpenURL and
   OpenSavesFolder counted, never run): title + world, fails on the old loader (the stock button calls OpenURL).
+
+## Escape (owner 2026-10-25: "make sure Escape works to close our custom windows"; kit 0.1.28, lane dsesc) - `src/dsl_ui.c` "Escape"
+THE RULE, for every window of every mod, now and later (owner: "make sure to put a rule so the escape button works like this
+in all future windows"; also in the mod skill, "ESCAPE RULE"):
+- One press acts on the TOP window of ours only, as that window's own button does, with the same cleanup:
+  - a sub-page with a Back button (a mod's Settings page, the Gallery's Details): Back one level; the next press closes;
+  - a confirm / notice box: Cancel (one button: OK); the crash-report consent box is the only exception (no answer);
+  - a text field with the keyboard: the press only leaves the field (and the field lets go of the selection); in an edit
+    row or box (DSL_ESC_EDIT) it also cancels the row; the next press closes the window;
+  - otherwise: the window's own Close / X / Cancel.
+- The game never gets that press: no pause menu, the stock window under ours stays. Only when none of ours shows does
+  Escape go to the game.
+How a module registers (dsl_sdk.h, beside esc_push): `dsl_esc_push(ui, win, close, ud, flags)` where the window is built or
+shown, `dsl_esc_drop(ui, win)` where it hides (a destroyed window drops itself). A box inside a window: push the box when it
+shows. A sub-page: push its body (close = its Back), or let the window's close run the Back while the sub-page is open
+(Units Laboratory cm_win.c `cmw_set_back`: the window keeps its place on the stack). The kit's notice box: nothing to do.
+A HUD panel with no Close (a meter, a log, a loading overlay): `dsl_esc_push(ui, panel, NULL, NULL, DSL_ESC_HUD)`. A module
+that reads Escape itself (multiplayer's title pages) skips a press when the loader export `dsl_esc_taken()` says 1.
+How it works: windows push themselves on a stack (weak GC handles); the kit reads the key in its frame tick
+(Input.GetKeyDown) and calls the close of the top shown entry, once per press. The game's own reader is
+KeyInputDispatcher.<GetInputOnKeyDown>d__18.MoveNext (List.AddRange in UpdateInputStream, an interface call: not inlined
+on Windows either); the kit's hook there (mac 0xd43494, win 0xa67620, by name) skips KeyCode.Escape while one of ours shows
+or the kit used this frame's press, so no EscapeActionRequested is made. Picked over InputEventHandler.OnEvent (multiplayer
+owns it; it would not stop the other Escape-made events) and IsTextInputFocused / UpdateKeyStream (multiplayer owns them;
+they block every hotkey).
+The guard (hard to forget): in test copies (background-only or DSRIG_CTL=1) every root panel of the kit (parent NULL) that
+shows 30 frames after it was made must be pushed (itself or a part of it), be made in the same frame as a pushed one (its
+dim backdrop), or be pushed as DSL_ESC_HUD; else dsload.log gets `ESC-MISSING "<its first text>"` and the esc tests fail
+(loader test/esc_test.py, Units Laboratory units/test/esc_test.py, multiplayer rig/esc_kit_test.py sweep the log). It does
+not see a window built from a mod's own clones (multiplayer's mk_* windows): those follow the rule by review and their test.
+Pick (logged): no default registration. The kit cannot know a window's own Close (the Unit Builder's Cancel asks first, the
+home page goes Back, Bring Units runs its callback, a HUD panel has none), so a wrong default would be worse than the log.
+Tests (real Escape key events on the game's view, hidden copies): loader esc_test 44/44 (title + world: demo panel, field,
+notice, Mods window, name row, Settings page Back, Load list + a world's Mods window, Bug report; Esc menu / Load list under
+ours stay), Units Laboratory esc_test 46/46, multiplayer esc_kit_test 37/37 + esc_mini_pair 5/5.
+
+## Red X, UI Scale, right-drag move (owner 2026-10-25, UX review L1 L2 L4 + MOVE RULE; kit 0.1.28, lane dskit) - `src/dsl_ui.c` "the game's look"
+Three DSLUi calls appended after esc_drop (dsl_sdk.h; wrappers `dsl_close_x`, `dsl_ui_scale`, `dsl_scale_follow`, `dsl_movable`
+give NULL / 1 / -1 with an older kit):
+- `close_x(parent, x, y, size, win)`: the game's red X. A copy of the Load Campaign window's own close button (popup prefab 5,
+  `SaveLoadView._closeButton`: 32 x 32, frame sprite topLineButton_Frame1 + child Img_cross) with its Button off, inside a kit
+  title button whose frame is off: the copy draws, its images take the click, the kit button gets it (crafted Action) and
+  its DASButton transition drives the copy's images with the close button's own colours (hover / press as the game's).
+  A click runs the close that `win` registered with esc_push: the same action as Escape, cleanup included (one place to
+  get it right). NULL when the game's button is not found: the caller keeps its text "X".
+  Used on: the Mods window (title and a world's), the bug report. Units Laboratory and multiplayer take it in their repos.
+- `ui_scale()` = UIScaleManager.Instance.Scale (Settings > UI Scale, 0.75 .. 1.4), 1 when unknown.
+- `scale_follow(win)`: OPT-IN per window (Units Laboratory and Bring Units apply UI Scale themselves; a global scale of the
+  kit layer would scale them twice). localScale = UI Scale, smaller when the window would not fit in its parent; applied
+  at once, on a UI Scale change (polled every frame, two calls) and every 30 frames (game window resized). Used on: the
+  Mods window, the bug report, the title corner (one group, dsl_ui_group, scaled from the top-right corner). The Load
+  list's filter panel and the New Game panels sit inside the game's own windows and already follow it.
+- `movable(panel, key)`: OPT-IN. A right press on the panel (the newest movable one under the pointer) and a move of 6 px
+  starts the drag (a right-click alone stays a click); the panel follows the pointer (rt_move_screen: any canvas), is kept
+  on the screen (all of it; its top-left when bigger), and on release its anchoredPosition is kept under key in
+  `<DSML_DATA>/Mods/ui_places.tsv` (key, x, y). The next movable() with that key puts it back (then on the screen). All
+  movable panels are put back on the screen every 30 frames (a smaller game window).
+- L2: the title corner (Auto-update switch, version, notice line, buttons) hides while a window of the game shows (any active
+  `Refactor.UI.PopUpUI_Base`: Options, Load Campaign, New Game, Credits, a notice), checked every 5 frames; it crossed the
+  Options window's red X at UI Scale 1.4.
+Test: `test/kitlook_test.py` (hidden copy KIT, uikit-demo driver: rdrag / rclick fake right mouse, api follow / movable /
+uiscale): 19/19 on this kit; main 5e213f1: 13 FAIL (no red X, nothing follows UI Scale, the corner over Options, no move).

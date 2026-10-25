@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "5d1abe46f74254dcad036aba455c59360f25e70d",
- "cm_pin": "772c0faa574c56401836f7b4b86fc1114a3823f6",
+ "mp_pin": "1a163d1e798a9146a68776f1a98cb3582fc13d88",
+ "cm_pin": "2c2f2f212e0246981287590ac6f6d79b4e513f2e",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -6308,6 +6308,23 @@
    "label": "sound-fix SoundSetting.SetSoundVolume",
    "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
    "key": "sound-fix|sound_fix.c|my_set_volume|"
+  },
+  {
+   "owner": "live-hp",
+   "kind": "detour",
+   "method": "Refactor.UI.EntitySummaryUIPresenter$$RefreshOnFrame",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xecd664"
+    },
+    "win-x64": {
+     "rva": "0xbcb2c0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "live-hp EntitySummaryUIPresenter.RefreshOnFrame",
+   "source": "ds_modloader:loader/modules/live-hp/live_hp.c",
+   "key": "live-hp|live_hp.c|h_frame|"
   },
   {
    "owner": "weapon-slot",

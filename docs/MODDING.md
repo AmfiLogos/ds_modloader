@@ -320,7 +320,7 @@ You can ship a C# mod in the same zip format. The loader installs and starts the
 - Players install it: Mods, "Open mods folder", drop the zip, Refresh, turn it on, Apply. A zip that is not a mod
   moves to `.failed`.
 - Signing: the loader's auto-update covers only the official mods (multiplayer, custom-modes, gcd-cdr,
-  hell-difficulty, zetu-suite, sound-fix, multi-bar, weapon-slot, locked-slots, dsmp-bridge), signed with the project's release key. Your mod is installed by hand and
+  hell-difficulty, zetu-suite, sound-fix, live-hp, multi-bar, weapon-slot, locked-slots, dsmp-bridge), signed with the project's release key. Your mod is installed by hand and
   is not signed by us. On Mac, the ad-hoc `codesign -s -` signature is enough.
 - Before you publish: search your files for your user name and home path (build paths end up in binaries).
 
