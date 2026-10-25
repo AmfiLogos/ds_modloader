@@ -52,14 +52,16 @@ void dsl_soft_prewarm_stop(void);
 int dsl_soft_prewarm_state(void);
 int dsl_ui_title_shown(void);                              /* dsl_ui.c: title menu column on screen */
 void dsl_ui_place_tr(DSLObj w, float right, float top, float wd, float h);
+DSLObj dsl_ui_group(DSLObj parent, float x, float y, float w, float h);   /* dsl_ui.c: an empty group that takes no clicks */
+int dsl_ui_game_window_shown(void);                        /* dsl_ui.c: a stock window of the game shows */
 
 #define KIT_REPO "AmfiLogos/ds_modloader"
 static const struct { const char *id, *repo; } MOD_REPOS[] = {
     { "multiplayer", "AmfiLogos/ds_multiplayer" }, { "custom-modes", "AmfiLogos/ds_custommodes" },
     { "gcd-cdr", "AmfiLogos/ds_modloader" }, { "hell-difficulty", "AmfiLogos/ds_modloader" },
     { "zetu-suite", "AmfiLogos/ds_modloader" }, { "sound-fix", "AmfiLogos/ds_modloader" },
-    { "multi-bar", "AmfiLogos/ds_modloader" }, { "weapon-slot", "AmfiLogos/ds_modloader" },
-    { "locked-slots", "AmfiLogos/ds_modloader" },
+    { "live-hp", "AmfiLogos/ds_modloader" }, { "multi-bar", "AmfiLogos/ds_modloader" },
+    { "weapon-slot", "AmfiLogos/ds_modloader" }, { "locked-slots", "AmfiLogos/ds_modloader" },
     { "dsmp-bridge", "AmfiLogos/ds_multiplayer" },     /* hidden library for BepInEx mods: installed with the mods that need it */
 };
 
@@ -425,7 +427,7 @@ static void title_results(void) {
 }
 
 /* ------------------------------------------------------------------ title corner */
-static uintptr_t c_tog, c_txt, c_btn, c_ver, c_rbtn;       /* DSLObj kept as plain pointers (re-made when gone) */
+static uintptr_t c_tog, c_txt, c_btn, c_ver, c_rbtn, c_grp;   /* DSLObj kept as plain pointers (re-made when gone) */
 static int c_btn_on, c_rbtn_on; static char c_last_line[600], c_btn_label[160]; static unsigned c_gen;
 static int restarting, restart_failed;                     /* "Restart and update now": 1 waiting for the starter, 2 quitting / it failed */
 static time_t restart_t0;
@@ -479,26 +481,36 @@ static void restart_frame(void) {
 static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
     int show = dsl_ui_title_shown() && dsl_reg_scene() == 1 && dsl_soft_title_idle();   /* the idle title only: never under a loading screen */
-    DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn, ver = (DSLObj)c_ver, rbtn = (DSLObj)c_rbtn;
+    /* UX L2: never over a window of the game (Options, New Game, Load Campaign, Credits, a notice): at UI Scale 1.4 its line
+       crossed the window's red X. Checked every 5 frames (FindObjectsOfType) */
+    static int c_frames, c_stock;
+    if (show && c_frames++ % 5 == 0) { int st = dsl_ui_game_window_shown(); if (st != c_stock) dsl_log("update: title corner %s", st ? "hidden: a window of the game shows" : "shown again"); c_stock = st; }
+    if (c_stock) show = 0;
+    DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn, ver = (DSLObj)c_ver, rbtn = (DSLObj)c_rbtn, grp = (DSLObj)c_grp;
     if (tog && c_gen != dsi_generation()) {                 /* a language change: made again (label, the new language's font) */
         u->destroy(tog); if (txt) u->destroy(txt); if (btn) u->destroy(btn); if (ver) u->destroy(ver); if (rbtn) u->destroy(rbtn);
-        c_tog = c_txt = c_btn = c_ver = c_rbtn = 0; tog = txt = btn = ver = rbtn = NULL; c_btn_label[0] = 0;
+        if (grp) u->destroy(grp);
+        c_tog = c_txt = c_btn = c_ver = c_rbtn = c_grp = 0; tog = txt = btn = ver = rbtn = grp = NULL; c_btn_label[0] = 0;
     }
     if (!show || restarting) {
         if (tog) u->set_active(tog, 0); if (txt) u->set_active(txt, 0); if (btn) u->set_active(btn, 0); if (ver) u->set_active(ver, 0);
         if (rbtn) u->set_active(rbtn, 0);
+        if (grp) u->set_active(grp, 0);
         c_btn_on = c_rbtn_on = tog ? 0 : -1; return;
     }
     if (!tog) {
         c_gen = dsi_generation();
-        tog = u->toggle(NULL, 0, 0, 380, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
-        txt = u->text(NULL, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT | DSL_TXT_WRAP, 0xE8DCC0FF);
-        btn = u->button(NULL, 0, 0, 260, 40, TR("Download update"), button_click, NULL);
-        rbtn = u->button(NULL, 0, 0, 340, 40, TR("Restart and update now"), restart_click, NULL);
+        /* one group in the screen's top-right corner, scaled as one with the game's UI Scale (UX L1); it takes no clicks */
+        grp = dsl_ui_group(NULL, 0, 0, 560, 260); if (!grp) return;
+        dsl_ui_place_tr(grp, 0, 0, 560, 260); u->scale_follow(grp); c_grp = (uintptr_t)grp;
+        tog = u->toggle(grp, 0, 0, 380, TR("Auto-update mod loader"), auto_on, toggle_change, NULL);   /* owner 2026-10-17: says what it updates */
+        txt = u->text(grp, 0, 0, 520, 30, "", 16, DSL_TXT_RIGHT | DSL_TXT_WRAP, 0xE8DCC0FF);
+        btn = u->button(grp, 0, 0, 260, 40, TR("Download update"), button_click, NULL);
+        rbtn = u->button(grp, 0, 0, 340, 40, TR("Restart and update now"), restart_click, NULL);
         if (!tog || !txt || !btn || !rbtn) return;
         /* the installed kit release, so two players can see they have the same one (owner 2026-10-20). The product name
            is not translated. Unknown release (dev build, no RELEASE file): no line. */
-        if (S.have[0]) { char v[96]; snprintf(v, sizeof v, "Dungeon Settlers Modded v%s", S.have); ver = u->text(NULL, 0, 0, 520, 24, v, 14, DSL_TXT_RIGHT, 0xD8CCB0D0); }
+        if (S.have[0]) { char v[96]; snprintf(v, sizeof v, "Dungeon Settlers Modded v%s", S.have); ver = u->text(grp, 0, 0, 520, 24, v, 14, DSL_TXT_RIGHT, 0xD8CCB0D0); }
         /* below the game's copyright line: switch, version, the status line, then its button */
         dsl_ui_place_tr(tog, 24, 56, 380, 40); if (ver) dsl_ui_place_tr(ver, 24, 98, 520, 24);
         dsl_ui_place_tr(txt, 24, 126, 520, 30); dsl_ui_place_tr(btn, 24, 160, 260, 40); dsl_ui_place_tr(rbtn, 24, 160, 340, 40);
@@ -508,7 +520,7 @@ static void corner_frame(void) {
         if (ver) dsl_log("update: title version line: Dungeon Settlers Modded v%s", S.have);
         dsl_log("update: title corner shown (auto-update %s)", auto_on ? "on" : "off");
     }
-    u->set_active(tog, 1); if (ver) u->set_active(ver, 1);
+    u->set_active(grp, 1); u->set_active(tog, 1); if (ver) u->set_active(ver, 1);
     pthread_mutex_lock(&mu);
     int st = S.dl, avail = S.checked && any_update(), clicked = consent || S.dl_wanted, rk = ready_kind; char kv[32];
     snprintf(kv, sizeof kv, "%s", S.kit_ver);

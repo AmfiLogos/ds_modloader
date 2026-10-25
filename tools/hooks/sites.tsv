@@ -38,6 +38,7 @@ zetu-suite	zetu.c	my_campaign_init	Refactor.SystemVar.Campaign$$Init/0	active: s
 zetu-suite	zetu_ui.c	*	-	active: setting max_units not 4 (default 4: not installed)
 sound-fix	sound_fix.c	my_set_volume	-	active: always (mod enabled)
 sound-fix	sound_fix.c	my_set_mute	-	active: always (mod enabled)
+live-hp	live_hp.c	h_frame	-	active: always (mod enabled)
 multiplayer	ui_tip.c	hk_etc_show	-	active: from the first tooltip the multiplayer window shows (installed on first use)
 multiplayer	ui_tip.c	hk_set_align	-	active: from the first tooltip the multiplayer window shows (installed on first use)
 hell-difficulty	hell.c	*	-	active: always (mod enabled)

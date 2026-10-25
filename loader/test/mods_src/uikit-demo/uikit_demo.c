@@ -4,11 +4,17 @@
 //   <dir>/req.json  {"seq":n,"cmd":...}  ->  <dir>/resp.json  {"seq":n,...}
 //   cmd state | click {target} | hover {target} | key {code} | type {text} | wheel {target, dy} | capture {name}
 //       | api {op, ...}   (toggle_set, value_set, field_set, set_text, place, set_active, set_enabled, destroy,
-//                          clipboard_set, clipboard_get, tooltip_off, notice1, open, hover_off)
+//                          clipboard_set, clipboard_get, tooltip_off, notice1, open, hover_off, bare {a:1|0} = a root panel
+//                          "Guard probe" with no Escape registration, made / destroyed: the kit's ESC-MISSING guard)
 //       targets: the panel's names, notice_ok / notice_cancel, title:<label>, cm:<prefix>:<name> (Units Laboratory's
 //                cm_test_target, when that module runs)
 //       | stock {what}   the game's own button method (escape test, loader/test/esc_test.py): title_load, title_bug,
-//                          esc_load, esc_bug (TitleMenuView / SystemMenuView); the state then says which stock views show
+//                          title_settings, title_newgame, esc_load, esc_bug (TitleMenuView / SystemMenuView); the state then
+//                          says which stock views show
+//       | rdrag {target, dx, dy}   a RIGHT-button drag from the target's centre by dx, dy screen pixels (y up) over 20 frames
+//       | rclick {target}          a right press + release without a move
+//       api ops (kit 0.1.28, loader/test/kitlook_test.py): follow (scale_follow on the panel), movable (key
+//                          "uikit-demo.panel"), uiscale {a: scale} (the game's UIScaleManager.SetScale), the panel's red X = target "x"
 // Escape (kit 0.1.28): the panel is pushed on the kit's Escape stack (Escape = Close).
 // Mouse: a fake mouse fed into Unity's Input (see fk_*), keys: real NSEvents given to the game window. The window stays
 // on the far-off test stage (DSL_SOFT_STAGE) and the app is never activated.
@@ -38,7 +44,7 @@ static DSLObj (*t_title)(const char *, char *, size_t); static DSLObj (*t_notice
 static int (*t_type)(DSLObj, const char *); static void (*t_hover)(DSLObj); static int (*t_tip)(char *, size_t);
 
 /* ------------------------------------------------------------------ the demo panel */
-static DSLObj panel, t_head, t_status, b_press, b_disabled, tg, vr, fd, sc, rows[20], img, b_notice, b_notice1, b_close;
+static DSLObj panel, t_head, t_status, b_press, b_disabled, tg, vr, fd, sc, rows[20], img, b_notice, b_notice1, b_close, b_x;
 static int n_click, n_disabled, n_toggle, n_value, n_submit, n_ok, n_cancel, n_title, built;
 static const char *const speeds[] = { "Slow", "Normal", "Fast" };
 static void status(void) {
@@ -57,7 +63,7 @@ static void on_notice(void *ud, DSLObj w) { (void)ud; (void)w; U->notice("<size=
 static void on_notice1(void *ud, DSLObj w) { (void)ud; (void)w; U->notice("One button only.", "Got it", NULL, on_ok, NULL, NULL); }
 static void close_panel(void) {                                    /* the children go with it: no raw pointer to them stays (the state reads them) */
     if (panel) U->destroy(panel);
-    panel = t_head = t_status = b_press = b_disabled = tg = vr = fd = sc = img = b_notice = b_notice1 = b_close = NULL;
+    panel = t_head = t_status = b_press = b_disabled = tg = vr = fd = sc = img = b_notice = b_notice1 = b_close = b_x = NULL;
     memset(rows, 0, sizeof rows); built = 0;
 }
 static void on_close(void *ud, DSLObj w) { (void)ud; (void)w; close_panel(); }
@@ -82,6 +88,7 @@ static void build(void) {
     b_notice = U->button(panel, 20, 506, 250, 40, "Notice", on_notice, NULL);
     b_notice1 = U->button(panel, 290, 506, 250, 40, "Notice (one button)", on_notice1, NULL);
     b_close = U->button(panel, 20, 570, 520, 44, "Close", on_close, NULL);
+    b_x = dsl_close_x(U, panel, 512, 14, 34, panel);                   /* the game's red X: runs esc_close below */
     built = 1; status();
     dsl_esc_push(U, panel, esc_close, NULL, 0);
     H->log(ME, "panel built: panel %p text %p button %p toggle %p value %p field %p scroll %p image %p", panel, t_head, b_press, tg, vr, fd, sc, img);
@@ -117,18 +124,26 @@ static void send_ev(id w, id ev) {
    scripted values while a fake action runs. The stock StandaloneInputModule -> raycast -> OnPointerClick chain decides. */
 typedef struct { float x, y, z; } V3; typedef struct { float x, y; } V2;
 static int (*frame_now)(const void *);
-static int fk_on, fk_down = -1, fk_until, fk_wheel_at = -1; static float fk_x, fk_y, fk_wy;
+static int fk_on, fk_down = -1, fk_up = -1, fk_btn, fk_m0 = -1, fk_m1 = -1, fk_until, fk_wheel_at = -1; static float fk_x, fk_y, fk_wy, fk_x1, fk_y1;
 static bool (*o_mb)(int, const void *), (*o_mbd)(int, const void *), (*o_mbu)(int, const void *);
 static V3 (*o_mpos)(const void *); static V2 (*o_wheel)(Obj, const void *);
 static int fnow(void) { return frame_now ? frame_now(NULL) : 0; }
 static int fk_live(void) { return fk_on && fnow() <= fk_until; }
-static bool hk_mb(int b, const void *mi) { return fk_live() ? (fk_down >= 0 && b == 0 && fnow() == fk_down) : o_mb(b, mi); }
-static bool hk_mbd(int b, const void *mi) { return fk_live() ? (fk_down >= 0 && b == 0 && fnow() == fk_down) : o_mbd(b, mi); }
-static bool hk_mbu(int b, const void *mi) { return fk_live() ? (fk_down >= 0 && b == 0 && fnow() == fk_down + 1) : o_mbu(b, mi); }
-static V3 hk_mpos(const void *mi) { return fk_live() ? (V3){ fk_x, fk_y, 0 } : o_mpos(mi); }
+static bool hk_mb(int b, const void *mi) { return fk_live() ? (fk_down >= 0 && b == fk_btn && fnow() >= fk_down && fnow() < fk_up) : o_mb(b, mi); }
+static bool hk_mbd(int b, const void *mi) { return fk_live() ? (fk_down >= 0 && b == fk_btn && fnow() == fk_down) : o_mbd(b, mi); }
+static bool hk_mbu(int b, const void *mi) { return fk_live() ? (fk_down >= 0 && b == fk_btn && fnow() == fk_up) : o_mbu(b, mi); }
+static V3 hk_mpos(const void *mi) {
+    if (!fk_live()) return o_mpos(mi);
+    float t = fk_m0 < 0 || fnow() <= fk_m0 ? 0 : fnow() >= fk_m1 ? 1 : (float)(fnow() - fk_m0) / (float)(fk_m1 - fk_m0);
+    return (V3){ fk_x + (fk_x1 - fk_x) * t, fk_y + (fk_y1 - fk_y) * t, 0 };
+}
 static V2 hk_wheel(Obj self, const void *mi) { return fk_live() && fnow() == fk_wheel_at ? (V2){ 0, fk_wy } : o_wheel(self, mi); }
-static void fk_at(const float r[4]) { fk_on = 1; fk_x = (r[0] + r[2]) / 2; fk_y = (r[1] + r[3]) / 2; fk_down = -1; fk_wheel_at = -1; }
-static int click_rect(const float r[4]) { fk_at(r); fk_down = fnow() + 5; fk_until = fk_down + 30; return 0; }   /* rest 5 frames, press, release */
+static void fk_at(const float r[4]) { fk_on = 1; fk_x = fk_x1 = (r[0] + r[2]) / 2; fk_y = fk_y1 = (r[1] + r[3]) / 2; fk_down = fk_up = fk_m0 = fk_m1 = -1; fk_btn = 0; fk_wheel_at = -1; }
+static int click_rect(const float r[4]) { fk_at(r); fk_down = fnow() + 5; fk_up = fk_down + 1; fk_until = fk_down + 30; return 0; }   /* rest 5 frames, press, release */
+static int rdrag_rect(const float r[4], float dx, float dy) {      /* right press, 20 frames of moving, release */
+    fk_at(r); fk_btn = 1; fk_x1 = fk_x + dx; fk_y1 = fk_y + dy;
+    fk_down = fnow() + 5; fk_m0 = fk_down + 2; fk_m1 = fk_m0 + 20; fk_up = fk_m1 + 3; fk_until = fk_up + 10; return 0;
+}
 static int move_rect(const float r[4]) { fk_at(r); fk_until = 0x7fffffff; return 0; }                           /* hover until "mouse_off" */
 static int wheel_rect(const float r[4], int dy) { fk_at(r); fk_wheel_at = fnow() + 3; fk_wy = (float)dy; fk_until = fk_wheel_at + 20; return 0; }
 static id ns_str(const char *s) { return ((id (*)(Class, SEL, const char *))objc_msgSend)(objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), s); }
@@ -162,7 +177,7 @@ static int capture(const char *name) {
 static DSLObj target(const char *t) {
     static const struct { const char *n; DSLObj *o; } map[] = { { "panel", &panel }, { "head", &t_head }, { "status", &t_status },
         { "press", &b_press }, { "disabled", &b_disabled }, { "toggle", &tg }, { "value", &vr }, { "field", &fd }, { "scroll", &sc },
-        { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close } };
+        { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close }, { "x", &b_x } };
     for (size_t i = 0; i < sizeof map / sizeof *map; i++) if (!strcmp(t, map[i].n)) return *map[i].o;
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
@@ -174,6 +189,7 @@ static DSLObj target(const char *t) {
         return cmt ? cmt(t + 3) : NULL;
     }
     if (!strcmp(t, "update")) { static DSLObj (*ut)(void); if (!ut) *(void **)&ut = dlsym(RTLD_DEFAULT, "dsl_update_test_toggle"); return ut ? ut() : NULL; }
+    if (!strncmp(t, "win:", 4)) { static DSLObj (*wt)(const char *); if (!wt) *(void **)&wt = dlsym(RTLD_DEFAULT, "dsl_win_test_control"); return wt ? wt(t + 4) : NULL; }   /* the Mods window's controls */
     return NULL;
 }
 /* sub-parts of composite widgets: value row arrows / field are at fixed places inside the root rect */
@@ -207,7 +223,8 @@ static int stock_shown(const char *ns, const char *k) {
 }
 static int stock_call(const char *what) {
     const char *k = !strncmp(what, "title_", 6) ? "TitleMenuView" : "SystemMenuView";
-    const char *m = !strcmp(what, "title_load") || !strcmp(what, "esc_load") ? "OnLoadCampaignPressed" : !strcmp(what, "title_bug") ? "OnBugReportPressed" : "OnReportBugPressed";
+    const char *m = !strcmp(what, "title_load") || !strcmp(what, "esc_load") ? "OnLoadCampaignPressed" : !strcmp(what, "title_bug") ? "OnBugReportPressed"
+                  : !strcmp(what, "title_settings") ? "OnSettingsPressed" : !strcmp(what, "title_newgame") ? "OnNewGamePressed" : "OnReportBugPressed";
     Obj v = stock_view("Refactor.UI", k); void (*f)(Obj, const void *) = H->find_method_address("Refactor.UI", k, m, 0);
     if (!v || !f) return -1;
     f(v, NULL); H->log(ME, "stock %s.%s called", k, m); return 0;
@@ -230,7 +247,7 @@ static void state(char *out, size_t cap) {
         o += (size_t)snprintf(out + o, cap - o, ",\"toggle\":%d,\"value\":%d,\"field\":\"%s\"", U->toggle_get(tg), U->value_get(vr), fe);
     }
     { DSLObj ut = target("update"); o += (size_t)snprintf(out + o, cap - o, ",\"update_on\":%d", ut ? U->toggle_get(ut) : -1); }
-    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update" };
+    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title" };
     o += (size_t)snprintf(out + o, cap - o, ",\"w\":{");
     for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
         DSLObj w = target(names[i]); float r[4] = { 0 }; int on = w ? t_rect(w, r) : -1; char l[200] = "", le[260];
@@ -251,12 +268,19 @@ static void state(char *out, size_t cap) {
                     press = H->find_method_address("UnityEngine.EventSystems", "PointerEventData", "get_pointerPress", 0);
                     nm = H->find_method_address("UnityEngine", "Object", "get_name", 0); }
         Obj es = cur ? cur(NULL) : NULL, m = es && mod ? mod(es, NULL) : NULL, pd = m && last ? last(m, -1, NULL) : NULL;
+        static bool (*live)(Obj, const void *); if (!live) live = H->find_method_address("UnityEngine", "Object", "op_Implicit", 1);
         Obj g = pd && enter ? enter(pd, NULL) : NULL, gp = pd && press ? press(pd, NULL) : NULL; char n1[96] = "", n2[96] = "";
+        if (g && (!live || !live(g, NULL))) g = NULL;                  /* destroyed under the pointer (a red X that closed its window): */
+        if (gp && (!live || !live(gp, NULL))) gp = NULL;               /* get_name would throw out of this run-loop timer */
         Obj s1 = g && nm ? nm(g, NULL) : NULL, s2 = gp && nm ? nm(gp, NULL) : NULL;
         for (int k = 0; k < 2; k++) { Obj sx = k ? s2 : s1; char *d = k ? n2 : n1; if (!sx) continue; int32_t len = *(int32_t *)((char *)sx + 0x10); const uint16_t *c = (const uint16_t *)((char *)sx + 0x14);
             int i = 0; for (; i < len && i < 90; i++) d[i] = c[i] < 0x80 && c[i] != '"' && c[i] != '\\' ? (char)c[i] : '?'; d[i] = 0; }
         o += (size_t)snprintf(out + o, cap - o, ",\"ptr_under\":\"%s\",\"ptr_press\":\"%s\"", n1, n2);
     }
+    { static int (*tp)(const char *, float *, float *); if (!tp) *(void **)&tp = dlsym(RTLD_DEFAULT, "dsl_ui_test_place");
+      float px = 0, py = 0; int kept = tp ? tp("uikit-demo.panel", &px, &py) : -1;
+      static int (*sw)(const void *), (*sh)(const void *); if (!sw) { sw = H->find_method_address("UnityEngine", "Screen", "get_width", 0); sh = H->find_method_address("UnityEngine", "Screen", "get_height", 0); }
+      o += (size_t)snprintf(out + o, cap - o, ",\"ui_scale\":%.3f,\"place\":[%d,%.1f,%.1f],\"screen\":[%d,%d]", dsl_ui_scale(U), kept, px, py, sw ? sw(NULL) : -1, sh ? sh(NULL) : -1); }
     char tt[200] = "", te[260]; int ts = t_tip(tt, sizeof tt); jesc(te, sizeof te, tt);
     o += (size_t)snprintf(out + o, cap - o, "},\"tip\":{\"shown\":%d,\"title\":\"%s\"}", ts, te);
 }
@@ -270,6 +294,11 @@ static void handle(const char *j) {
         float r[4]; int on = target_rect(t, r);
         if (on <= 0) rc = -1;
         else rc = !strcmp(cmd, "click") ? click_rect(r) : !strcmp(cmd, "hover") ? move_rect(r) : wheel_rect(r, (int)jnum(j, "dy", -3));
+        o += (size_t)snprintf(out + o, sizeof out - o, "\"at\":[%.0f,%.0f,%.0f,%.0f],", r[0], r[1], r[2], r[3]);
+    }
+    else if (!strcmp(cmd, "rdrag") || !strcmp(cmd, "rclick")) {
+        float r[4]; int on = target_rect(t, r);
+        if (on <= 0) rc = -1; else rc = rdrag_rect(r, !strcmp(cmd, "rdrag") ? (float)jnum(j, "dx", 0) : 0, !strcmp(cmd, "rdrag") ? (float)jnum(j, "dy", 0) : 0);
         o += (size_t)snprintf(out + o, sizeof out - o, "\"at\":[%.0f,%.0f,%.0f,%.0f],", r[0], r[1], r[2], r[3]);
     }
     else if (!strcmp(cmd, "via")) via_view = (int)jnum(j, "view", 1);
@@ -294,6 +323,18 @@ static void handle(const char *j) {
         else if (!strcmp(op, "hover_off")) t_hover(NULL);
         else if (!strcmp(op, "mouse_off")) fk_on = 0;
         else if (!strcmp(op, "notice1")) on_notice1(NULL, NULL);
+        else if (!strcmp(op, "follow")) rc = dsl_scale_follow(U, panel);
+        else if (!strcmp(op, "movable")) rc = dsl_movable(U, panel, "uikit-demo.panel");
+        else if (!strcmp(op, "uiscale")) {                            /* what Settings > UI Scale does */
+            static Obj (*inst)(const void *); static void (*set)(Obj, float, bool, const void *);
+            if (!inst) { inst = H->find_method_address("Refactor", "UIScaleManager", "get_Instance", 0); set = H->find_method_address("Refactor", "UIScaleManager", "SetScale", 2); }
+            Obj m = inst ? inst(NULL) : NULL; if (m && set) set(m, (float)a, false, NULL); else rc = -4;
+        }
+        else if (!strcmp(op, "bare")) {                                /* the Escape guard's probe: a root panel with NO Escape registration */
+            static DSLObj bare; if (bare) U->destroy(bare);
+            bare = a ? U->panel(NULL, 600, 40, 300, 80, 0) : NULL;
+            if (bare) U->text(bare, 10, 10, 280, 60, "Guard probe", 18, DSL_TXT_LEFT, 0);
+        }
         else if (!strcmp(op, "clipboard_set")) U->clipboard_set(s);
         else if (!strcmp(op, "clipboard_get")) { char c[512], ce[600]; size_t n = U->clipboard_get(c, sizeof c); jesc(ce, sizeof ce, c);
                                                  o += (size_t)snprintf(out + o, sizeof out - o, "\"clip\":\"%s\",\"clip_len\":%zu,", ce, n); }

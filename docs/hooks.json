@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "57634ba74c3d0c9f660a23bae8c1f0520a9f70f7",
- "cm_pin": "7894c9a6a391b935bb08385f441fee9ef9379b0f",
+ "mp_pin": "1a163d1e798a9146a68776f1a98cb3582fc13d88",
+ "cm_pin": "2c2f2f212e0246981287590ac6f6d79b4e513f2e",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -4844,6 +4844,40 @@
   {
    "owner": "custom-modes",
    "kind": "detour",
+   "method": "Refactor.FX.AffecterFX_SelfRepair$$OnFXCall",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x9c20b0"
+    },
+    "win-x64": {
+     "rva": "0x71f5d0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes AffecterFX_SelfRepair.OnFXCall",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_fxcall|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.Combat.ExecutionProcess.AffecterSimulator$$Simulate",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x94a380"
+    },
+    "win-x64": {
+     "rva": "0x6b3d20"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes AffecterSimulator.Simulate",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_asim|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
    "method": "Refactor.Combat.ExecutionProcess.DamageSimulator$$Simulate",
    "platforms": {
     "mac-arm64": {
@@ -4878,6 +4912,23 @@
   {
    "owner": "custom-modes",
    "kind": "detour",
+   "method": "Refactor.Combat.ExecutionProcess.HealSimulator$$Simulate",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x94d83c"
+    },
+    "win-x64": {
+     "rva": "0x6b73b0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes HealSimulator.Simulate",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_hsim|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
    "method": "UnityEngine.Input$$get_mouseScrollDelta",
    "platforms": {
     "mac-arm64": {
@@ -4891,6 +4942,57 @@
    "label": "custom-modes Input.get_mouseScrollDelta",
    "source": "ds_custommodes:fights/tf_dps.c",
    "key": "custom-modes|tf_dps.c|h_wheel|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.FX.StatusResultFX$$HandleFX",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xa21bb8"
+    },
+    "win-x64": {
+     "rva": "0x769020"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes StatusResultFX.HandleFX",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_statfx|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.Combat.ExecutionProcess.StatusSimulator$$Simulate",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x94ebe4"
+    },
+    "win-x64": {
+     "rva": "0x6c6eb0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes StatusSimulator.Simulate",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_ssim|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.UI.SubUI_EntityInspectionStatus$$SetBuildingStatus",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xea6af0"
+    },
+    "win-x64": {
+     "rva": "0xbb2fa0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes SubUI_EntityInspectionStatus.SetBuildingStatus",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_setbs|"
   },
   {
    "owner": "custom-modes",
@@ -6206,6 +6308,23 @@
    "label": "sound-fix SoundSetting.SetSoundVolume",
    "source": "ds_modloader:loader/modules/sound-fix/sound_fix.c",
    "key": "sound-fix|sound_fix.c|my_set_volume|"
+  },
+  {
+   "owner": "live-hp",
+   "kind": "detour",
+   "method": "Refactor.UI.EntitySummaryUIPresenter$$RefreshOnFrame",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xecd664"
+    },
+    "win-x64": {
+     "rva": "0xbcb2c0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "live-hp EntitySummaryUIPresenter.RefreshOnFrame",
+   "source": "ds_modloader:loader/modules/live-hp/live_hp.c",
+   "key": "live-hp|live_hp.c|h_frame|"
   },
   {
    "owner": "weapon-slot",
