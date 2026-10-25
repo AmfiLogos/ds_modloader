@@ -1727,6 +1727,14 @@ static void esc_install(void) {
         dsl_log("ui: Escape: key reader hook refused: an Escape that closes our window also reaches the game");
     dsl_log("ui: Escape for our windows ready (fields %s, notice buttons %s)", m_es_cur && m_es_selgo ? "on" : "OFF", m_nv_okclick && m_nv_cancelclick ? "on" : "OFF");
 }
+/* a module that reads Escape itself (multiplayer's title pages, its in-game boxes) leaves the press alone while the kit
+   takes it: one of the pushed windows shows, or the kit used this frame's press. Found by name (Windows: baselib.dll). */
+#ifdef _WIN32
+__declspec(dllexport)
+#else
+__attribute__((visibility("default")))
+#endif
+int dsl_esc_taken(void) { int32_t fc = esc_frame(); return (esc_used == fc && fc >= 0) || esc_top() != NULL; }
 __attribute__((visibility("default"))) int dsl_ui_test_typing(void) { return esc_focused() != NULL; }   /* test: a text field has the keyboard */
 /* test only: the pushed windows, top last ("name|shown|flags;...") */
 __attribute__((visibility("default"))) int dsl_ui_test_esc(char *out, size_t cap) {
