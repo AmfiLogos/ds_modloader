@@ -14,7 +14,7 @@ Vanilla & Vanilla+: a fix never counts as Modded, owner 2026-10-24; two saves),
 Moonlight (tagged Multiplayer).
 Usage: l1_filter_test.py <out dir>   (env DSL_TEST_MODS = built mods, default this tree's loader/build/mods;
 LF_RUNS = comma list of runs, default main,restart,sizes; langs = every language's rows, one shot each)"""
-import json, os, sys, time, shutil, glob, threading, subprocess
+import json, os, re, sys, time, shutil, glob, threading, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 os.environ.setdefault('DSL_TEST_COPY', 'V')
 os.environ.setdefault('DSL_TEST_MODS', os.path.join(os.path.dirname(HERE), 'build', 'mods'))
@@ -75,7 +75,8 @@ def fake_root():
     os.makedirs(os.path.join(FAKEROOT, 'loader'), exist_ok=True); os.makedirs(os.path.join(FAKEROOT, 'update'), exist_ok=True)
     open(os.path.join(FAKEROOT, 'loader', 'RELEASE'), 'w').write('0.1.23\n')
     open(os.path.join(FAKEROOT, 'update', 'notice.txt'), 'w').write('The last update could not be installed. The game stays on 0.1.22.\n')
-    return {'DSML_ROOT': FAKEROOT, 'DSL_UPDATE': '0'}
+    cr = os.path.join(I, 'crashrep_test'); os.makedirs(cr, exist_ok=True); open(os.path.join(cr, 'answer'), 'w').write('no')   # a fresh copy's consent box: No
+    return {'DSML_ROOT': FAKEROOT, 'DSL_UPDATE': '0', 'DSL_CRASHREP_TEST': cr}
 
 
 def start(size=(960, 540), scale=None, lang='en'):
@@ -243,6 +244,61 @@ def run_langs():
         S.stop_all()
 
 
+TIPS = ('vanilla', 'modded', 'multiplayer', 'latest_only')        # the panel's boxes in dsl_rows.c order (pn:<k>)
+
+
+def tip_rect(k):
+    """hover the panel's box k (no mouse, dsl_reg.c hover pn:<k>): (shown, title, card rect) 20 frames later; the card stays
+    about 2 s more (for a shot)"""
+    mark = len(T.dlog()); T.request({'cmd': 'hover', 'what': f'pn:{k}'}); t0 = time.time()
+    rx = re.compile(r"reg test: tip pn:%d shown (\d) title '([^']*)' card ([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)" % k)
+    while time.time() - t0 < 15:
+        m = rx.search(T.dlog()[mark:])
+        if m: return int(m.group(1)), m.group(2), [float(m.group(i)) for i in range(3, 7)]
+        time.sleep(0.2)
+    return 0, '', [0] * 4
+
+
+def tip_checks(tag, st, shot_k=None):
+    """owner 2026-10-25: a box's hover card never covers the filter panel or the Load window (it hid the other boxes:
+    "barely usable"); right below the panel with its left edge when there is room; inside the screen"""
+    p, w, (sw, sh) = st.get('panel', [0] * 4), st.get('window', [0] * 4), st.get('screen', [0, 0])
+    for k, key in enumerate(TIPS):
+        on, title, c = tip_rect(k)
+        log(tag, key, 'card', c, 'panel', p, 'window', w)
+        check(f'{tag}: {key}: the hover card shows', on == 1 and title, (on, title))
+        check(f'{tag}: {key}: the card does not cover the filter panel', not overlap(c, p), (c, p))
+        check(f'{tag}: {key}: the card does not cover the Load window', not overlap(c, w), (c, w))
+        check(f'{tag}: {key}: the card is inside the screen', c[0] >= -0.5 and c[1] >= -0.5 and c[2] <= sw + 0.5 and c[3] <= sh + 0.5, (c, sw, sh))
+        if p[1] - 24 - (c[3] - c[1]) >= 0:                            # room below the panel: there, with its left edge
+            check(f'{tag}: {key}: room below the panel: the card is right below it, same left edge', abs(c[0] - p[0]) <= 1.5 and p[1] - 24 <= c[3] <= p[1] + 0.5,
+                  (c, p))
+        if k == shot_k: shot(f'tip_{tag.replace(" ", "_")}')
+        time.sleep(3)                                               # the hover ends (2 s), the card goes
+
+
+def run_tips():
+    """the boxes' hover cards at 16:9 and 16:10, UI scale 0.75 / 1.0 / 1.4, en / de / ru / ja (owner 2026-10-25)"""
+    seed()
+    for size, scale, lang in (((960, 540), 1.0, 'en'), ((960, 540), 0.75, 'en'), ((960, 540), 1.4, 'de'), ((960, 600), 1.0, 'ru'), ((960, 600), 1.4, 'ja')):
+        tag = f'tips {size[0]}x{size[1]} UI {scale} {lang}'
+        start(size, scale, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+        open_list(); st = lf()
+        log(tag, 'screen', st.get('screen'), 'window', st.get('window'), 'panel', st.get('panel'), 'scale', st.get('scale'))
+        tip_checks(tag, st, shot_k=0)
+        S.stop_all()
+
+
+def run_tiplangs():
+    """every language at 960x540, UI 1.0: the four boxes' cards (one shot each language, the Vanilla card: the longest text)"""
+    seed()
+    for lang in [l for l in LANG if l in os.environ.get('LF_LANGS', ','.join(LANG)).split(',')]:
+        start((960, 540), 1.0, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+        open_list(); st = lf()
+        tip_checks(f'tips {lang}', st, shot_k=0)
+        S.stop_all()
+
+
 def main():
     for p in T.game_pids(): raise SystemExit(f'copy {X} already running: {p}')
     real0 = S.tree_sum(r.REAL_DATA); plist0 = r.file_sha(r.REAL_PLIST)
@@ -252,7 +308,7 @@ def main():
     which = os.environ.get('LF_RUNS', 'main,restart,sizes').split(',')
     try:
         for w in which:
-            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs}[w]()
+            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs, 'tips': run_tips, 'tiplangs': run_tiplangs}[w]()
             for f in ('dsload.log',):
                 if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f'{w}_{f}'))
     except Exception as e:

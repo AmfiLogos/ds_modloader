@@ -582,7 +582,7 @@ static DSLObj pn_build(Obj slv) {
         if (k == LK_MP && !lf_is_mp) continue;                          /* no multiplayer mod: its worlds are sorted by their mods */
         if (k == LK_N) y += 12;                                         /* the saves toggle apart from the world kinds */
         DSLObj tg = u->toggle(pn, PN_PAD, y, PN_W - 2 * PN_PAD, pn_label(k), k < LK_N ? lf_on[k] : lf_latest, pn_change, (void *)(intptr_t)k);
-        if (tg) u->tooltip(tg, pn_label(k), pn_tip(k));
+        if (tg) { u->tooltip(tg, pn_label(k), pn_tip(k)); dsl_ui_tip_below(tg); }   /* never over the panel or the Load window */
         hold(&pn_tog_h[k], tg); y += PN_ROW;
     }
     pn_ht = y + PN_PAD - (PN_ROW - 36);
@@ -855,6 +855,9 @@ static void new_campaign_frame(void) {
 
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
 DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
+
+/* test only: the filter panel's box k (0 Vanilla & Vanilla+, 1 Modded, 2 Multiplayer, 3 Latest save only), for a hover */
+DSLObj dsl_rows_test_pn(int k) { return k >= 0 && k <= LK_N && pn_tog_h[k] ? held(&pn_tog_h[k]) : NULL; }
 
 /* test only: the "Change" of world row i, as a click */
 void dsl_rows_test_change(int i) { change_click((void *)(intptr_t)i, NULL); }
