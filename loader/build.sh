@@ -103,6 +103,13 @@ put $W/weapon-slot.dylib
 cp modules/weapon-slot/mod.json $W/
 echo "built $W"
 
+# locked-slots (Locked Slots): one source, every hook by il2cpp name (no per-build table)
+LS=build/mods/locked-slots; mkdir -p $LS
+nice -n 19 clang -arch arm64 $CF -Isdk -dynamiclib -install_name @rpath/locked-slots.dylib -o $LS/locked-slots.dylib.tmp modules/locked-slots/locked_slots.c
+put $LS/locked-slots.dylib
+cp modules/locked-slots/mod.json $LS/
+echo "built $LS"
+
 # hell-difficulty: code half + table half (hell_data.c rebuilds the Hell table bundle from the player's stock one and the
 # delta rva/<build>_mac_tables.dsdelta; without the delta the module turns Hell off). The delta is made from the stock
 # Mac table bundle (game file, read only; HELL_STOCK_MAC) by modules/hell-difficulty/tools/hell_delta.py, as build_mods.sh does.
