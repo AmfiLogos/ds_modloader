@@ -2,14 +2,13 @@
  "id": "weapon-slot",
  "name": "Weapon skill slot",
  "short_name": "Weapon slot",
- "version": "0.1.1",
+ "version": "0.1.2",
  "author": "AmfiLogos",
  "kind": "code",
  "api": 2,
  "scope": "gameplay",
  "sim": true,
- "save_dependent": true,
- "save_backup": true,
+ "save_dependent": false,
  "default_on": false,
  "game_builds": [
   "25846389"
