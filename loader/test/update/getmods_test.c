@@ -6,7 +6,8 @@
 //   getmods_test check                                 the auto-update check (DSL_UPDATE unset; signed_test.sh): prints
 //                                                      ROOT/update/ready.txt once written, "(none)" after 5 s
 // Env: DSML_ROOT (ROOT), DSL_UPDATE_API (relserver.py), HM_ON / HM_EN (",a,b," running / enabled ids), HM_APPLY_REFUSE=1,
-// HM_MYSET (mod settings lines).
+// HM_MYSET (mod settings lines), HM_FAIL (",a," enabled but not running: off by the crash guard), HM_DEP (",a," a missing
+// requirement is the reason).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include <dirent.h>
@@ -68,6 +69,10 @@ static DSLModInfo MI[32]; static int nmi, scanned;
 static int listed(const char *var, const char *id) {
     const char *l = getenv(var); char k[80]; snprintf(k, sizeof k, ",%s,", id); return l && strstr(l, k) != NULL;
 }
+int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
+    if (!listed("HM_DEP", id)) return 0;
+    snprintf(out, cap, "needs a newer mod"); return 1;
+}
 static void scan(void) {
     if (scanned) return; scanned = 1; nmi = 0;
     char d[1200]; snprintf(d, sizeof d, "%s/loader/mods", getenv("DSML_ROOT")); DIR *dd = opendir(d); struct dirent *e;
@@ -80,7 +85,8 @@ static void scan(void) {
         DSLModInfo *m = &MI[nmi++]; memset(m, 0, sizeof *m);
         m->id = strdup(json_str(j, "id") ? json_str(j, "id") : e->d_name); m->name = strdup(json_str(j, "name") ? json_str(j, "name") : m->id);
         m->version = strdup(json_str(j, "version") ? json_str(j, "version") : ""); m->scope = strdup(json_str(j, "scope") ? json_str(j, "scope") : "gameplay");
-        m->kind = "code"; m->reason = ""; m->enabled = listed("HM_EN", m->id); m->active = listed("HM_ON", m->id);
+        m->kind = "code"; m->enabled = listed("HM_EN", m->id); m->active = listed("HM_ON", m->id) ? 1 : listed("HM_FAIL", m->id) ? -1 : 0;
+        m->reason = m->active == -1 ? "it stopped the game while starting last time, so it stays off until it is updated" : "";
         json_free(j);
     }
     if (dd) closedir(dd);
@@ -88,6 +94,8 @@ static void scan(void) {
 int dsl_mods_count(void) { scan(); return nmi; }
 const DSLModInfo *dsl_mods_at(int i) { scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
 void dsl_mods_rescan(void) { scanned = 0; scan(); }
+/* dsl_reg.c: in this game's multiplayer set now (no custom-difficulty level rule here: running = in the set) */
+int dsl_mod_in_hello(const char *id) { scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI[i].active == 1; return 0; }
 
 static char *slurp(const char *p) {
     FILE *f = fopen(p, "rb"); if (!f) return NULL;

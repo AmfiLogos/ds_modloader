@@ -46,6 +46,7 @@ struct DSLPlugin {
     int idx, state;                       /* 0 listed, 1 active, 2 failed, 3 skipped */
     int api, order_key, ordered, gameplay;
     int fit;                              /* loadable here (build, platform, files, table) before the dependency rule */
+    int crash_off;                        /* state 3 by the crash guard (it stopped the game while starting last time) */
     void *h;
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
@@ -271,6 +272,7 @@ int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
 int dsl_mod_state(const char *id, const char **why) {
     struct DSLPlugin *p = find_mod_early(id);
     if (why) *why = !p ? TR_NOOP("not loaded: not made for this game version or this computer") : p->state == 2 ? TR_NOOP("it crashed while starting")
+                  : p->state == 3 && p->crash_off ? TR_NOOP("it stopped the game while starting last time, so it stays off until it is updated")
                   : p->state == 3 ? TR_NOOP("not loaded: it needs another mod, clashes with one, or crashed last time") : "";   /* keys: the Mods window translates */
     return p ? p->state : 0;
 }
@@ -470,7 +472,7 @@ static void open_modules(void) {
         struct DSLPlugin *p = ORDER[i];
         file_sig(p->file, p->sig, sizeof p->sig);
         char what[128]; snprintf(what, sizeof what, "module %s", p->id);
-        if (guard_check(p->id, p->sig, what)) { p->state = 3; continue; }
+        if (guard_check(p->id, p->sig, what)) { p->state = 3; p->crash_off = 1; continue; }
         guard_enter(p->id, "loading the dylib");
         p->h = dsl_os_dlopen(p->file);
         if (!p->h) { guard_leave(p->id); p->state = 2; dsl_log("%s: FAILED to load: %s", p->id, dsl_os_dlerror()); continue; }
