@@ -38,6 +38,8 @@
 #include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 #include "dsl_u8_win.h"
 #include "dsl_update_os.h"
+#include "zlib.h"
+#include "dsl_lang_embed.h"   /* build_win.sh (gen_lang_embed.py): the kit's files\lang, put back by lang_heal */
 
 #define APPID L"2798330"
 static wchar_t root[MAX_PATH], game[MAX_PATH], profile[MAX_PATH], data[MAX_PATH];
@@ -567,6 +569,57 @@ static void uw_close(void) {
 static const DslUpdWin upd_win = { uw_open, uw_progress, uw_close };
 
 /* 1 = this process is done (a new kit was installed and its starter runs now, or that start failed) */
+/* the loader's texts: ROOT\game\lang = the kit's files\lang (where install.bat puts them), which this starter carries. A file
+   missing there or different is written again (temp file, then moved over the old one). Auto-updates up to 0.1.28 never
+   copied the texts, and the update to a new kit is installed by the player's OLD starter, so every new text showed in
+   English until a full install; the new starter puts them back at its first start, whatever installed it. Only when no
+   game or other starter of this install runs; a failure is a log line, never a stop. */
+void dsl_uos_log_installed(const char *path);           /* dsl_update_win.c: ROOT\install_files.log (the uninstall's list) */
+static int lang_same(const wchar_t *p, const unsigned char *d, unsigned n) {
+    FILE *f = _wfopen(p, L"rb"); if (!f) return 0;
+    static unsigned char b[65536]; unsigned o = 0; size_t k; int same = 1;
+    while (same && (k = fread(b, 1, sizeof b, f)) > 0) { if (o + k > n || memcmp(b, d + o, k)) same = 0; else o += (unsigned)k; }
+    fclose(f);
+    return same && o == n;
+}
+static unsigned char *lang_raw(const DslLangFile *e) {
+    unsigned char *raw = malloc(e->size + 1); if (!raw) return NULL;
+    z_stream z; memset(&z, 0, sizeof z);
+    z.next_in = (Bytef *)e->z; z.avail_in = e->zsize; z.next_out = raw; z.avail_out = e->size + 1;
+    int ok = inflateInit(&z) == Z_OK && inflate(&z, Z_FINISH) == Z_STREAM_END && z.total_out == e->size;
+    inflateEnd(&z);
+    if (!ok) { free(raw); return NULL; }
+    return raw;
+}
+static void lang_heal(void) {
+    wchar_t ld[MAX_PATH]; _snwprintf(ld, MAX_PATH, L"%ls\\lang", game);
+    int put = 0, added = 0, bad = 0;
+    for (int i = 0; i < DSL_LANG_N; i++) {
+        const DslLangFile *e = &DSL_LANG[i];
+        wchar_t nm[128], p[MAX_PATH], t[MAX_PATH];
+        if (!MultiByteToWideChar(CP_UTF8, 0, e->name, -1, nm, 128)) { bad++; continue; }
+        _snwprintf(p, MAX_PATH, L"%ls\\%ls", ld, nm); _snwprintf(t, MAX_PATH, L"%ls.heal.tmp", p);
+        unsigned char *raw = lang_raw(e);
+        if (!raw) { bad++; logf_("texts: the built-in %s does not unpack", e->name); continue; }
+        if (lang_same(p, raw, e->size)) { free(raw); continue; }
+        int had = GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES;
+        CreateDirectoryW(ld, NULL);
+        FILE *f = _wfopen(t, L"wb"); int ok = f && fwrite(raw, 1, e->size, f) == e->size;
+        if (f && fclose(f)) ok = 0;
+        free(raw);
+        if (ok && MoveFileExW(t, p, MOVEFILE_REPLACE_EXISTING)) {
+            put++;
+            char a[MAX_PATH * 3];
+            if (!had && WideCharToMultiByte(CP_ACP, 0, p, -1, a, sizeof a, NULL, NULL)) { added++; dsl_uos_log_installed(a); }
+        } else {
+            bad++; logf_("texts: %ls not written (error %lu)", p, GetLastError());
+            if (f) DeleteFileW(t);                               /* our own temp file */
+        }
+    }
+    if (put || bad) logf_("texts: %d of %d file(s) of this starter put back into %ls (%d new), %d failed", put, DSL_LANG_N, ld, added, bad);
+    else logf_("texts: %ls matches this starter's %d file(s)", ld, DSL_LANG_N);
+}
+
 static int update_step(int dry, int *code) {
     char r8[MAX_PATH * 3], label[200];
     WideCharToMultiByte(CP_ACP, 0, root, -1, r8, sizeof r8, NULL, NULL);
@@ -595,7 +648,10 @@ static int update_step(int dry, int *code) {
     int other = starter_running(), running = other || game_runs(gexe);
     if (running) logf_("update: %s runs", other ? "another starter of this install" : "the game of this install");
     int kit = dsl_update_starter(r8, running, &upd_win, label, sizeof label);
-    if (!kit) { dsl_u8_setenv("DSML_UPDATE", label[0] ? label : NULL); return 0; }   /* UTF-8 (mod names in the player's language) */
+    if (!kit) {
+        if (!running) lang_heal();                         /* after the update step: a rollback may have put files back */
+        dsl_u8_setenv("DSML_UPDATE", label[0] ? label : NULL); return 0;   /* UTF-8 (mod names in the player's language) */
+    }
     /* the new kit's starter goes on from here (pending.txt: its first start) */
     dsl_u8_setenv("DSML_UPDATE", NULL);
     if (upd_mutex) { CloseHandle(upd_mutex); upd_mutex = NULL; }

@@ -10,8 +10,6 @@
 //      no DONE line = the install was cut off: roll back at once. Two STARTED lines = the new version was started twice
 //      and never reached the title: roll back, the KEY goes into bad.txt (not offered again), one line for the player.
 //      Else one more STARTED line and the game starts with DSML_UPDATE=<label> (one retry after a crash or a quit).
-//      Before the first STARTED of a kit: dsl_uos_kit_finish places what an older starter's install left out (Windows
-//      texts up to 0.1.28), its MOVE lines added to pending.txt (a rollback covers them).
 //   3. ready.txt and (Auto-update on, or CONSENT): sha256 checked again, a small window "Updating Dungeon Settlers Modded
 //      to 0.1.N" with a progress bar, the install (pending.txt written first, each MOVE line before its move), DONE.
 //      Kit: the caller starts the new starter (it goes through step 2). Mods: step 2 here. Install failed: rolled back,
@@ -127,14 +125,6 @@ static void us_pending(const char *root, char *label, size_t ln) {
             us_notice(line);
         }
     } else {
-        if (!pd.started && !mods) {                         /* the first start of a new kit: what an older starter did not place */
-            char p[1200]; us_path(p, sizeof p, "pending.txt"); FILE *f = fopen(p, "ab");
-            if (f) {
-                pd.mv->log = f;
-                if (dsl_uos_kit_finish(pd.mv)) dsl_log("update: %s: not all of the kit's texts are in place (the game starts anyway)", pd.label);
-                fclose(f); pd.mv->log = NULL;
-            }
-        }
         us_append("pending.txt", "STARTED");
         snprintf(label, ln, "%s", pd.label);
         dsl_log("update: %s starts (start %d of 2 before it rolls back)", pd.label, pd.started + 1);

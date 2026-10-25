@@ -201,7 +201,6 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     dsl_log("update: Mac kit installed: %s and %s (old ones in %s)", app, ol, backup);
     return 0;
 }
-int dsl_uos_kit_finish(DslMoves *mv) { (void)mv; return 0; }   /* the kit install swaps all of ROOT/loader (lang/ too) */
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     char u[1200]; snprintf(u, sizeof u, "%s.new", backup);
     if (unpack(zip, u)) { snprintf(why, wn, TR("the %s download could not be unpacked"), id); return -1; }
