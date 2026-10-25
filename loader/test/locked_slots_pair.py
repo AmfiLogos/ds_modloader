@@ -10,7 +10,7 @@ Real breaks it catches (a desync or a lock that one player has and the other not
  G  the guest's lock (its own unit, through the stock menu row = the game's order) is applied on BOTH players at the
     same step; a guest's lock order on a unit it does not own changes nothing anywhere.
  T  dungeon and back by the map-change vote: 0 desyncs, step fingerprints equal for 600+ ticks after the return,
-    both players' saves keep the locked stacks (host's and guest's locks) and drop the unlocked resources."""
+    the host's save keeps the locked stacks (host's and guest's locks) and drops the unlocked resources; both kept 3."""
 import json, os, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
@@ -147,13 +147,11 @@ def run(out, port):
     d1 = {x: mp(x).get('desyncs', 0) for x in (HX, GX)}
     check('T: 0 desyncs, step fingerprints equal after the return', len(common) >= 600 and first is None and d1 == d0,
           f'common ticks {len(common)}, first diff {first}, desyncs {d0} -> {d1}')
-    sh, sg = save(HX, out, 'lks_pair_host'), save(GX, out, 'lks_pair_guest')
-    bh, bg = T.bags(sh), T.bags(sg) if sg else {}
+    sh = save(HX, out, 'lks_pair_host')            # a guest writes no save: its world = the host's by the fingerprints above
+    bh = T.bags(sh)
     check('T: the host\'s save keeps the locked stacks (host lock + guest lock), unlocked resources left the bags',
           bh[U[0]][0] == ('ITEM_LumaLog', 3) and bh[U[0]][3] == ('ITEM_LumaLog', 2) and bh[U[1]][1] == ('ITEM_WildLongGrass', 4)
           and not any(x and x[0] in RES for i, x in enumerate(bh[U[0]]) if i not in (0, 3)), (bh[U[0]][:8], bh[U[1]][:4]))
-    check('T: the guest\'s save has the same bags', not sg or (bg.get(U[0]) == bh[U[0]] and bg.get(U[1]) == bh[U[1]]),
-          (bg.get(U[0], [])[:8], bg.get(U[1], [])[:4]))
     check('T: the module kept the same stacks on both', lk(HX).get('kept') == lk(GX).get('kept') == 3, (lk(HX), lk(GX)))
 
 
