@@ -246,9 +246,15 @@ multiplayer	detour	Refactor.UI.ExpeditionPlanPresenter$$OnActivateView	-	0xbe601
 multiplayer	detour	Refactor.UI.ExpeditionPlanRiskData$$get_IsCritical	-	0xbf28d0	always (module loaded)	multiplayer win_exp ExpeditionPlanRiskData.get_IsCritical (test switch)	ds_multiplayer:win/port/win_test_cmds.c
 multiplayer	detour	Refactor.UI.ExpeditionPlanView$$ShowCriticalRiskConfirm	-	0xbeca90	always (module loaded)	multiplayer win_exp ExpeditionPlanView.ShowCriticalRiskConfirm	ds_multiplayer:win/port/win_test_cmds.c
 custom-modes	detour	Refactor.Main.InputModule.InputDispatcher$$Update	0xd3b550	0xa4c970	always (module loaded)	custom-modes InputDispatcher.Update	ds_custommodes:fights/cm_win.c
+custom-modes	detour	Refactor.FX.AffecterFX_SelfRepair$$OnFXCall	0x9c20b0	0x71f5d0	always (module loaded)	custom-modes AffecterFX_SelfRepair.OnFXCall	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.Combat.ExecutionProcess.AffecterSimulator$$Simulate	0x94a380	0x6b3d20	always (module loaded)	custom-modes AffecterSimulator.Simulate	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.DamageSimulator$$Simulate	0x94ae24	0x6b62b0	always (module loaded)	custom-modes DamageSimulator.Simulate	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.UI.EntitySummaryUIView$$UpdateBuildingEntityUI	0xed4464	0xbd84c0	always (module loaded)	custom-modes EntitySummaryUIView.UpdateBuildingEntityUI	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.Combat.ExecutionProcess.HealSimulator$$Simulate	0x94d83c	0x6b73b0	always (module loaded)	custom-modes HealSimulator.Simulate	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	UnityEngine.Input$$get_mouseScrollDelta	0x51ad584	0x3a0ea20	always (module loaded)	custom-modes Input.get_mouseScrollDelta	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.FX.StatusResultFX$$HandleFX	0xa21bb8	0x769020	always (module loaded)	custom-modes StatusResultFX.HandleFX	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.Combat.ExecutionProcess.StatusSimulator$$Simulate	0x94ebe4	0x6c6eb0	always (module loaded)	custom-modes StatusSimulator.Simulate	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.UI.SubUI_EntityInspectionStatus$$SetBuildingStatus	0xea6af0	0xbb2fa0	always (module loaded)	custom-modes SubUI_EntityInspectionStatus.SetBuildingStatus	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.CampaignSaveLoader$$TryLoad	0x8143cc	0x58c4b0	always (module loaded)	custom-modes CampaignSaveLoader.TryLoad	ds_custommodes:fights/tf_worlds.c
 custom-modes	detour	Refactor.UI.LatestCampaignSaveSelector$$TrySelect	0xe6f45c	0xb66680	always (module loaded)	custom-modes LatestCampaignSaveSelector.TrySelect	ds_custommodes:fights/tf_worlds.c
 custom-modes	detour	Refactor.SaveLoadHelper$$DeserializeCampaignSaveDataSafely	0x875df4	0x5dd560	always (module loaded)	custom-modes SaveLoadHelper.DeserializeCampaignSaveDataSafely	ds_custommodes:fights/tf_worlds.c
