@@ -850,6 +850,16 @@ static void new_campaign_frame(void) {
     if (nc_line && rt_rect) nc_fit(nc_line, t, rt_rect(tr, NULL).w - 180);   /* the line's width (dsl_rows_place_newcampaign) */
 }
 
+/* test only (dsl_newgame.c state): the New Campaign line with its [Change], screen rect (y up); 0 = not shown */
+int dsl_rows_test_newcampaign_rect(float r[4]) {
+    float a[4], b[4]; int la = nc_line && dsl_ui_widget_rect(nc_line, a) == 1 && dsl_ui_shown(nc_line), lb = nc_btn && dsl_ui_widget_rect(nc_btn, b) == 1 && dsl_ui_shown(nc_btn);
+    if (!la && !lb) return 0;
+    if (!la) memcpy(a, b, sizeof a);
+    if (!lb) memcpy(b, a, sizeof b);
+    r[0] = a[0] < b[0] ? a[0] : b[0]; r[1] = a[1] < b[1] ? a[1] : b[1]; r[2] = a[2] > b[2] ? a[2] : b[2]; r[3] = a[3] > b[3] ? a[3] : b[3];
+    return 1;
+}
+
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
 DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
 

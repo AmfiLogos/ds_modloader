@@ -29,6 +29,7 @@ typedef void *Obj;
 #define CALL(mi, R, ...) ((R (*)(__VA_ARGS__, const void *))(*(void **)(mi)))
 
 int dsl_mod_difficulty(const char *id);                 /* dsl_reg.c: mod.json "difficulty" value, 0 = none */
+int dsl_rows_test_newcampaign_rect(float r[4]);         /* dsl_rows.c, test: the "Mods for this world" line + [Change] */
 
 static const DSLUi *U;
 static int ok;
@@ -41,6 +42,7 @@ static void *m_next, *m_refresh, *m_forced, *m_ironinter, *m_lockset, *m_namechg
             *m_magictext, *m_setname, *m_setseed, *m_newgame, *m_intext, *m_alive, *m_find, *m_comp_go, *m_comp_tr,
             *m_go_tree, *m_parent, *m_lockinc, *m_inter;
 static Obj t_title;                                      /* System.Type of TitleMenuView (FindObjectOfType, test "open") */
+static Obj t_sr; static void *m_getcomp, *m_sr_vpos;      /* test "scroll": the settings list's ScrollRect */
 static Obj (*str_new)(const char *);
 static uintptr_t (*gc_weak)(Obj, uint8_t); static uintptr_t (*gc_new)(Obj, uint8_t); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
 
@@ -338,6 +340,9 @@ void dsl_newgame_install(void) {
     gc_get = dsl_ga_sym("il2cpp_gchandle_get_target"); gc_free = dsl_ga_sym("il2cpp_gchandle_free");
     void *(*ctype)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*tobj)(void *) = dsl_ga_sym("il2cpp_type_get_object");
     if (ctype && tobj && k_title) t_title = tobj(ctype(k_title));
+    void *k_sr = dsl_find_class("UnityEngine.UI", "ScrollRect");       /* test only */
+    if (ctype && tobj && k_sr) t_sr = tobj(ctype(k_sr));
+    m_getcomp = kComp ? dsl_find_method(kComp, "GetComponentInChildren", 1) : NULL; m_sr_vpos = k_sr ? dsl_find_method(k_sr, "set_verticalNormalizedPosition", 1) : NULL;
     ok = U && o_view >= 0 && o_vt >= 0 && o_name >= 0 && o_cd >= 0 && o_md >= 0 && o_iron >= 0 && o_before >= 0 && o_magic >= 0
          && o_lock >= 0 && o_seed >= 0 && o_unlocked >= 0 && o_setpanel >= 0 && o_inc >= 0 && o_inctip >= 0 && o_minc >= 0 && o_minctip >= 0
          && m_next && m_refresh && m_forced && m_ironinter && m_lockset && m_namechg && m_seedchg && m_cdtext && m_mdtext && m_irontext
@@ -396,9 +401,17 @@ static void state_write(void) {
     }
     float P[4] = { 0 }; Obj ptr = set ? tr_of(set) : NULL; if (ptr) dsl_ui_screen_rect((DSLObj)ptr, P);
     float *S = dsl_newgame_pn_rect, *F = dsl_newgame_frame_rect, *W = dsl_newgame_row_rect; float sw, sh; dsl_ui_screen_size(&sw, &sh);
+    float SR[4] = { 0 }, L[4] = { 0 }, FR[4] = { 0 }, C[4] = { 0 }, M[4] = { 0 };             /* screen rects now (the side panel's, not its last placing) */
+    DSLObj pn = held(&h_pn); int pn_on = pn && dsl_ui_screen_rect(pn, SR) == 1 && dsl_ui_shown(pn);
+    DSLObj vp = ptr ? dsl_ui_child((DSLObj)ptr, "Viewport") : NULL; if (vp) dsl_ui_screen_rect(vp, L);
+    Obj fr = ptr ? CALL(m_parent, Obj, Obj)(ptr, m_parent) : NULL; if (fr) dsl_ui_screen_rect((DSLObj)fr, FR);
+    int c_on = dsl_update_corner_rect(C), m_on = dsl_rows_test_newcampaign_rect(M);
     fprintf(f, "], \"panel\": [%.1f, %.1f, %.1f, %.1f], \"side\": [%.1f, %.1f, %.1f, %.1f], \"window\": [%.1f, %.1f, %.1f, %.1f], \"row\": [%.1f, %.1f, %.1f, %.1f], "
-               "\"side_shown\": %d, \"screen\": [%.0f, %.0f]}\n", P[0], P[1], P[2], P[3], S[0], S[1], S[2], S[3], F[0], F[1], F[2], F[3], W[0], W[1], W[2], W[3],
-            held(&h_pn) ? dsl_ui_shown(held(&h_pn)) : 0, sw, sh);
+               "\"side_shown\": %d, \"screen\": [%.0f, %.0f], ", P[0], P[1], P[2], P[3], S[0], S[1], S[2], S[3], F[0], F[1], F[2], F[3], W[0], W[1], W[2], W[3],
+            pn ? dsl_ui_shown(pn) : 0, sw, sh);
+    fprintf(f, "\"side_now\": [%.1f, %.1f, %.1f, %.1f], \"side_now_shown\": %d, \"list\": [%.1f, %.1f, %.1f, %.1f], \"frame\": [%.1f, %.1f, %.1f, %.1f], "
+               "\"corner\": [%.1f, %.1f, %.1f, %.1f], \"corner_shown\": %d, \"mods\": [%.1f, %.1f, %.1f, %.1f], \"mods_shown\": %d}\n",
+            SR[0], SR[1], SR[2], SR[3], pn_on, L[0], L[1], L[2], L[3], FR[0], FR[1], FR[2], FR[3], C[0], C[1], C[2], C[3], c_on, M[0], M[1], M[2], M[3], m_on);
     fclose(f); rename(tmp, pth);
 }
 void dsl_newgame_test_cmd(const JNode *j) {
@@ -424,6 +437,11 @@ void dsl_newgame_test_cmd(const JNode *j) {
         if (json_str(j, "seed")) snprintf(x.seed, sizeof x.seed, "%s", json_str(j, "seed"));
         int c = 0, m = 0; choices_apply(p, &x, 1, &c, &m);
         dsl_log("newgame test: set combat %d management %d", c, m);
+    } else if (!strcmp(op, "scroll")) {                                /* the settings list scrolled: 1 = top, 0 = bottom */
+        Obj str = tr_of(setpanel_of(v)), sr = str && t_sr && m_getcomp && m_sr_vpos ? CALL(m_getcomp, Obj, Obj, Obj)(str, t_sr, m_getcomp) : NULL;
+        JNode *n = json_get(j, "pos"); float pos = n && n->t == JN_NUM ? (float)n->num : 1;
+        if (live(sr)) CALL(m_sr_vpos, void, Obj, float)(sr, pos, m_sr_vpos);
+        dsl_log("newgame test: scroll %.2f (%s)", pos, live(sr) ? "ScrollRect" : "no ScrollRect");
     } else if (!strcmp(op, "force")) {                                 /* a level written past the selectors (a key path): clamp() */
         JNode *n = json_get(j, "combat"); if (p && n && n->t == JN_NUM) AT(p, o_cd, int32_t) = (int)n->num;
         dsl_log("newgame test: force combat %d", p ? AT(p, o_cd, int32_t) : -1);
