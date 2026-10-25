@@ -612,6 +612,9 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
 - Kinds, one per world: Multiplayer = the multiplayer mod's tag (its export `dsl_loadlist_world_mp`), else Modded = a mod
   of the world's set with scope gameplay or not installed (`dsl_world_is_modded`, dsl_reg.c), else Vanilla & Vanilla+.
   Fixes (mod.json `"category": "fix"`, kit v0.1.26) never count: a world with only fixes is Vanilla & Vanilla+.
+  2026-10-25 (owner): mod.json `"vanilla_plus": true` (Weapon skill slot) = a small gameplay mod that keeps a world
+  Vanilla & Vanilla+. The world KIND only (filter, counts, tags): the world check, flow K, the HELLO mod-set hash
+  (binaries' sha256 only, not mod.json) and the save warning still treat it as the gameplay / save_dependent mod it is.
   A world shows when its kind's box is ticked; the world being played always shows. Defaults = the old list: Vanilla &
   Modded on, Multiplayer off. Choices in `<data>/Mods/loadlist.json` (vanilla, modded, multiplayer, latest_only).
 - The multiplayer mod's box "Show multiplayer worlds" under the single-player list is replaced: with a loader that
