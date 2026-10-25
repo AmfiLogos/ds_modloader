@@ -371,7 +371,8 @@ static void scan_mods(const char *build) {
         if (!kind) kind = json_str(m, "type");
         if (!id || strcmp(id, names[k])) { dsl_log("%s: mod.json id '%s' does not match the folder: skipped", names[k], id ? id : ""); json_free(m); continue; }
         DslDep *dp = dsl_dep_add(DEPS, &ndeps, MAXD, id, m, enabled, order, k);
-        if (enabled && str_in(enabled, id) == 0) { dsl_log("%s: not enabled in the profile", id); if (dp) dp->mf = NULL; json_free(m); continue; }
+        if (enabled && str_in(enabled, id) == 0 && dsl_mf_difficulty(m)) dsl_log("%s: custom difficulty: runs whenever installed (only worlds on level %d use it)", id, dsl_mf_difficulty(m));
+        else if (enabled && str_in(enabled, id) == 0) { dsl_log("%s: not enabled in the profile", id); if (dp) dp->mf = NULL; json_free(m); continue; }
         if (!kind || strcmp(kind, "code")) {                       /* data / patch / builtin: applied to the copy by the launcher;
                                                                        bepinex / melon: run by the OS start part */
             if (dp && nkeep < MAXD) keep[nkeep++] = m; else { if (dp) dp->mf = NULL; json_free(m); }

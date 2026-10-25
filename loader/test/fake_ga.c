@@ -1,6 +1,7 @@
 // Fake GameAssembly.dylib for the host test (never the game): the il2cpp exports the loader uses, a fake
 // DungeonBehaviorSimulator (floor-logger's class) and a few plain functions. -O0: plain prologues.
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,6 +29,10 @@ void *CLEH_LoadCampaign(void *self, FStr *name, const void *mi) { FIter *it = ca
 int CLEH_TryGetSaveHeader(void *self, FStr *name, uint8_t *hdr, void **set, const void *mi) {
     if (!name || name->len < 5) return 0;
     for (int i = 0; i < 16; i++) hdr[i] = (uint8_t)(name->c[4] == '1' ? 0x11 : 0x22);   /* save1 -> 11111111-1111-..., save2 -> 22222222-... */
+    /* FAKE_LEVELS="c1,m1;c2,m2": the combat / management levels of save1 / save2 (CampaignSaveHeader +0x64 / +0x68); none = 0 */
+    const char *lv = getenv("FAKE_LEVELS"); int c[2] = { 0, 0 }, m[2] = { 0, 0 };
+    if (lv) sscanf(lv, "%d,%d;%d,%d", &c[0], &m[0], &c[1], &m[1]);
+    int k = name->c[4] == '1' ? 0 : 1; *(int32_t *)(hdr + 0x64) = c[k]; *(int32_t *)(hdr + 0x68) = m[k];
     return 1;
 }
 void CLEH_CancelIronModeLoad(void *self, FStr *notice, FStr *log, const void *mi) {
@@ -41,8 +46,10 @@ static FakeMethod dbs_methods[] = {
     { (void*)DBS_OnEnterSafeFloor, "OnEnterSafeFloor", 0 }, { (void*)DBS_OnEnterNonSafeFloor, "OnEnterNonSafeFloor", 0 },
     { (void*)DBS_Tick, "Tick", 0 }, { (void*)Foreign_Target, "ForeignTarget", 0 } };
 static FakeField dbs_fields[] = { { "_floorEnteredMin", 0x80 }, { "_isInSafeFloor", 0x85 } };
+static FakeField hdr_fields[] = { { "CampaignGuid", 0x10 }, { "CombatDifficulty", 0x74 }, { "ManagementDifficulty", 0x78 } };   /* value type: + 0x10 */
 static FakeClass classes[] = { { "Refactor.Runtime", "DungeonBehaviorSimulator", dbs_methods, 4, dbs_fields, 2 },
-                               { "Refactor.Main.Event", "CampaignLoadingEventHandler", cleh_methods, 3, NULL, 0 } };
+                               { "Refactor.Main.Event", "CampaignLoadingEventHandler", cleh_methods, 3, NULL, 0 },
+                               { "Refactor", "CampaignSaveHeader", NULL, 0, hdr_fields, 3 } };
 static int fake_domain, fake_image;
 static void *fake_assemblies[1] = { &fake_image };
 

@@ -501,6 +501,40 @@
    "key": "loader|dsl_start_win.c|my_pdp|Application.get_persistentDataPath"
   },
   {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.CreateCampaignPresenter$$RefreshDifficultyIncreaseButtonState",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xe6278c"
+    },
+    "win-x64": {
+     "rva": "0xb61a70"
+    }
+   },
+   "active": "always",
+   "label": "loader New Game screen custom difficulty lock",
+   "source": "ds_modloader:loader/ui/dsl_newgame.c",
+   "key": "loader|dsl_newgame.c|h_refresh|loader New Game screen custom difficulty lock"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.CreateCampaignPresenter$$OnActivateView",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xe618a0"
+    },
+    "win-x64": {
+     "rva": "0xb5fea0"
+    }
+   },
+   "active": "always",
+   "label": "loader New Game screen difficulty toggle",
+   "source": "ds_modloader:loader/ui/dsl_newgame.c",
+   "key": "loader|dsl_newgame.c|h_activate|loader New Game screen difficulty toggle"
+  },
+  {
    "owner": "multiplayer",
    "kind": "detour",
    "method": "UnityEngine.Application$$get_persistentDataPath",

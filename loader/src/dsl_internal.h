@@ -139,6 +139,15 @@ int dsl_key_same(const char *a, const char *b);            /* gameplay keys equa
 void dsl_world_key_eff(const char *guid, const char *stored, char *out, size_t cap);   /* dsl_reg.c: the set the world plays
                                                               with (its stored key + fixes on in all worlds - its offs) */
 void dsl_world_mismatch(const char *save_name, const char *guid, const char *key);   /* dsl_world.c refused: ask (flow K) */
+/* dsl_reg.c, custom difficulty (mod.json "difficulty": Hell): a world uses it only on its level (combat or management) */
+void dsl_world_note_level(const char *guid, int combat, int management);   /* a world's levels (save header, open world) */
+int dsl_world_key_match(const char *guid, const char *eff, const char *mine);   /* the world's set = this game's set, as for it */
+void dsl_world_hello(const char *guid);                  /* the multiplayer set is about this world now ("" = the title) */
+int dsl_mod_is_difficulty(const char *id);               /* mod.json "difficulty": runs whenever installed */
+const char *dsl_mod_difficulty_name(const char *id);     /* its level's name ("Hell") */
+int dsl_mod_in_hello(const char *id);                    /* in this game's multiplayer set now */
+int dsl_world_save_dependent(const char *guid, const char **ids, int max, char *key, size_t kcap);   /* the running mods whose
+                                                            saves need the loader, as that world uses them; count */
 const char *dsl_reg_data_dir(void);
 struct DSLHost; struct DSLPlugin;
 void dsl_reg_host(struct DSLHost *h);                    /* constructor: API 3 host fields */

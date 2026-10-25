@@ -9,7 +9,7 @@ Player-visible faults checked in the same runs: the panel is outside the Load wi
 and off the title corner (Auto-update mod loader), at 16:9 and 16:10 and UI scale 0.75 / 1.0 / 1.4; each world in its
 kind; the multiplayer mod's box under the list is gone; Latest save only shows the newest save of a world; the choices
 come back after a restart.
-Worlds: Elven (game save, gcd-cdr + hell-difficulty, installed and off = Modded), Template (the wiki's public base save, only the fix gcd-cdr =
+Worlds: Elven (game save, gcd-cdr + zetu-suite, installed and off = Modded; Hell would not count: Elven is not on Hell), Template (the wiki's public base save, only the fix gcd-cdr =
 Vanilla & Vanilla+: a fix never counts as Modded, owner 2026-10-24; two saves),
 Moonlight (tagged Multiplayer).
 Usage: l1_filter_test.py <out dir>   (env DSL_TEST_MODS = built mods, default this tree's loader/build/mods;
@@ -65,7 +65,7 @@ def seed():
     open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
 
 
-WORLDS = {ELVEN_GUID: 'gcd-cdr+hell-difficulty', TPL_GUID: 'gcd-cdr'}
+WORLDS = {ELVEN_GUID: 'gcd-cdr+zetu-suite', TPL_GUID: 'gcd-cdr'}
 FAKEROOT = os.path.join(I, 'lf_root')
 
 
@@ -167,7 +167,7 @@ def run_main():
     b = st.get('boxes', {})
     check('defaults = the list as before: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box')) == (1, 1, 0, 0, 1), b)
     e, t, m = world(st, ELVEN_GUID), world(st, TPL_GUID), world(st, MOON_GUID)
-    check('kinds: Elven (gcd-cdr + hell-difficulty) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
+    check('kinds: Elven (gcd-cdr + zetu-suite) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
     check('Multiplayer off: Moonlight hidden, the others shown; the line counts 1', (e.get('shown'), t.get('shown'), m.get('shown'), st.get('hidden_line')) == (1, 1, 0, 1), st)
     ml = mp('mpm_list')
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,

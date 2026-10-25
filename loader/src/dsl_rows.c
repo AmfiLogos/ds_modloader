@@ -145,6 +145,8 @@ static const char *guid_of_save(const char *name) {
     if (!try_header(lh, str_new(name), hdr, &set, NULL)) return NULL;
     int i = nsg < MAXS ? nsg++ : MAXS - 1;
     snprintf(SG[i].name, sizeof SG[i].name, "%s", name); guid_text(hdr, SG[i].guid);
+    { int dsl_hdr_levels(const uint8_t *hdr, int *c, int *m); int c, m;   /* custom difficulty: a world uses Hell only on Hell */
+      if (dsl_hdr_levels(hdr, &c, &m)) dsl_world_note_level(SG[i].guid, c, m); }
     return SG[i].guid;
 }
 
