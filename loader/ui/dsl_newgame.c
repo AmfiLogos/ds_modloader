@@ -386,7 +386,7 @@ static void side_frame(void) {
     }
     if (pn || mp) col_place(set, pn, mp);
 }
-/* dsl_reg.c (the New Campaign line "Mods for this world"): the levels chosen on the settings step now; 0 = not there */
+/* dsl_reg.c (the New Game screen's "Mods of this world"): the levels chosen on the settings step now; 0 = not there */
 int dsl_newgame_levels(int *combat, int *management) {
     if (!ok) return 0;
     Obj p = presenter(), v = view_of(p);
