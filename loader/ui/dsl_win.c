@@ -891,15 +891,15 @@ static int slogel_files(void) {                                       /* the idl
     }
     return 0;
 }
+static void win_esc(void *ud);
 static void build(void) {
     unreg_all();
-    w_back = flat(U->panel(NULL, 0, 0, 100, 100, 0), 0x0000009E);       /* dims the game and takes its clicks */
-    fill_parent(w_back);
-    w_win = U->panel(NULL, 0, 0, WIN_W, WIN_H, 0);
-    centre(w_win); U->scale_follow(w_win);                             /* UI Scale as the game's windows; a tall game window: smaller, never cut */
-    flat(U->panel(w_win, 4, 4, WIN_W - 8, WIN_H - 8, 0), 0x222025FF);      /* one body colour (the frame sprite's inside has a band) */
-    flat(U->panel(w_win, 4, 4, WIN_W - 8, BAND_H - 4, 0), 0x2D2A31FF);
-    flat(U->panel(w_win, 4, BAND_H, WIN_W - 8, 1, 0), 0xB6835AFF);
+    /* the window template (kit window_std): dim backdrop, header, the game's red X, Escape (= the X; a mod's Settings page
+       pushes its own Back), UI Scale; a tall game window: smaller, never cut */
+    DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_MODAL, .w = WIN_W, .h = WIN_H, .title = "Dungeon Settlers Modded", .close = win_esc,
+                    .band_h = BAND_H, .title_x = 104, .title_size = 32 };
+    DSLWinParts pt; w_win = U->window_std(&o, &pt); w_back = pt.backdrop;
+    if (!w_win) return;
     memset(w_slogel, 0, sizeof w_slogel); slogel_shown = -1;
     if (!slogel_files())
         for (int k = 0; k < SLOGEL_FRAMES; k++) {
@@ -907,10 +907,8 @@ static void build(void) {
             w_slogel[k] = U->image_png(w_win, 24, 10, SLOGEL_W * 2, SLOGEL_H * 2, f, 1);
             if (w_slogel[k]) U->set_active(w_slogel[k], 0);
         }
-    named(U->text(w_win, 104, 6, 700, BAND_H - 6, "Dungeon Settlers Modded", 32, DSL_TXT_LEFT | DSL_TXT_TITLE, 0), 3, "title", NULL, NULL, "Dungeon Settlers Modded");
-    DSLObj x = U->close_x(w_win, WIN_W - 62, 26, 38, w_win);           /* the game's red X: the window's Escape close (win_esc) */
-    if (!x) x = U->button(w_win, WIN_W - 66, 24, 42, 42, "X", close_click, NULL);
-    named(x, 0, "close", close_click, NULL, "X");
+    named(pt.title, 3, "title", NULL, NULL, "Dungeon Settlers Modded");
+    DSLObj x = named(pt.close_x, 0, "close", close_click, NULL, "X");
     U->tooltip(x, NULL, TR("Close (Esc)"));
     ntabs_shown = 1;                                                   /* nothing but mods in this window (owner 2026-10-16 #14) */
     if (dsl_tab_count()) dsl_log("win: %d module tab(s) not shown: the Mods window shows only mods", dsl_tab_count());
@@ -924,13 +922,13 @@ static void build(void) {
 }
 static void destroy_all(void) {
     tab_close();
-    U->destroy(w_win); U->destroy(w_back);
+    if (w_win) U->window_close(w_win);                                 /* the window and its backdrop */
     w_win = w_back = w_mark = NULL; memset(w_tab, 0, sizeof w_tab);
     unreg_all();
     is_open = 0;
 }
 static int open_tries; static double open_retry_at;
-static void win_esc(void *ud) { (void)ud; dsl_win_close(); }
+static void win_esc(void *ud) { (void)ud; dsl_win_close(); }          /* the red X and Escape (the window template) */
 static void open_now(void) {
     want_open = 0;
     if (!U) U = dsl_ui_kit();
@@ -944,7 +942,6 @@ static void open_now(void) {
             return;
         }
         open_tries = 0;
-        U->esc_push(w_win, win_esc, NULL, 0);                         /* Escape = X (the kit owns the key) */
         dsl_log("win: Mods window open");
     }
     int t = 0;
