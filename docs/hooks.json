@@ -6208,6 +6208,23 @@
    "key": "sound-fix|sound_fix.c|my_set_volume|"
   },
   {
+   "owner": "live-hp",
+   "kind": "detour",
+   "method": "Refactor.UI.EntitySummaryUIPresenter$$RefreshOnFrame",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xecd664"
+    },
+    "win-x64": {
+     "rva": "0xbcb2c0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "live-hp EntitySummaryUIPresenter.RefreshOnFrame",
+   "source": "ds_modloader:loader/modules/live-hp/live_hp.c",
+   "key": "live-hp|live_hp.c|h_frame|"
+  },
+  {
    "owner": "weapon-slot",
    "kind": "detour",
    "method": "Refactor.Main.Event.CampaignLoadingEventHandler$$FinalizeCampaignLoad",

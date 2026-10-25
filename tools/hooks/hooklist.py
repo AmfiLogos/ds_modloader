@@ -847,12 +847,12 @@ def pick_method(label, names, plats):
     if len(mac) == 1: return mac[0]
     return None
 
-OWN_ORDER = {"loader": 0, "multiplayer": 1, "custom-modes": 2, "gcd-cdr": 3, "hell-difficulty": 4, "zetu-suite": 5, "sound-fix": 6, "weapon-slot": 7, "locked-slots": 8}
+OWN_ORDER = {"loader": 0, "multiplayer": 1, "custom-modes": 2, "gcd-cdr": 3, "hell-difficulty": 4, "zetu-suite": 5, "sound-fix": 6, "live-hp": 7, "weapon-slot": 8, "locked-slots": 9}
 
 def src_name(s):
     f = s["file"]
     if s.get("from_table"): return "ds_modloader:loader/" + s["from_table"]
-    if s["owner"] in ("loader", "gcd-cdr", "hell-difficulty", "zetu-suite", "sound-fix") or f.startswith("modules/"): return "ds_modloader:loader/" + f
+    if s["owner"] in ("loader", "gcd-cdr", "hell-difficulty", "zetu-suite", "sound-fix", "live-hp") or f.startswith("modules/"): return "ds_modloader:loader/" + f
     return ("ds_multiplayer:" if s["owner"] == "multiplayer" else "ds_custommodes:") + f
 
 # ------------------------------------------------------------------------------------------------ main

@@ -58,8 +58,8 @@ static const struct { const char *id, *repo; } MOD_REPOS[] = {
     { "multiplayer", "AmfiLogos/ds_multiplayer" }, { "custom-modes", "AmfiLogos/ds_custommodes" },
     { "gcd-cdr", "AmfiLogos/ds_modloader" }, { "hell-difficulty", "AmfiLogos/ds_modloader" },
     { "zetu-suite", "AmfiLogos/ds_modloader" }, { "sound-fix", "AmfiLogos/ds_modloader" },
-    { "multi-bar", "AmfiLogos/ds_modloader" }, { "weapon-slot", "AmfiLogos/ds_modloader" },
-    { "locked-slots", "AmfiLogos/ds_modloader" },
+    { "live-hp", "AmfiLogos/ds_modloader" }, { "multi-bar", "AmfiLogos/ds_modloader" },
+    { "weapon-slot", "AmfiLogos/ds_modloader" }, { "locked-slots", "AmfiLogos/ds_modloader" },
     { "dsmp-bridge", "AmfiLogos/ds_multiplayer" },     /* hidden library for BepInEx mods: installed with the mods that need it */
 };
 
