@@ -321,6 +321,12 @@ weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$RemoveQuickSlotAt	0xcc4
 weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$Serialize	0xcc203c	0x9f2330	always	weapon-slot UnitQuickSlotContainer.Serialize	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
 weapon-slot	detour	Refactor.Main.UnitQuickSlotContainer$$TryRegisterQuickSlot	0xcc15fc	0x9f2680	always	weapon-slot UnitQuickSlotContainer.TryRegisterQuickSlot	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
 weapon-slot	detour	Refactor.Main.UnitSkillContainer$$Deserialize	0xcc29c0	0x9f2e40	always	weapon-slot UnitSkillContainer.Deserialize	ds_modloader:loader/modules/weapon-slot/weapon_slot.c
+locked-slots	detour	Refactor.Main.Processor.ItemControlProcessor$$RouteDungeonReturnInventoryItem	0xd48064	0xa5c4c0	always (mod enabled)	locked-slots	ds_modloader:loader/modules/locked-slots/locked_slots.c
+locked-slots	detour	Refactor.Main.Processor.ItemControlProcessor$$SortInventory	0xd4bb0c	0xa5cc20	always (mod enabled)	locked-slots	ds_modloader:loader/modules/locked-slots/locked_slots.c
+locked-slots	detour	Refactor.Main.Event.ItemEventHandler$$OnEvent	0xda32e0	0xab9f50	always (mod enabled)	locked-slots	ds_modloader:loader/modules/locked-slots/locked_slots.c
+locked-slots	detour	Refactor.Control.InteractionOptionControl$$RegisterInteraction_Inventory	0xc25720	0x9579c0	always (mod enabled)	locked-slots	ds_modloader:loader/modules/locked-slots/locked_slots.c
+locked-slots	detour	Refactor.UI.InteractionOptionUI$$Show	0xf0adc0	0xc12bc0	always (mod enabled)	locked-slots	ds_modloader:loader/modules/locked-slots/locked_slots.c
+locked-slots	detour	Refactor.UI.ItemSlotUI$$SetItem	0xeae2f0	0xbad2b0	always (mod enabled)	locked-slots	ds_modloader:loader/modules/locked-slots/locked_slots.c
 multi-bar	detour	Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0	0xf22174	0xc2c930	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
 multi-bar	detour	Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__1	0xf22214	0xc2ca30	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
 multi-bar	detour	Refactor.Main.Event.PlayerControlEventHandler$$OnEvent	0xdbe600	0xac8be0	always (mod enabled)	multi-bar	ds_modloader:loader/modules/multi-bar/multi_bar.c
