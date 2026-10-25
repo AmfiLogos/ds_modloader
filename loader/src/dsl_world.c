@@ -5,6 +5,7 @@
 //   guid:  the game's own TryGetSaveHeader(saveName, out CampaignSaveHeader, out CampaignSaveLoadSet); CampaignGuid @0
 //   rule:  worlds[guid] exists and != this copy's modset -> refuse; unknown guid -> allow; a module that exports
 //          dsl_world_check_skip() returning 1 (multiplayer guest: the HELLO check covers it) -> allow
+//   a module that exports dsl_world_temporary(guid) returning 1: that world is never registered (dsl_reg.c world_frame)
 //   refuse: the game's CancelIronModeLoad(notice, log) (closes the loading view, shows a popup with that text) and
 //          the original coroutine object with its state set to "finished", so the caller's `yield return` ends at once.
 // The world check also fills dsload_modset.json (dsl_main.c) with what the session file says.
@@ -29,6 +30,14 @@ static void (*cancel_notice)(void *self, void *notice, void *log, const void *mi
 static void *(*str_new)(const char *);
 static int (*skip_fns[32])(void);
 static int nskip;
+/* a module's temporary worlds (multiplayer: the Foreign Expedition hub, made new for each session and never saved, owner
+   2026-10-25): never registered in worlds.json (dsl_reg.c world_frame). Module export int dsl_world_temporary(const char *guid). */
+static int (*temp_fns[32])(const char *);
+static int ntemp;
+int dsl_world_is_temporary(const char *guid) {
+    for (int i = 0; i < ntemp; i++) if (temp_fns[i](guid)) return 1;
+    return 0;
+}
 int dsl_world_refusals;
 
 static char *read_all(const char *p) {
@@ -126,6 +135,8 @@ void dsl_world_install(void **modules, int n) {
     for (int i = 0; i < n && nskip < 32; i++) {
         int (*f)(void) = modules[i] ? (int (*)(void))dsl_os_dlsym(modules[i], "dsl_world_check_skip") : NULL;
         if (f) skip_fns[nskip++] = f;
+        int (*t)(const char *) = modules[i] && ntemp < 32 ? (int (*)(const char *))dsl_os_dlsym(modules[i], "dsl_world_temporary") : NULL;
+        if (t) temp_fns[ntemp++] = t;
     }
     if (!getenv("DSML_SESSION")) { dsl_log("world check: off (game not started by the launcher)"); return; }
     const char *ns = "Refactor.Main.Event", *k = "CampaignLoadingEventHandler";

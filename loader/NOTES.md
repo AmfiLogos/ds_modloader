@@ -906,7 +906,7 @@ difficulty. We don't HAVE to use it because it's a possibility." No restart anyw
 - Logs: `reg: custom difficulty hell-difficulty (level 5, Hell): runs; ...`, `reg: multiplayer set for <guid|the title>:
   <hash>`, `newgame: hell-difficulty ON on the New Game screen (level 5 shown, no restart)`, `newgame: a hidden level was
   chosen: combat 4, management 4 now`.
-- Tests: host `run_tests.sh` T1e (a Hell world refused where Hell does not run, worlds not on Hell load although
+- Tests: host `run_tests.sh` T1f (a Hell world refused where Hell does not run, worlds not on Hell load although
   registered with Hell, the multiplayer set with / without Hell by the loading world's level); hidden copy
   `test/hell_toggle_test.py` (one process all along: switch off = no Hell, switch on = Hell, a Hell world keeps Hell after a
   reload, a Very Hard world has none; `LANGTYPE=3|4|7` = Mods window row + settings panel shots, text fit); pair

@@ -780,6 +780,32 @@ int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
     worlds_save(guid, k); dsl_log("reg: world %s set to %s%s%s", guid, k, offs[0] ? ", fixes off: " : "", offs);
     dsl_rows_refresh(); return 0;
 }
+/* the multiplayer mod's single-player copy of a world (owner 2026-10-25): the copy `to` plays with the mods of `from` (its
+   stored set and its fixes turned off; an unregistered `from` = the set that runs now, as world_frame would register it).
+   0 ok, -1 bad call / worlds.json unreadable. */
+#ifdef _WIN32
+__declspec(dllexport)
+#else
+__attribute__((visibility("default")))
+#endif
+int dsl_world_copy_mods(const char *from, const char *to) {
+    if (!from || !*from || !to || !*to) return -1;
+    worlds_load();
+    if (worlds_bad) return -1;
+    char key[512], offs[512] = "";
+    JNode *w = json_get(worlds_doc, "worlds"); const char *k = NULL;
+    if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, from) && c->t == JN_STR) { k = c->str; break; }
+    char rk[512]; key_diff(from, run_key, 1, rk, sizeof rk);         /* custom difficulty: as `from` uses it (Hell only on Hell) */
+    snprintf(key, sizeof key, "%s", k ? k : rk);
+    for (int i = 0; i < nlv; i++) if (!strcasecmp(LV[i].guid, from)) { dsl_world_note_level(to, LV[i].c, LV[i].m); break; }   /* same world data, same level */
+    if (k) snprintf(offs, sizeof offs, "%s", world_offs(from));
+    else for (int i = 0; i < nmi; i++) if (fix_default(i) && !in_plus(run_key, MI[i].id)) plus_add(offs, sizeof offs, MI[i].id);
+    world_offs_put(to, offs);
+    worlds_save(to, key);
+    dsl_log("reg: world %s copied from %s: mods %s%s%s", to, from, key, offs[0] ? ", fixes off: " : "", offs);
+    dsl_rows_refresh();
+    return 0;
+}
 void dsl_world_change(const char *guid, const char *save_name) {
     if (dsl_win_open_world) dsl_win_open_world(guid, save_name);
     else if (dsl_win_open) dsl_win_open(NULL);
@@ -1097,6 +1123,7 @@ static int open_levels(int *c, int *m) {                                  /* the
     *c = AT(st, off_lc, int32_t); *m = AT(st, off_lm, int32_t);
     return 1;
 }
+int dsl_world_is_temporary(const char *guid);                          /* dsl_world.c: a module's temporary world */
 static void world_frame(void) {
     static unsigned f; if (++f % 5) return;
     Obj mf = mainflow(); int sc = mf && off_scene >= 0 ? AT(mf, off_scene, int32_t) : -1;
@@ -1106,6 +1133,7 @@ static void world_frame(void) {
     snprintf(seen_guid, sizeof seen_guid, "%s", g);
     int c, m; if (open_levels(&c, &m)) dsl_world_note_level(g, c, m);
     dsl_world_hello(g);
+    if (dsl_world_is_temporary(g)) { dsl_log("reg: world %s is a mod's temporary world: not registered", g); return; }
     char rk[512]; key_diff(g, run_key, 1, rk, sizeof rk);                 /* the running set as this world uses it (Hell: only on Hell) */
     const char *k = world_key(g);
     if (!k) {                                       /* a fix on in all worlds that does not run now: off for this world, so
