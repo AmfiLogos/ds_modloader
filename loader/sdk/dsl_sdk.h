@@ -146,11 +146,25 @@ typedef struct DSLUi {
        itself (Escape = its Cancel; OK when it has one button). A text field with the keyboard: that Escape only leaves
        the field (the game's field drops the typed text); flags DSL_ESC_EDIT = the window is an edit row or box whose
        Cancel drops the edit, so that same Escape also closes it. Push a window again when it shows again (it goes on
-       top). 0 = ok. */
+       top). 0 = ok.
+       ESCAPE RULE (owner 2026-10-25, every window of every mod, now and later; ../NOTES.md "Escape"): one press acts on
+       the top window only. Register, right where it is built or shown:
+         - a window or panel with a Close / X / Cancel: esc_push(win, its_close, ud, 0); esc_drop when it hides;
+         - a box inside a window (confirm, paste, rename): push the box when it shows (it goes on top), close = its Cancel;
+           an edit row or box with a text field: flags DSL_ESC_EDIT;
+         - a sub-page with a Back button (a Settings page, a Details page): Escape goes Back one level first, then the
+           window closes. Push the sub-page's own body when it shows (close = its Back), or let the window's close run
+           the Back while a sub-page is open (it returns without closing);
+         - this kit's notice box: nothing to do (the kit pushes it);
+         - a HUD panel with no Close (a meter, a log, a loading overlay): esc_push(panel, NULL, NULL, DSL_ESC_HUD): it
+           never takes Escape, and it says "not a window" to the check below.
+       Test copies (background-only or DSRIG_CTL=1): a root panel of this kit (parent NULL) that shows 30 frames after it
+       was made and is neither pushed (itself or a part of it, or a panel made in the same frame: its dim backdrop) nor
+       DSL_ESC_HUD logs "ESC-MISSING <its first text>" in dsload.log; the esc tests fail on that line. */
     int (*esc_push)(DSLObj win, void (*close)(void *ud), void *ud, int flags);
     void (*esc_drop)(DSLObj win);            /* the window closed (or hid) another way */
 } DSLUi;
-enum { DSL_ESC_EDIT = 1 };
+enum { DSL_ESC_EDIT = 1, DSL_ESC_HUD = 2 };   /* esc_push flags (DSL_ESC_HUD: close may be NULL) */
 
 typedef struct DSLHost {
     /* ---- API 1 (layout frozen) */

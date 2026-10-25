@@ -814,6 +814,7 @@ static Obj parent_or_layer(DSLObj p) { Obj t = p ? tr_of((Obj)p) : layer(); retu
 static int ready_basic(void) { kit_used = 1; return templates_ready(); }
 
 /* ------------------------------------------------------------------ widgets */
+static void esc_guard_root(DSLObj root);
 static DSLObj k_panel(DSLObj parent, float x, float y, float w, float h, uint32_t rgba) {
     if (!ready_basic()) return NULL;
     Obj p = parent_or_layer(parent); Obj im = p ? inst(hget(h_tpl_img), p) : NULL;
@@ -825,7 +826,9 @@ static DSLObj k_panel(DSLObj parent, float x, float y, float w, float h, uint32_
     gr_raycast(im, 1);                                               /* a panel blocks clicks to what is under it */
     place_tl(im, x, y, w, h);
     W *wd = w_new(W_PANEL); if (!wd) { destroy_obj(go_of(im)); return NULL; }
-    return w_done(wd, tr_of(im), NULL);
+    DSLObj r = w_done(wd, tr_of(im), NULL);
+    if (!parent) esc_guard_root(r);                                  /* test copies: a window of ours must have an Escape registration */
+    return r;
 }
 static int txt_align(int flags) { int a = flags & 3; int wrap = flags & DSL_TXT_WRAP; return (wrap ? 256 : 512) + (a == DSL_TXT_CENTER ? 2 : a == DSL_TXT_RIGHT ? 4 : 1); }
 static Obj mk_text(Obj parent, float x, float y, float w, float h, const char *s, float size, int flags, Col c) {
@@ -1623,7 +1626,7 @@ static int esc_notice_up(const EscE *e) {                            /* the kit 
     return !strcmp(cur, NB.text);
 }
 static void esc_sweep(void) { for (int i = nesc - 1; i >= 0; i--) if (escs[i].notice ? !esc_notice_up(&escs[i]) : !hget(escs[i].h)) esc_free(i); }
-static int esc_shown(const EscE *e) { return e->notice || on_tree(hget(e->h)); }
+static int esc_shown(const EscE *e) { return e->notice || (!(e->flags & DSL_ESC_HUD) && on_tree(hget(e->h))); }   /* a HUD panel never takes Escape */
 static EscE *esc_top(void) {
     esc_sweep();
     EscE *t = NULL;
@@ -1632,7 +1635,7 @@ static EscE *esc_top(void) {
 }
 static int k_esc_push(DSLObj win, void (*close)(void *), void *ud, int flags) {
     W *w = w_of(win); Obj o = w ? w_root(w) : (Obj)win;
-    if (!close || !alive(o)) return -1;
+    if ((!close && !(flags & DSL_ESC_HUD)) || !alive(o)) return -1;
     int i = 0; while (i < nesc && (escs[i].notice || escs[i].id != win)) i++;
     if (i == nesc) {
         if (nesc == ESC_MAX) esc_sweep();
@@ -1676,6 +1679,50 @@ static int esc_holder(Obj field) {                                   /* the inne
     for (Obj t = tr_of(field); t; t = tr_parent(t))
         for (int i = 0; i < nesc; i++) if (!escs[i].notice) { Obj o = hget(escs[i].h); if (o && tr_of(o) == t && on_tree(o)) return i; }
     return -1;
+}
+/* The rule's guard (owner 2026-10-25: "make sure ... the escape button works like this in all future windows"). Test copies
+   only (background-only or DSRIG_CTL=1, dsl_soft_test_copy): every root panel of the kit (parent NULL: a window, its dim
+   backdrop, a HUD panel) is checked once it has shown for 30 frames: it must be pushed (itself or a part of it), or be
+   made in the same frame as a pushed one (the backdrop of a window), or be pushed as DSL_ESC_HUD. Else one line
+   "ESC-MISSING <its first text>"; the esc tests fail on it. No default registration: the kit cannot know a window's own
+   Close (the Unit Builder's Cancel asks first, the home page goes Back, Bring Units runs its callback, a HUD has none). */
+#define GUARD_MAX 64
+static struct { uintptr_t h; int64_t made; int done; } groots[GUARD_MAX]; static int ngroots, guard_on = -1;
+static void esc_guard_root(DSLObj root) {
+    if (guard_on < 0) guard_on = dsl_soft_test_copy() != NULL;
+    if (!guard_on || !root) return;
+    for (int i = ngroots - 1; i >= 0; i--) if (!hget(groots[i].h)) { hfree(&groots[i].h); groots[i] = groots[--ngroots]; }
+    if (ngroots == GUARD_MAX) return;
+    groots[ngroots].h = x_weak ? x_weak((Obj)root, false) : hnew((Obj)root); groots[ngroots].made = frames; groots[ngroots].done = 0; ngroots++;
+}
+static int guard_pushed(Obj root) {                                   /* an entry (HUD too) is this root or under it */
+    for (int i = 0; i < nesc; i++) {
+        if (escs[i].notice) continue;
+        for (Obj t = tr_of(hget(escs[i].h)); t; t = tr_parent(t)) if (t == tr_of(root)) return 1;
+    }
+    return 0;
+}
+static void guard_text(Obj t, char *out, size_t cap, int depth) {    /* the first non-empty text under t (its title) */
+    if (out[0] || !t || depth > 4) return;
+    Obj tx = comp_get(t, K.TMP_Text); if (tx) { utf8_of(tmp_get(tx), out, cap); if (out[0]) return; }
+    for (int i = 0, n = child_count(t); i < n && !out[0]; i++) guard_text(child_at(t, i), out, cap, depth + 1);
+}
+static void esc_guard_frame(void) {
+    if (guard_on != 1 || frames % 30) return;
+    for (int i = 0; i < ngroots; i++) {
+        Obj o = hget(groots[i].h);
+        if (!o || groots[i].done || frames - groots[i].made < 30 || !on_tree(o)) continue;
+        int ok = guard_pushed(o);
+        for (int k = 0; k < ngroots && !ok; k++) {                    /* its dim backdrop: made in the same frame as a pushed one */
+            Obj q = k != i && groots[k].made == groots[i].made ? hget(groots[k].h) : NULL;
+            ok = q && guard_pushed(q);
+        }
+        groots[i].done = 1;
+        if (ok) continue;
+        char t[200] = ""; guard_text(o, t, sizeof t, 0);
+        for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
+        dsl_log("ESC-MISSING \"%s\": a window of ours shows with no Escape registration (dsl_esc_push its Close; a HUD panel: DSL_ESC_HUD)", t[0] ? t : "(no text)");
+    }
 }
 static void esc_tick(void) {
     Obj had = hget(esc_foc), now = esc_focused();
@@ -2245,6 +2292,7 @@ static void tick(void) {
     run_queue();
     fields_frame();
     esc_tick();
+    esc_guard_frame();
     sliders_frame();
     tips_frame();
     if (!o_cur_perform) tip_place_frame();                          /* else right before the UI is drawn (h_cur_perform) */

@@ -1027,3 +1027,38 @@ Discord ping (receiver side: lane bugrecv; its spec is crashrep/README.md "kind 
   too big -> screenshot dropped; fails when the base64 is scrubbed). Rig: `test/bugrep_test.py [out] [--send]
   [--title-only]` on copy R with test module `bugrep-probe` (fake mouse on the stock buttons; OpenURL and
   OpenSavesFolder counted, never run): title + world, fails on the old loader (the stock button calls OpenURL).
+
+## Escape (owner 2026-10-25: "make sure Escape works to close our custom windows"; kit 0.1.28, lane dsesc) - `src/dsl_ui.c` "Escape"
+THE RULE, for every window of every mod, now and later (owner: "make sure to put a rule so the escape button works like this
+in all future windows"; also in the mod skill, "ESCAPE RULE"):
+- One press acts on the TOP window of ours only, as that window's own button does, with the same cleanup:
+  - a sub-page with a Back button (a mod's Settings page, the Gallery's Details): Back one level; the next press closes;
+  - a confirm / notice box: Cancel (one button: OK); the crash-report consent box is the only exception (no answer);
+  - a text field with the keyboard: the press only leaves the field (and the field lets go of the selection); in an edit
+    row or box (DSL_ESC_EDIT) it also cancels the row; the next press closes the window;
+  - otherwise: the window's own Close / X / Cancel.
+- The game never gets that press: no pause menu, the stock window under ours stays. Only when none of ours shows does
+  Escape go to the game.
+How a module registers (dsl_sdk.h, beside esc_push): `dsl_esc_push(ui, win, close, ud, flags)` where the window is built or
+shown, `dsl_esc_drop(ui, win)` where it hides (a destroyed window drops itself). A box inside a window: push the box when it
+shows. A sub-page: push its body (close = its Back), or let the window's close run the Back while the sub-page is open
+(Units Laboratory cm_win.c `cmw_set_back`: the window keeps its place on the stack). The kit's notice box: nothing to do.
+A HUD panel with no Close (a meter, a log, a loading overlay): `dsl_esc_push(ui, panel, NULL, NULL, DSL_ESC_HUD)`. A module
+that reads Escape itself (multiplayer's title pages) skips a press when the loader export `dsl_esc_taken()` says 1.
+How it works: windows push themselves on a stack (weak GC handles); the kit reads the key in its frame tick
+(Input.GetKeyDown) and calls the close of the top shown entry, once per press. The game's own reader is
+KeyInputDispatcher.<GetInputOnKeyDown>d__18.MoveNext (List.AddRange in UpdateInputStream, an interface call: not inlined
+on Windows either); the kit's hook there (mac 0xd43494, win 0xa67620, by name) skips KeyCode.Escape while one of ours shows
+or the kit used this frame's press, so no EscapeActionRequested is made. Picked over InputEventHandler.OnEvent (multiplayer
+owns it; it would not stop the other Escape-made events) and IsTextInputFocused / UpdateKeyStream (multiplayer owns them;
+they block every hotkey).
+The guard (hard to forget): in test copies (background-only or DSRIG_CTL=1) every root panel of the kit (parent NULL) that
+shows 30 frames after it was made must be pushed (itself or a part of it), be made in the same frame as a pushed one (its
+dim backdrop), or be pushed as DSL_ESC_HUD; else dsload.log gets `ESC-MISSING "<its first text>"` and the esc tests fail
+(loader test/esc_test.py, Units Laboratory units/test/esc_test.py, multiplayer rig/esc_kit_test.py sweep the log). It does
+not see a window built from a mod's own clones (multiplayer's mk_* windows): those follow the rule by review and their test.
+Pick (logged): no default registration. The kit cannot know a window's own Close (the Unit Builder's Cancel asks first, the
+home page goes Back, Bring Units runs its callback, a HUD panel has none), so a wrong default would be worse than the log.
+Tests (real Escape key events on the game's view, hidden copies): loader esc_test 44/44 (title + world: demo panel, field,
+notice, Mods window, name row, Settings page Back, Load list + a world's Mods window, Bug report; Esc menu / Load list under
+ours stay), Units Laboratory esc_test 46/46, multiplayer esc_kit_test 37/37 + esc_mini_pair 5/5.

@@ -12,6 +12,8 @@ menu in a world, the stock window under ours stays), and the next press does the
         stays; 2nd closes; owner 2026-10-25 "Go Back one level").
  world: Escape with none of ours opens the Esc menu (the key path works); demo panel (no Esc menu); Mods window (no Esc
         menu); Esc menu + Bug report (only ours closes); Esc menu > Load + a world's Mods window (only ours closes).
+Guard (the Escape rule for every future window): a root panel made with no Escape registration logs ESC-MISSING; the
+probe "Guard probe" must be caught, and no other ESC-MISSING line may appear in the whole run (sweep).
 Old loaders fail: Escape leaves the demo panel and the notice open, and in a world the game also opens or closes its menus.
   esc_test.py [out] [--no-build] [--title-only]     Exit 0 = PASS. <out>/summary.json, logs. ESC_DYLIB=<another dsload.dylib>."""
 import glob, json, os, shutil, signal, subprocess, sys, threading, time
@@ -130,6 +132,11 @@ bug = lambda op, timeout=15, **kw: req(BDRV, 'cmd.json', 'result.json', timeout,
 st = lambda: ui('state')
 
 
+def dlog():
+    try: return open(os.path.join(I, 'dsload.log'), errors='replace').read()
+    except OSError: return ''
+
+
 def ctl(obj, timeout=20):
     try: return r.send(X, obj, timeout=timeout, connect_wait=0)
     except Exception as e: return {'error': str(e)}
@@ -212,6 +219,10 @@ def title_cases():
     press(); b = bug('state'); s = st()
     check('title 7: Escape closes the Bug report window', not b.get('open'), b)
     check('title 7: the title menu is still there', s.get('titlemenu') == 1, s.get('titlemenu'))
+    # 9. the guard: a root panel with no Escape registration is caught (the rule for every future window)
+    ui('api', op='bare', a=1); hit = wait_for(lambda: 'ESC-MISSING "Guard probe"' in dlog(), 8)
+    check('title 9: the guard logs ESC-MISSING for a window with no Escape registration', bool(hit), 'no line')
+    ui('api', op='bare', a=0)
     # 8. a mod's Settings page inside the Mods window (multiplayer's, a launcher mod): Escape = Back first
     names = lambda j: [c.get('name') for c in j.get('controls', [])]
     win('open'); wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10); time.sleep(0.5)
@@ -292,6 +303,9 @@ def main():
         stop.set()
         for f in ('dsload.log', 'player.log'):
             if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f))
+    miss = [l for l in open(os.path.join(OUT, 'dsload.log'), errors='replace').read().splitlines()
+            if 'ESC-MISSING' in l and 'Guard probe' not in l] if os.path.exists(os.path.join(OUT, 'dsload.log')) else ['no dsload.log']
+    check('sweep: no ESC-MISSING line (every window of ours has its Escape registration)', not miss, miss[:3])
     fails = [c for c in checks if not c['ok']]
     check('copy never on screen / frontmost', not violations, violations)
     json.dump({'checks': checks, 'violations': violations}, open(os.path.join(OUT, 'summary.json'), 'w'), indent=1)
