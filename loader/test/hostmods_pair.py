@@ -368,7 +368,7 @@ def run(port, api, rel, pk):
     hl = session_lines(H)
     info['host_lines'] = hl
     check('host runs X; Y (Hell) runs too but stays out of the set on this world (not on Hell)',
-          hl and any(l.startswith(f'{X_ID}@{xv}') for l in hl) and not any(l.startswith(f'{Y_ID}@') for l in hl) and f'{Y_ID}: custom difficulty: runs whenever installed' in flog(H, 'dsload.log'), hl)
+          hl and any(l.startswith(f'{X_ID}@{xv}') for l in hl) and not any(l.startswith(f'{Y_ID}@') for l in hl) and f'{Y_ID} {yv}: opened' in flog(H, 'dsload.log'), hl)   # Y is on in the host's profile: it runs (the 'runs whenever installed' line is for a profile with Y off)
     if SETTINGS:
         check(f'host runs {S_ID} with {S_SET} = {S_HOST} (default {s_def})', S_HOST != s_def and s_line in (hl or []), hl)
 
