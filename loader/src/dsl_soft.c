@@ -137,12 +137,58 @@ static void mute_tick(void) {
     }
     if (get_apause && set_apause && !get_apause()) { if (mute_saved_pause < 0) { mute_saved_pause = 0; SLOG("B: audio paused while hidden"); } set_apause(1); }
 }
+static const char *silent_why;
 static void mute_end(void) {
     if (!mute_on) return;
     mute_on = 0;
     if (set_apause && mute_saved_pause >= 0) set_apause(mute_saved_pause);
-    if (set_vol && mute_saved_vol >= 0) set_vol(mute_saved_vol);
-    SLOG("B: audio back (volume %.2f, pause %d)", mute_saved_vol, mute_saved_pause);
+    if (set_vol && mute_saved_vol >= 0) set_vol(silent_why ? 0 : mute_saved_vol);
+    SLOG("B: audio back (volume %.2f, pause %d)%s", mute_saved_vol, mute_saved_pause, silent_why ? ": test copy, AudioListener stays 0" : "");
+}
+
+/* Test copies are silent (owner 2026-10-25: "can you make sure the background tests don't have sound please?").
+   Test copy = a background-only app (Mac: Info.plist LSBackgroundOnly, every rig / lrig copy; dsl_start_mac.c) or a copy
+   with the test control channel (DSRIG_CTL=1, both OS: winrig, lrig, rig; the starter and the app never set it). A
+   player's game has neither: its sound is left to the game. Saved volumes 0 + Mute were not enough (the stock game does
+   not reliably apply them at start, and test steps click sliders and Mute buttons): AudioListener.volume stays 0 from
+   the first tick. The managed setter is hooked (every game write goes through it: BackgroundAudioMute OnEnable /
+   OnDisable / focus / pause / ApplyOutputVolume, SoundManager RefreshSoundSetting / SetMuteInBackground; no inlined copy
+   on Mac or Windows in build 25846389), and the tick puts back any other write (the soft restart's own icall, a
+   module's). The mixer's exposed volumes (the Sound settings) are not touched: tests still read them. Mac: the process
+   is also inaudible in CoreAudio (dsl_sos_process_mute). Test: <DSRIG_DIR>/listener_req.txt -> one log line with the
+   listener volume now. */
+void dsl_soft_silent(const char *why) { if (!silent_why) silent_why = why; }
+static void (*o_set_volume)(float, const void *);
+static long silent_kept, silent_reset;
+static void my_set_volume(float v, const void *mi) {
+    if (v != 0 && silent_kept++ < 3) dsl_log("test copy: AudioListener.volume = %.2f by the game: kept 0", v);
+    o_set_volume(0.0f, mi);
+}
+static void silent_tick(void) {
+    if (!silent_why || !dsl_ready || !get_vol || !set_vol) return;
+    static int said, n; static char req[1100];
+    float v = get_vol();
+    if (v != 0) { set_vol(0); if (said && silent_reset++ < 3) dsl_log("test copy: AudioListener %.2f set by another path: back to 0", v); }
+    if (!said || n % 600 == 0) {                                     /* CoreAudio: again every ~10 s (a coreaudiod restart forgets it) */
+        int ca = dsl_sos_process_mute();
+        if (!said) dsl_log("test copy: audio muted (AudioListener 0; %s)%s", silent_why,
+                           ca > 0 ? ", process inaudible in CoreAudio" : ca == 0 ? "" : ", CoreAudio process mute FAILED");
+        said = 1;
+    }
+    if (n++ % 30) return;
+    if (!req[0]) { const char *d = getenv("DSRIG_DIR"); if (!d || !*d) return; snprintf(req, sizeof req, "%s/listener_req.txt", d); }
+    if (access(req, 0)) return;
+    unlink(req);
+    dsl_log("test copy: listener volume %.2f (game writes kept 0: %ld, other writes put back: %ld)", get_vol(), silent_kept, silent_reset);
+}
+static void *meth(const char *ns, const char *k, const char *m, int argc);
+static void silent_install(void *(*icall)(const char *)) {
+    if (!silent_why) { dsl_log("audio: a player's copy (not background-only, no DSRIG_CTL=1): sound left to the game"); return; }
+    if (icall && !get_vol) { get_vol = icall("UnityEngine.AudioListener::get_volume"); set_vol = icall("UnityEngine.AudioListener::set_volume"); }
+    void *a3 = meth("UnityEngine", "AudioListener", "set_volume", 1);
+    int h3 = a3 ? dsl_hook(DSL_OWNER_LOADER, a3, (void *)my_set_volume, (void **)&o_set_volume, "loader test copy AudioListener.set_volume") : -1;
+    dsl_log("test copy (%s): AudioListener held at 0: setter hook %s, listener icalls %s", silent_why, h3 ? "REFUSED (the tick alone puts it back)" : "ok",
+            get_vol && set_vol ? "ok" : "MISSING");
 }
 
 static int scene(void) { return (mf && off_scene >= 0) ? AT(mf, off_scene, int32_t) : -1; }
@@ -870,6 +916,7 @@ int dsl_soft_title_idle(void) {
     return !splash_drawing();
 }
 static void tick(void) {
+    silent_tick();
     if (prof_on && !role_b) prof_tick();
     dsl_fastboot_tick();
     if (!role_b) { shot_tick(dsl_ready && mf && scene() == 1 && boot_ready() && !busy()); a_fast_tick(); a_boot_screen_tick(); }
@@ -906,6 +953,7 @@ void dsl_soft_snapshot(const char *logdir) {
     const char *h = getenv("DSL_SOFT_HANDOFF");
     test_mode = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1';
     no_activate = getenv("DSL_SOFT_NOACTIVATE") && *getenv("DSL_SOFT_NOACTIVATE") == '1';
+    { const char *c = getenv("DSRIG_CTL"); if (c && !strcmp(c, "1")) dsl_soft_silent("test control channel, DSRIG_CTL=1"); }
     const char *stg = getenv("DSL_SOFT_STAGE");
     if (stg && sscanf(stg, "%lf,%lf", &stage_x, &stage_y) == 2) stage_on = 1;
     const char *cd = getenv("DSL_SOFT_CAPTURE");
@@ -961,6 +1009,7 @@ void dsl_soft_install(void) {
         get_apause = icall("UnityEngine.AudioListener::get_pause"); set_apause = icall("UnityEngine.AudioListener::set_pause");
         SLOG("B: mute while hidden: volume %s, pause %s", get_vol && set_vol ? "ok" : "MISSING", get_apause && set_apause ? "ok" : "MISSING");
     }
+    silent_install(icall);
     { dsl_fastboot_install(dsl_core_logdir());
       a_part_splash = dsl_fastboot_part("DSL_FB_SPLASH"); a_part_fps = dsl_fastboot_part("DSL_FB_FPS"); a_part_blp = dsl_fastboot_part("DSL_FB_BLP");
       if (!role_b) SLOG("A: boot speed-up parts: splash %d, frames uncapped %d, loading priority High %d (DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP)", a_part_splash, a_part_fps, a_part_blp);

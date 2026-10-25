@@ -470,6 +470,23 @@
   {
    "owner": "loader",
    "kind": "detour",
+   "method": "UnityEngine.AudioListener$$set_volume",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x5067948"
+    },
+    "win-x64": {
+     "rva": "0x38e1780"
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): AudioListener.volume held at 0",
+   "label": "loader test copy AudioListener.set_volume",
+   "source": "ds_modloader:loader/src/dsl_soft.c",
+   "key": "loader|dsl_soft.c|my_set_volume|loader test copy AudioListener.set_volume"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
    "method": "UnityEngine.UI.CanvasUpdateRegistry$$PerformUpdate",
    "platforms": {
     "mac-arm64": {

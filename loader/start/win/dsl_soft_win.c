@@ -317,3 +317,4 @@ void dsl_sos_timer(void (*fn)(void)) {
     tick_fn = fn;
     if (!SetTimer(NULL, 0, 16, timer_proc)) dsl_log("soft: SetTimer failed (%lu): soft restart has no tick", GetLastError());
 }
+int dsl_sos_process_mute(void) { return 0; }   /* Windows: AudioListener 0 only (dsl_soft.c) */

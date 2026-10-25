@@ -146,6 +146,14 @@ r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell
 check "game without Hell running: worlds not on Hell load, although registered with it" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
 mv "$OUT/profile.json.keep" "$M/profile.json"; mv "$M/hellmod" "$OUT/hellmod.off"
 
+print "== T1s test copies are silent, the owner's game is not (src/dsl_soft.c silent_install)"
+# Breaks caught: the owner's own game muted (the starter sets DSRIG_DIR + DSRIG_LIVE=1, never DSRIG_CTL), or a Windows
+# test copy (winrig: DSRIG_LIVE=1 + DSRIG_CTL=1) left with sound.
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSRIG_DIR="$LOGD" DSRIG_LIVE=1 DSRIG_FPS=60)
+check "the owner's game (DSRIG_DIR + DSRIG_LIVE=1, no DSRIG_CTL): sound left to the game" 'log | grep -q "audio: a player.s copy" && ! log | grep -q "test copy"'
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSRIG_DIR="$LOGD" DSRIG_LIVE=1 DSRIG_CTL=1)
+check "a test copy with the control channel (winrig env: DSRIG_LIVE=1 + DSRIG_CTL=1): AudioListener held at 0" 'log | grep -q "test copy (test control channel, DSRIG_CTL=1): AudioListener held at 0" && ! log | grep -q "audio: a player"'
+
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")
 check "game runs, modules load, foreign entry kept" '[[ "$r" == *"$EXPECT"* ]] && log | grep -q "floor-logger 1.0.0: loaded" && [[ "$r" == *"ENV DYLD_INSERT_LIBRARIES=$FW/foreign.dylib"* ]]'
