@@ -2,7 +2,7 @@
  "id": "locked-slots",
  "name": "Locked Slots",
  "short_name": "Locked Slots",
- "version": "0.1.0",
+ "version": "0.1.1",
  "author": "AmfiLogos",
  "kind": "code",
  "api": 6,

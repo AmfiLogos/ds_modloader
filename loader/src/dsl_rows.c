@@ -1,5 +1,5 @@
 // Load list service (dsl_sdk.h API 3: loadrow_add, loadlist_filter, loadlist_refresh) + the loader's own lines:
-// world rows of the stock Load list get "Mods: <names>  Change", the New Campaign screen "Mods for this world: <names>  Change".
+// world rows of the stock Load list get "Mods: <names>  Change" (the New Game screen's mods: ui/dsl_newgame.c).
 // No hook on the row sites: the multiplayer module hooks SubUI_SaveFileButton.SetData, SubUI_SettlerNameCase.Init and
 // SaveLoadView.RefreshLoadPanel until it moves to this API (MASTER_PLAN 5.1 wp-menu), and the engine allows one owner per
 // site. So this file polls: every few frames it looks at the open SaveLoadView; when its rows changed it rebuilds our lines.
@@ -43,10 +43,9 @@ void dsl_rows_test_toggles(int on) {
 
 /* ------------------------------------------------------------------ game access by name */
 static int ok;
-static void *k_slv, *k_case, *k_btn, *k_str, *k_cs;
+static void *k_slv, *k_case, *k_btn, *k_str;
 typedef struct { float x, y, w, h; } URect;
 static URect (*rt_rect)(Obj t, const void *mi);
-static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn);
 static int32_t o_cases = -1, o_dict = -1, o_slots = -1, o_title_name = -1, o_cur = -1, o_lowload = -1;
 static Obj (*find_obj)(Obj type, int inactive, const void *mi);
 static uint8_t (*alive)(Obj o, const void *mi);
@@ -57,7 +56,7 @@ static void (*refresh_size)(Obj slv, const void *mi);
 static uint8_t (*try_header)(Obj self, Obj name, void *hdr, Obj *set, const void *mi);
 static Obj (*str_new)(const char *);
 static void *(*obj_class)(Obj);
-static Obj t_slv, t_cs;
+static Obj t_slv;
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
 static int32_t mf_handler = -1;
 static int32_t o_parent = -1;                            /* SaveLoadView._saveSlotParent (the hidden-worlds lines) */
@@ -79,7 +78,7 @@ static void set_on(Obj comp, int on) { Obj g = live(comp) ? comp_go(comp, NULL) 
 static void guard_install(void);
 void dsl_rows_install(void) {
     k_slv = cls("Refactor", "SaveLoadView"); k_case = cls("Refactor", "SubUI_SettlerNameCase"); k_btn = cls("Refactor.UI", "SubUI_SaveFileButton");
-    k_str = cls("System", "String"); k_cs = cls("Refactor.UI", "SubUI_CampaignSetting");
+    k_str = cls("System", "String");
     o_cases = fo(k_slv, "_campaignCases"); o_dict = fo(k_slv, "_saveNameSlotDictionary"); o_lowload = fo(k_slv, "_lowLoadPanel");
     o_slots = fo(k_case, "_saveSlots"); o_title_name = fo(k_case, "_nameText"); o_cur = fo(k_case, "_isCurrentCampaign");
     void *kObj = cls("UnityEngine", "Object"), *kComp = cls("UnityEngine", "Component"), *kGo = cls("UnityEngine", "GameObject");
@@ -100,7 +99,6 @@ void dsl_rows_install(void) {
     gc_new = dsl_ga_sym("il2cpp_gchandle_new"); gc_get = dsl_ga_sym("il2cpp_gchandle_get_target"); gc_free = dsl_ga_sym("il2cpp_gchandle_free");
     void *(*ctype)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*tobj)(void *) = dsl_ga_sym("il2cpp_type_get_object");
     if (ctype && tobj && k_slv) t_slv = tobj(ctype(k_slv));
-    if (ctype && tobj && k_cs) t_cs = tobj(ctype(k_cs));
     ok = find_obj && alive && comp_go && comp_tr && go_tree && go_self && go_set && refresh_size && try_header && str_new && obj_class
          && gc_new && gc_get && gc_free && t_slv && o_cases >= 0 && o_dict >= 0 && o_slots >= 0 && o_title_name >= 0 && mf_handler >= 0;
     dsl_log("rows: load list service %s", ok ? "on (polling the open Load list)" : "OFF (names missing)");
@@ -378,12 +376,6 @@ static float row_line_place(Obj cs, DSLObj line, DSLObj chg) {
     u->place(line, x0, 1, lw > 1 ? lw : 1, 20);
     if (chg) u->place(chg, bx, 2, CHG_W, 18);
     return lw;
-}
-static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn) {
-    const DSLUi *u = dsl_ui_kit(); Obj t = comp_tr(cs, NULL); if (!u || !t || !rt_rect) return;
-    URect r = rt_rect(t, NULL);
-    u->place(line, 24, r.h - 52, r.w - 180, 40);
-    u->place(btn, r.w - 140, r.h - 50, 110, 34);
 }
 
 static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);   /* below (GC-held lines) */
@@ -819,44 +811,6 @@ static void hidden_off(void) {
     for (int k = 0; k < 2; k++) { DSLObj l = u ? held(&hid_h[k]) : NULL; if (l) u->set_active(l, 0); }
 }
 
-/* the New Campaign line */
-static DSLObj nc_line, nc_btn; static uintptr_t h_cs;
-static void nc_click(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("rows: New Campaign [Change]"); dsl_newworld_change(); }
-/* the line keeps to its 40-high rect: the kit fits two lines at its smallest size (12 of 16); a longer list wrapped at
-   16 and ran out of the rect, over the panel's bottom edge. Then the list is cut ("...") and the hover card has it all.
-   Height at 12 wrapped at w = height at 16 wrapped at w * 16/12, times 12/16 (TMP scales with the size). */
-static char nc_last[600]; static float nc_lastw;
-static void nc_fit(DSLObj line, const char *full, float w) {
-    const DSLUi *u = dsl_ui_kit();
-    if (!strcmp(full, nc_last) && w == nc_lastw) return;
-    snprintf(nc_last, sizeof nc_last, "%s", full); nc_lastw = w;
-    char t[600]; snprintf(t, sizeof t, "%s", full);
-    u->set_text(line, t);
-    int can = u->size >= offsetof(DSLUi, text_height) + sizeof u->text_height && u->text_height && w > 40;
-    for (int k = 0; can && k < 16 && u->text_height(line, w * 4 / 3.f) * 0.75f > 40; k++) {
-        size_t n = strlen(t), cut = n * 7 / 8; if (n < 24) break;
-        while (cut && ((unsigned char)t[cut] & 0xC0) == 0x80) cut--;     /* a whole UTF-8 character */
-        for (size_t s = cut; s > 0 && cut - s < 24; s--) if (t[s] == ' ') { cut = s; break; }   /* at a word if one is near */
-        while (cut && (t[cut - 1] == ' ' || t[cut - 1] == ',')) cut--;
-        snprintf(t + cut, sizeof t - cut, "\xE2\x80\xA6");
-        u->set_text(line, t);
-    }
-    u->tooltip(line, TR("Mods of this world"), strcmp(t, full) ? full : NULL);
-    if (strcmp(t, full)) dsl_log("rows: New Campaign line cut to fit (%zu of %zu bytes); the hover card has every mod", strlen(t), strlen(full));
-}
-static void new_campaign_frame(void) {
-    const DSLUi *u = dsl_ui_kit(); if (!u || !t_cs) return;
-    Obj cs = h_cs ? gc_get(h_cs) : NULL;
-    if (!live(cs)) { if (h_cs) gc_free(h_cs); h_cs = 0; nc_line = nc_btn = NULL; cs = find_obj(t_cs, 0, NULL); if (!cs) return; h_cs = gc_new(cs, 0); }
-    if (!shown(cs)) return;
-    char t[600]; dsl_newworld_label(t, sizeof t);
-    Obj tr = comp_tr(cs, NULL);
-    if (!nc_line || !live((Obj)nc_line)) { nc_line = u->text(tr, 0, 0, 10, 10, t, 16, DSL_TXT_LEFT, 0xD9C7B0FF); nc_btn = u->button(tr, 0, 0, 10, 10, TR("Change"), nc_click, NULL);
-                                           nc_last[0] = 0; }
-    dsl_rows_place_newcampaign(cs, nc_line, nc_btn);
-    if (nc_line && rt_rect) nc_fit(nc_line, t, rt_rect(tr, NULL).w - 180);   /* the line's width (dsl_rows_place_newcampaign) */
-}
-
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
 DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
 
@@ -1164,7 +1118,6 @@ void dsl_rows_frame(void) {
     if (fr % 6) return;                                                     /* 10 times a second at 60 fps */
     Obj slv = h_slv ? gc_get(h_slv) : NULL;
     if (!live(slv)) { if (h_slv) gc_free(h_slv); h_slv = 0; slv = (fr % 30 == 0) ? find_obj(t_slv, 1, NULL) : NULL; if (slv) h_slv = gc_new(slv, 0); }
-    if (fr % 30 == 0) new_campaign_frame();
     if (slv) list_poll(slv);
     else if (list_open) list_poll(NULL);
 }

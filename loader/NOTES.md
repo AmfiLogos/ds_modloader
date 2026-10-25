@@ -334,7 +334,7 @@ Windows untested (names only, should port).
 - `src/dsl_menu.h` = L1/L2 contract (tabs, kit, installed mods, groups, Apply, world mods; L2's `dsl_win_*` are weak).
 - `src/dsl_ui.c` kit (helper agent, 67/67 on copy L), `src/dsl_reg.c` (registries, Apply = `<data>/Mods/pending.json` +
   soft restart, B copies it to active.json once on screen; groups.json; worlds.json; flow K), `src/dsl_rows.c` (Load list
-  rows + filters + New Campaign line, by POLLING the open SaveLoadView: multiplayer owns the three row hooks until it uses
+  rows + filters, by POLLING the open SaveLoadView (the New Game screen's mods: `ui/dsl_newgame.c`): multiplayer owns the three row hooks until it uses
   this API; the engine allows one owner per site). The filter only re-shows rows it hid itself.
 - Mods per world: key = sorted gameplay ids joined by "+" ("vanilla"). A world gets the running key the first time it is
   open; Apply inside a world gives that world the new key (else the restart's own reload would be refused).
@@ -924,14 +924,14 @@ difficulty. We don't HAVE to use it because it's a possibility." No restart anyw
     lines plus those are exactly the host's (same version + sha256s). The world the guest then loads puts Hell in its set.
     Tests: run_tests T1f (offered when not counted, not when counted, never when it does not run), pair
     `test/hell_join_pair.py` (Hell guest joins a Hell host in the same process, 0 desyncs; a guest without Hell refused).
-- **New Game switch** (`ui/dsl_newgame.c`): a "Custom difficulty" panel right of the settings' combat difficulty row (same
-  look and placing rules as the Load list's filter panel), one switch per difficulty mod. It only shows or hides level N
+- **New Game switch** (`ui/dsl_newgame.c`): a "Custom difficulty" panel right of the New Game window, fixed whatever the
+  scroll (section "New Game side panels" below), one switch per difficulty mod. It only shows or hides level N
   in the combat and management selectors: saved at once in `<data>/Mods/newgame.json` `{"show": {"<id>": bool}}`, off by
   default. Hidden: after the presenter's own RefreshDifficultyIncreaseButtonState (hooked, "loader New Game screen custom
   difficulty lock") the "+" at N-1 is locked with the game's SetDifficultyIncreaseLocked (as at its top level; not while
   Devastation is still locked: the game's own lock and card stay); a level N chosen anyway (switch turned off with Hell
   chosen, a key) falls back to N-1 at once. A mod that does not run: its switch is greyed, its card says why. The New
-  Campaign line "Mods for this world" follows the chosen levels. The presenter by a weak GC handle (OnActivateView
+  Game screen's "Mods of this world" follows the chosen levels. The presenter by a weak GC handle (OnActivateView
   hooked), fields and methods by name, C# bool returns as uint8_t: one source, Mac and Windows.
 - **Mods window**: the difficulty mod's row is on and greyed (no switch: never in an Apply, a group or a world's set by
   hand) with one gold line: "Always on. Only worlds on Hell use it. To show Hell on the New Game screen, turn on its switch
@@ -946,6 +946,33 @@ difficulty. We don't HAVE to use it because it's a possibility." No restart anyw
   reload, a Very Hard world has none; `LANGTYPE=3|4|7` = Mods window row + settings panel shots, text fit); pair
   `test/hell_mp_pair.py` (Hell host, guest without Hell, 0 desyncs). l1_savewarn / l1_saves / l1_filter use ZET-U as their
   save_dependent / game mod now (Hell counts only on Hell); hostmods_pair expects Hell out of both sets on its seed world.
+
+## New Game side panels (owner 2026-10-25, branch fix/newgame-ui) - `ui/dsl_newgame.c`
+Owner: "Custom difficulty toggle moves at the same time as the scroll." "Mods for this world appear atop the interface -
+should likely be below or on the side below custom difficulty." (the line lay over "Even small waste can lead to downfall",
+Seed and Time Limit; the panel followed the combat row as the settings list scrolled).
+- One column outside the New Game window on its right, one width (the widest one-line need of both, 300..600 units), both
+  panels children of the settings panel (SubUI_CampaignSetting: they show and go with it): "Custom difficulty" (the
+  switches) with its top level with the settings list's top (`Viewport`), the same place whatever the scroll; right under
+  it (16 units) "Mods of this world" (the kit's dark panel, the existing translated title): the mods a world made here
+  plays with (`dsl_newworld_names`, dsl_reg.c: the running set for the chosen levels, Hell only on Hell), one name per
+  line, long names wrap; more than 7 lines: the first names and "+N" (the Load list's rule), "+N" alone when even one name
+  does not fit; the hover card then lists them all; Change (right, its label's width) = the Mods window. The old line in
+  dsl_rows.c is gone (and its key "Mods for this world: %s", pruned from the 10 languages).
+- Place, every 2 frames, from the screen (the Load list filter panel's rules): x = the window's right edge + 16 units; top =
+  the list's top, at most under the title corner (`dsl_update_corner_rect`) when the column runs under it, at most the
+  screen top; too low for its height: moved up (never over the corner), then scaled down; too narrow: scaled down. Measured
+  (`test/newgame_side_test.py`): scale 1.0 at 960x540 / 960x600 / 800x600 UI 1.0, 0.97 (de) / 0.86 (ja) at UI 1.4 16:9 /
+  16:10, 0.48 at 800x600 UI 1.4 (the window takes most of the width there; the column stays inside the screen).
+- Without the switches (a name missing in a future game build) the mods panel still shows: the settings panel is then
+  found with FindObjectOfType every 30 frames, as the old line did.
+- Test requests (DSL_SOFT_TEST): `{"cmd":"newgame","op":"scroll","pos":0..1}` (ScrollRect.verticalNormalizedPosition),
+  `{"op":"mods_lines","n":N}` (fewer lines allowed: the "+N" path; 0 = back to 7); state: `side_now`, `mods`, `list`,
+  `frame`, `corner`, `side_scale`, `mods_fit` (TMP rendered size vs the box, Change inside the panel, the text).
+- Test `test/newgame_side_test.py` (copy W): 3 window sizes x UI 1.0 / 1.4, en / de / ru / ja, every gameplay mod on, combat
+  Hell, the list at the top / middle / bottom: the panel keeps its rect, the mods are off the window, both inside the
+  screen and off the corner, the mods under the switches, text inside its box, "+N" with 2 lines. On the old code (with
+  only the test requests added) a. and b. fail at every size (12 FAILs).
 
 ## Startup time: stock vs patched file vs loader vs BepInEx / MelonLoader (lane modguide, 2026-10-20)
 Mac M4 Max, one hidden copy (BT), 3 rounds round-robin, process start -> title ready (MainFlow scene Title + `_bootReady`,
