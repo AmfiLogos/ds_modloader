@@ -372,6 +372,7 @@ if 'mismatch' in TESTS:
         check('mismatch: refused, nothing changed', "the download's version number is wrong" in st and r.release_of() == (OLD, OLD)
               and not r.pending(), str(r.release_of()))
         check('mismatch: one line for the player', 'could not be installed' in r.ufile('notice.txt'), r.ufile('notice.txt').strip())
+        time.sleep(1.2)   # the backup folder's name has whole seconds: two starts in one second share it (a player's starts never do)
         r.seed_ready('0.1.6', NEW)
         r.stub(dry=True)
         check('mismatch: second failure -> not offered again', 'kit 0.1.6' in r.ufile('bad.txt'), r.ufile('bad.txt').strip())
