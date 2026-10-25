@@ -9,6 +9,8 @@
 //   risks              the risk rows of the expedition window's supplies step (SubUI_CheckInventoryPanelUI._riskRows)
 //   tree <Class> <d>   layout of the live Refactor.UI.<Class> view: name, active, anchors, pivot, position, size, scale,
 //                      layout components, to depth d
+//   rects              screen rectangles of the expedition / unit / result windows' elements (below, do_rects)
+//   click <name>       the click of the kit button named <name> (below, do_click)
 // Each answer is one dsload.log line "zetu-probe: <cmd>: ...". Every game call by il2cpp name.
 #include "dsl_sdk.h"
 #include <stdint.h>
@@ -123,9 +125,112 @@ static void tree(Obj t, int d, int maxd) {
     for (int i = 0; i < n && i < 30; i++) tree(MC(m_child, Obj, Obj, int32_t)(t, i, m_child), d + 1, maxd);
 }
 
+/* ---------------------------------------------------------------- rects: what a player sees, measured on screen
+   One line per element: "rect <tag> <i> <x0> <y0> <x1> <y1> <scale>" in screen pixels (origin bottom left; the game's
+   UI canvas is screen space overlay, so world corners are pixels). <scale> = the element's lossy scale / its view's
+   size on screen against the same element of the game at UI Scale 1.0 (lossy scale / the canvas scale, the game's
+   canvas = screen height / 1080): the stock unit windows are 1.0 at UI Scale 1.0 and 1.4 at 1.4, the expedition
+   window 1.0 at every UI Scale; 0 = hidden (an expedition page not shown).
+   Tags: inv / status / skill (active panels of the open unit window), supplies (the expedition window's unit panels),
+   supgrid (its supply grid), result (active portraits of the result window), resimg / resret / resdown / rescount
+   (its region picture, buttons, count text), alert (active alert rows at the right), clock (the pause / speed row at
+   the top left), screen W H at the end.
+   click <name>: the kit button (SubUI_TitleMenuButton clone) whose GameObject is <name>: its click action, as a
+   player's click (the zetu-suite expedition pages "zetu_page_1" / "zetu_page_2"). */
+static void *m_corners, *m_lossy, *m_go2, *m_tr2, *m_inh, *m_sw, *m_sh, *k_v3;
+static int rects_init(void) {
+    if (m_corners) return 1;
+    void *kr = H->find_class("UnityEngine", "RectTransform"), *kt = H->find_class("UnityEngine", "Transform");
+    void *kc = H->find_class("UnityEngine", "Component"), *kg = H->find_class("UnityEngine", "GameObject"), *ks = H->find_class("UnityEngine", "Screen");
+    k_v3 = H->find_class("UnityEngine", "Vector3");
+    m_lossy = msig(kt, "get_lossyScale", 0); m_go2 = msig(kc, "get_gameObject", 0); m_tr2 = msig(kc, "get_transform", 0);
+    m_inh = msig(kg, "get_activeInHierarchy", 0); m_sw = msig(ks, "get_width", 0); m_sh = msig(ks, "get_height", 0);
+    m_corners = msig(kr, "GetWorldCorners", 1);
+    return m_corners && m_lossy && m_go2 && m_tr2 && m_inh && m_sw && m_sh && k_v3;
+}
+static int c_active(Obj c) { Obj g = c ? MC(m_go2, Obj, Obj)(c, m_go2) : NULL; return g && MC(m_inh, uint8_t, Obj)(g, m_inh); }
+static void put_rect(const char *tag, int i, Obj c, Obj view) {
+    if (!c || !c_active(c)) return;
+    Obj (*anew)(void *, uintptr_t) = H->il2cpp_fn("il2cpp_array_new");
+    Obj t = MC(m_tr2, Obj, Obj)(c, m_tr2), a = anew(k_v3, 4);
+    MC(m_corners, void, Obj, Obj)(t, a, m_corners);
+    V3 *q = (V3 *)((char *)a + 0x20);
+    (void)view;
+    int32_t (*sh)(const void *) = *(void **)m_sh;
+    float s = MC(m_lossy, V3, Obj)(t, m_lossy).x, cs = (float)sh(m_sh) / 1080.f;
+    H->log(ME, "rect %s %d %.1f %.1f %.1f %.1f %.3f", tag, i, q[0].x, q[0].y, q[2].x, q[2].y, cs > 0 ? s / cs : 0);
+}
+static Obj live(const char *ns, const char *cls) {
+    void *k = H->find_class(ns, cls);
+    Obj (*tobj)(void *) = H->il2cpp_fn("il2cpp_type_get_object"); void *(*ctype)(void *) = H->il2cpp_fn("il2cpp_class_get_type");
+    return k ? find_obj(tobj(ctype(k)), find_obj_mi) : NULL;   /* active objects only */
+}
+static void put_array(const char *tag, Obj view, const char *cls, const char *field, int is_list) {
+    int32_t off = view ? fofs("Refactor.UI", cls, field) : -1;
+    Obj a = off >= 0 ? AT(view, off, Obj) : NULL;
+    if (a && is_list) { int n = AT(a, 0x18, int32_t); Obj it = AT(a, 0x10, Obj); for (int i = 0; it && i < n; i++) put_rect(tag, i, AT(it, 0x20 + 8 * i, Obj), view); return; }
+    int n = a ? (int)AT(a, 0x18, uintptr_t) : 0;
+    for (int i = 0; i < n; i++) put_rect(tag, i, AT(a, 0x20 + 8 * i, Obj), view);
+}
+static void do_rects(void) {
+    if (!rects_init()) { H->log(ME, "zetu-probe: rects: Unity methods missing"); return; }
+    static const char *const W[3][3] = { { "inv", "EntityInventoryUI", "_panels" }, { "status", "EntityStatusUI", "_panels" }, { "skill", "EntitySkillUI", "_panels" } };
+    for (int w = 0; w < 3; w++) put_array(W[w][0], live("Refactor.UI", W[w][1]), W[w][1], W[w][2], 0);
+    Obj cip = live("Refactor.UI", "SubUI_CheckInventoryPanelUI");
+    if (cip) {
+        put_array("supplies", cip, "SubUI_CheckInventoryPanelUI", "_panels", 0);
+        int32_t o = fofs("Refactor.UI", "SubUI_CheckInventoryPanelUI", "_expeditionInventoryPanel");
+        if (o >= 0) put_rect("supgrid", 0, AT(cip, o, Obj), cip);
+    }
+    Obj res = live("Refactor.UI", "DungeonResultView");
+    if (res) {
+        put_array("result", res, "DungeonResultView", "_portraitUIList", 1);
+        static const char *const R[4][2] = { { "resimg", "_regionImage" }, { "resret", "_btnReturn" }, { "resdown", "_btnGoDown" }, { "rescount", "_unitCountText" } };
+        for (int i = 0; i < 4; i++) { int32_t o = fofs("Refactor.UI", "DungeonResultView", R[i][1]); if (o >= 0) put_rect(R[i][0], 0, AT(res, o, Obj), res); }
+    }
+    Obj al = live("Refactor.UI", "AlertUIView");
+    put_array("alert", al, "AlertUIView", "_orderedElements", 1);
+    Obj ci = live("Refactor.UI", "CampaignInfoView");
+    if (ci) {
+        void *mf = msig(H->find_class("UnityEngine", "Transform"), "Find", 1);
+        Obj (*sn)(const char *) = H->il2cpp_fn("il2cpp_string_new");
+        Obj t = mf ? MC(mf, Obj, Obj, Obj)(MC(m_tr2, Obj, Obj)(ci, m_tr2), sn("SubUI_CampaignClockUI"), mf) : NULL;
+        if (t) put_rect("clock", 0, t, ci);
+    }
+    int32_t (*sw)(const void *) = *(void **)m_sw, (*sh)(const void *) = *(void **)m_sh;
+    H->log(ME, "zetu-probe: rects: screen %d %d", sw(m_sw), sh(m_sh));
+}
+
+static void do_click(const char *name) {
+    void *kb = H->find_class("Refactor.UI", "SubUI_TitleMenuButton"), *ko = H->find_class("UnityEngine", "Object");
+    int32_t f_act = kb ? H->field_offset(kb, "_onButtonClicked") : -1;
+    void *(*methods)(void *, void **) = H->il2cpp_fn("il2cpp_class_get_methods"); const char *(*mname)(void *) = H->il2cpp_fn("il2cpp_method_get_name");
+    uint32_t (*pc)(void *) = H->il2cpp_fn("il2cpp_method_get_param_count"); uint8_t (*gen)(void *) = H->il2cpp_fn("il2cpp_method_is_generic");
+    void *it = NULL, *m, *fa = NULL;
+    while (ko && (m = methods(ko, &it))) if (!strcmp(mname(m), "FindObjectsOfType") && pc(m) == 2 && !(gen && gen(m))) { fa = m; break; }
+    if (!rects_init() || !kb || f_act < 0 || !fa) { H->log(ME, "zetu-probe: click: names missing"); return; }
+    Obj (*tobj)(void *) = H->il2cpp_fn("il2cpp_type_get_object"); void *(*ctype)(void *) = H->il2cpp_fn("il2cpp_class_get_type");
+    void *(*ocls)(Obj) = H->il2cpp_fn("il2cpp_object_get_class");
+    Obj arr = MC(fa, Obj, Obj, uint8_t)(tobj(ctype(kb)), 0, fa);
+    int n = arr ? (int)AT(arr, 0x18, uintptr_t) : 0, k = 0;
+    void *mn = msig(ko, "get_name", 0);
+    for (int i = 0; i < n; i++) {
+        Obj b = AT(arr, 0x20 + 8 * i, Obj); char nm[96];
+        if (!b || !c_active(b)) continue;
+        u8(MC(mn, Obj, Obj)(MC(m_go2, Obj, Obj)(b, m_go2), mn), nm, sizeof nm);
+        if (strcmp(nm, name)) continue;
+        Obj act = AT(b, f_act, Obj);
+        void *inv = act ? H->find_method(ocls(act), "Invoke", 0) : NULL;
+        if (inv) { ((void (*)(Obj, const void *))H->method_address(inv))(act, inv); k++; }
+    }
+    H->log(ME, "zetu-probe: click %s: %d button(s)", name, k);
+}
+
 static void run_req(Obj eq, const char *line) {
     char cmd[32] = "", cls[64] = ""; int arg = 0;
     sscanf(line, "%31s %d", cmd, &arg);
+    if (!strcmp(cmd, "rects")) { do_rects(); return; }
+    if (!strcmp(cmd, "click")) { char nm[64] = ""; sscanf(line, "%*s %63s", nm); do_click(nm); return; }
     if (!strcmp(cmd, "risks")) {
         void *k = H->find_class("Refactor.UI", "SubUI_CheckInventoryPanelUI");
         Obj (*tobj)(void *) = H->il2cpp_fn("il2cpp_type_get_object"); void *(*ctype)(void *) = H->il2cpp_fn("il2cpp_class_get_type");

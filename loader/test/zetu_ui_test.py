@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """ZET-U "max units in the dungeon" = 8: the expedition screens and the dungeon with 8 units, on hidden test copy Q
-(lrig.start: guard, cap, DSL_NOTCH=0; a hidden window, not -batchmode, so the UI draws for the shots). One rig lease.
+(ZETU_COPY=<name> for another copy; lrig.start: guard, cap, DSL_NOTCH=0; a hidden window, not -batchmode, so the UI
+draws for the shots). One rig lease.
 Never the owner's game, saves or prefs: the seed save (2026-10-11 backup, 7 units) is loaded from a copy in <out>.
 
-  zetu_ui_test.py run [out]          the whole proof (below); exit 1 on a failed check
+  zetu_ui_test.py run [out] [--size WxH] [--ui S] [--lang en|de|ru]
+                                     the whole proof (below) at that window size (default 960x540), UI Scale (default
+                                     the profile's) and language; exit 1 on a failed check
   zetu_ui_test.py run4 [out]         max_units 4: the module changes nothing, a stock 4-unit expedition works
   zetu_ui_test.py up [out]           lease + start + load the save, then hold until `down` (manual look)
   zetu_ui_test.py cmd '<json>'       rig socket command to the running copy
@@ -18,11 +21,18 @@ Real breaks the run catches (owner rule: 8 units work without UI overlap or cras
  5  Inventory / Status / Skill windows with all 8 selected: 8 panels each, inside the screen, no exception
  7  the risk "Insufficient units selected" uses the setting: shown for 4 of 8, not for 8
  6  the result screen lists the 8 units (portraits shown, none overlapping)
+ 8  every unit's element can be read (UX review 2026-10-25 Z1-Z4), measured on screen by the probe ("rects"): the
+    supplies step's panels (both pages), the Inventory / Status / Skill panels with 8 selected and the result
+    portraits are at least 0.7 of the game's own size at UI Scale 1.0, inside the screen, not over each other, the
+    supply grid, the result window's picture / buttons / count, the alert rows at the right or the pause / speed
+    row at the top; the result window with 4 units keeps the game's size
 Shots: <out>/*.png, also copied to $ZETU_SHOTS when set."""
 import json, os, re, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
-X = 'Q'; I = r.idir(X)
+X = os.environ.get('ZETU_COPY', 'Q'); I = r.idir(X)
+LANG = {'en': 0, 'de': 3, 'ru': 4}
+OPT = {}                                          # --size / --ui / --lang of the run
 LB = os.path.dirname(HERE)
 H = os.path.expanduser('~')
 SEED = os.path.join(r.SEED_DATA, 'Saves', 'ElvenExpedition__AutoSave_f816ebc6195c432c9fff754b75ee3738_0.json')
@@ -74,6 +84,37 @@ def risks():
     mark = len(dlog()); probe('risks')
     return [l.split('risk row ', 1)[1] for l in dlog()[mark:].splitlines() if 'risk row ' in l]
 LOW = 'Insufficient units selected'
+def rects():
+    """the probe's screen rectangles: {tag: [(i, x0, y0, x1, y1, scale)]}, (W, H); scale 0 = hidden"""
+    mark = len(dlog())
+    p = os.path.join(I, 'zetu_probe_req.txt'); open(p + '.tmp', 'w').write('rects\n'); os.replace(p + '.tmp', p)
+    t0 = time.time()
+    while time.time() - t0 < 20 and 'zetu-probe: rects: screen' not in dlog()[mark:]: time.sleep(0.3)
+    L = dlog()[mark:]; R = {}
+    for l in L.splitlines():
+        if '] rect ' in l:
+            x = l.split('] rect ', 1)[1].split(); R.setdefault(x[0], []).append((int(x[1]),) + tuple(float(v) for v in x[2:7]))
+    m = re.search(r'rects: screen (\d+) (\d+)', L)
+    return R, ((int(m.group(1)), int(m.group(2))) if m else (0, 0))
+def overlap(a, b): return min(a[3], b[3]) - max(a[1], b[1]) > 1 and min(a[4], b[4]) - max(a[2], b[2]) > 1
+MIN_SCALE = 0.7                                   # of the game's own size at UI Scale 1.0
+def geo(name, RS, tag, want, avoid=(), min_scale=MIN_SCALE, idx=None):
+    """real breaks a player sees: an element too small to read, off screen, over another one or over a part he needs"""
+    R, (W, Hh) = RS
+    P = [x for x in R.get(tag, []) if x[5] > 0.01]
+    S['geo_' + name] = {'shown': len(P), 'scale': [round(min(x[5] for x in P), 3) if P else None], 'screen': [W, Hh],
+                        'box': [round(min(x[1] for x in P)), round(min(Hh - x[4] for x in P)), round(max(x[3] for x in P)), round(max(Hh - x[2] for x in P))] if P else None}
+    check(f'8: {name}: {want} shown', len(P) == want and (idx is None or sorted(x[0] for x in P) == idx), [x[0] for x in P])
+    check(f'8: {name}: at least {min_scale} of the game\'s size', P and min(x[5] for x in P) >= min_scale, S['geo_' + name]['scale'])
+    check(f'8: {name}: inside the screen', P and W and all(x[1] >= -1 and x[2] >= -1 and x[3] <= W + 1 and x[4] <= Hh + 1 for x in P), S['geo_' + name])
+    bad = [(a[0], b[0]) for k, a in enumerate(P) for b in P[k + 1:] if overlap(a, b)]
+    check(f'8: {name}: no two over each other', not bad, bad[:6])
+    for t in avoid:
+        bad = [(a[0], b[0]) for a in P for b in R.get(t, []) if overlap(a, b)]
+        check(f'8: {name}: not over {t}', not bad, bad[:6])
+S = {}
+
+
 def units(m):
     u = cmd({'cmd': 'list_units', 'map': m}).get('units') or []
     return [x for x in u if x.get('faction') == 1 and not x.get('dead')]
@@ -101,7 +142,7 @@ def disk_free_gb():
 
 def up(out, mx=8):
     """mods of this tree + the probe; profile with zetu-suite max_units 8; copy Q started hidden; the seed save loaded"""
-    if r.alive(r.read_pid(X)): raise SystemExit('copy Q already running')
+    if r.alive(r.read_pid(X)): raise SystemExit('copy %s already running' % X)
     if disk_free_gb() < 30: raise SystemExit('less than 30 GB free disk')
     md = os.path.join(out, 'mods')
     if os.path.exists(md): aside(md, out)
@@ -125,7 +166,17 @@ def up(out, mx=8):
                        'DSL_SOFT_STAGE': '-20000,-20000'})
     os.environ.pop('DSML_SESSION', None)
     os.environ.update(r.soft_test_env())
-    r.start(X, window=True)
+    if OPT.get('size'): os.environ['LRIG_SIZE'] = OPT['size']
+    orig = r.prepare_data
+    def prep(x):                                  # the copy's own UserSetting.json: UI Scale, language
+        orig(x)
+        p = os.path.join(r.idir(x), 'data', 'UserSetting.json'); s = json.load(open(p))
+        if OPT.get('lang'): s['GeneralSettingData']['SaveCurrentLanguageType'] = LANG[OPT['lang']]
+        if OPT.get('ui'): s['GraphicSettingData']['UIScale'] = float(OPT['ui'])
+        json.dump(s, open(p, 'w'), indent=1)
+    r.prepare_data = prep
+    try: r.start(X, window=True)
+    finally: r.prepare_data = orig
     r.wait_for(X, lambda s: s.get('scene') == 1 and not s.get('busy'), 'title', timeout=900)
     L = dlog()
     check('setting read: max units %d' % mx, 'max units in the dungeon %d' % mx in L, [l for l in L.splitlines() if 'zetu' in l][-5:])
@@ -164,7 +215,6 @@ def wait_map(m, limit=120):
 
 
 def run(out):
-    S = {}
     g0 = up(out)
     cmd({'cmd': 'set_speed', 'speed': 1})
     st = status(); log('status', {k: st.get(k) for k in ('scene', 'map', 'tick')})
@@ -172,6 +222,10 @@ def run(out):
     if units(1):
         log('probe', probe('result')); time.sleep(4)
         shot(out, 'results_4_stock')
+        R4 = rects(); P = [x for x in R4[0].get('result', []) if x[5] > 0.01]
+        u = (R4[0].get('resimg') or [(0, 0, 0, 0, 0, 0)])[0][5]   # the window's own picture: the game's size (UI Scale)
+        S['geo_result_4'] = [round(x[5], 3) for x in P] + ['picture %.3f' % u]
+        check('8: result with 4 units: 4 portraits at the game\'s own size', len(P) == 4 and u > 0 and all(abs(x[5] - u) < 0.05 * u for x in P), S['geo_result_4'])
         d = units(1)
         log('back to base', cmd({'cmd': 'trn_changemap', 'from': 1, 'to': 0, 'guids': ','.join(u['guid'] for u in d)}))
         wait_map(0, 120); time.sleep(3)
@@ -209,7 +263,13 @@ def run(out):
     S['supplies_line'] = [l for l in L.splitlines() if 'zetu-suite' in l and 'supplies' in l][-3:]
     st = teams(action='state').get('stock') or {}
     S['stock_panels'] = st.get('panels'); S['stock_state'] = st.get('state')
-    check('2: supplies step: 8 panels in one row, no overlap', re.search(r'supplies: 8 unit panels .*, no overlap', L), S['supplies_line'])
+    check('2: supplies step: 8 panels, no overlap', re.search(r'supplies: 8 unit panels .*, no overlap', L), S['supplies_line'])
+    RS = rects()
+    geo('supplies step, page 1', RS, 'supplies', 4, ('supgrid',), idx=[0, 1, 2, 3])
+    log('page 2', probe('click zetu_page_2')); time.sleep(1)
+    shot(out, 'expedition_8_supplies_page2')
+    geo('supplies step, page 2', rects(), 'supplies', 4, ('supgrid',), idx=[4, 5, 6, 7])
+    log('page 1', probe('click zetu_page_1')); time.sleep(1)
     check('2: the window is at the supplies step (no crash)', st.get('state') == 1, st)
     check('2: each of the 8 units has its own panel (GetPanelOwner 0..7)', len({p for p in (st.get('panels') or []) if p}) == 8, st.get('panels'))
     rk = risks(); S['risks_8'] = rk
@@ -228,11 +288,9 @@ def run(out):
         log('probe', probe('toggle %d' % t)); time.sleep(2.5)
         shot(out, 'dungeon_8_' + n)
         L = dlog()
-        fit = re.findall(view + r': (\d+) units shown, row scale ([\d.]+), x (-?\d+)\.\.(-?\d+) of (\d+) px', L)
-        S['fit_' + n] = fit[-1] if fit else None
+        S['fit_' + n] = [l.split('] ', 1)[-1] for l in L[mark:].splitlines() if view + ': ' in l and 'units shown' in l][-1:]
         check(f'5: {n} window: 8 panels (4 stock + 4 copies)', re.search(view + r': 8 panels \(4 stock \+ 4 copies\)', L), [l for l in L.splitlines() if view in l][-3:])
-        check(f'5: {n} window shows the 8 selected units inside the screen',
-              fit and fit[-1][0] == '8' and int(fit[-1][2]) >= 0 and int(fit[-1][3]) <= int(fit[-1][4]), fit[-1:] or L[mark:][-300:])
+        geo(f'{n} window, 8 selected', rects(), {'inventory': 'inv'}.get(n, n), 8, ('alert', 'clock'))
         log('probe', probe('toggle %d' % t)); time.sleep(1)
     P = plog()[p0:]
     exc = [l for l in P.splitlines() if 'Exception' in l]
@@ -242,8 +300,9 @@ def run(out):
     L = dlog()
     shot(out, 'results_8')
     S['result_line'] = [l for l in L.splitlines() if 'zetu-suite' in l and 'result' in l][-3:]
-    check('6: result screen: 8 portraits, no overlap', re.search(r'result: 8 portraits \(4 stock \+ 4 copies\).*, no overlap', L)
+    check('6: result screen: 8 portraits shown', re.search(r'result: 8 portraits \(4 stock \+ 4 copies\)', L)
           and re.search(r'result: 8 units \+ 0 dead, 8 portraits shown', L), S['result_line'])
+    geo('result window', rects(), 'result', 8, ('resimg', 'resret', 'resdown', 'rescount'))
     P = plog()
     S['exceptions'] = [l for l in P.splitlines() if 'Exception' in l][:10]
     check('no exception in player.log during the run', not S['exceptions'], S['exceptions'][:4])
@@ -252,7 +311,6 @@ def run(out):
 
 def run4(out):
     """max_units 4: the module does nothing; a stock 4-unit expedition still works"""
-    S = {}
     g0 = up(out, 4)
     cmd({'cmd': 'set_speed', 'speed': 1})
     if units(1):
@@ -276,6 +334,9 @@ def run4(out):
 
 def main():
     a = sys.argv[1:] or ['run']
+    for k in ('size', 'ui', 'lang'):                 # --size WxH / --ui S / --lang en|de|ru
+        if '--' + k in a:
+            i = a.index('--' + k); OPT[k] = a[i + 1]; del a[i:i + 2]
     out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'run4', 'up') else '~/ds_launcher/loader/test_env/l1_out/zetu_ui')
     if a[0] == 'cmd': print(json.dumps(cmd(json.loads(a[1]), 120))); return
     if a[0] == 'probe': print(probe(a[1])); return
@@ -288,7 +349,7 @@ def main():
         except SystemExit:
             if time.time() - t0 > 5400: raise
     lane, pair = lease(); log('lease', pair)
-    S = {}; g0 = 0
+    g0 = 0
     try:
         if a[0] == 'up':
             if os.path.exists(STOPF): aside(STOPF, out)
@@ -297,9 +358,9 @@ def main():
             while not os.path.exists(STOPF) and time.time() - t0 < 3 * 3600 and r.alive(r.read_pid(X)): time.sleep(2)
             if os.path.exists(STOPF): aside(STOPF, out)
         elif a[0] == 'run4':
-            S, g0 = run4(out)
+            _, g0 = run4(out)
         else:
-            S, g0 = run(out)
+            _, g0 = run(out)
     except Exception as e:
         check('run finished', False, repr(e))
     finally:
@@ -311,7 +372,7 @@ def main():
         subprocess.run([sys.executable, f'{H}/ds_multiplayer/rig/rig.py', 'release', pair, lane], capture_output=True)
         S['checks'] = checks; json.dump(S, open(os.path.join(out, 'summary.json'), 'w'), indent=1)
     fails = [c for c in checks if not c['ok']]
-    print(f'\n{len(checks) - len(fails)} PASS {len(fails)} FAIL; out {out}')
+    print(f'\nRESULT zetu_ui {" ".join(f"--{k} {v}" for k, v in OPT.items())}: {len(checks) - len(fails)} PASS {len(fails)} FAIL; out {out}')
     sys.exit(1 if fails else 0)
 
 
