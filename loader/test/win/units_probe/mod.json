@@ -1,0 +1,14 @@
+{
+ "id": "units-probe",
+ "name": "Units probe (test only)",
+ "version": "0.1.0",
+ "author": "Units Laboratory tests",
+ "kind": "code",
+ "api": 3,
+ "game_builds": ["25846389"],
+ "platforms": { "win-x64": { "entry": "units-probe.dll" } },
+ "requires": ["loader>=2.0.0"],
+ "conflicts": [],
+ "description": "Test module of loader/test/win/units_lab_vm.py: drives Units Laboratory's windows on the Windows VM. Never shipped.",
+ "scope": "client"
+}
