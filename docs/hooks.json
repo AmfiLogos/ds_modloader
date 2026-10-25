@@ -6325,6 +6325,120 @@
    "key": "weapon-slot|weapon_slot.c|my_skc_deser|"
   },
   {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.Main.Processor.ItemControlProcessor$$RouteDungeonReturnInventoryItem",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xd48064"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xa5c4c0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_route|"
+  },
+  {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.Main.Processor.ItemControlProcessor$$SortInventory",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xd4bb0c"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xa5cc20"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_sort|"
+  },
+  {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.Main.Event.ItemEventHandler$$OnEvent",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xda32e0"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xab9f50"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_ban|"
+  },
+  {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.Control.InteractionOptionControl$$RegisterInteraction_Inventory",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xc25720"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0x9579c0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_reg|"
+  },
+  {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.UI.InteractionOptionUI$$Show",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xf0adc0"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xc12bc0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_show|"
+  },
+  {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.UI.ItemSlotUI$$SetItem",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xeae2f0"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xbad2b0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_setitem|"
+  },
+  {
    "owner": "multi-bar",
    "kind": "detour",
    "method": "Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0",

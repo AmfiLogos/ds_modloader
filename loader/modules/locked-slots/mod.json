@@ -1,0 +1,77 @@
+{
+ "id": "locked-slots",
+ "name": "Locked Slots",
+ "short_name": "Locked Slots",
+ "version": "0.1.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "api": 6,
+ "scope": "gameplay",
+ "sim": true,
+ "save_dependent": false,
+ "default_on": false,
+ "vanilla_plus": true,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "locked-slots.dylib"
+  },
+  "win-x64": {
+   "entry": "locked-slots.dll"
+  }
+ },
+ "requires": [
+  "loader>=3.2.0"
+ ],
+ "conflicts": [],
+ "description": "Right-click a slot in a unit's inventory and choose Keep on return. A small lock shows on the slot, and what is in it stays with the unit when it comes back to the settlement. The unit can still use, move and drop those items. Sort leaves locked slots alone. Right-click again and choose Do not keep on return to unlock it.",
+ "i18n": {
+  "fr": {
+   "name": "Emplacements verrouillés",
+   "short_name": "Emplacements verrouillés",
+   "description": "Faites un clic droit sur un emplacement de l'inventaire d'une unité et choisissez Garder au retour. Un petit cadenas apparaît sur l'emplacement, et ce qu'il contient reste avec l'unité quand elle revient à la colonie. L'unité peut toujours utiliser, déplacer et jeter ces objets. Le tri ne touche pas aux emplacements verrouillés. Faites un nouveau clic droit et choisissez Ne pas garder au retour pour le déverrouiller."
+  },
+  "de": {
+   "name": "Gesperrte Plätze",
+   "short_name": "Gesperrte Plätze",
+   "description": "Klicke mit der rechten Maustaste auf einen Platz im Inventar einer Einheit und wähle Bei Rückkehr behalten. Ein kleines Schloss erscheint auf dem Platz, und was darin liegt, bleibt bei der Einheit, wenn sie zur Siedlung zurückkehrt. Die Einheit kann diese Gegenstände weiter benutzen, verschieben und ablegen. Das Sortieren lässt gesperrte Plätze in Ruhe. Klicke erneut mit der rechten Maustaste und wähle Bei Rückkehr nicht behalten, um ihn freizugeben."
+  },
+  "es": {
+   "name": "Casillas bloqueadas",
+   "short_name": "Casillas bloqueadas",
+   "description": "Haz clic derecho en una casilla del inventario de una unidad y elige Conservar al volver. Aparece un pequeño candado en la casilla, y lo que contiene se queda con la unidad cuando vuelve al asentamiento. La unidad puede seguir usando, moviendo y soltando esos objetos. Ordenar no toca las casillas bloqueadas. Haz clic derecho otra vez y elige No conservar al volver para desbloquearla."
+  },
+  "pt-BR": {
+   "name": "Espaços travados",
+   "short_name": "Espaços travados",
+   "description": "Clique com o botão direito em um espaço do inventário de uma unidade e escolha Manter ao retornar. Um pequeno cadeado aparece no espaço, e o que estiver nele fica com a unidade quando ela volta ao assentamento. A unidade ainda pode usar, mover e largar esses itens. Organizar não mexe nos espaços travados. Clique com o botão direito de novo e escolha Não manter ao retornar para destravá-lo."
+  },
+  "ru": {
+   "name": "Закреплённые ячейки",
+   "short_name": "Закреплённые ячейки",
+   "description": "Щёлкните правой кнопкой по ячейке инвентаря юнита и выберите «Оставить при возвращении». На ячейке появится маленький замок, и то, что в ней лежит, останется у юнита, когда он вернётся в поселение. Юнит по-прежнему может использовать, перемещать и выбрасывать эти предметы. Сортировка не трогает закреплённые ячейки. Щёлкните правой кнопкой ещё раз и выберите «Не оставлять при возвращении», чтобы снять замок."
+  },
+  "ja": {
+   "name": "スロット固定",
+   "short_name": "スロット固定",
+   "description": "ユニットのインベントリのスロットを右クリックし、「帰還時に保持」を選びます。スロットに小さな錠前が表示され、その中身はユニットが入植地に戻ってもユニットの手元に残ります。ユニットはそのアイテムをこれまでどおり使ったり、移動したり、捨てたりできます。整理はロックしたスロットに触れません。もう一度右クリックして「帰還時に保持しない」を選ぶと、ロックが外れます。"
+  },
+  "ko": {
+   "name": "잠긴 슬롯",
+   "short_name": "잠긴 슬롯",
+   "description": "유닛 인벤토리의 슬롯을 우클릭하고 「복귀 시 유지」를 선택하세요. 슬롯에 작은 자물쇠가 표시되고, 그 안의 아이템은 유닛이 정착지로 복귀할 때 유닛에게 남습니다. 유닛은 그 아이템을 그대로 사용하고, 옮기고, 버릴 수 있습니다. 정렬은 잠긴 슬롯을 건드리지 않습니다. 다시 우클릭하고 「복귀 시 유지 안 함」을 선택하면 잠금이 풀립니다."
+  },
+  "zh-Hans": {
+   "name": "锁定栏位",
+   "short_name": "锁定栏位",
+   "description": "右键点击单位背包中的一个栏位，选择“返回时保留”。栏位上会出现一个小锁，单位返回据点时，栏位里的物品会留在单位身上。单位仍可照常使用、移动和丢弃这些物品。整理不会动锁定的栏位。再次右键点击并选择“返回时不保留”即可解锁。"
+  },
+  "zh-Hant": {
+   "name": "鎖定欄位",
+   "short_name": "鎖定欄位",
+   "description": "右鍵點擊單位物品欄中的一個欄位，選擇「返回時保留」。欄位上會出現一個小鎖，單位返回定居點時，欄位裡的物品會留在單位身上。單位仍可照常使用、移動和丟棄這些物品。整理不會動鎖定的欄位。再次右鍵點擊並選擇「返回時不保留」即可解鎖。"
+  }
+ }
+}
