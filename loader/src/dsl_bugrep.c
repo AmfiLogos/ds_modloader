@@ -88,7 +88,7 @@ static int sending, done_code, unsent_n;                            /* done_code
 static char done_msg[1400], last_id[160];
 
 /* ------------------------------------------------------------------ Unity by name */
-static void *m_amin, *m_amax, *m_pivot, *m_pos, *m_size, *m_key, *m_cur_es, *m_sel_go, *m_go_get, *m_go_tr, *m_in_focused, *m_img_sprite,
+static void *m_amin, *m_amax, *m_pivot, *m_pos, *m_size, *m_cur_es, *m_sel_go, *m_go_get, *m_go_tr, *m_in_focused, *m_img_sprite,
             *m_gr_color, *m_shot, *m_tw, *m_th, *m_pix, *m_destroy, *m_comp_tr, *m_tr_getscale, *m_tr_setscale, *m_rect;
 static void *k_image, *k_input, *k_tmp;
 static void *(*x_class_type)(void *), *(*x_type_obj)(void *);
@@ -100,7 +100,6 @@ static void unity_init(void) {
     m_amin = mth("UnityEngine", "RectTransform", "set_anchorMin", 1); m_amax = mth("UnityEngine", "RectTransform", "set_anchorMax", 1);
     m_pivot = mth("UnityEngine", "RectTransform", "set_pivot", 1); m_pos = mth("UnityEngine", "RectTransform", "set_anchoredPosition", 1);
     m_size = mth("UnityEngine", "RectTransform", "set_sizeDelta", 1); m_rect = mth("UnityEngine", "RectTransform", "get_rect", 0);
-    m_key = mth("UnityEngine", "Input", "GetKeyDownInt", 1);
     m_cur_es = mth("UnityEngine.EventSystems", "EventSystem", "get_current", 0);
     m_sel_go = mth("UnityEngine.EventSystems", "EventSystem", "get_currentSelectedGameObject", 0);
     m_go_tr = mth("UnityEngine", "GameObject", "get_transform", 0);
@@ -160,7 +159,6 @@ static void fill_parent(DSLObj rt) {
     CALL(m_amin, void, Obj, V2)(rt, z, m_amin); CALL(m_amax, void, Obj, V2)(rt, o, m_amax); CALL(m_pivot, void, Obj, V2)(rt, h, m_pivot);
     CALL(m_size, void, Obj, V2)(rt, z, m_size); CALL(m_pos, void, Obj, V2)(rt, z, m_pos);
 }
-static int esc_down(void) { return m_key && CALL(m_key, int8_t, int32_t)(27, m_key) != 0; }
 static int typing(void) {                                             /* a text field has the keyboard (Esc is its own) */
     Obj es = m_cur_es ? CALL0(m_cur_es, Obj)(m_cur_es) : NULL;
     Obj go = es && m_sel_go ? CALL(m_sel_go, Obj, Obj)(es, m_sel_go) : NULL;
@@ -498,6 +496,7 @@ static void close_window(void) {
     is_open = 0;
     dsl_log("bugrep: window closed");
 }
+static void esc_close(void *ud) { (void)ud; close_window(); }
 static void open_window(void) {
     if (!U) U = dsl_ui_kit();
     if (!U) { dsl_log("bugrep: no widget kit: the window cannot open"); return; }
@@ -509,6 +508,7 @@ static void open_window(void) {
     is_open = w_win != NULL;
     if (!is_open) { close_window(); dsl_log("bugrep: the window could not be built"); return; }
     if (busy) { U->set_enabled(w_send, 0); status(TR("Sending..."), SUB); }
+    U->esc_push(w_win, esc_close, NULL, 0);                            /* Escape = Cancel (the kit owns the key; the Esc menu under it stays) */
     dsl_log("bugrep: window open (from the %s, screenshot %s)", want_src == 2 ? "Esc menu" : "title", shot_ok ? "yes" : "no");
 }
 int dsl_bugrep_is_open(void) { return is_open; }
@@ -609,7 +609,6 @@ void dsl_bugrep_frame(void) {
         }
         if (want_src == 2 && dsl_reg_scene() != 2) close_window();      /* the world was left under the window */
         else if (want_src == 1 && dsl_reg_scene() == 2) close_window();
-        else if (esc_down() && !typing()) close_window();
     } else if (want_src == 2 && h_menu && !phase) {
         void (*fr)(uintptr_t) = dsl_il2cpp_fn("il2cpp_gchandle_free"); if (fr) fr(h_menu); h_menu = 0;
     }

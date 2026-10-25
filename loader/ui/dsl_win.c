@@ -59,9 +59,9 @@ static DSLObj w_back, w_win, w_body, w_tab[17], w_mark, w_slogel[SLOGEL_FRAMES];
 static int slogel_shown = -1;
 static char slogel_dir[1100];
 
-/* ---------------------------------------------------------------- Unity by name (centre a panel, Esc, time, shot) */
-static void *m_amin, *m_amax, *m_pivot, *m_pos, *m_size, *m_key, *m_time, *m_shot, *m_png, *m_destroy, *m_cur_es, *m_sel_go,
-            *m_go_get, *m_in_focused, *m_img_sprite, *m_gr_color, *k_image, *k_input;
+/* ---------------------------------------------------------------- Unity by name (centre a panel, time, shot) */
+static void *m_amin, *m_amax, *m_pivot, *m_pos, *m_size, *m_time, *m_shot, *m_png, *m_destroy,
+            *m_go_get, *m_img_sprite, *m_gr_color, *k_image;
 static void *(*x_get_methods)(void *, void **); static const char *(*x_mname)(void *); static uint32_t (*x_pcount)(void *);
 static void *(*x_param)(void *, uint32_t); static char *(*x_tname)(void *); static void (*x_free)(void *);
 static void *(*x_class_type)(void *); static void *(*x_type_obj)(void *);
@@ -86,18 +86,14 @@ static void unity_init(void) {
     m_amin = mth("UnityEngine", "RectTransform", "set_anchorMin", 1); m_amax = mth("UnityEngine", "RectTransform", "set_anchorMax", 1);
     m_pivot = mth("UnityEngine", "RectTransform", "set_pivot", 1); m_pos = mth("UnityEngine", "RectTransform", "set_anchoredPosition", 1);
     m_size = mth("UnityEngine", "RectTransform", "set_sizeDelta", 1);
-    m_key = mth("UnityEngine", "Input", "GetKeyDownInt", 1);              /* GetKeyDown(KeyCode) has a string twin: the Int one is unique */
     m_time = mth("UnityEngine", "Time", "get_realtimeSinceStartup", 0);
-    m_cur_es = mth("UnityEngine.EventSystems", "EventSystem", "get_current", 0);
-    m_sel_go = mth("UnityEngine.EventSystems", "EventSystem", "get_currentSelectedGameObject", 0);
     *(void **)&x_get_methods = dsl_il2cpp_fn("il2cpp_class_get_methods"); *(void **)&x_mname = dsl_il2cpp_fn("il2cpp_method_get_name");
     *(void **)&x_pcount = dsl_il2cpp_fn("il2cpp_method_get_param_count"); *(void **)&x_param = dsl_il2cpp_fn("il2cpp_method_get_param");
     *(void **)&x_tname = dsl_il2cpp_fn("il2cpp_type_get_name"); *(void **)&x_free = dsl_il2cpp_fn("il2cpp_free");
     *(void **)&x_class_type = dsl_il2cpp_fn("il2cpp_class_get_type"); *(void **)&x_type_obj = dsl_il2cpp_fn("il2cpp_type_get_object");
     m_go_get = mth_sig("UnityEngine", "Component", "GetComponent", 1, "System.Type");
-    m_in_focused = mth("TMPro", "TMP_InputField", "get_isFocused", 0);
     m_img_sprite = mth("UnityEngine.UI", "Image", "set_sprite", 1); m_gr_color = mth("UnityEngine.UI", "Graphic", "set_color", 1);
-    k_image = dsl_find_class("UnityEngine.UI", "Image"); k_input = dsl_find_class("TMPro", "TMP_InputField");
+    k_image = dsl_find_class("UnityEngine.UI", "Image");
 }
 static Obj comp_of(Obj any_comp, void *k) {                           /* GetComponent(typeof(k)) */
     if (!any_comp || !k || !m_go_get || !x_class_type || !x_type_obj) return NULL;
@@ -125,16 +121,7 @@ static void fill_parent(DSLObj rt) {                                 /* the whol
     CALL(m_amin, void, Obj, V2)(rt, z, m_amin); CALL(m_amax, void, Obj, V2)(rt, o, m_amax); CALL(m_pivot, void, Obj, V2)(rt, h, m_pivot);
     CALL(m_size, void, Obj, V2)(rt, z, m_size); CALL(m_pos, void, Obj, V2)(rt, z, m_pos);
 }
-static int esc_down(void) { return m_key && CALL(m_key, int8_t, int32_t)(27, m_key) != 0; }
 static double now_s(void) { return m_time ? CALL0(m_time, float)(m_time) : 0; }
-static int typing(void) {                                             /* a text field has the keyboard (Esc is its own) */
-    Obj es = m_cur_es ? CALL0(m_cur_es, Obj)(m_cur_es) : NULL;
-    Obj go = es && m_sel_go ? CALL(m_sel_go, Obj, Obj)(es, m_sel_go) : NULL;
-    static void *m_go_tr; if (!m_go_tr) m_go_tr = mth("UnityEngine", "GameObject", "get_transform", 0);
-    Obj tr = go && m_go_tr ? CALL(m_go_tr, Obj, Obj)(go, m_go_tr) : NULL;
-    Obj f = tr ? comp_of(tr, k_input) : NULL;
-    return f && m_in_focused && CALL(m_in_focused, int8_t, Obj)(f, m_in_focused);
-}
 
 /* ---------------------------------------------------------------- test registry: named controls */
 typedef struct { char name[80]; DSLObj w; dsl_ui_cb cb; void *ud; int kind; char text[160]; } Reg;   /* kind 0 button, 1 toggle, 2 field, 3 text, 4 value row, 5 slider, 6 number field */
@@ -338,10 +325,14 @@ static void groups_build(void) {
     if (m_gnone) U->set_active(m_gnone, ng_rows == 0);
     else U->place(m_gmark, 0, 4, 4, 32);
 }
+static void naming_show(int on);
+static void naming_esc(void *ud) { (void)ud; naming_show(0); }
 static void naming_show(int on) {
     naming = on;
     U->set_active(m_field, on); U->set_active(m_fsave, on); U->set_active(m_fcancel, on); U->set_active(m_save, !on);
     if (on) { U->field_set(m_field, ""); for (int k = 0; k < nreg; k++) if (reg[k].w == m_field) reg[k].text[0] = 0; }
+    if (on) U->esc_push(m_field, naming_esc, NULL, DSL_ESC_EDIT);      /* Escape = Cancel, also while typing the name */
+    else U->esc_drop(m_field);
 }
 static void save_click(void *ud, DSLObj w) { (void)ud; (void)w; naming_show(1); }
 static void fcancel_click(void *ud, DSLObj w) { (void)ud; (void)w; naming_show(0); }
@@ -935,6 +926,7 @@ static void destroy_all(void) {
     is_open = 0;
 }
 static int open_tries; static double open_retry_at;
+static void win_esc(void *ud) { (void)ud; dsl_win_close(); }
 static void open_now(void) {
     want_open = 0;
     if (!U) U = dsl_ui_kit();
@@ -948,6 +940,7 @@ static void open_now(void) {
             return;
         }
         open_tries = 0;
+        U->esc_push(w_win, win_esc, NULL, 0);                         /* Escape = X (the kit owns the key) */
         dsl_log("win: Mods window open");
     }
     int t = 0;
@@ -1081,7 +1074,6 @@ void dsl_win_frame(void) {
         if (f != slogel_shown && w_slogel[f]) { if (slogel_shown >= 0 && w_slogel[slogel_shown]) U->set_active(w_slogel[slogel_shown], 0); U->set_active(w_slogel[f], 1); slogel_shown = f; }
         if (cur == 0) { mods_update(); num_focus_frame(); }
         else if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->update) t->update(t->ud); }
-        if (esc_down() && !typing()) { if (naming) naming_show(0); else dsl_win_close(); }
     }
     if (test_dir && !dsl_soft_wanted()) { static int k; if (++k % 3 == 0) test_frame(); }   /* a hidden B (prewarm) leaves the commands to A */
 }

@@ -5,6 +5,9 @@
 //   cmd state | click {target} | hover {target} | key {code} | type {text} | wheel {target, dy} | capture {name}
 //       | api {op, ...}   (toggle_set, value_set, field_set, set_text, place, set_active, set_enabled, destroy,
 //                          clipboard_set, clipboard_get, tooltip_off, notice1, open, hover_off)
+//       | stock {what}   the game's own button method (escape test, loader/test/esc_test.py): title_load, title_bug,
+//                          esc_load, esc_bug (TitleMenuView / SystemMenuView); the state then says which stock views show
+// Escape (kit 0.1.28): the panel is pushed on the kit's Escape stack (Escape = Close).
 // Mouse: a fake mouse fed into Unity's Input (see fk_*), keys: real NSEvents given to the game window. The window stays
 // on the far-off test stage (DSL_SOFT_STAGE) and the app is never activated.
 // Without the multiplayer module, GUIUtility.systemCopyBuffer get/set are hooked to <dir>/clipboard.txt (as MP does
@@ -50,8 +53,13 @@ static void on_ok(void *ud, DSLObj w) { (void)ud; (void)w; n_ok++; H->log(ME, "n
 static void on_cancel(void *ud, DSLObj w) { (void)ud; (void)w; n_cancel++; H->log(ME, "notice Cancel"); status(); }
 static void on_notice(void *ud, DSLObj w) { (void)ud; (void)w; U->notice("<size=130%>UI Kit Demo</size>\nThis is the game's own notice box.", "Yes", "No", on_ok, on_cancel, NULL); }
 static void on_notice1(void *ud, DSLObj w) { (void)ud; (void)w; U->notice("One button only.", "Got it", NULL, on_ok, NULL, NULL); }
-static void close_panel(void) { if (panel) U->destroy(panel); panel = NULL; built = 0; }
+static void close_panel(void) {                                    /* the children go with it: no raw pointer to them stays (the state reads them) */
+    if (panel) U->destroy(panel);
+    panel = t_head = t_status = b_press = b_disabled = tg = vr = fd = sc = img = b_notice = b_notice1 = b_close = NULL;
+    memset(rows, 0, sizeof rows); built = 0;
+}
 static void on_close(void *ud, DSLObj w) { (void)ud; (void)w; close_panel(); }
+static void esc_close(void *ud) { (void)ud; H->log(ME, "panel closed by Escape"); close_panel(); }
 static void build(void) {
     if (built) return;
     panel = U->panel(NULL, 40, 30, 560, 640, 0);
@@ -73,6 +81,7 @@ static void build(void) {
     b_notice1 = U->button(panel, 290, 506, 250, 40, "Notice (one button)", on_notice1, NULL);
     b_close = U->button(panel, 20, 570, 520, 44, "Close", on_close, NULL);
     built = 1; status();
+    dsl_esc_push(U, panel, esc_close, NULL, 0);
     H->log(ME, "panel built: panel %p text %p button %p toggle %p value %p field %p scroll %p image %p", panel, t_head, b_press, tg, vr, fd, sc, img);
 }
 static void on_title(void *ud) { (void)ud; n_title++; H->log(ME, "title button clicked"); build(); }
@@ -175,8 +184,36 @@ static char *jstr(const char *j, const char *k, char *out, size_t cap) {   /* "k
 }
 static double jnum(const char *j, const char *k, double d) { char pat[64]; snprintf(pat, sizeof pat, "\"%s\":", k); const char *p = strstr(j, pat); return p ? atof(p + strlen(pat)) : d; }
 static void jesc(char *o, size_t cap, const char *s) { size_t n = 0; for (; *s && n + 3 < cap; s++) { if (*s == '"' || *s == '\\') o[n++] = '\\'; if ((unsigned char)*s < 0x20) continue; o[n++] = *s; } o[n] = 0; }
+/* the game's own views by class (FindObjectOfType, inactive too): shown = active in the hierarchy */
+static Obj stock_view(const char *ns, const char *k) {
+    static Obj (*find)(Obj, bool, const void *); static void *(*ct)(void *); static Obj (*to)(void *);
+    if (!find) { find = H->find_method_address("UnityEngine", "Object", "FindObjectOfType", 2); ct = H->il2cpp_fn("il2cpp_class_get_type"); to = H->il2cpp_fn("il2cpp_type_get_object"); }
+    void *kl = H->find_class(ns, k);
+    return kl && find && ct && to ? find(to(ct(kl)), true, NULL) : NULL;
+}
+static int stock_shown(const char *ns, const char *k) {
+    static Obj (*go)(Obj, const void *); static bool (*tree)(Obj, const void *);
+    if (!go) { go = H->find_method_address("UnityEngine", "Component", "get_gameObject", 0); tree = H->find_method_address("UnityEngine", "GameObject", "get_activeInHierarchy", 0); }
+    Obj v = stock_view(ns, k), g = v && go ? go(v, NULL) : NULL;
+    return g && tree ? tree(g, NULL) : -1;
+}
+static int stock_call(const char *what) {
+    const char *k = !strncmp(what, "title_", 6) ? "TitleMenuView" : "SystemMenuView";
+    const char *m = !strcmp(what, "title_load") || !strcmp(what, "esc_load") ? "OnLoadCampaignPressed" : !strcmp(what, "title_bug") ? "OnBugReportPressed" : "OnReportBugPressed";
+    Obj v = stock_view("Refactor.UI", k); void (*f)(Obj, const void *) = H->find_method_address("Refactor.UI", k, m, 0);
+    if (!v || !f) return -1;
+    f(v, NULL); H->log(ME, "stock %s.%s called", k, m); return 0;
+}
 static void state(char *out, size_t cap) {
     size_t o = 0; char col[1200] = "", e[1400];
+    {   /* the Escape test: the kit's Escape stack, the stock views that matter, the field with the keyboard */
+        static int (*te)(char *, size_t); if (!te) *(void **)&te = dlsym(RTLD_DEFAULT, "dsl_ui_test_esc");
+        char es[1500] = "", ee[1700]; int n = te ? te(es, sizeof es) : -1; jesc(ee, sizeof ee, es);
+        static int (*ty)(void); if (!ty) *(void **)&ty = dlsym(RTLD_DEFAULT, "dsl_ui_test_typing");
+        o += (size_t)snprintf(out + o, cap - o, "\"esc_n\":%d,\"esc\":\"%s\",\"sysmenu\":%d,\"loadlist\":%d,\"titlemenu\":%d,\"typing\":%d,", n, ee,
+                              stock_shown("Refactor.UI", "SystemMenuView"), stock_shown("Refactor", "SaveLoadView"), stock_shown("Refactor.UI", "TitleMenuView"),
+                              ty ? ty() : -1);
+    }
     t_title(NULL, col, sizeof col); jesc(e, sizeof e, col);
     o += (size_t)snprintf(out + o, cap - o, "\"kit\":%d,\"built\":%d,\"title_column\":\"%s\",\"n\":{\"title\":%d,\"click\":%d,\"disabled\":%d,\"toggle\":%d,\"value\":%d,\"submit\":%d,\"ok\":%d,\"cancel\":%d}",
                           U != NULL, built, e, n_title, n_click, n_disabled, n_toggle, n_value, n_submit, n_ok, n_cancel);
@@ -229,6 +266,7 @@ static void handle(const char *j) {
     }
     else if (!strcmp(cmd, "via")) via_view = (int)jnum(j, "view", 1);
     else if (!strcmp(cmd, "key")) rc = key_code((int)jnum(j, "code", 36));
+    else if (!strcmp(cmd, "stock")) { jstr(j, "what", s, sizeof s); rc = stock_call(s); }
     else if (!strcmp(cmd, "type")) { jstr(j, "text", s, sizeof s); rc = t_type(fd, s); }
     else if (!strcmp(cmd, "capture")) { jstr(j, "name", s, sizeof s); rc = capture(s); }
     else if (!strcmp(cmd, "api")) {
@@ -242,7 +280,7 @@ static void handle(const char *j) {
         else if (!strcmp(op, "place")) U->place(w, (float)x, (float)y, (float)ww, (float)hh);
         else if (!strcmp(op, "set_active")) U->set_active(w, (int)a);
         else if (!strcmp(op, "set_enabled")) U->set_enabled(w, (int)a);
-        else if (!strcmp(op, "destroy")) { U->destroy(w); if (w == panel) { panel = NULL; built = 0; } }
+        else if (!strcmp(op, "destroy")) { if (w == panel) close_panel(); else U->destroy(w); }
         else if (!strcmp(op, "tooltip_off")) U->tooltip(w, NULL, NULL);
         else if (!strcmp(op, "hover")) t_hover(w);
         else if (!strcmp(op, "hover_off")) t_hover(NULL);

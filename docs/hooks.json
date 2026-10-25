@@ -487,6 +487,25 @@
   {
    "owner": "loader",
    "kind": "detour",
+   "method": "Refactor.Main.InputModule.KeyInputDispatcher.<GetInputOnKeyDown>d__18$$MoveNext",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xd43494"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xa67620"
+    }
+   },
+   "active": "always (the kit's Escape: KeyCode.Escape kept from the game while one of our windows takes it)",
+   "label": "loader ui Escape (KeyInputDispatcher key-down reader)",
+   "source": "ds_modloader:loader/src/dsl_ui.c",
+   "key": "loader|dsl_ui.c|h_kd_next|loader ui Escape (KeyInputDispatcher key-down reader)"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
    "method": "UnityEngine.EventSystems.EventSystem$$Update",
    "platforms": {
     "mac-arm64": {

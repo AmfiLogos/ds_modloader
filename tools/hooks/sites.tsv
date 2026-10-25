@@ -24,6 +24,7 @@ loader	dsl_soft.c	my_start_mn	Refactor.Main.MainFlow.<Start>d__*$$MoveNext/0	act
 loader	dsl_soft.c	it_fn[n]	Refactor.Addressable.AddressableInitializer.<*>d__?$$MoveNext/0	active: second process of a soft restart (DSL_SOFT_HANDOFF); every iterator class found at run time (up to 8) | note: the generic iterator <LoadTable>d__8<T> is hooked too, at the address il2cpp returns for its class definition (Mac 0x5bbe74 in build 25846389), which the dump does not name
 loader	dsl_ui.c	h_es_update	UnityEngine.EventSystems.EventSystem$$Update/0	active: always (Mods window and menu kit)
 loader	dsl_ui.c	h_cur_perform	-	active: always (Mods window and menu kit)
+loader	dsl_ui.c	h_kd_next	Refactor.Main.InputModule.KeyInputDispatcher.<GetInputOnKeyDown>d__18$$MoveNext/0	active: always (the kit's Escape: KeyCode.Escape kept from the game while one of our windows takes it)
 loader	dsl_start_win.c	my_pdp	-	active: Windows start with a data folder (DSRIG_DIR)
 loader	dsl_start_win.c	my_store_start	-	active: Windows start unless DSL_STEAM=1 (Steam check off)
 gcd-cdr	gcd_cdr.c	my_set_gcd	-	active: always (mod enabled)

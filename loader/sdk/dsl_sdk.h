@@ -138,7 +138,19 @@ typedef struct DSLUi {
                      dsl_ui_cb change, void *ud);
     int (*slider_get)(DSLObj s);
     void (*slider_set)(DSLObj s, int value);  /* no change callback */
+    /* appended (check size, or use the wrappers below; kit 0.1.28): the Escape key. The kit owns it: one press closes
+       the top-most open window of the ones pushed here (the last pushed that is still shown), and the game does not see
+       that press (no pause menu, a stock window under it stays). With none of them shown, Escape goes to the game as
+       before. close(ud) runs on the main thread between frames; it does exactly what the window's own Close / Cancel /
+       X does, cleanup included, and calls esc_drop (or destroys `win`). A notice box of this kit is pushed by the kit
+       itself (Escape = its Cancel; OK when it has one button). A text field with the keyboard: that Escape only leaves
+       the field (the game's field drops the typed text); flags DSL_ESC_EDIT = the window is an edit row or box whose
+       Cancel drops the edit, so that same Escape also closes it. Push a window again when it shows again (it goes on
+       top). 0 = ok. */
+    int (*esc_push)(DSLObj win, void (*close)(void *ud), void *ud, int flags);
+    void (*esc_drop)(DSLObj win);            /* the window closed (or hid) another way */
 } DSLUi;
+enum { DSL_ESC_EDIT = 1 };
 
 typedef struct DSLHost {
     /* ---- API 1 (layout frozen) */
@@ -304,6 +316,11 @@ static inline const char *dsl_mod_data_dir(const DSLHost *h, DSLPlugin *self) {
     return DSL_HAS(h, mod_data_dir) ? h->mod_data_dir(self) : NULL; }
 static inline int dsl_on_setting_change(const DSLHost *h, DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud) {
     return DSL_HAS(h, settings_on_change) ? h->settings_on_change(self, changed, ud) : -1; }
+/* Escape wrappers (kit 0.1.28): -1 / nothing with an older kit, whose Escape does nothing for these windows */
+#define DSL_UI_HAS(ui, field) ((ui) && (ui)->size >= offsetof(DSLUi, field) + sizeof((ui)->field) && (ui)->field)
+static inline int dsl_esc_push(const DSLUi *ui, DSLObj win, void (*close)(void *ud), void *ud, int flags) {
+    return DSL_UI_HAS(ui, esc_push) ? ui->esc_push(win, close, ud, flags) : -1; }
+static inline void dsl_esc_drop(const DSLUi *ui, DSLObj win) { if (DSL_UI_HAS(ui, esc_drop)) ui->esc_drop(win); }
 
 #ifdef __cplusplus
 }
