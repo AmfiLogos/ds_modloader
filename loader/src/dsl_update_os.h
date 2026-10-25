@@ -33,7 +33,7 @@ int dsl_uos_kit_asset(const char *asset_name);           /* 1 = the release asse
 int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn);
 /* the first start of a kit installed by an OLDER starter (start/dsl_update_start.c): what that starter's install did not
-   place yet (Windows: files\lang -> ROOT\game\lang, missing up to 0.1.27). mv = the install's moves from pending.txt; new
+   place yet (Windows: files\lang -> ROOT\game\lang, missing up to 0.1.28). mv = the install's moves from pending.txt; new
    moves are added and logged the same way. 0 = done or nothing to do (Mac: always 0, its install swaps all of
    ROOT/loader). A failure only costs texts: the game starts anyway. */
 int dsl_uos_kit_finish(DslMoves *mv);

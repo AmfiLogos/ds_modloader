@@ -11,7 +11,7 @@
 //      and never reached the title: roll back, the KEY goes into bad.txt (not offered again), one line for the player.
 //      Else one more STARTED line and the game starts with DSML_UPDATE=<label> (one retry after a crash or a quit).
 //      Before the first STARTED of a kit: dsl_uos_kit_finish places what an older starter's install left out (Windows
-//      texts up to 0.1.27), its MOVE lines added to pending.txt (a rollback covers them).
+//      texts up to 0.1.28), its MOVE lines added to pending.txt (a rollback covers them).
 //   3. ready.txt and (Auto-update on, or CONSENT): sha256 checked again, a small window "Updating Dungeon Settlers Modded
 //      to 0.1.N" with a progress bar, the install (pending.txt written first, each MOVE line before its move), DONE.
 //      Kit: the caller starts the new starter (it goes through step 2). Mods: step 2 here. Install failed: rolled back,

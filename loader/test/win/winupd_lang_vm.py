@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Windows VM: the auto-update puts the loader's texts where a full install puts them (files\\lang -> ROOT\\game\\lang).
-Up to 0.1.27 the Windows auto-update copied only baselib.dll, the starter, RELEASE and the mods, so every loader text
+Up to 0.1.28 the Windows auto-update copied only baselib.dll, the starter, RELEASE and the mods, so every loader text
 added after the player's last full install showed in English (found 2026-10-25 with the What's new window's title).
 Through winrig (ds_multiplayer win/winbot, WINBOT_DIR), VM running visibly with the agent up; the REAL player starter
 (Steam on, the VM's test account), the game in German.
-  python3 winupd_lang_vm.py --old-setup <published Setup.exe, e.g. v0.1.27> --kit <"Dungeon Settlers Modded - Windows.zip"
+  python3 winupd_lang_vm.py --old-setup <published Setup.exe, v0.1.27 or older (A checks it)> --kit <"Dungeon Settlers Modded - Windows.zip"
           of the build under test> [--ver 0.1.28] [--out DIR]
  A  the old release installed fresh (Setup /S; the install there before is moved to C:\\dsm\\to_delete, never deleted).
  B  the kit as a downloaded update (update\\ready.txt, CONSENT 1), kit RELEASE --ver: the OLD starter installs it, the new
@@ -13,7 +13,9 @@ Through winrig (ds_multiplayer win/winbot, WINBOT_DIR), VM running visibly with 
     the "This computer" mark = the kit's de.json text).
  C  the same kit as the next version with that German text changed, installed by the NEW starter (dsl_uos_kit_install's
     own copy): the changed text shows.
-Fails on a kit built before the fix (B and C show "This computer" in English). Exit 0 = every check passed."""
+Fails on a kit built before the fix (B and C show "This computer" in English). Exit 0 = every check passed.
+B needs an old release whose German texts lack KEY (v0.1.27 or older; A fails otherwise). From v0.1.28 on, change B to a
+changed text like C."""
 import argparse, hashlib, json, os, sys, time, zipfile
 
 sys.path.insert(0, os.environ.get('WINBOT_DIR') or os.path.expanduser('~/ds_multiplayer/win/winbot'))

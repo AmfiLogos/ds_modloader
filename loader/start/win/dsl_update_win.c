@@ -293,7 +293,7 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
         if (swap_in(s, d, b, mv)) { snprintf(why, wn, TR("%s could not be replaced"), ONE[i].to); return -1; }
     }
     /* the loader's texts (files\lang: <code>.json + uninstall.bat's setup_<code>.bat) into ROOT\game\lang, where install.bat
-       puts them; file by file. Before 0.1.28 this step was missing: every new text showed in English after an auto-update
+       puts them; file by file. Before 0.1.29 this step was missing: every new text showed in English after an auto-update
        (an older starter installs the new kit: dsl_uos_kit_finish below, at the new starter's first start) */
     char sl[1500], dl[1300], bl[1300]; int nl = 0;
     snprintf(sl, sizeof sl, "%s\\lang", fdir); snprintf(dl, sizeof dl, "%s\\game\\lang", root); snprintf(bl, sizeof bl, "%s\\game\\lang", backup);
@@ -325,7 +325,7 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     return 0;
 }
 
-/* the first start of a kit that an older starter installed (0.1.27 and before put no files\lang into ROOT\game\lang): the
+/* the first start of a kit that an older starter installed (0.1.28 and before put no files\lang into ROOT\game\lang): the
    kit's texts from the unpacked kit that install left in <backup>.new (its backup = the folder of the old starter's
    backup in mv), file by file like dsl_uos_kit_install. Each move is recorded in mv, so a rollback puts the old texts
    back. A start cut off in the middle can run it again: what was moved is no longer in <backup>.new. 0 = done or nothing
@@ -338,7 +338,7 @@ int dsl_uos_kit_finish(DslMoves *mv) {
     size_t dn = strlen(dl), sn = strlen("\\Dungeon Settlers Modded.exe");
     for (int i = 0; i < mv->n; i++) {
         snprintf(p, sizeof p, "%s", mv->path[i]); bs(p);
-        if (!_strnicmp(p, dl, dn)) return 0;                  /* placed by this install (a 0.1.28 starter or newer) */
+        if (!_strnicmp(p, dl, dn)) return 0;                  /* placed by this install (a 0.1.29 starter or newer) */
         if (_stricmp(p, st)) continue;
         snprintf(p, sizeof p, "%s", mv->backup[i]); bs(p);
         size_t bl = strlen(p);
