@@ -18,9 +18,12 @@ A tag names its entry: v0.1.27 = (kit, 0.1.27); multiplayer-v0.1.26 = (multiplay
 
 Usage:
   changelog.py lint   [--file F]                          format check (all entries)
-  changelog.py check  --tag TAG [--file F] [--binary B]   release check: a DATED entry for that version, not empty;
-                                                           --binary: its in-game text is inside that loader binary
-                                                           (dsload.dylib / baselib.dll), so the window shows it
+  changelog.py check  --tag TAG [--file F] [--binary B]... [--notes N]
+                                                           release check: a DATED entry for that version, not empty;
+                                                           --binary (kit): its in-game text is inside that loader
+                                                           (dsload.dylib / baselib.dll, or every loader inside a kit
+                                                           release file .dmg / .zip / Setup.exe), so the window shows it;
+                                                           --notes: that release-notes file holds the entry (built from it)
   changelog.py notes  --tag TAG [--file F]                the entry's text (markdown) for the release notes
   changelog.py fill   --tag TAG --head H [--file F]       H with its line "<!-- CHANGELOG -->" replaced by the entry
   changelog.py cheader --version V --out O [--file F]     C header for the loader: the kit entry of version V as the
@@ -119,6 +122,18 @@ def find(secs, tag):
     return sid, ver, e
 
 
+def loaders(path):
+    """[(label, bytes)]: a loader file itself, or every loader inside a kit release file (check_keys.py unpacks them)"""
+    if path.endswith((".dmg", ".zip", ".exe")):
+        sys.path.insert(0, os.path.join(os.path.dirname(HERE), "release_sign"))
+        import check_keys
+        found = check_keys.loaders(path)
+        if not found:
+            die(f"CHANGELOG FAIL: no loader found in {path}")
+        return found
+    return [(path, open(path, "rb").read())]
+
+
 def display(body):
     """the in-game text: markdown links -> their text, no backticks / bold marks; bullets and groups stay"""
     out = []
@@ -150,6 +165,7 @@ def main():
     ap.add_argument("--tag")
     ap.add_argument("--binary", action="append", default=[])
     ap.add_argument("--head")
+    ap.add_argument("--notes")
     ap.add_argument("--version")
     ap.add_argument("--out")
     a = ap.parse_args()
@@ -199,13 +215,18 @@ def main():
                 f"'### {ver} (<YYYY-MM-DD>)'")
         if not any(l.strip() for l in e["body"]):
             die(f"CHANGELOG FAIL: the {sid} {ver} entry is empty")
+        text, nb = display(e["body"]).encode("utf-8"), 0
         for b in a.binary:
-            data = open(b, "rb").read()
-            if display(e["body"]).encode("utf-8") not in data:
-                die(f"CHANGELOG FAIL: {b} does not hold the {sid} {ver} entry: it was built before the entry was final "
-                    f"(rebuild the loader after the CHANGELOG change), so the What's new window would not show it")
+            for what, data in loaders(b):
+                nb += 1
+                if text not in data:
+                    die(f"CHANGELOG FAIL: {what} does not hold the {sid} {ver} entry: it was built before the entry was final "
+                        f"(rebuild the loader after the CHANGELOG change), so the What's new window would not show it")
+        if a.notes and "\n".join(e["body"]) not in open(a.notes, encoding="utf-8").read():
+            die(f"CHANGELOG FAIL: the release notes {a.notes} do not hold the {sid} {ver} entry (build them with "
+                f"changelog.py fill: the head's line '{MARK}' becomes the entry)")
         print(f"CHANGELOG OK {sid} {ver} ({e['date']}, {sum(1 for l in e['body'] if l.startswith('- '))} bullets"
-              + (f", in {len(a.binary)} loader binary(ies)" if a.binary else "") + ")")
+              + (f", in {nb} loader(s)" if a.binary else "") + (", in the notes" if a.notes else "") + ")")
     elif a.cmd == "notes":
         print("\n".join(e["body"]))
     elif a.cmd == "fill":

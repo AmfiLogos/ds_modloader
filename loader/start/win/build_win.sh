@@ -22,6 +22,9 @@ PM=(-ffile-prefix-map=$HOME=/src)                               # no build path 
 PM+=(-ffile-prefix-map=$L=/loader -ffile-prefix-map=${D:A}=/mp)  # any build folder: the same debug info, so the same .buildid hash
 # links: -Wl,--no-insert-timestamp = no build time in the PE headers (the same bytes from every build)
 CF=($PM $NS -O2 -g -Wall -Wno-unused-function -D__USE_MINGW_ANSI_STDIO=1 -DDSL_RELEASE=\"$(head -1 $L/../RELEASE)\" -I$L/src -I$L/sdk -I$MH/include)
+# the kit entry of this release from CHANGELOG.md, built into the loader (the What's new window, src/dsl_whatsnew.c)
+mkdir -p $O/gen && python3 $L/../tools/changelog/changelog.py cheader --file $L/../CHANGELOG.md --version "$(head -1 $L/../RELEASE)" --out $O/gen/dsl_whatsnew_data.h
+CF+=(-I$O/gen)
 # MelonLoader guard plugin (kind "melon" mods): its DLL is embedded into bie_win.c (starter + baselib.dll)
 MLG=${ML_GUARD_DLL:-$D/ext/melon/plugin/DSMelonGuard/bin/Release/net6.0/DSMelonGuard.dll}; MLGF=()
 if [[ -f $MLG ]]; then

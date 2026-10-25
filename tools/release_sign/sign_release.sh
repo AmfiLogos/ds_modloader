@@ -20,7 +20,8 @@
 # the spare). It only goes from the Keychain through a pipe into dsl_sign: never on disk, in an argument or in a log.
 # Checks: file names fit the tag (make_manifest.py); the new signature is checked again by the loader's own code against
 # the keys the loader trusts (a key that is not in dsl_sig.c fails here); a kit whose loaders do not hold exactly the two
-# release keys, or also trust the public dev key (a test build, -DDSL_SIGN_DEV_KEY), is refused (check_keys.py).
+# release keys, or also trust the public dev key (a test build, -DDSL_SIGN_DEV_KEY), is refused (check_keys.py); a release
+# with no final CHANGELOG.md entry, or a kit whose loaders lack it, is refused (tools/changelog/changelog.py check).
 set -euo pipefail
 H="${0:A:h}"; REPO="${H:h:h}"; SVC=ds-modloader-release-signing; ACCT=${KEY_ACCOUNT:-ed25519}
 T=$(mktemp -d "${TMPDIR:-/tmp}/sign_release.XXXXXX")
@@ -61,6 +62,21 @@ fi
 
 M=$OUT/release-manifest.json
 python3 -I $H/make_manifest.py $R $TAG $T/release-manifest.json "$@"
+# the release's CHANGELOG.md entry (owner 2026-10-25): none, still "Unreleased" or empty = not signed; a kit whose loaders
+# do not hold its entry (the What's new window, loader/src/dsl_whatsnew.c) = not signed. CHANGELOG=<file> names the file;
+# else ds_modloader = this tree's CHANGELOG.md, ds_multiplayer / ds_custommodes = their public main (clone ~/<repo>, fetched).
+# Back-signing (--existing) skips it: those releases are out already.
+if (( ! existing )); then
+  CL=${CHANGELOG:-}
+  if [[ -z $CL && $R == */ds_modloader ]]; then CL=$REPO/CHANGELOG.md
+  elif [[ -z $CL ]]; then
+    C=$HOME/${R#*/}
+    { git -C $C fetch -q origin main && git -C $C show origin/main:CHANGELOG.md > $T/CHANGELOG.md; } || { print -u2 "sign_release: no CHANGELOG.md on the main of $R ($C): not signed"; exit 1; }
+    CL=$T/CHANGELOG.md
+  fi
+  kb=(); [[ $TAG == v* ]] && for f in "$@"; do kb+=(--binary $f); done
+  python3 -I $H/../changelog/changelog.py check --file $CL --tag $TAG $kb || { print -u2 "sign_release: the CHANGELOG entry of $TAG is missing or not final: not signed"; exit 1; }
+fi
 # a kit: every loader in its files must trust exactly the two release keys, never the public dev key (check_keys.py)
 if [[ $TAG == v* ]]; then python3 -I $H/check_keys.py "$@" || { print -u2 "sign_release: kit loader keys wrong: not signed"; exit 1; }; fi
 security find-generic-password -s $SVC -a $ACCT -w | $SIGN sign $T/release-manifest.json > $T/release-manifest.json.sig
