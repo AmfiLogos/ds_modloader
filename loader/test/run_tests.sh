@@ -125,17 +125,22 @@ mod hellmod 3 '{"id":"hellmod","version":"1.0.0","kind":"code","api":2,"game_bui
 cp "$M/profile.json" "$OUT/profile.json.keep"; print '{"enabled":["early-mod"],"provided":["notch-fix"]}' > "$M/profile.json"
 HSESS='{"world":null,"modset":"aaa","rule":"mods","worlds":{"11111111-1111-1111-1111-111111111111":"early-mod+hellmod","22222222-2222-2222-2222-222222222222":"early-mod+hellmod"}}'
 print -r -- "$HSESS" > "$OUT/session_hell.json"
-r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;4,1")
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;4,1" HOST_OPT_LINES=1)
 check "not switched on in the profile: it runs anyway" 'log | grep -q "hellmod: custom difficulty: runs whenever installed" && log | grep -q "hellmod 1.0.0: loaded"'
 check "a Hell world and a level-4 world registered with Hell both load, no refusal" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
 check "multiplayer set while the level-4 world loads: no Hell" '! grep -q "hellmod@" "$OUT/session_hell.json"'
+# multiplayer's HELLO also sends the custom difficulty mods that run but are not counted (a guest at the title joins a host
+# on Hell with them, no restart). Breaks caught: Hell missing there (the guest is refused) or claimed where it does not run
+check "loaded but not counted (level-4 world): Hell's line is offered to a host on Hell" '[[ "$r" == *"OPTLINES n=1 hellmod@1.0.0"* ]]'
 print -r -- "$HSESS" > "$OUT/session_hell.json"
-r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="4,1;1,5")
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="4,1;1,5" HOST_OPT_LINES=1)
 check "multiplayer set while a Hell world (management Hell) loads: Hell in it" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && grep -q "hellmod@1.0.0" "$OUT/session_hell.json"'
+check "Hell counted: nothing more offered" '[[ "$r" == *"OPTLINES n=0 "* ]]'
 sed -i '' 's/"game_builds":\["test"\]/"game_builds":["1"]/' "$M/hellmod/mod.json"     # Hell installed but not running here
 print -r -- "$HSESS" > "$OUT/session_hell.json"
-r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;0,5")
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;0,5" HOST_OPT_LINES=1)
 check "game without Hell running: a world on combat or management Hell is refused" '[[ "$r" == *"WORLD save1_state=-2 save2_state=-2 cancels=2"* ]]'
+check "Hell installed but not running: never offered to a host" '[[ "$r" == *"OPTLINES n=0 "* ]]'
 print -r -- "$HSESS" > "$OUT/session_hell.json"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="4,1;2,3")
 check "game without Hell running: worlds not on Hell load, although registered with it" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'

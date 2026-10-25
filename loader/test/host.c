@@ -21,6 +21,9 @@ int main(void) {
     const char *cm = getenv("HOST_COPY_MODS");          /* "<from> <to>": the loader export multiplayer calls for a world's single-player copy */
     if (cm) { char a[64], b[64]; int (*f)(const char *, const char *) = (int (*)(const char *, const char *))dlsym(RTLD_DEFAULT, "dsl_world_copy_mods");
               if (sscanf(cm, "%63s %63s", a, b) == 2) printf("COPYMODS rc=%d\n", f ? f(a, b) : -9); }
+    if (getenv("HOST_OPT_LINES")) {                     /* the loader export multiplayer's HELLO sends: loaded custom difficulty mods not counted now */
+        char ol[4096] = ""; int (*f)(char *, size_t) = (int (*)(char *, size_t))dlsym(RTLD_DEFAULT, "dsl_mp_optional_lines");
+        int k = f ? f(ol, sizeof ol) : -9; printf("OPTLINES n=%d %s\n", k, ol); }
     const char *wf = getenv("HOST_WAIT_FILE");          /* update test: stay up (max 60 s) until the loader's thread wrote it */
     for (int i = 0; wf && *wf && i < 600 && access(wf, 0); i++) usleep(100000);
     return 0;
