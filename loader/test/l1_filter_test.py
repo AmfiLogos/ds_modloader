@@ -71,7 +71,7 @@ def seed():
     json.dump(t, open(os.path.join(MSAVES, TPL_OLD + '.json'), 'w'))
     h.update(CampaignGuid=SLOT_GUID, ClanName='Slot', SaveName=SLOT, DisplayName='Slot', SaveTime='2026-10-20 08:00:00', IsAutoSave=True)   # the newest world (before the game save Elven); Template (2 saves) the last
     json.dump(t, open(os.path.join(MSAVES, SLOT + '.json'), 'w'))
-    open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
+    open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tAmfi\tFoctopus\tBartholomew\n')   # long: the tag's "with" part must give way
 
 
 WORLDS = {ELVEN_GUID: 'gcd-cdr+zetu-suite', TPL_GUID: 'gcd-cdr', SLOT_GUID: 'gcd-cdr+weapon-slot'}
@@ -206,6 +206,18 @@ def tag_checks(tag, st, on):
               [(x.get('name'), x.get('name_text'), x.get('remove_tag')) for x in shown])
 
 
+def rm_checks(tag, st):
+    """owner (next version after v0.1.27): "Remove tag" sat under [Change], over the world's detail box. It must be on the
+    world's title line (the band 1..21 units under the row's top), overlap neither the "Mods:" line nor [Change]"""
+    w = world(st, MOON_GUID)
+    if not (w.get('shown') and w.get('remove_tag')): check(f'{tag}: Remove tag shows on the multiplayer world', False, w); return
+    r, rr, px = w['rm_rect'], w['row_rect'], w.get('px') or 1
+    top, bot = rr[3] - 0.5 * px, rr[3] - 22 * px
+    check(f'{tag}: Remove tag is on the title line (not over the detail box)', r[1] >= bot - 1 and r[3] <= top + 1, (r, round(bot, 1), round(top, 1)))
+    hit = [n for n, q in (('Mods line', w['line_rect'] if w.get('line_shown') and w.get('line_text') else None), ('Change', w.get('chg_rect'))) if q and q[2] > q[0] and overlap(r, q)]
+    check(f'{tag}: Remove tag overlaps neither the Mods line nor [Change]', not hit, (r, hit, w.get('line_rect'), w.get('chg_rect')))
+
+
 def run_main():
     seed(); start()
     T.request({'cmd': 'warn_cancel'}); time.sleep(1)
@@ -229,7 +241,7 @@ def run_main():
     tag_checks('main, Show tags on (default)', st, True)
     shot('main_defaults')
     st = lf('lf', multiplayer=1); time.sleep(0.5); st = lf()
-    tag_checks('main, Multiplayer box on', st, True); shot('main_tags_on')
+    tag_checks('main, Multiplayer box on', st, True); rm_checks('main en', st); shot('main_tags_on')
     st = lf('lf', show_tags=0); time.sleep(0.5); st = lf()
     tag_checks('main, Show tags off', st, False); line_checks('main, Show tags off', st); shot('main_tags_off')
     st = lf('lf', show_tags=1); time.sleep(0.5); st = lf()
@@ -331,7 +343,7 @@ def run_look():
     for lang in ('de', 'ru', 'ja'):
         start((960, 600), 1.0, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
         open_list(); st = lf('lf', multiplayer=1); time.sleep(1); st = lf()
-        tag_checks(f'look {lang}', st, True); line_checks(f'look {lang}', st); row_checks(f'look {lang}', st)
+        tag_checks(f'look {lang}', st, True); line_checks(f'look {lang}', st); row_checks(f'look {lang}', st); rm_checks(f'look {lang}', st)
         shot(f'look_{lang}')
         S.stop_all()
 
