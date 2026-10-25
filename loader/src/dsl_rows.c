@@ -151,7 +151,7 @@ static const char *guid_of_save(const char *name) {
 
 /* ------------------------------------------------------------------ the open list */
 #define MAXW 64
-typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid, game, kind, why; } WRow;   /* why: 1 the panel hid it, 2 a toggle under the list */
+typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid, game, kind, play, why; } WRow;   /* kind LK_VAN / LK_MOD, play LK_SOLO / LK_MP; why: 1 the panel hid it, 2 a toggle under the list */
 static WRow W[MAXW]; static int nw;
 static uintptr_t h_slv; static uint32_t sig_last; static int list_open;
 static DSLObj band;                                     /* our toggles' strip */
@@ -170,7 +170,7 @@ static uint32_t list_sig(Obj slv) {
         Obj c = AT(a, 0x20 + 8 * i, Obj); s = s * 31 + (uint32_t)(uintptr_t)c;
         if (!c || !shown(c)) continue;
         s ^= 0x9e37u + (uint32_t)i;
-        Obj nt = o_title_name >= 0 ? AT(c, o_title_name, Obj) : NULL;      /* its name text: a module rewrote it (Remove tag) = again */
+        Obj nt = o_title_name >= 0 ? AT(c, o_title_name, Obj) : NULL;      /* its name text: a module rewrote it (Remove tag: the world is Solo now) = again */
         if (tmp_get_f && live(nt)) s = s * 131 + (uint32_t)(uintptr_t)tmp_get_f(nt, m_tmp_get);
     }
     Obj d = AT(slv, o_dict, Obj); s = s * 31 + (d ? (uint32_t)AT(d, 0x20, int32_t) : 0);
@@ -395,9 +395,13 @@ static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);   /*
    locked (SaveLoadView.UnselectAllSlots + LockLoadButtons): they only ever act on a save the player sees.
    Place: outside the Load window, on its right, level with the list's top, never over the title corner (Auto-update
    mod loader); a screen too narrow for it scales it down (never under half). */
-enum { LK_VAN, LK_MOD, LK_MP, LK_N, LK_TAGS };           /* the kinds; then the view options: LK_N Latest save only, LK_TAGS Show tags */
-static const char *const lf_key[LK_TAGS + 1] = { "vanilla", "modded", "multiplayer", "latest_only", "show_tags" };
-static int lf_on[LK_N] = { 1, 1, 0 }, lf_latest, lf_tags = 1, lf_loaded, lf_panel, lt_applied;   /* Show tags on by default (owner 2026-10-25) */
+/* the boxes: group Mods (LK_VAN, LK_MOD: the world's mods), group Play (LK_SOLO, LK_MP: the multiplayer tag); then the view
+   options LK_N Latest save only, LK_TAGS Show tags. Owner 2026-10-25: a world shows when the box of its mods AND the box of
+   its play are on; a group with every box off does not filter; all four on by default (an older loadlist.json keeps its
+   Multiplayer value, Solo on) */
+enum { LK_VAN, LK_MOD, LK_SOLO, LK_MP, LK_N, LK_TAGS };
+static const char *const lf_key[LK_TAGS + 1] = { "vanilla", "modded", "solo", "multiplayer", "latest_only", "show_tags" };
+static int lf_on[LK_N] = { 1, 1, 1, 1 }, lf_latest, lf_tags = 1, lf_loaded, lf_panel, lt_applied;   /* Show tags on by default (owner 2026-10-25) */
 static int *lf_val(int k) { return k < LK_N ? &lf_on[k] : k == LK_N ? &lf_latest : &lf_tags; }
 static int (*lf_is_mp)(const char *guid);                /* NULL: no multiplayer mod (or an older one): no Multiplayer box */
 static uintptr_t pn_h, pn_fr_h, pn_tog_h[LK_TAGS + 1];   /* panel, its parent (the Load window), boxes (LK_N, LK_TAGS: the view options) */
@@ -426,12 +430,13 @@ static void lf_load(void) {
         *lf_val(i) = v->b != 0;
     }
     json_free(j);
-    dsl_log("rows: filters read: vanilla %d, modded %d, multiplayer %d, latest only %d, show tags %d", lf_on[0], lf_on[1], lf_on[2], lf_latest, lf_tags);
+    dsl_log("rows: filters read: vanilla %d, modded %d, solo %d, multiplayer %d, latest only %d, show tags %d", lf_on[LK_VAN], lf_on[LK_MOD], lf_on[LK_SOLO], lf_on[LK_MP], lf_latest, lf_tags);
 }
 static void lf_save(void) {
-    char p[1300], tmp[1340], b[256]; lf_path(p, sizeof p); snprintf(tmp, sizeof tmp, "%s.tmp", p);
-    snprintf(b, sizeof b, "{\"vanilla\": %s, \"modded\": %s, \"multiplayer\": %s, \"latest_only\": %s, \"show_tags\": %s}\n",
-             lf_on[0] ? "true" : "false", lf_on[1] ? "true" : "false", lf_on[2] ? "true" : "false", lf_latest ? "true" : "false", lf_tags ? "true" : "false");
+    char p[1300], tmp[1340], b[300]; lf_path(p, sizeof p); snprintf(tmp, sizeof tmp, "%s.tmp", p);
+    snprintf(b, sizeof b, "{\"vanilla\": %s, \"modded\": %s, \"solo\": %s, \"multiplayer\": %s, \"latest_only\": %s, \"show_tags\": %s}\n",
+             lf_on[LK_VAN] ? "true" : "false", lf_on[LK_MOD] ? "true" : "false", lf_on[LK_SOLO] ? "true" : "false", lf_on[LK_MP] ? "true" : "false",
+             lf_latest ? "true" : "false", lf_tags ? "true" : "false");
     FILE *f = fopen(tmp, "w"); int bad = !f || fputs(b, f) < 0; if (f) bad |= fclose(f) != 0;
     if (bad || rename(tmp, p)) dsl_log("rows: filters not saved (%s)", p);
 }
@@ -445,11 +450,18 @@ static void lf_syms(void) {
     void *f[8]; int n = dsl_module_syms("dsl_loadlist_world_mp", f, 8);
     lf_is_mp = n ? (int (*)(const char *))f[0] : NULL;
 }
-/* owner 2026-10-25: Vanilla & Vanilla+, Modded and Multiplayer all off = every world shows (not an empty list) */
-static int lf_all_off(void) { return !lf_on[LK_VAN] && !lf_on[LK_MOD] && (!lf_is_mp || !lf_on[LK_MP]); }
-static int world_kind(const WRow *w) {
-    if (lf_is_mp && lf_is_mp(w->guid) > 0) return LK_MP;
-    return dsl_world_is_modded(w->guid) ? LK_MOD : LK_VAN;
+/* a world's two kinds: its mods (LK_VAN / LK_MOD, every world, multiplayer ones too) and its play (LK_SOLO / LK_MP: the
+   multiplayer mod's tag, its export dsl_loadlist_world_mp; no multiplayer mod = Solo, and the Play boxes are not there) */
+static void world_kinds(WRow *w) {
+    w->kind = dsl_world_is_modded(w->guid) ? LK_MOD : LK_VAN;
+    w->play = lf_is_mp && lf_is_mp(w->guid) > 0 ? LK_MP : LK_SOLO;
+}
+/* 1 = the panel hides this world: its Mods box or its Play box off; a group with every box off does not filter (owner
+   2026-10-25: all off = every world, not an empty list) */
+static int lf_hides(const WRow *w) {
+    int mods = !lf_on[w->kind] && (lf_on[LK_VAN] || lf_on[LK_MOD]);
+    int play = lf_is_mp && !lf_on[w->play] && (lf_on[LK_SOLO] || lf_on[LK_MP]);
+    return mods || play;
 }
 
 /* the save row's height in its world row: _buttonCount = the rows it shows, then the stock RefreshSize */
@@ -556,14 +568,16 @@ static void guard_install(void) {
 }
 
 static const char *pn_label(int k) {
-    return k == LK_VAN ? TR("Vanilla & Vanilla+") : k == LK_MOD ? TR("Modded") : k == LK_MP ? TR("Multiplayer") : k == LK_N ? TR("Latest save only") : TR("Show tags");
+    return k == LK_VAN ? TR("Vanilla & Vanilla+") : k == LK_MOD ? TR("Modded") : k == LK_SOLO ? TR("Solo") : k == LK_MP ? TR("Multiplayer")
+         : k == LK_N ? TR("Latest save only") : TR("Show tags");
 }
 static const char *pn_tip(int k) {
     return k == LK_VAN ? TR("Worlds with no mods, or only fixes, mods that do not change the gameplay and small Vanilla+ mods such as Weapon skill slot.")
          : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay. Fixes and Vanilla+ mods do not count.")
+         : k == LK_SOLO ? TR("Worlds you played alone: no multiplayer tag.")
          : k == LK_MP ? TR("Worlds you played with friends.")
          : k == LK_N ? TR("Each world shows only its newest save. Off: every save.")
-         : TR("Tags after the world names: Modded, and Multiplayer for worlds you played with friends or Solo for the others. Off: the names only.");
+         : TR("Tags after the world names: Modded, and Multiplayer for worlds you played with friends. Off: the names only.");
 }
 static void rows_rebuild(Obj slv, const char *why);
 static void pn_change(void *ud, DSLObj w) {
@@ -599,7 +613,11 @@ static DSLObj pn_build(Obj slv) {
     u->text(pn, PN_PAD, 10, PN_W - 2 * PN_PAD, 30, TR("Filters"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF);
     float y = 48;
     for (int k = 0; k <= LK_TAGS; k++) {
-        if (k == LK_MP && !lf_is_mp) continue;                          /* no multiplayer mod: its worlds are sorted by their mods */
+        if ((k == LK_SOLO || k == LK_MP) && !lf_is_mp) continue;        /* no multiplayer mod: no Play boxes (every world is Solo) */
+        if (k == LK_SOLO) {                                             /* Mods | Play: a thin line between the two groups */
+            DSLObj ln = u->panel(pn, PN_PAD + 24, y + 4, PN_W - 2 * PN_PAD - 48, 2, 0x7A6248FF); if (ln) dsl_ui_flat(ln, 0x7A6248FF);
+            y += 12;
+        }
         if (k == LK_N) {                                                /* the view options apart from the kinds: the title menu's ornament line */
             float dh = 0; DSLObj dv = dsl_ui_menu_divider(pn, PN_PAD, y + 2, PN_W - 2 * PN_PAD, &dh);
             if (!dv && (dv = u->panel(pn, PN_PAD + 10, y + 6, PN_W - 2 * PN_PAD - 20, 1, 0x8C7356FF))) { dsl_ui_flat(dv, 0x8C7356FF); dh = 9; }
@@ -660,10 +678,10 @@ static void filters_apply(Obj slv) {
     for (int i = 0; i < nw; i++) {
         WRow *w = &W[i]; Obj cs = gc_get(w->cs); if (!live(cs)) continue;
         int show = 1, why = 0;
-        w->kind = world_kind(w);
+        world_kinds(w);
         if (o_cur >= 0 && AT(cs, o_cur, uint8_t)) show = 1;                 /* the world being played always shows */
         else {
-            if (lf_panel && !lf_on[w->kind] && !lf_all_off()) { show = 0; why = 1; }
+            if (lf_panel && lf_hides(w)) { show = 0; why = 1; }
             for (int f = 0; f < nf && show; f++) if (F[f].mode != DSL_LIST_OFF && !F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on)) { show = 0; why = 2; }
         }
         w->hid = !show; w->why = why;
@@ -845,8 +863,9 @@ static void lf_state_write(Obj slv) {
     fprintf(f, "{\"open\": %d, \"panel_on\": %d, \"panel_shown\": %d, \"panel\": [%.1f, %.1f, %.1f, %.1f], \"scale\": %.3f, \"window_shown\": %d, "
                "\"window\": [%.1f, %.1f, %.1f, %.1f], \"corner_shown\": %d, \"corner\": [%.1f, %.1f, %.1f, %.1f], \"screen\": [%.0f, %.0f], ",
             list_open, lf_panel, pshown, pr[0], pr[1], pr[2], pr[3], dsl_rows_pn_scale, fshown, fr[0], fr[1], fr[2], fr[3], cshown, cr[0], cr[1], cr[2], cr[3], sw, sh);
-    fprintf(f, "\"boxes\": {\"vanilla\": %d, \"modded\": %d, \"multiplayer\": %d, \"latest_only\": %d, \"show_tags\": %d, \"mp_box\": %d}, ",
-            lf_on[0], lf_on[1], lf_on[2], lf_latest, lf_tags, pn_tog_h[LK_MP] && held(&pn_tog_h[LK_MP]) ? 1 : 0);
+    fprintf(f, "\"boxes\": {\"vanilla\": %d, \"modded\": %d, \"solo\": %d, \"multiplayer\": %d, \"latest_only\": %d, \"show_tags\": %d, \"mp_box\": %d, \"solo_box\": %d}, ",
+            lf_on[LK_VAN], lf_on[LK_MOD], lf_on[LK_SOLO], lf_on[LK_MP], lf_latest, lf_tags, pn_tog_h[LK_MP] && held(&pn_tog_h[LK_MP]) ? 1 : 0,
+            pn_tog_h[LK_SOLO] && held(&pn_tog_h[LK_SOLO]) ? 1 : 0);
     char esc[600]; jesc_(esc, sizeof esc, nm);
     fprintf(f, "\"selected\": \"%s\", \"selected_world\": %d, \"selected_row\": %d, \"load_clickable\": %d, \"remove_clickable\": %d, \"guard\": %d, \"hidden_line\": %d, \"worlds\": [",
             esc, wi, si, lok, rok, dsl_rows_guard_n, dsl_rows_hidden[1]);
@@ -887,11 +906,11 @@ static void lf_state_write(Obj slv) {
           for (int q = 0; q < k; q++) if (dsl_ui_shown(ch[q]) && dsl_ui_text_get(ch[q], t4, sizeof t4) && !strncmp(t4, "<u>", 3)) { rm_on = 1; dsl_ui_screen_rect(ch[q], RM); } }
         if (on && W[i].chg && dsl_ui_shown(W[i].chg)) dsl_ui_screen_rect(W[i].chg, CH);
         { float w_ = on ? row_w(cs) : 0; if (w_ > 0) px = (RR[2] - RR[0]) / w_; }
-        fprintf(f, "%s{\"guid\": \"%s\", \"name\": \"%s\", \"kind\": %d, \"shown\": %d, \"saves_shown\": %d, \"saves\": %d, \"button_count\": %d, \"shown_names\": [%s], "
+        fprintf(f, "%s{\"guid\": \"%s\", \"name\": \"%s\", \"kind\": %d, \"mods\": %d, \"play\": %d, \"shown\": %d, \"saves_shown\": %d, \"saves\": %d, \"button_count\": %d, \"shown_names\": [%s], "
                    "\"line_shown\": %d, \"line_rect\": [%.1f, %.1f, %.1f, %.1f], \"left_end\": %.1f, \"rendered\": [%.1f, %.1f], \"line_text\": \"%s\", "
                    "\"row_rect\": [%.1f, %.1f, %.1f, %.1f], \"save_rects\": [%s], \"name_text\": \"%s\", \"remove_tag\": %d, "
                    "\"rm_rect\": [%.1f, %.1f, %.1f, %.1f], \"chg_rect\": [%.1f, %.1f, %.1f, %.1f], \"px\": %.4f}",
-                i ? ", " : "", g, names, W[i].kind, on, sh_, sn, live(cs) && o_bcount >= 0 ? AT(cs, o_bcount, int32_t) : -1, list,
+                i ? ", " : "", g, names, W[i].play == LK_MP ? 2 : W[i].kind, W[i].kind == LK_MOD, W[i].play == LK_MP, on, sh_, sn, live(cs) && o_bcount >= 0 ? AT(cs, o_bcount, int32_t) : -1, list,
                 lon, LR[0], LR[1], LR[2], LR[3], le, rw, rh, lte, RR[0], RR[1], RR[2], RR[3], srs, nte, rm_on,
                 RM[0], RM[1], RM[2], RM[3], CH[0], CH[1], CH[2], CH[3], px);
     }
@@ -933,8 +952,6 @@ void dsl_rows_test_cmd(const char *c, const JNode *j) {
    its "Remove tag" link, a child of the row). Off: the name alone and no link. The multiplayer part is kept per world while
    it is off (the mod writes it only at the row's Init); a world the multiplayer mod no longer tags (Remove tag) loses it. */
 #define TAG_MARK "  <size=75%><color=#E3A65B>"              /* our "Modded" tag (its colour marks it in any language) */
-#define SOLO_MARK "  <size=75%><color=#8FC4FF><link=\"dsl.solo\">"   /* our "Solo" tag: the multiplayer tag's look, marked by its link id */
-#define SOLO_END "</link></color></size>"
 static struct { char guid[40], mp[600]; } TG[MAXW]; static int ntg;
 static Obj tag_link(Obj cs) {                             /* the multiplayer mod's "Remove tag" (<u>...</u>), a child of the row */
     DSLObj ch[64]; int k = dsl_ui_children((DSLObj)comp_tr(cs, NULL), ch, 64); char t4[16];
@@ -973,18 +990,15 @@ static float tag_fit(Obj cs, Obj nt, const char *head, const char *mp, float lnk
 }
 static void tags_apply(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || o_title_name < 0) return;
-    char mt[200], so[200]; snprintf(mt, sizeof mt, "%s%s</color></size>", TAG_MARK, TR("Modded"));
-    snprintf(so, sizeof so, "%s%s%s", SOLO_MARK, TR("Solo"), SOLO_END);
-    int nmod = 0, nmp = 0, nso = 0, show = lf_tags || !lf_panel;         /* no panel (a module's own list): the tags as before */
+    char mt[200]; snprintf(mt, sizeof mt, "%s%s</color></size>", TAG_MARK, TR("Modded"));
+    int nmod = 0, nmp = 0, show = lf_tags || !lf_panel;                  /* no panel (a module's own list): the tags as before */
     for (int i = 0; i < nw; i++) {
         WRow *w = &W[i]; Obj cs = gc_get(w->cs), nt = live(cs) ? AT(cs, o_title_name, Obj) : NULL;
         char cur[1200], rest[1200], name[1200], mp[600] = "", want[1800];
         if (!live(nt) || !dsl_ui_text_get((DSLObj)nt, cur, sizeof cur)) continue;
         snprintf(rest, sizeof rest, "%s", cur);
         char *m = strstr(rest, TAG_MARK), *me = m ? strstr(m, "</color></size>") : NULL;
-        if (me) memmove(m, me + 15, strlen(me + 15) + 1);              /* our tags out: name + the multiplayer part */
-        m = strstr(rest, SOLO_MARK); me = m ? strstr(m, SOLO_END) : NULL;
-        if (me) memmove(m, me + strlen(SOLO_END), strlen(me + strlen(SOLO_END)) + 1);
+        if (me) memmove(m, me + 15, strlen(me + 15) + 1);              /* our tag out: name + the multiplayer part */
         char *sp = strstr(rest, "  ");
         snprintf(name, sizeof name, "%.*s", sp ? (int)(sp - rest) : (int)strlen(rest), rest);
         if (sp) snprintf(mp, sizeof mp, "%s", sp);
@@ -993,9 +1007,9 @@ static void tags_apply(void) {
         if (mp[0] && is_mp != 0) { if (k < 0 && ntg < MAXW) k = ntg++; if (k >= 0) { snprintf(TG[k].guid, 40, "%s", w->guid); snprintf(TG[k].mp, sizeof TG[k].mp, "%s", mp); } }
         else if (!mp[0] && is_mp > 0 && k >= 0) snprintf(mp, sizeof mp, "%s", TG[k].mp);
         else if (is_mp == 0) { mp[0] = 0; if (k >= 0) TG[k] = TG[--ntg]; }
-        int mod = dsl_world_is_modded(w->guid), solo = show && lf_is_mp && !mp[0];   /* owner 2026-10-25: Solo = no multiplayer tag */
-        snprintf(want, sizeof want, "%s%s%s", name, show && mod ? mt : "", solo ? so : show ? mp : "");
-        nmod += show && mod; nmp += show && mp[0]; nso += solo;
+        int mod = dsl_world_is_modded(w->guid);
+        snprintf(want, sizeof want, "%s%s%s", name, show && mod ? mt : "", show ? mp : "");
+        nmod += show && mod; nmp += show && mp[0];
         Obj rm = tag_link(cs); int on = rm && show && mp[0];
         if (rm) set_on(rm, on);
         float R[4], C[4], wr = row_w(cs);
@@ -1012,8 +1026,8 @@ static void tags_apply(void) {
         float dx = x - R[0], dy = yc - (R[1] + R[3]) / 2;
         if (dx > 0.5f || dx < -0.5f || dy > 0.5f || dy < -0.5f) dsl_ui_move_screen((DSLObj)rm, dx, dy);
     }
-    static int last = -1; int sig = show * 1000000 + nmod * 10000 + nmp * 100 + nso;
-    if (sig != last) { last = sig; dsl_log("rows: tags %s: %d Modded, %d Multiplayer, %d Solo", show ? "on" : "off", nmod, nmp, nso); }
+    static int last = -1; int sig = show * 10000 + nmod * 100 + nmp;
+    if (sig != last) { last = sig; dsl_log("rows: tags %s: %d Modded, %d Multiplayer", show ? "on" : "off", nmod, nmp); }
 }
 static void rows_rebuild(Obj slv, const char *why) {
     sig_last = list_sig(slv); dirty = 0;
@@ -1026,11 +1040,11 @@ static void rows_rebuild(Obj slv, const char *why) {
     groups_count();
     hidden_apply(slv);
     sig_last = list_sig(slv);
-    int hidden = 0, kinds[LK_N] = { 0 }; for (int i = 0; i < nw; i++) { hidden += W[i].hid; kinds[W[i].kind]++; }
+    int hidden = 0, kinds[LK_N] = { 0 }; for (int i = 0; i < nw; i++) { hidden += W[i].hid; kinds[W[i].kind]++; kinds[W[i].play]++; }
     dsl_log("rows: Load list rebuilt (%s): %d world row(s) (%d hidden by filters), %d text source(s), %d filter(s); groups: %d game, %d modded; "
-            "hidden lines: %d top, %d bottom; panel %s (kinds %d vanilla, %d modded, %d multiplayer; latest only %d)",
+            "hidden lines: %d top, %d bottom; panel %s (mods %d vanilla, %d modded; play %d solo, %d multiplayer; latest only %d)",
             why, nw, hidden, nr, nf, dsl_rows_groups[0], dsl_rows_groups[1], dsl_rows_hidden[0], dsl_rows_hidden[1],
-            lf_panel ? "on" : "off", kinds[LK_VAN], kinds[LK_MOD], kinds[LK_MP], lf_panel && lf_latest);
+            lf_panel ? "on" : "off", kinds[LK_VAN], kinds[LK_MOD], kinds[LK_SOLO], kinds[LK_MP], lf_panel && lf_latest);
 }
 /* the open Load list: opened -> panel + rows; changed -> rows again; closed -> ours off */
 static void list_poll(Obj slv) {
@@ -1102,8 +1116,8 @@ static void open_monitor(void) {
         }
         if (!w.guid[0] || (o_cur >= 0 && AT(cs, o_cur, uint8_t))) continue;
         if (!lf_is_mp) lf_syms();
-        int kind = world_kind(&w);
-        bad += panel && !lf_on[kind] && !lf_all_off();
+        world_kinds(&w);
+        bad += panel && lf_hides(&w);
     }
     dsl_log("rows test: open frame %d: %d world row(s) drawn, %d of them hidden by the filters", k, drawn, bad);
     k++;
