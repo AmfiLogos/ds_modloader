@@ -4,7 +4,8 @@
 //   <dir>/req.json  {"seq":n,"cmd":...}  ->  <dir>/resp.json  {"seq":n,...}
 //   cmd state | click {target} | hover {target} | key {code} | type {text} | wheel {target, dy} | capture {name}
 //       | api {op, ...}   (toggle_set, value_set, field_set, set_text, place, set_active, set_enabled, destroy,
-//                          clipboard_set, clipboard_get, tooltip_off, notice1, open, hover_off)
+//                          clipboard_set, clipboard_get, tooltip_off, notice1, open, hover_off, bare {a:1|0} = a root panel
+//                          "Guard probe" with no Escape registration, made / destroyed: the kit's ESC-MISSING guard)
 //       targets: the panel's names, notice_ok / notice_cancel, title:<label>, cm:<prefix>:<name> (Units Laboratory's
 //                cm_test_target, when that module runs)
 //       | stock {what}   the game's own button method (escape test, loader/test/esc_test.py): title_load, title_bug,
@@ -294,6 +295,11 @@ static void handle(const char *j) {
         else if (!strcmp(op, "hover_off")) t_hover(NULL);
         else if (!strcmp(op, "mouse_off")) fk_on = 0;
         else if (!strcmp(op, "notice1")) on_notice1(NULL, NULL);
+        else if (!strcmp(op, "bare")) {                                /* the Escape guard's probe: a root panel with NO Escape registration */
+            static DSLObj bare; if (bare) U->destroy(bare);
+            bare = a ? U->panel(NULL, 600, 40, 300, 80, 0) : NULL;
+            if (bare) U->text(bare, 10, 10, 280, 60, "Guard probe", 18, DSL_TXT_LEFT, 0);
+        }
         else if (!strcmp(op, "clipboard_set")) U->clipboard_set(s);
         else if (!strcmp(op, "clipboard_get")) { char c[512], ce[600]; size_t n = U->clipboard_get(c, sizeof c); jesc(ce, sizeof ce, c);
                                                  o += (size_t)snprintf(out + o, sizeof out - o, "\"clip\":\"%s\",\"clip_len\":%zu,", ce, n); }

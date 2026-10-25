@@ -158,6 +158,7 @@ static void mute_end(void) {
    is also inaudible in CoreAudio (dsl_sos_process_mute). Test: <DSRIG_DIR>/listener_req.txt -> one log line with the
    listener volume now. */
 void dsl_soft_silent(const char *why) { if (!silent_why) silent_why = why; }
+const char *dsl_soft_test_copy(void) { return silent_why; }      /* non-NULL = a test copy (the kit's Escape guard) */
 static void (*o_set_volume)(float, const void *);
 static long silent_kept, silent_reset;
 static void my_set_volume(float v, const void *mi) {
