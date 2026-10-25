@@ -53,6 +53,11 @@ cp modules/multiplayer/mod.json $M/mod.json
 if [[ -d $V/rva ]]; then mkdir -p $M/rva; cp $V/rva/*.tsv $M/rva/; fi       # address tables of other game versions (src/rig_rv.c)
 print -r -- "$SHA" > $M/PINNED_COMMIT
 zsh modules/copy_lang.sh $MP_REPO $SHA $M                          # its translations (repo lang/*.json) when the pin has them
+# the hub / PvP map files next to the module, as modules/build_mods.sh puts them in what ships (ds_multiplayer maps/README.md:
+# not in git): without them every hub test on this build fails on "no map" (bringcards_pair through HM_BUILD, 2026-10-25)
+maps=(${MP_MAPS:-$MP_REPO/maps}/hub_*.json(N) ${MP_MAPS:-$MP_REPO/maps}/base_*.json(N))
+(( ${#maps} )) || echo "multiplayer: no map files in ${MP_MAPS:-$MP_REPO/maps}: hub tests on this build fail on \"no map\"" >&2
+for f in $maps; do cp $f $M/; done
 echo "built $M from ds_multiplayer $SHA (${#mpsrc} files)"
 # custom-modes: its own repo (github.com/AmfiLogos/ds_custommodes), ONE pinned commit (cm_pin.txt, or CM_PIN=<commit/tag>),
 # exported read-only into build/cmpin/<sha>/; headers from the multiplayer pin above (MP_SRC). CM_REPO = a local clone.
