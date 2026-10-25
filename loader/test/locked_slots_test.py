@@ -9,6 +9,8 @@ the owner is read or written.
   env LS_COPY=<letter> (default Z), LS_MODS=<dir> (take locked-slots from <dir>/locked-slots, the unzipped package)
 
 Real breaks it catches:
+ N  the game's own Ban / Allow Auto Repair orders (the same event with a real slot in Index) still change the item's
+    auto-repair flag and never touch a lock (only the marked Index is the mod's).
  M  the stock right-click of a slot (UIInput ShowInteraction_Inventory) shows the row "Keep on return" (an EMPTY slot
     too); its click (InteractionOptionUI.OnSelect, the element's own call) locks the slot through the game's order;
     right-click again shows "Do not keep on return"; the lock icon shows on the locked slots only; the lock is in
@@ -65,6 +67,7 @@ def wait(what, f, timeout=60, every=0.5):
 
 # ------------------------------------------------------------------------------------------------ the test world
 U = ['c88ac7e8-19f5-4532-914b-71c9929c4ba8', '1df4889e-7b6e-4db3-a3c9-bb02e1dd8e8a', 'ddeecda0-3650-4053-ba82-7974d87adae5']
+U3 = '8b6e7144-afac-4eb7-a595-b5303c2bc2c3'           # 4th unit: a coif in bag slot 2 for the stock auto-repair options
 LOCK = [0, 3, 5]                                  # U[0]'s locked slots: 0 and 3 hold resources, 5 is empty
 RES = ('ITEM_LumaLog', 'ITEM_WildLongGrass')      # ItemType Resource (1): these leave the bag on a return
 
@@ -81,15 +84,14 @@ def make_fixture(dst):
     css.setdefault('LockConsecrationEnabled', False); css['LockConsecrationNoticeAcknowledged'] = True   # no Yes / No box at load
     B = d['EntityContainerSaveData']['ItemContainerSaveData']['Base']; E = d['EntityComponentSaveData']['EntityComponents']
     tmpl = {}
-    for g, v in B['ItemSaveData'].items():
-        if v['Key'] in RES: tmpl.setdefault(v['Key'], g)
-    assert set(tmpl) == set(RES), tmpl
+    for g, v in B['ItemSaveData'].items(): tmpl.setdefault(v['Key'], g)
+    assert all(k in tmpl for k in RES + ('ITEM_ClothCoif',)), tmpl
 
-    def mk(key, n):
+    def mk(key, n, auto=False):
         g = str(uuid.uuid4())
         B['ItemSaveData'][g] = {'Guid': g, 'Key': key}; B['ItemAutoFixable'][g] = B['ItemAutoFixable'][tmpl[key]]
         E[g] = copy.deepcopy(E[tmpl[key]])
-        return {'Guid': g, 'Key': key, 'Amount': n, 'AutoFixed': False}
+        return {'Guid': g, 'Key': key, 'Amount': n, 'AutoFixed': auto}
 
     def bag(u): return next(e['Data']['ItemSlots'] for e in E[u] if e['Type'] == 5)
     b0, b1, b2 = bag(U[0]), bag(U[1]), bag(U[2])
@@ -101,6 +103,7 @@ def make_fixture(dst):
     b0[6] = mk('ITEM_WildLongGrass', 2)
     b1[1] = mk('ITEM_WildLongGrass', 4)
     b2[4] = mk('ITEM_WildLongGrass', 2); b2[7] = hard[1]; b2[9] = mk('ITEM_WildLongGrass', 5)
+    bag(U3)[2] = mk('ITEM_ClothCoif', 1, auto=True)   # the stock auto-repair options (unmarked orders) act on it
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     json.dump(d, open(dst, 'w'))
     return w
@@ -113,6 +116,11 @@ def bags(save):
         b = next((e['Data']['ItemSlots'] for e in E.get(u, []) if e['Type'] == 5), [])
         out[u] = [(s['Key'], s['Amount']) if s.get('Key') else None for s in b]
     return out
+
+
+def autofix(save, u, slot):
+    d = jload(save)
+    return next(e['Data']['ItemSlots'][slot].get('AutoFixed') for e in d['EntityComponentSaveData']['EntityComponents'][u] if e['Type'] == 5)
 
 
 def totals(save):
@@ -262,6 +270,18 @@ def run_a(out):
     log('picture', cmd({'cmd': 'ui_capture', 'path': os.path.join(out, 'locked_slots_menu.png')}))
     lf = os.path.join(I, 'data', 'ModData', 'locked-slots', 'locks_%s.txt' % world)
     check('M: the locks are in the data file', ('%s 0 3 5' % U[0]) in rd(lf), rd(lf))
+
+    # ---- N: the game's own auto-repair orders (same event, Index = a real slot) still reach the stock code
+    t0 = lstate().get('toggles')
+    inject('SelectPlayerUnitRequested', guid_20=U3); time.sleep(1)   # as in the game: the bag shown is the selected unit's
+    a0 = autofix(save_now('lks_af0'), U3, 2)
+    inject('BanAutoFixItemRequested', i32_16=0, i32_20=-1, guid_24=U3, i32_40=2, u8_44=1); time.sleep(2)
+    a1 = autofix(save_now('lks_af1'), U3, 2)
+    inject('AllowAutoFixItemRequested', i32_16=0, i32_20=-1, guid_24=U3, i32_40=2, u8_44=1); time.sleep(2)
+    a2 = autofix(save_now('lks_af2'), U3, 2)
+    st = lstate()
+    check('N: unmarked Ban / Allow Auto Repair still work (stock), no lock change', (a0, a1, a2) == (True, False, True)
+          and st.get('toggles') == t0 and not any(x['unit'] == U3 for x in st.get('units', [])), ((a0, a1, a2), st))
 
     # ---- S: Sort of the locked unit and of the reference unit (no lock)
     before = bags(save_now('lks_before_sort'))
