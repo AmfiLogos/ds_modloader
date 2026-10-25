@@ -163,10 +163,18 @@ static void rows_clear(void) {
     for (int i = 0; i < nw; i++) { if (u && W[i].line) u->destroy(W[i].line); if (u && W[i].chg) u->destroy(W[i].chg); gc_free(W[i].cs); }
     nw = 0;
 }
+static void *m_tmp_get; static Obj (*tmp_get_f)(Obj, const void *);
 static uint32_t list_sig(Obj slv) {
     Obj l = AT(slv, o_cases, Obj); int n = l ? AT(l, 0x18, int32_t) : 0; Obj a = l ? AT(l, 0x10, Obj) : NULL;
+    if (!m_tmp_get) { void *k = dsl_find_class("TMPro", "TMP_Text"); m_tmp_get = k ? dsl_find_method(k, "get_text", 0) : NULL; if (m_tmp_get) tmp_get_f = dsl_method_address(m_tmp_get); }
     uint32_t s = (uint32_t)n * 2654435761u;
-    for (int i = 0; i < n && a; i++) { Obj c = AT(a, 0x20 + 8 * i, Obj); s = s * 31 + (uint32_t)(uintptr_t)c; if (c && shown(c)) s ^= 0x9e37u + (uint32_t)i; }
+    for (int i = 0; i < n && a; i++) {
+        Obj c = AT(a, 0x20 + 8 * i, Obj); s = s * 31 + (uint32_t)(uintptr_t)c;
+        if (!c || !shown(c)) continue;
+        s ^= 0x9e37u + (uint32_t)i;
+        Obj nt = o_title_name >= 0 ? AT(c, o_title_name, Obj) : NULL;      /* its name text: a module rewrote it (Remove tag) = again */
+        if (tmp_get_f && live(nt)) s = s * 131 + (uint32_t)(uintptr_t)tmp_get_f(nt, m_tmp_get);
+    }
     Obj d = AT(slv, o_dict, Obj); s = s * 31 + (d ? (uint32_t)AT(d, 0x20, int32_t) : 0);
     return s;
 }
@@ -182,7 +190,6 @@ static void toggle_change(void *ud, DSLObj w) {
 
 /* the world's name as its row shows it ("Elven Expedition"): the row's _nameText without rich-text tags and without
    what other modules add after two spaces (the multiplayer tag) */
-static void *m_tmp_get;
 static void world_name(Obj cs, char *out, size_t cap) {
     out[0] = 0;
     if (!m_tmp_get) { void *k = dsl_find_class("TMPro", "TMP_Text"); m_tmp_get = k ? dsl_find_method(k, "get_text", 0) : NULL; }
@@ -564,7 +571,7 @@ static const char *pn_tip(int k) {
          : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay. Fixes and Vanilla+ mods do not count.")
          : k == LK_MP ? TR("Worlds you played with friends.")
          : k == LK_N ? TR("Each world shows only its newest save. Off: every save.")
-         : TR("Tags after the world names: Modded, and Multiplayer for worlds you played with friends. Off: the names only.");
+         : TR("Tags after the world names: Modded, and Multiplayer for worlds you played with friends or Solo for the others. Off: the names only.");
 }
 static void rows_rebuild(Obj slv, const char *why);
 static void pn_change(void *ud, DSLObj w) {
@@ -972,6 +979,8 @@ void dsl_rows_test_cmd(const char *c, const JNode *j) {
    its "Remove tag" link, a child of the row). Off: the name alone and no link. The multiplayer part is kept per world while
    it is off (the mod writes it only at the row's Init); a world the multiplayer mod no longer tags (Remove tag) loses it. */
 #define TAG_MARK "  <size=75%><color=#E3A65B>"              /* our "Modded" tag (its colour marks it in any language) */
+#define SOLO_MARK "  <size=75%><color=#8FC4FF><link=\"dsl.solo\">"   /* our "Solo" tag: the multiplayer tag's look, marked by its link id */
+#define SOLO_END "</link></color></size>"
 static struct { char guid[40], mp[600]; } TG[MAXW]; static int ntg;
 static Obj tag_link(Obj cs) {                             /* the multiplayer mod's "Remove tag" (<u>...</u>), a child of the row */
     DSLObj ch[64]; int k = dsl_ui_children((DSLObj)comp_tr(cs, NULL), ch, 64); char t4[16];
@@ -1010,15 +1019,18 @@ static float tag_fit(Obj cs, Obj nt, const char *head, const char *mp, float lnk
 }
 static void tags_apply(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || o_title_name < 0) return;
-    char mt[200]; snprintf(mt, sizeof mt, "%s%s</color></size>", TAG_MARK, TR("Modded"));
-    int nmod = 0, nmp = 0, show = lf_tags || !lf_panel;                  /* no panel (a module's own list): the tags as before */
+    char mt[200], so[200]; snprintf(mt, sizeof mt, "%s%s</color></size>", TAG_MARK, TR("Modded"));
+    snprintf(so, sizeof so, "%s%s%s", SOLO_MARK, TR("Solo"), SOLO_END);
+    int nmod = 0, nmp = 0, nso = 0, show = lf_tags || !lf_panel;         /* no panel (a module's own list): the tags as before */
     for (int i = 0; i < nw; i++) {
         WRow *w = &W[i]; Obj cs = gc_get(w->cs), nt = live(cs) ? AT(cs, o_title_name, Obj) : NULL;
         char cur[1200], rest[1200], name[1200], mp[600] = "", want[1800];
         if (!live(nt) || !dsl_ui_text_get((DSLObj)nt, cur, sizeof cur)) continue;
         snprintf(rest, sizeof rest, "%s", cur);
         char *m = strstr(rest, TAG_MARK), *me = m ? strstr(m, "</color></size>") : NULL;
-        if (me) memmove(m, me + 15, strlen(me + 15) + 1);              /* our tag out: name + the multiplayer part */
+        if (me) memmove(m, me + 15, strlen(me + 15) + 1);              /* our tags out: name + the multiplayer part */
+        m = strstr(rest, SOLO_MARK); me = m ? strstr(m, SOLO_END) : NULL;
+        if (me) memmove(m, me + strlen(SOLO_END), strlen(me + strlen(SOLO_END)) + 1);
         char *sp = strstr(rest, "  ");
         snprintf(name, sizeof name, "%.*s", sp ? (int)(sp - rest) : (int)strlen(rest), rest);
         if (sp) snprintf(mp, sizeof mp, "%s", sp);
@@ -1027,9 +1039,9 @@ static void tags_apply(void) {
         if (mp[0] && is_mp != 0) { if (k < 0 && ntg < MAXW) k = ntg++; if (k >= 0) { snprintf(TG[k].guid, 40, "%s", w->guid); snprintf(TG[k].mp, sizeof TG[k].mp, "%s", mp); } }
         else if (!mp[0] && is_mp > 0 && k >= 0) snprintf(mp, sizeof mp, "%s", TG[k].mp);
         else if (is_mp == 0) { mp[0] = 0; if (k >= 0) TG[k] = TG[--ntg]; }
-        int mod = dsl_world_is_modded(w->guid);
-        snprintf(want, sizeof want, "%s%s%s", name, show && mod ? mt : "", show ? mp : "");
-        nmod += show && mod; nmp += show && mp[0];
+        int mod = dsl_world_is_modded(w->guid), solo = show && lf_is_mp && !mp[0];   /* owner 2026-10-25: Solo = no multiplayer tag */
+        snprintf(want, sizeof want, "%s%s%s", name, show && mod ? mt : "", solo ? so : show ? mp : "");
+        nmod += show && mod; nmp += show && mp[0]; nso += solo;
         Obj rm = tag_link(cs); int on = rm && show && mp[0];
         if (rm) set_on(rm, on);
         float R[4], C[4], wr = row_w(cs);
@@ -1046,8 +1058,8 @@ static void tags_apply(void) {
         float dx = x - R[0], dy = yc - (R[1] + R[3]) / 2;
         if (dx > 0.5f || dx < -0.5f || dy > 0.5f || dy < -0.5f) dsl_ui_move_screen((DSLObj)rm, dx, dy);
     }
-    static int last = -1; int sig = show * 10000 + nmod * 100 + nmp;
-    if (sig != last) { last = sig; dsl_log("rows: tags %s: %d Modded, %d Multiplayer", show ? "on" : "off", nmod, nmp); }
+    static int last = -1; int sig = show * 1000000 + nmod * 10000 + nmp * 100 + nso;
+    if (sig != last) { last = sig; dsl_log("rows: tags %s: %d Modded, %d Multiplayer, %d Solo", show ? "on" : "off", nmod, nmp, nso); }
 }
 static void rows_rebuild(Obj slv, const char *why) {
     sig_last = list_sig(slv); dirty = 0;

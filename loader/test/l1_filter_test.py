@@ -168,7 +168,10 @@ def row_checks(tag, st):
 
 
 NEWEST = {ELVEN_GUID: '2026-10-11 18:25:31', MOON_GUID: '2026-10-04 19:56:07', TPL_GUID: '2026-09-04 09:59:06', SLOT_GUID: '2026-10-20 08:00:00'}
-MOD_MARK, MP_MARK = '<color=#E3A65B>', '<color=#8FC4FF>'                # the loader's "Modded" tag, the multiplayer mod's tag
+MOD_MARK, MP_MARK, SOLO_MARK = '<color=#E3A65B>', '<color=#8FC4FF>', '<link="dsl.solo">'   # the loader's Modded, the multiplayer mod's, the loader's Solo
+
+
+def has_mp(x): return MP_MARK in x and SOLO_MARK not in x                 # the Solo tag has the multiplayer tag's colour
 
 
 def open_checks(mark):
@@ -192,17 +195,19 @@ def order_checks(tag, st):
 
 def tag_checks(tag, st, on):
     """owner 2026-10-25 "Show tags": on = "Modded" on a Modded world (not on a fix-only or Vanilla+ world), the multiplayer
-    tag with its Remove tag on a multiplayer world; off = no tag, no Remove tag"""
+    tag with its Remove tag on a multiplayer world, "Solo" on every world without it; off = no tag, no Remove tag"""
     w = {g: world(st, g) for g in (ELVEN_GUID, TPL_GUID, SLOT_GUID, MOON_GUID)}
     if on:
-        check(f'{tag}: Elven (Modded) shows the Modded tag', MOD_MARK in w[ELVEN_GUID].get('name_text', ''), w[ELVEN_GUID].get('name_text'))
-        check(f'{tag}: Template (only a fix) and Slot (Vanilla+) show no tag', not any(m in w[g].get('name_text', '') for g in (TPL_GUID, SLOT_GUID) for m in (MOD_MARK, MP_MARK)),
-              [w[g].get('name_text') for g in (TPL_GUID, SLOT_GUID)])
+        e = w[ELVEN_GUID].get('name_text', '')
+        check(f'{tag}: Elven (Modded, no multiplayer tag) shows Modded and Solo', MOD_MARK in e and SOLO_MARK in e and not has_mp(e), e)
+        check(f'{tag}: Template (only a fix) and Slot (Vanilla+) show Solo only', all(SOLO_MARK in w[g].get('name_text', '') and MOD_MARK not in w[g].get('name_text', '')
+              and not has_mp(w[g].get('name_text', '')) for g in (TPL_GUID, SLOT_GUID)), [w[g].get('name_text') for g in (TPL_GUID, SLOT_GUID)])
         if w[MOON_GUID].get('shown'):
-            check(f'{tag}: Moonlight shows the multiplayer tag and its Remove tag', MP_MARK in w[MOON_GUID].get('name_text', '') and w[MOON_GUID].get('remove_tag') == 1, w[MOON_GUID])
+            mn = w[MOON_GUID].get('name_text', '')
+            check(f'{tag}: Moonlight shows the multiplayer tag and its Remove tag, no Solo', has_mp(mn) and SOLO_MARK not in mn and w[MOON_GUID].get('remove_tag') == 1, w[MOON_GUID])
     else:
         shown = [x for x in w.values() if x.get('shown')]
-        check(f'{tag}: Show tags off: no tag on any row, no Remove tag', shown and not any(MOD_MARK in x.get('name_text', '') or MP_MARK in x.get('name_text', '') or x.get('remove_tag') for x in shown),
+        check(f'{tag}: Show tags off: no tag on any row, no Remove tag', shown and not any(m in x.get('name_text', '') for x in shown for m in (MOD_MARK, MP_MARK, SOLO_MARK)) and not any(x.get('remove_tag') for x in shown),
               [(x.get('name'), x.get('name_text'), x.get('remove_tag')) for x in shown])
 
 
@@ -216,6 +221,17 @@ def rm_checks(tag, st):
     check(f'{tag}: Remove tag is on the title line (not over the detail box)', r[1] >= bot - 1 and r[3] <= top + 1, (r, round(bot, 1), round(top, 1)))
     hit = [n for n, q in (('Mods line', w['line_rect'] if w.get('line_shown') and w.get('line_text') else None), ('Change', w.get('chg_rect'))) if q and q[2] > q[0] and overlap(r, q)]
     check(f'{tag}: Remove tag overlaps neither the Mods line nor [Change]', not hit, (r, hit, w.get('line_rect'), w.get('chg_rect')))
+
+
+def untag_check():
+    """owner 2026-10-25: a world whose multiplayer tag the player removes shows Solo at once (the multiplayer mod's Remove
+    tag box answered Remove; the list stays open)"""
+    lf('lf', multiplayer=1); time.sleep(0.8)
+    rows = mp('mpm_tag').get('rows', []); i = next((x['i'] for x in rows if x.get('guid') == MOON_GUID and x.get('remove')), None)
+    if i is None: check('Remove tag: the multiplayer world has its link', False, rows); return
+    mp('mpm_tag', click=i); time.sleep(0.8); b = mp('mpm_box', action='confirm'); log('untag box', b)
+    time.sleep(0.6); st = lf(); mn = world(st, MOON_GUID).get('name_text', '')
+    check('Remove tag: the world shows Solo at once, no multiplayer tag, no link', SOLO_MARK in mn and not has_mp(mn) and not world(st, MOON_GUID).get('remove_tag'), (mn, world(st, MOON_GUID)))
 
 
 def run_main():
@@ -284,6 +300,7 @@ def run_main():
     st = lf('lf', latest_only=0); t = world(st, TPL_GUID)
     check('Latest save only off: both Template saves show again, the row counts 2', t.get('saves_shown') == 2 and t.get('button_count') == 2, t)
     lf('lf', latest_only=1)                                         # kept on for the restart run
+    untag_check()                                                   # last: it removes Moonlight's multiplayer tag
     S.stop_all()
 
 
