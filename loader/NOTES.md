@@ -951,8 +951,8 @@ Seed and Time Limit; the panel followed the combat row as the settings list scro
 - Place, every 2 frames, from the screen (the Load list filter panel's rules): x = the window's right edge + 16 units; top =
   the list's top, at most under the title corner (`dsl_update_corner_rect`) when the column runs under it, at most the
   screen top; too low for its height: moved up (never over the corner), then scaled down; too narrow: scaled down. Measured
-  (`test/newgame_side_test.py`): scale 1.0 at 960x540 / 960x600 / 800x600 UI 1.0, 0.76-0.82 at UI 1.4 16:9 / 16:10,
-  0.48 at 800x600 UI 1.4 (the window takes most of the width there; the column stays inside the screen).
+  (`test/newgame_side_test.py`): scale 1.0 at 960x540 / 960x600 / 800x600 UI 1.0, 0.97 (de) / 0.86 (ja) at UI 1.4 16:9 /
+  16:10, 0.48 at 800x600 UI 1.4 (the window takes most of the width there; the column stays inside the screen).
 - Without the switches (a name missing in a future game build) the mods panel still shows: the settings panel is then
   found with FindObjectOfType every 30 frames, as the old line did.
 - Test requests (DSL_SOFT_TEST): `{"cmd":"newgame","op":"scroll","pos":0..1}` (ScrollRect.verticalNormalizedPosition),
