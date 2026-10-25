@@ -1,6 +1,6 @@
 // Locked Slots (mod id locked-slots): a unit keeps what is in chosen inventory slots when it comes back to base.
-// Right-click a slot of a unit's inventory: "Keep on return" locks the SLOT (a small lock shows on it), "Do not keep on
-// return" unlocks it. An empty locked slot keeps its lock. The unit still uses, moves and drops those items as usual;
+// Right-click a slot of a unit's inventory: "Keep On Return" locks the SLOT (a small lock shows on it), "Do Not Keep On
+// Return" unlocks it. An empty locked slot keeps its lock. The unit still uses, moves and drops those items as usual;
 // the inventory Sort leaves locked slots and their items where they are. Vanilla+: nothing else of the game changes.
 // Runtime hooks found by il2cpp name (Mac and Windows), GameAssembly unchanged. Build 25846389 (DS_B.0.4.29).
 //
@@ -27,6 +27,11 @@
 // the 7 x 8 picture below: no file, no game asset; owner 2026-10-25: "smaller & white"), in the top-left corner of locked
 // slots of a unit's inventory (about a fifth of the slot: never over the item count or the picture's center), and hides
 // it everywhere else.
+// Hover cards (view only, UX review 2026-10-25 S1): Tooltip_Item.Show (the item card) is hooked: when the card's caller
+// is a locked bag slot of a unit (Tooltip_Base._callerRect -> its ItemSlotUI), one more stat row "Kept On Return" is added
+// with the card's own AddStatRowText, under the stock rows (Durability ...). An EMPTY locked slot has no item card (the
+// stock slot turns its InteractableUI off when empty): it gets the game's simple-text card "Kept On Return" (its own
+// TooltipFeedback.SetSimpleText, InteractableUI on); when it is unlocked, that is undone (ClearTooltip, InteractableUI off).
 // Data: never in the save. <ModData>/locked-slots/locks_<world guid>.txt, one line per unit: its guid and the locked
 // slot numbers. Removing the mod = items drop as in the stock game. Multiplayer: the host's locks of its world go to
 // every joiner in a join-point block ("LKSL"); a guest keeps them in memory only; the locks are in the world
@@ -168,24 +173,28 @@ static int gzero(const WGuid *a) { return !a->lo && !a->hi; }
 /* ======================================================================================== game names */
 static struct {
     void *unit, *inv, *ih, *slotui, *mainflow, *ctrl, *optui, *option, *ia, *uiin, *image, *object, *comp, *go, *transform,
-         *rect, *graphic, *lang, *ev_ban, *uistream, *ec, *complist, *tex, *texture, *sprite, *color32;
+         *rect, *graphic, *lang, *ev_ban, *uistream, *ec, *complist, *tex, *texture, *sprite, *color32,
+         *tipbase, *tipitem, *iui, *tipfb, *behaviour;
 } K;
 static struct {
     int32_t unit_guid, inv_slots, ih_guid, ih_key, ih_amount, ih_auto, slot_owner, slot_index, slot_inv, slot_autofix,
             mf_campaign, cd_clan, clan_guid, ctrl_option, option_list, ev_guid, ev_index, ec_components, ui_stream,
             optui_list, ih_size, list_items, cd_time, time_tick,
             ia_type, ia_text, ia_possible, ia_index, ia_input, ia_uiinput,           /* inside Interaction */
-            ui_type, ui_p2, ui_g1;                                                  /* inside UIInput */
+            ui_type, ui_p2, ui_g1,                                                  /* inside UIInput */
+            slot_key, slot_iui, tb_caller, tip_rows, tip_rowidx, fb_hovering;       /* hover cards */
 } O;
 static struct {
-    void *route, *sort, *ban, *reg, *show, *setitem,                                /* hooked */
+    void *route, *sort, *ban, *reg, *show, *setitem, *tip_show,                     /* hooked */
          *inv_add, *inv_remove, *ih_empty, *ec_tryget, *cl_tryget, *list_add, *list_removeat, *list_count,
          *obj_find, *obj_inst, *obj_set_name, *op_implicit, *comp_tr, *comp_go, *go_active, *go_activeself, *tr_find,
          *tr_last, *rt_amin, *rt_amax, *rt_pivot, *rt_pos, *rt_size, *img_sprite, *img_preserve, *g_color,
          *g_raycast, *lang_get, *stream_add, *optui_select, *ec_inst, *tex_ctor, *tex_set, *tex_apply, *tex_filter,
-         *tex_wrap, *spr_create, *obj_hide;
+         *tex_wrap, *spr_create, *obj_hide,
+         *comp_inparent, *tip_addrow, *rows_count, *iui_getfb, *iui_hasfb, *beh_enabled, *beh_set_enabled, *fb_simple,
+         *fb_getsimple, *fb_clear, *fb_start, *fb_end;
 } M;
-static struct { int ia_ui, uit_ban, uit_skilltarget, uit_show_inv, ct_inv, find_incl, rgba32, point, clamp, keep; } E;
+static struct { int ia_ui, uit_ban, uit_skilltarget, uit_show_inv, ct_inv, find_incl, rgba32, point, clamp, keep, fb_tooltip, tc_numeric; } E;
 
 /* ---- small Unity helpers (alive = UnityEngine.Object op_Implicit: m_CachedPtr != 0, T1) */
 static Obj str(const char *s) { return IL.string_new(s); }
@@ -204,13 +213,18 @@ static Obj find_any(void *k) { return k ? MC(M.obj_find, Obj, Obj, int32_t, void
 static int list_count(Obj l) { return l ? MC(M.list_count, int32_t, Obj, void *)(l, M.list_count) : 0; }
 
 /* ======================================================================================== texts (game LanguageType order) */
-/* 0 en, 1 ko, 2 fr, 3 de, 4 ru, 5 zh-Hans, 6 zh-Hant, 7 ja, 8 es, 9 pt-BR */
+/* 0 en, 1 ko, 2 fr, 3 de, 4 ru, 5 zh-Hans, 6 zh-Hant, 7 ja, 8 es, 9 pt-BR. English rows in Title Case like the stock rows
+   ("Drop All", "Ban Auto Repair") and the stock card rows ("Expire Duration", "Indoor Only"); the other languages keep
+   their own rules. The word for "return" is the game's own (Return Scroll / Return to Settlement in each language). */
 static const char *const T_KEEP[10] = {
-    "Keep on return", "복귀 시 유지", "Garder au retour", "Bei Rückkehr behalten", "Оставить при возвращении",
+    "Keep On Return", "복귀 시 유지", "Garder au retour", "Bei Rückkehr behalten", "Оставить при возвращении",
     "返回时保留", "返回時保留", "帰還時に保持", "Conservar al volver", "Manter ao retornar" };
 static const char *const T_DROP[10] = {
-    "Do not keep on return", "복귀 시 유지 안 함", "Ne pas garder au retour", "Bei Rückkehr nicht behalten", "Не оставлять при возвращении",
+    "Do Not Keep On Return", "복귀 시 유지 안 함", "Ne pas garder au retour", "Bei Rückkehr nicht behalten", "Не оставлять при возвращении",
     "返回时不保留", "返回時不保留", "帰還時に保持しない", "No conservar al volver", "Não manter ao retornar" };
+static const char *const T_KEPT[10] = {                     /* the hover-card line of a locked slot (a state, not an action) */
+    "Kept On Return", "복귀 시 유지됨", "Gardé au retour", "Wird bei Rückkehr behalten", "Остаётся при возвращении",
+    "返回时将保留", "返回時將保留", "帰還時に保持される", "Se conserva al volver", "Mantido ao retornar" };
 static int lang(void) {
     int v = M.lang_get ? MC(M.lang_get, int32_t, void *)(M.lang_get) : 0;
     return v >= 0 && v < 10 ? v : 0;
@@ -449,6 +463,76 @@ static void remember(Obj slot, const WGuid *u, int idx) {
     S[i].h = IL.gch_weak(slot, 0); S[i].u = *u; S[i].idx = idx;
 }
 static int known_unit(const WGuid *u) { for (int i = 0; i < nS; i++) if (geq(&S[i].u, u)) return 1; return 0; }
+
+/* ---- hover cards (view only: they read the lock table, never change it) */
+static int u16_eq(Obj s, const char *u8) {                  /* il2cpp string == UTF-8 text (BMP only: our texts) */
+    if (!s) return 0;
+    int32_t n = AT(s, 0x10, int32_t), k = 0; const uint16_t *c = (const uint16_t *)((char *)s + 0x14);
+    for (const unsigned char *p = (const unsigned char *)u8; *p;) {
+        uint32_t cp;
+        if (*p < 0x80) cp = *p++;
+        else if ((*p & 0xE0) == 0xC0) { cp = (uint32_t)(*p++ & 0x1F) << 6; cp |= *p++ & 0x3Fu; }
+        else { cp = (uint32_t)(*p++ & 0x0F) << 12; cp |= (uint32_t)(*p++ & 0x3F) << 6; cp |= *p++ & 0x3Fu; }
+        if (k >= n || c[k++] != cp) return 0;
+    }
+    return k == n;
+}
+static int is_kept_text(Obj s) { for (int l = 0; l < 10; l++) if (u16_eq(s, T_KEPT[l])) return 1; return 0; }
+static Obj tip_feedback(Obj slot, Obj *iu_out) {            /* the slot's TooltipFeedback (NULL = none) */
+    Obj iu = AT(slot, O.slot_iui, Obj);
+    if (iu_out) *iu_out = iu;
+    if (!alive(iu) || !(MC(M.iui_hasfb, uint8_t, Obj, int32_t, void *)(iu, E.fb_tooltip, M.iui_hasfb) & 1)) return NULL;
+    Obj fb = MC(M.iui_getfb, Obj, Obj, int32_t, void *)(iu, E.fb_tooltip, M.iui_getfb);
+    return alive(fb) ? fb : NULL;
+}
+static int enabled(Obj b) { return alive(b) && (MC(M.beh_enabled, uint8_t, Obj, void *)(b, M.beh_enabled) & 1); }
+static void set_enabled(Obj b, int on) { MC(M.beh_set_enabled, void, Obj, uint8_t, void *)(b, (uint8_t)(on != 0), M.beh_set_enabled); }
+static int n_empty_log;
+static void empty_card(Obj slot, int on) {                  /* an EMPTY bag slot: the simple card "Kept On Return" while locked */
+    Obj key = AT(slot, O.slot_key, Obj);
+    if (key && AT(key, 0x10, int32_t) > 0) return;          /* an item: the stock item card, my_tip adds the line */
+    Obj iu = AT(slot, O.slot_iui, Obj);
+    int en = enabled(iu);
+    if (!on && !en) return;                                 /* the stock empty slot: no card, nothing of ours */
+    Obj fb = tip_feedback(slot, NULL);
+    if (!fb) return;
+    if (on) {
+        MC(M.fb_simple, void, Obj, Obj, uint8_t, void *)(fb, str(T_KEPT[lang()]), 0, M.fb_simple);
+        if (!en) set_enabled(iu, 1);                        /* the stock empty slot has it off: no card at all */
+        if (logn(&n_empty_log, 3)) H->log(ME, "empty locked slot %d: card \"%s\"", AT(slot, O.slot_index, int32_t), T_KEPT[lang()]);
+    } else if (en && is_kept_text(MC(M.fb_getsimple, Obj, Obj, void *)(fb, M.fb_getsimple))) {   /* ours: back to stock */
+        if (AT(fb, O.fb_hovering, uint8_t) & 1) MC(M.fb_end, void, Obj, void *)(fb, M.fb_end);       /* hide it if shown now */
+        MC(M.fb_clear, void, Obj, void *)(fb, M.fb_clear);
+        set_enabled(iu, 0);
+    }
+}
+static int slot_locked(Obj slot) {                          /* 1 = a locked bag slot of a unit */
+    Obj owner = AT(slot, O.slot_owner, Obj);
+    int idx = AT(slot, O.slot_index, int32_t);
+    if (!(AT(slot, O.slot_inv, uint8_t) & 1) || !is_a(owner, K.unit) || idx < 0 || idx >= NSLOT) return 0;
+    WGuid u; memcpy(&u, (char *)owner + O.unit_guid, 16);
+    sync_world();
+    return (int)(lk_mask(&u) >> idx & 1);
+}
+static Obj slot_of(Obj caller) {                            /* the ItemSlotUI a card was shown for (NULL = not a slot) */
+    if (!alive(caller)) return NULL;
+    Obj s = MC(M.comp_inparent, Obj, Obj, Obj, void *)(caller, type_of(K.slotui), M.comp_inparent);
+    return alive(s) ? s : NULL;
+}
+static int n_cards, n_tip_log, n_norow_log;
+static void (*o_tip)(Obj, Obj, const void *);
+static void my_tip(Obj self, Obj key, const void *mi) {    /* Tooltip_Item.Show(string): the item card */
+    o_tip(self, key, mi);
+    Obj slot = slot_of(AT(self, O.tb_caller, Obj));         /* the caller rect: set by ShowTooltip, cleared at a screen position */
+    if (!slot || !slot_locked(slot)) return;
+    Obj rows = AT(self, O.tip_rows, Obj);
+    int at = AT(self, O.tip_rowidx, int32_t), n = rows ? MC(M.rows_count, int32_t, Obj, void *)(rows, M.rows_count) : 0;
+    if (at < 0 || at >= n) { if (logn(&n_norow_log, 3)) H->log(ME, "item card: all %d stat rows used, no line", n); return; }
+    MC(M.tip_addrow, void, Obj, Obj, Obj, int32_t, void *)(self, str(T_KEPT[lang()]), str(""), E.tc_numeric, M.tip_addrow);
+    n_cards++;
+    if (logn(&n_tip_log, 5)) H->log(ME, "item card of locked slot %d: line \"%s\" (row %d of %d)", AT(slot, O.slot_index, int32_t), T_KEPT[lang()], at + 1, n);
+}
+
 static int n_ovl;
 static void overlay(Obj slot) {
     if (!alive(slot)) return;
@@ -465,6 +549,7 @@ static void overlay(Obj slot) {
     int on = (int)(lk_mask(&u) >> idx & 1);
     if (on && !img) img = lock_img(slot, 1);
     if (img) set_active(img, on);
+    empty_card(slot, on);
     if (on && logn(&n_ovl, 5)) { char g[40]; guid_s(&u, g); H->log(ME, "lock icon on: unit %.8s slot %d", g, idx); }
 }
 static void refresh_unit(const WGuid *u) {                  /* after a lock change: the shown slots of that unit */
@@ -656,7 +741,7 @@ static char *t_exec(const char *cmd, const char *line) {
     if (!strcmp(cmd, "lks_state")) {
         sync_world();
         char w[40] = ""; if (have_world) guid_s(&cur_world, w);
-        PUT("{\"ok\":true,\"world\":\"%s\",\"role\":%d,\"kept\":%d,\"sorted\":%d,\"toggles\":%d,\"rows\":%d,\"last_tick\":%lld,\"units\":[", w, role(), n_kept, n_sorted, n_toggles, n_rows, (long long)last_tick);
+        PUT("{\"ok\":true,\"world\":\"%s\",\"role\":%d,\"kept\":%d,\"sorted\":%d,\"toggles\":%d,\"rows\":%d,\"cards\":%d,\"last_tick\":%lld,\"units\":[", w, role(), n_kept, n_sorted, n_toggles, n_rows, n_cards, (long long)last_tick);
         for (int i = 0; i < nT; i++) {
             char g[40]; guid_s(&T[i].u, g); PUT("%s{\"unit\":\"%s\",\"slots\":[", i ? "," : "", g);
             int k = 0; for (int s = 0; s < NSLOT; s++) if (T[i].m >> s & 1) PUT("%s%d", k++ ? "," : "", s);
@@ -744,6 +829,57 @@ static char *t_exec(const char *cmd, const char *line) {
         PUT("],\"picked\":%d}", picked);
         return jdup(b);
     }
+    if (!strcmp(cmd, "lks_hover") || !strcmp(cmd, "lks_card")) {
+        /* lks_hover {unit, slot, on}: the pointer enters (on 1) / leaves (on 0) that bag slot as the EventSystem does it:
+           the slot's TooltipFeedback.OnInteractStart / End, only when its InteractableUI is on (else no event reaches it).
+           lks_card {unit, slot}: the card shown now for that slot as the player sees it (its texts, read from the UI). */
+        char us[64] = ""; WGuid u; jstr(line, "unit", us, sizeof us);
+        if (!guid_p(us, &u)) return jdup("{\"ok\":false,\"error\":\"need unit\"}");
+        int want = jint(line, "slot", -1);
+        void *k_go = K.go, *m_ah = msig_q(k_go, "get_activeInHierarchy", 0, NULL);
+        Obj slot = NULL;
+        for (int i = 0; i < nS && !slot; i++) {
+            Obj s = IL.gch_target(S[i].h); Obj g = go(s);
+            if (alive(s) && geq(&S[i].u, &u) && AT(s, O.slot_index, int32_t) == want && g && m_ah && (MC(m_ah, uint8_t, Obj, void *)(g, m_ah) & 1)) slot = s;
+        }
+        if (!slot) return jdup("{\"ok\":false,\"error\":\"slot not shown\"}");
+        if (!strcmp(cmd, "lks_hover")) {
+            Obj iu, fb = tip_feedback(slot, &iu);
+            int on = jint(line, "on", 1), en = enabled(iu);
+            if (fb && en) MC(on ? M.fb_start : M.fb_end, void, Obj, void *)(fb, on ? M.fb_start : M.fb_end);
+            PUT("{\"ok\":true,\"slot\":%d,\"interactable\":%d,\"feedback\":%d}", want, en, fb != NULL);
+            return jdup(b);
+        }
+        void *m_all = msig_q(K.object, "FindObjectsOfType", 2, "Type,Boolean"), *k_tmp = H->find_class("TMPro", "TMP_Text");
+        void *m_txt = k_tmp ? msig_q(k_tmp, "get_text", 0, NULL) : NULL, *k_row = H->find_class("Refactor.UI", "TooltipValueRow");
+        Obj arr = m_all ? MC(m_all, Obj, Obj, uint8_t, void *)(type_of(K.tipbase), 0, m_all) : NULL;   /* active cards only */
+        int n = arr ? (int)AT(arr, 0x18, uintptr_t) : 0;
+        Obj card = NULL;
+        for (int i = 0; i < n && !card; i++) { Obj t = AT(arr, AHDR + 8 * (size_t)i, Obj); if (alive(t) && slot_of(AT(t, O.tb_caller, Obj)) == slot) card = t; }
+#define PUTS(X) do { Obj _t = (X), _s = _t && m_txt ? MC(vm(_t, m_txt), Obj, Obj, void *)(_t, vm(_t, m_txt)) : NULL; PUT("\""); \
+        for (int32_t c = 0; _s && c < AT(_s, 0x10, int32_t) && o + 16 < sizeof b; c++) { uint16_t ch = ((uint16_t *)((char *)_s + 0x14))[c]; \
+            if (ch >= 0x20 && ch < 0x80 && ch != '"' && ch != '\\') b[o++] = (char)ch; else PUT("\\u%04x", ch); } PUT("\""); } while (0)
+        if (!card) { PUT("{\"ok\":true,\"card\":null}"); return jdup(b); }
+        void *ck = IL.object_get_class(card); void *f_title = fld(ck, "_titleText");
+        PUT("{\"ok\":true,\"card\":\"%s\",\"title\":", IL.class_get_name(ck));
+        PUTS(f_title ? AT(card, (int32_t)IL.field_get_offset(f_title), Obj) : NULL);
+        PUT(",\"rows\":[");
+        if (ck == K.tipitem && k_row) {                     /* the active stat rows: [name, value] */
+            void *f_n = fld(k_row, "_nameText"), *f_v = fld(k_row, "_valueText");
+            void *f_it = fld(ftype_class(K.tipitem, "_statRows"), "_items");   /* List<TooltipValueRow>._items */
+            Obj rows = AT(card, O.tip_rows, Obj), items = rows && f_it ? AT(rows, (int32_t)IL.field_get_offset(f_it), Obj) : NULL;
+            int nr = rows ? MC(M.rows_count, int32_t, Obj, void *)(rows, M.rows_count) : 0, k = 0;
+            for (int i = 0; items && f_n && f_v && i < nr; i++) {
+                Obj r = AT(items, AHDR + 8 * (size_t)i, Obj);
+                if (!is_active(r)) continue;
+                PUT("%s[", k++ ? "," : ""); PUTS(AT(r, (int32_t)IL.field_get_offset(f_n), Obj)); PUT(",");
+                PUTS(AT(r, (int32_t)IL.field_get_offset(f_v), Obj)); PUT("]");
+            }
+        }
+        PUT("]}");
+#undef PUTS
+        return jdup(b);
+    }
     if (!strcmp(cmd, "lks_icons")) {                        /* the lock icons on the slots shown now */
         PUT("{\"ok\":true,\"slots\":[");
         int k = 0;
@@ -774,6 +910,8 @@ static int resolve(void) {
     K.color32 = kls("UnityEngine", "Color32");
     K.ev_ban = kls("Refactor.Main.Event", "BanAutoFixItemRequested");
     K.ec = kls(RM, "EntityComponent"); K.complist = kls(RM, "ComponentList");
+    K.tipbase = kls(RUI, "Tooltip_Base"); K.tipitem = kls(RUI, "Tooltip_Item"); K.iui = kls("Refactor.UI.Util", "InteractableUI");
+    K.tipfb = kls("Refactor.UI.Util", "TooltipFeedback"); K.behaviour = kls("UnityEngine", "Behaviour");
     void *k_proc = kls("Refactor.Main.Processor", "ItemControlProcessor"), *k_ieh = kls("Refactor.Main.Event", "ItemEventHandler");
     void *k_cd = kls(RM, "CampaignDataContainer"), *k_clan = kls(R, "ClanDataContainer"), *k_static = kls(RUI, "StaticUI_Base");
     if (n_missing) return 1;
@@ -832,6 +970,19 @@ static int resolve(void) {
     E.rgba32 = enum_v(kls("UnityEngine", "TextureFormat"), "RGBA32", 4); E.point = enum_v(kls("UnityEngine", "FilterMode"), "Point", 0);
     E.clamp = enum_v(kls("UnityEngine", "TextureWrapMode"), "Clamp", 1); E.keep = enum_v(kls("UnityEngine", "HideFlags"), "DontUnloadUnusedAsset", 32);
     M.stream_add = msig(K.uistream, "AddInput", 1, NULL);
+    /* hover cards: the item card's stat rows, the caller's slot, the slot's tooltip feedback */
+    O.slot_key = fo(K.slotui, "_key"); O.slot_iui = fo(K.slotui, "_interactableUI"); O.tb_caller = fo(K.tipbase, "_callerRect");
+    O.tip_rows = fo(K.tipitem, "_statRows"); O.tip_rowidx = fo(K.tipitem, "statRowIndex"); O.fb_hovering = fo(K.tipfb, "_isHovering");
+    M.tip_show = msig(K.tipitem, "Show", 1, "String"); M.tip_addrow = msig(K.tipitem, "AddStatRowText", 3, "String,String,TextColor");
+    M.rows_count = msig(ftype_class(K.tipitem, "_statRows"), "get_Count", 0, NULL);
+    M.comp_inparent = msig(K.comp, "GetComponentInParent", 1, "Type");
+    M.iui_getfb = msig(K.iui, "GetFeedback", 1, NULL); M.iui_hasfb = msig(K.iui, "HasFeedback", 1, NULL);
+    M.beh_enabled = msig(K.behaviour, "get_enabled", 0, NULL); M.beh_set_enabled = msig(K.behaviour, "set_enabled", 1, NULL);
+    M.fb_simple = msig(K.tipfb, "SetSimpleText", 2, "String,Boolean"); M.fb_getsimple = msig(K.tipfb, "GetSimpleText", 0, NULL);
+    M.fb_clear = msig(K.tipfb, "ClearTooltip", 0, NULL); M.fb_start = msig(K.tipfb, "OnInteractStart", 0, NULL);
+    M.fb_end = msig(K.tipfb, "OnInteractEnd", 0, NULL);
+    E.fb_tooltip = enum_v(kls("Refactor.UI.Util", "InteractFeedbackType"), "Tooltip", 0);
+    E.tc_numeric = enum_v(kls("Refactor", "TextColor"), "Numeric", 3);   /* AddStatRowText's own default value colour */
     if (n_missing) return 1;
     H->log(ME, "fields: unit guid %d, slots %d, holder %d/%d/%d/%d size %d, slot ui %d/%d/%d/%d, world %d/%d/%d, menu %d/%d, order %d/%d",
            O.unit_guid, O.inv_slots, O.ih_guid, O.ih_key, O.ih_amount, O.ih_auto, O.ih_size, O.slot_owner, O.slot_index, O.slot_inv,
@@ -882,7 +1033,8 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     bad |= H->hook(ME, *(void **)M.reg, (void *)my_reg, (void **)&o_reg) ? 8 : 0;
     bad |= H->hook(ME, *(void **)M.show, (void *)my_show, (void **)&o_show) ? 16 : 0;
     bad |= H->hook(ME, *(void **)M.setitem, (void *)my_setitem, (void **)&o_setitem) ? 32 : 0;
-    if (bad) { H->log(ME, "a hook was refused (mask %d: return, sort, order, menu, menu row, lock icon): the module stays off", bad); return 4; }
+    bad |= H->hook(ME, *(void **)M.tip_show, (void *)my_tip, (void **)&o_tip) ? 64 : 0;
+    if (bad) { H->log(ME, "a hook was refused (mask %d: return, sort, order, menu, menu row, lock icon, item card): the module stays off", bad); return 4; }
 
     mp = mp_find();
     if (mp) {
@@ -893,6 +1045,6 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
         if (MP_HAS(register_rig_cmd)) mp->register_rig_cmd("lks_", t_exec);
         if (bad) { H->log(ME, "multiplayer found but its join point / fingerprint could not be registered: the module stays off"); return 5; }
     }
-    H->log(ME, "locked slots on (6 hooks; data %s; multiplayer %s)", data_dir, mp ? "join point + fingerprint" : "not loaded");
+    H->log(ME, "locked slots on (7 hooks; data %s; multiplayer %s)", data_dir, mp ? "join point + fingerprint" : "not loaded");
     return 0;
 }
