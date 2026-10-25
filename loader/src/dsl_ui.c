@@ -2054,6 +2054,7 @@ static DSLObj k_window_std(const DSLWinStd *o, DSLWinParts *out) {
     if (!panel) {                                                    /* the dim backdrop: the game behind it takes no click */
         back = k_panel(NULL, 0, 0, 100, 100, 0); if (!back) return NULL;
         dsl_ui_flat(back, 0x0000009E); stretch((Obj)back);
+        Obj bi = comp_get((Obj)back, K.Image); if (bi) gr_raycast(bi, 1);   /* flat turns clicks off: the backdrop must take them */
     }
     DSLObj win = k_panel(NULL, 0, 0, o->w, o->h, 0);
     if (!win) { if (back) k_destroy(back); return NULL; }

@@ -1106,6 +1106,10 @@ Every owner rule for our windows lives in ONE template; new work starts from it,
   card panel without card_toggle; a labelled toggle is a full-row click already), font (a text whose font is not the game's:
   LanguageSetting fonts, the title font, the kit's text template). Loading overlays (full-screen HUD) are skipped.
   loader esc_test and kitlook_test fail on any UI-RULE line; other repos' esc tests should sweep it too (as ESC-MISSING).
+- Trap (dsuxcm, 2026-10-25): `dsl_ui_flat` / img_set turn a panel's clicks OFF ("never a click target"). The template
+  turns them back on for its backdrop (d529f52 missed it: a click beside a modal reached the title page). A flat panel
+  that must block clicks needs its raycast on again. kitlook_test: "a click beside the window does nothing" (template and
+  Mods window).
 - The loader's own windows are on it: the Mods window (title left at 104, band 88, its Mud Slogel on top) and the bug
   report (title left at 32, band 80). Units Laboratory and multiplayer move in their own lanes.
 Test: kitlook_test template_cases (template window: red X, Escape Back then close, X closes without Back, card click on its
