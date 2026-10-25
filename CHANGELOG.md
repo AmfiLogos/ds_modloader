@@ -20,6 +20,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - Units Laboratory 0.1.43: a DPS Check in Test Fights (DPS meter, hit log in the chat, Restart Test), units from your saves in Test Fights, Rename Team, and one window look where Escape and the game's red X close the window.
 - Multiplayer 0.1.27: its windows close with the game's red X or Escape and follow the game's UI Scale. You can move, resize and read the chat without typing. Without Steam, your player name is never your computer account's name.
 - After an update, the game shows this "What's new" window once.
+- Windows: after an auto-update, new texts of the Mods window and the other mod loader windows show in your language. Before, they stayed in English until you ran Setup again.
 
 ### 0.1.27 (2026-10-25)
 

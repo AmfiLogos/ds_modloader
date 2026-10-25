@@ -4,7 +4,7 @@
 // Text: the kit entry of this release in CHANGELOG.md (section "## Dungeon Settlers Modded (kit)"), built INTO the
 // loader by tools/changelog/changelog.py cheader -> build/gen/dsl_whatsnew_data.h (build.sh, start/win/build_win.sh).
 // In the binary, not a file next to it: every kit install replaces the loader binary on both OS, but the Windows
-// auto-update copies no text files (dsl_update_win.c: baselib.dll, the starter, RELEASE, mods). The release check
+// auto-update copied no text files up to 0.1.27 (dsl_update_win.c: baselib.dll, the starter, RELEASE, mods). The release check
 // (changelog.py check --binary) fails a kit whose loader does not hold its entry. The title is in the game's language;
 // the entry is English (owner's pick: entries are written once, in English).
 // When: at the idle title (menu column shown, scene 1, nothing loading, no soft restart running), with no window of the
