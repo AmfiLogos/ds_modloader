@@ -1,0 +1,76 @@
+{
+ "id": "live-hp",
+ "name": "Live building HP",
+ "short_name": "Live building HP",
+ "version": "0.1.0",
+ "author": "AmfiLogos",
+ "kind": "code",
+ "category": "fix",
+ "api": 2,
+ "scope": "client",
+ "sim": false,
+ "default_on": true,
+ "game_builds": [
+  "25846389"
+ ],
+ "platforms": {
+  "mac-arm64": {
+   "entry": "live-hp.dylib"
+  },
+  "win-x64": {
+   "entry": "live-hp.dll"
+  }
+ },
+ "requires": [
+  "loader>=2.0.0"
+ ],
+ "conflicts": [],
+ "description": "Fixes the building HP display: while a building is selected, its durability number and bar in the bottom panel and in the Inspect window now follow its real durability when it takes damage or gets repaired, not only the value it had when you selected it.",
+ "i18n": {
+  "fr": {
+   "name": "PV des bâtiments en direct",
+   "short_name": "PV en direct",
+   "description": "Corrige l'affichage des PV des bâtiments : quand un bâtiment est sélectionné, le nombre et la barre de durabilité dans le panneau du bas et dans la fenêtre Inspecter suivent maintenant sa vraie durabilité quand il subit des dégâts ou est réparé, et plus seulement la valeur qu'il avait quand vous l'avez sélectionné."
+  },
+  "de": {
+   "name": "Gebäude-Haltbarkeit live",
+   "short_name": "Haltbarkeit live",
+   "description": "Korrigiert die Anzeige der Gebäude-Haltbarkeit: Solange ein Gebäude ausgewählt ist, folgen Zahl und Balken der Haltbarkeit in der unteren Leiste und im Fenster „Untersuchen“ jetzt seiner echten Haltbarkeit, wenn es Schaden nimmt oder repariert wird, statt nur den Wert zum Zeitpunkt der Auswahl zu zeigen."
+  },
+  "es": {
+   "name": "Durabilidad de edificios en vivo",
+   "short_name": "Durabilidad en vivo",
+   "description": "Corrige la durabilidad de los edificios: mientras un edificio está seleccionado, el número y la barra de durabilidad en el panel inferior y en la ventana Inspeccionar siguen ahora su durabilidad real cuando recibe daño o se repara, no solo el valor que tenía al seleccionarlo."
+  },
+  "pt-BR": {
+   "name": "Durabilidade de construções ao vivo",
+   "short_name": "Durabilidade ao vivo",
+   "description": "Corrige a durabilidade das construções: enquanto uma construção está selecionada, o número e a barra de durabilidade no painel de baixo e na janela Inspecionar agora acompanham a durabilidade real quando ela sofre dano ou é reparada, não só o valor que tinha quando você a selecionou."
+  },
+  "ru": {
+   "name": "Прочность построек в реальном времени",
+   "short_name": "Живая прочность",
+   "description": "Исправляет показ прочности построек: пока постройка выбрана, число и полоса прочности на нижней панели и в окне «Осмотреть» теперь следуют за её настоящей прочностью, когда она получает урон или её чинят, а не застывают на значении в момент выбора."
+  },
+  "ja": {
+   "name": "建物の耐久度リアルタイム表示",
+   "short_name": "耐久度リアルタイム",
+   "description": "建物の耐久度表示を修正します。建物を選択している間、下部パネルと「調査」ウィンドウの耐久度の数値とバーが、ダメージや修理による実際の耐久度に合わせて更新されます。選択した時点の値のままにはなりません。"
+  },
+  "ko": {
+   "name": "건물 내구도 실시간 표시",
+   "short_name": "실시간 내구도",
+   "description": "건물 내구도 표시를 수정합니다. 건물을 선택한 동안 하단 패널과 '조사' 창의 내구도 숫자와 막대가 피해를 입거나 수리될 때 실제 내구도를 따라 바뀝니다. 선택한 순간의 값에 머물지 않습니다."
+  },
+  "zh-Hans": {
+   "name": "建筑耐久度实时显示",
+   "short_name": "耐久度实时显示",
+   "description": "修复建筑耐久度的显示：选中建筑时，底部面板和“检查”窗口中的耐久度数字和进度条现在会随建筑受到伤害或被修理而实时变化，而不是停留在选中时的数值。"
+  },
+  "zh-Hant": {
+   "name": "建築耐久度即時顯示",
+   "short_name": "耐久度即時顯示",
+   "description": "修正建築耐久度的顯示：選取建築時，底部面板與「檢視」視窗中的耐久度數字和進度條現在會隨建築受到傷害或被修理而即時變化，而不是停留在選取時的數值。"
+  }
+ }
+}

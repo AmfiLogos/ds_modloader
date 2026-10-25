@@ -10,7 +10,7 @@
 set -e
 HERE="${0:A:h}"; REPO="${HERE:h}"
 OUTDIR="$HERE/build"; NAME="Dungeon Settlers Modded"; APP="$OUTDIR/$NAME.app"
-MODS=(multiplayer custom-modes gcd-cdr hell-difficulty zetu-suite sound-fix multi-bar weapon-slot locked-slots)
+MODS=(multiplayer custom-modes gcd-cdr hell-difficulty zetu-suite sound-fix live-hp multi-bar weapon-slot locked-slots)
 die() { echo "ERROR: $*" >&2; exit 1; }
 [[ -f $REPO/loader/build/dsload.dylib ]] || die "no loader/build/dsload.dylib (build the loader first)"
 [[ -f $HERE/icon/AppIcon.icns ]] || die "no app/icon/AppIcon.icns (run app/icon/make_icon.py)"

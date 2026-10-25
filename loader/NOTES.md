@@ -856,7 +856,8 @@ world; they must not mix with the per-world mods.
 Owner: "some of the mods that we have can be considered not even mods but more game fix ... put them in a different
 category like bug fixes"; Modded off in the Load list filters hid every world (each had Global cooldown fix on).
 - mod.json `"category": "fix"` (absent = a game mod; `"feature"` = launcher mod, above). Fixes today: Global cooldown
-  fix (gcd-cdr 0.1.7, scope gameplay) and Sound settings fix (sound-fix 0.1.1, scope client). No built-in id list: an
+  fix (gcd-cdr 0.1.7, scope gameplay), Sound settings fix (sound-fix 0.1.1, scope client) and Live building HP (live-hp
+  0.1.0, scope client; section below). No built-in id list: an
   older mod.json without the field is a game mod (pre-launch, no compatibility work).
 - A fix is per world like a game mod (in a world's key if scope gameplay; in the HELLO lines as before), but the Load
   list filter counts it as Vanilla & Vanilla+ (`dsl_world_is_modded` skips it). Tooltips say so.
@@ -884,6 +885,26 @@ category like bug fixes"; Modded off in the Load list filters hid every world (e
   switch. Nothing on = "No mods are on for this world. Switch off "Show only active mods" to see every mod.".
 - Log: `reg: fixes: gcd-cdr (on in all worlds), sound-fix (client: the same in all worlds)` at start; `reg: world <guid>
   set to <key>, fixes off: <ids>`; the world check logs the set it compares (with the fixes).
+
+## Live building HP (owner 2026-10-25, branch feat/live-hp) - `modules/live-hp/live_hp.c`
+Owner's pick: the DPS Check dummy's live HP (Units Laboratory 0.1.26) for ALL buildings, as a Fix like Sound settings fix.
+- Stock bug (decomp 25846389): a building's bottom panel (EntitySummaryUIView: UpdateBuildingEntityUI -> SetDurabilityUI)
+  and its Inspect window rows (SubUI_EntityInspectionStatus.SetBuildingStatus) are filled when the selection changes or the
+  window opens, never after (UpdateOnStatusChanged refreshes units only; RefreshOnFrame refreshes a building's work text,
+  not its durability). Damage or repair while it stays selected: the old number and bar stay.
+- Fix (client, category fix, default on): one hook, EntitySummaryUIPresenter.RefreshOnFrame (the panel's per-frame refresh,
+  a delegate target: not inlined on Windows). For one selected BuildingEntity (summary Building / Storage / WorkPlan /
+  Research) or FarmEntity (Farming), it reads Durability / MaxDurability from the entity's own StatusReader
+  (EntityComponent._components -> ComponentList.TryGetReader(Status), weak handle per guid, looked up again every 120
+  frames) and, on a change (and once more 10 frames after a new selection or window), calls the game's own
+  UpdateBuildingEntityUI(reader) and, while the Inspect window shows (_currentToggled = EntityInspect), SetBuildingStatus(
+  reader, quality as RefreshBuilding works it out). Game calls through il2cpp_runtime_invoke (an exception is caught).
+- One owner per site: custom-modes hooks UpdateBuildingEntityUI and SetBuildingStatus (the DPS Check's number form and
+  fit); this mod only calls them, so that form runs on every live change. custom-modes' own per-frame copies of the
+  follow (tf_dps.c live_tick / ins_tick) are not needed with this fix.
+- Proof: `test/live_hp_test.py` (one hidden copy, base map, test module `test/hp_probe.c`: selects the support wagon the
+  game's way, changes its durability with StatusComponent.AddValue, and logs per frame when the panel / window first match).
+  Stock: no match in 3 s (damage, repair, window, second building); with the fix: match in 33 ms each (one frame).
 
 ## Hell always loaded, New Game switch shows it (owner 2026-10-25, branch feat/hell-toggle) - `ui/dsl_newgame.c`, `src/dsl_reg.c`
 Owner, first ask: "a toggle in the difficulty selection screen, to its right ... which then keeps turned on the custom
