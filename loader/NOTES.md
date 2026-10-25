@@ -503,7 +503,10 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   (never deleted); different bytes = one notice at the title with the folder. The game's save is the one listed.
 - Load list (`dsl_rows.c` groups_apply): two groups with a gold title-font header each, "Game saves: also in Dungeon
   Settlers" first, then "Modded saves: only in Dungeon Settlers Modded" (rows moved with Transform.SetSiblingIndex in the
-  list's own layout). No game save listed = the list as before.
+  list's own layout). No game save listed = the list as before. REMOVED 2026-10-25 (owner: one list, as the normal game
+  shows it): the stock order stays (SaveLoadView.RefreshLoadPanel: worlds OrderByDescending by their newest save time,
+  a world's saves OrderByDescending by save time; disassembly of RefreshLoadPanel, build 25846389). The rebuild log still
+  counts "groups: N game, M modded" (shown world rows of game saves / modded-only saves).
 - Warning: a game save loaded while a mod with mod.json `"save_dependent": true` runs (data check 2026-10-17: only
   hell-difficulty, combat difficulty 5 + new table rows in the save; gcd-cdr, multiplayer, custom-modes write nothing the
   stock game cannot read) asks first in the game's notice box: Load / Cancel. Hooked at `EventQueue.AddEvent
@@ -589,8 +592,7 @@ Shots: `~/ds_launcher/loader/test_env/l1_out/v13_run2/*.png`. Soft restart timin
   - Counted per world (distinct CampaignGuid: autosave name, else the header), `mp_*` temporary saves and files with no
     readable header left out, worlds listed from the other folder left out (`dsl_saves_hidden_worlds`).
   - Not a hidden world: a modded file named like a game save (the game's save of that world is listed); `mp_*` files.
-    Not reachable: the normal game (no loader) never lists modded-only worlds; the group header "Modded saves: only in
-    Dungeon Settlers Modded" says so in the modded game.
+    Not reachable: the normal game (no loader) never lists modded-only worlds.
 - Filter strip (bug 2026-10-20, v0.1.15-0.1.17): the loader's strip for its own filter toggles (`dsl_rows.c toggles_build`)
   was built for ANY registered filter and drawn with rgba 0 (= the kit's default tint: the game's dark Box panel).
   custom-modes registers a filter with no label (its test worlds), so with Units Laboratory on, every Load list (Load
@@ -609,6 +611,21 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   level with the list's top (`ScrollView_SettingData`), below the title corner when they would overlap
   (`dsl_update_corner_rect`: Auto-update switch, version, status line, buttons), inside the screen; too narrow = scaled
   down (min 0.5; measured 0.89 at 16:10 UI 1.4). Measured fits: 960x540 UI 0.75 / 1.4, 960x600 UI 1.0 / 1.4.
+- 2026-10-25 (owner): the panel = the three kinds, the title menu's ornament line (the stock title column's child
+  "PlaceHolder", 100 x 16, cloned once into the kit's template holder: `dsl_ui_menu_divider`), then the view options
+  Latest save only and Show tags (on by default, `show_tags` in loadlist.json). Show tags on: the world row's name, then
+  "Modded" (`dsl_world_is_modded`, the Modded box's rule) and the multiplayer mod's tag with its "Remove tag" (that mod
+  writes both at the row's Init; kept per world while off; the link moved after the new name width); off: the name alone,
+  no link. All three kind boxes off = every world shows (not an empty list), no hidden-worlds line.
+- 2026-10-25 (owner): the hidden-worlds line lay over the last save row. Cause: Latest save only set a world row's
+  `_buttonCount` to 1 only for the SHOWN rows; a row hidden by a filter while Latest save only went off kept 1, and shown
+  again its second save row hung out of its row (under the next row or the line). Now every row the loader shrank goes
+  back to its save count, hidden or not (latest_apply, `fitted`).
+- 2026-10-25 (owner): the first open after a start showed the whole list for about 0.5 s, then the filtered one (the new
+  SaveLoadView was only found by the 30-frame search, then the 6-frame poll). Now the panel and rows are made right after
+  SaveLoadPresenter.OpenLoad / Refresh (hooks; both are called through the presenter's update table, so never inlined)
+  and every frame right before the UI is drawn (`dsl_rows_late` from dsl_ui.c h_cur_perform). Test: DSL_ROWS_OPEN_TEST=1
+  (with DSL_SOFT_TEST=1) logs the 30 frames after each opening ("rows test: open frame N: ... hidden by the filters").
 - Kinds, one per world: Multiplayer = the multiplayer mod's tag (its export `dsl_loadlist_world_mp`), else Modded = a mod
   of the world's set with scope gameplay or not installed (`dsl_world_is_modded`, dsl_reg.c), else Vanilla & Vanilla+.
   Fixes (mod.json `"category": "fix"`, kit v0.1.26) never count: a world with only fixes is Vanilla & Vanilla+.

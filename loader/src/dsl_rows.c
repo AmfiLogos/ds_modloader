@@ -50,7 +50,7 @@ static void dsl_rows_place_newcampaign(Obj cs, DSLObj line, DSLObj btn);
 static int32_t o_cases = -1, o_dict = -1, o_slots = -1, o_title_name = -1, o_cur = -1, o_lowload = -1;
 static Obj (*find_obj)(Obj type, int inactive, const void *mi);
 static uint8_t (*alive)(Obj o, const void *mi);
-static Obj (*comp_go)(Obj c, const void *mi), (*comp_tr)(Obj c, const void *mi);
+static Obj (*comp_go)(Obj c, const void *mi), (*comp_tr)(Obj c, const void *mi), (*go_trf)(Obj g, const void *mi);
 static uint8_t (*go_tree)(Obj g, const void *mi), (*go_self)(Obj g, const void *mi);
 static void (*go_set)(Obj g, int on, const void *mi);
 static void (*refresh_size)(Obj slv, const void *mi);
@@ -60,7 +60,7 @@ static void *(*obj_class)(Obj);
 static Obj t_slv, t_cs;
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
 static int32_t mf_handler = -1;
-static int32_t o_parent = -1;                            /* SaveLoadView._saveSlotParent (groups_apply) */
+static int32_t o_parent = -1;                            /* SaveLoadView._saveSlotParent (the hidden-worlds lines) */
 static int32_t o_issel = -1;                             /* SubUI_SaveFileButton._isSelected (the selected save) */
 static void (*unselect_all)(Obj slv, const void *mi), (*lock_buttons)(Obj slv, const void *mi);
 static int32_t o_bcount = -1;                            /* SubUI_SettlerNameCase._buttonCount (the save rows its height counts) */
@@ -85,9 +85,10 @@ void dsl_rows_install(void) {
     void *kObj = cls("UnityEngine", "Object"), *kComp = cls("UnityEngine", "Component"), *kGo = cls("UnityEngine", "GameObject");
     find_obj = ma(kObj, "FindObjectOfType", 2); alive = ma(kObj, "op_Implicit", 1);
     comp_go = ma(kComp, "get_gameObject", 0); comp_tr = ma(kComp, "get_transform", 0);
+    go_trf = ma(kGo, "get_transform", 0);
     go_tree = ma(kGo, "get_activeInHierarchy", 0); go_self = ma(kGo, "get_activeSelf", 0); go_set = ma(kGo, "SetActive", 1);
     refresh_size = ma(k_slv, "RefreshPanelSize", 0);
-    o_parent = fo(k_slv, "_saveSlotParent");                               /* the list's rows (groups_apply) */
+    o_parent = fo(k_slv, "_saveSlotParent");                               /* the list's rows (the hidden-worlds lines) */
     void *kTr = cls("UnityEngine", "Transform");
     set_sib = ma(kTr, "SetSiblingIndex", 1); get_sib = ma(kTr, "GetSiblingIndex", 0); set_last = ma(kTr, "SetAsLastSibling", 0);
     rt_rect = ma(cls("UnityEngine", "RectTransform"), "get_rect", 0);
@@ -393,11 +394,12 @@ static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);   /*
    locked (SaveLoadView.UnselectAllSlots + LockLoadButtons): they only ever act on a save the player sees.
    Place: outside the Load window, on its right, level with the list's top, never over the title corner (Auto-update
    mod loader); a screen too narrow for it scales it down (never under half). */
-enum { LK_VAN, LK_MOD, LK_MP, LK_N };
-static const char *const lf_key[LK_N + 1] = { "vanilla", "modded", "multiplayer", "latest_only" };
-static int lf_on[LK_N] = { 1, 1, 0 }, lf_latest, lf_loaded, lf_panel, lt_applied;
+enum { LK_VAN, LK_MOD, LK_MP, LK_N, LK_TAGS };           /* the kinds; then the view options: LK_N Latest save only, LK_TAGS Show tags */
+static const char *const lf_key[LK_TAGS + 1] = { "vanilla", "modded", "multiplayer", "latest_only", "show_tags" };
+static int lf_on[LK_N] = { 1, 1, 0 }, lf_latest, lf_tags = 1, lf_loaded, lf_panel, lt_applied;   /* Show tags on by default (owner 2026-10-25) */
+static int *lf_val(int k) { return k < LK_N ? &lf_on[k] : k == LK_N ? &lf_latest : &lf_tags; }
 static int (*lf_is_mp)(const char *guid);                /* NULL: no multiplayer mod (or an older one): no Multiplayer box */
-static uintptr_t pn_h, pn_fr_h, pn_tog_h[LK_N + 1];      /* panel, its parent (the Load window), boxes (LK_N: Latest save only) */
+static uintptr_t pn_h, pn_fr_h, pn_tog_h[LK_TAGS + 1];   /* panel, its parent (the Load window), boxes (LK_N, LK_TAGS: the view options) */
 static float pn_ht, pn_last[5]; static unsigned pn_gen; static int pn_mp;
 int dsl_rows_guard_n;                                     /* test: selections the guard cleared */
 /* the multiplayer mod asks (its loader-symbol lookup; Windows: baselib.dll's exports): 1 = this loader has the panel, so the
@@ -418,17 +420,17 @@ static void lf_load(void) {
     FILE *f = fopen(p, "rb"); if (!f) return;
     char b[1024]; size_t n = fread(b, 1, sizeof b - 1, f); fclose(f); b[n] = 0;
     JNode *j = json_parse(b); if (!j) { dsl_log("rows: filters: %s is not JSON: the defaults", p); return; }
-    for (int i = 0; i <= LK_N; i++) {
+    for (int i = 0; i <= LK_TAGS; i++) {
         JNode *v = json_get(j, lf_key[i]); if (!v || v->t != JN_BOOL) continue;
-        if (i < LK_N) lf_on[i] = v->b != 0; else lf_latest = v->b != 0;
+        *lf_val(i) = v->b != 0;
     }
     json_free(j);
-    dsl_log("rows: filters read: vanilla %d, modded %d, multiplayer %d, latest only %d", lf_on[0], lf_on[1], lf_on[2], lf_latest);
+    dsl_log("rows: filters read: vanilla %d, modded %d, multiplayer %d, latest only %d, show tags %d", lf_on[0], lf_on[1], lf_on[2], lf_latest, lf_tags);
 }
 static void lf_save(void) {
-    char p[1300], tmp[1340], b[200]; lf_path(p, sizeof p); snprintf(tmp, sizeof tmp, "%s.tmp", p);
-    snprintf(b, sizeof b, "{\"vanilla\": %s, \"modded\": %s, \"multiplayer\": %s, \"latest_only\": %s}\n",
-             lf_on[0] ? "true" : "false", lf_on[1] ? "true" : "false", lf_on[2] ? "true" : "false", lf_latest ? "true" : "false");
+    char p[1300], tmp[1340], b[256]; lf_path(p, sizeof p); snprintf(tmp, sizeof tmp, "%s.tmp", p);
+    snprintf(b, sizeof b, "{\"vanilla\": %s, \"modded\": %s, \"multiplayer\": %s, \"latest_only\": %s, \"show_tags\": %s}\n",
+             lf_on[0] ? "true" : "false", lf_on[1] ? "true" : "false", lf_on[2] ? "true" : "false", lf_latest ? "true" : "false", lf_tags ? "true" : "false");
     FILE *f = fopen(tmp, "w"); int bad = !f || fputs(b, f) < 0; if (f) bad |= fclose(f) != 0;
     if (bad || rename(tmp, p)) dsl_log("rows: filters not saved (%s)", p);
 }
@@ -442,6 +444,8 @@ static void lf_syms(void) {
     void *f[8]; int n = dsl_module_syms("dsl_loadlist_world_mp", f, 8);
     lf_is_mp = n ? (int (*)(const char *))f[0] : NULL;
 }
+/* owner 2026-10-25: Vanilla & Vanilla+, Modded and Multiplayer all off = every world shows (not an empty list) */
+static int lf_all_off(void) { return !lf_on[LK_VAN] && !lf_on[LK_MOD] && (!lf_is_mp || !lf_on[LK_MP]); }
 static int world_kind(const WRow *w) {
     if (lf_is_mp && lf_is_mp(w->guid) > 0) return LK_MP;
     return dsl_world_is_modded(w->guid) ? LK_MOD : LK_VAN;
@@ -452,16 +456,23 @@ static int case_fit(Obj cs, int n) {
     if (o_bcount < 0 || !case_refresh || AT(cs, o_bcount, int32_t) == n) return 0;
     AT(cs, o_bcount, int32_t) = n; case_refresh(cs, NULL); return 1;
 }
-/* Latest save only on the shown world rows: save rows after the first off (an open world), the world row's height to
-   match; off again = the stock state (every save row of an open world on). Returns 1 when a row changed. */
+/* Latest save only: save rows after the first off (an open world), the world row's height to match; off again = the
+   stock state (every save row of an open world on). The height of EVERY world row, hidden ones too (owner 2026-10-25:
+   a row hidden by a filter while Latest save only went off kept the height of one save row; shown again, its second
+   save row lay under the next row or under the hidden-worlds line). Returns 1 when a row changed. */
+#define MAXFIT 64
+static char fitted[MAXFIT][40]; static int nfit;          /* worlds whose height we set to one save row */
 static int latest_apply(void) {
     int want = lf_panel && lf_latest, changed = 0;
-    if (!want && !lt_applied) return 0;
+    if (!want && !lt_applied && !nfit) return 0;
     for (int i = 0; i < nw; i++) {
-        Obj cs = gc_get(W[i].cs); if (!live(cs) || W[i].hid) continue;
-        int open = o_cur >= 0 && AT(cs, o_cur + 1, uint8_t);              /* _isNameCaseOpen */
+        Obj cs = gc_get(W[i].cs); if (!live(cs)) continue;
         Obj slots = AT(cs, o_slots, Obj); int sn = slots ? AT(slots, 0x18, int32_t) : 0; Obj sa = slots ? AT(slots, 0x10, Obj) : NULL;
-        changed |= case_fit(cs, want && sn > 1 ? 1 : sn);                  /* first: its RefreshSize turns the save rows on again */
+        int f = -1; for (int k = 0; k < nfit; k++) if (!strcmp(fitted[k], W[i].guid)) f = k;
+        if (want && sn > 1) { changed |= case_fit(cs, 1); if (f < 0 && nfit < MAXFIT) snprintf(fitted[nfit++], 40, "%s", W[i].guid); }
+        else if (f >= 0) { changed |= case_fit(cs, sn); memmove(fitted[f], fitted[f + 1], (size_t)(nfit - f - 1) * sizeof fitted[0]); nfit--; }
+        if (W[i].hid) continue;                                            /* a hidden row's save rows stay off (filters_apply) */
+        int open = o_cur >= 0 && AT(cs, o_cur + 1, uint8_t);              /* _isNameCaseOpen */
         for (int s = 1; s < sn && sa; s++) {
             Obj sg = AT(sa, 0x20 + 8 * s, Obj); if (!sg || !alive(sg, NULL)) continue;
             int on = open && !want;
@@ -527,6 +538,8 @@ static int act_refused(Obj self, const char *what) {
 }
 static void h_click_remove(Obj self, Obj data, const void *mi) { if (!act_refused(self, "Remove File")) o_click_remove(self, data, mi); }
 static void h_click_load(Obj self, Obj data, const void *mi) { if (!act_refused(self, "Load")) o_click_load(self, data, mi); }
+static void (*o_open_load)(Obj self, Obj data, const void *mi), (*o_refresh)(Obj self, Obj data, const void *mi);
+static void h_open_load(Obj self, Obj data, const void *mi), h_refresh(Obj self, Obj data, const void *mi);
 static void guard_install(void) {
     void *kp = cls("Refactor.UI", "SaveLoadPresenter"); o_selname = fo(kp, "_selectedSaveName");
     void *a_rm = dsl_find_method_address("Refactor.UI", "SaveLoadPresenter", "ClickRemoveButton", 1);
@@ -534,22 +547,28 @@ static void guard_install(void) {
     int r1 = o_selname < 0 || !a_rm ? -1 : dsl_hook(DSL_OWNER_LOADER, a_rm, (void *)h_click_remove, (void **)&o_click_remove, "loader rows SaveLoadPresenter.ClickRemoveButton");
     int r2 = o_selname < 0 || !a_ld ? -1 : dsl_hook(DSL_OWNER_LOADER, a_ld, (void *)h_click_load, (void **)&o_click_load, "loader rows SaveLoadPresenter.ClickLoadButton");
     dsl_log("rows: load guard (Remove File / Load on a hidden save): %s, %s", r1 ? "Remove File hook OFF" : "Remove File on", r2 ? "Load hook OFF" : "Load on");
+    void *a_op = dsl_find_method_address("Refactor.UI", "SaveLoadPresenter", "OpenLoad", 1);
+    void *a_rf = dsl_find_method_address("Refactor.UI", "SaveLoadPresenter", "Refresh", 1);
+    int r3 = !a_op ? -1 : dsl_hook(DSL_OWNER_LOADER, a_op, (void *)h_open_load, (void **)&o_open_load, "loader rows SaveLoadPresenter.OpenLoad");
+    int r4 = !a_rf ? -1 : dsl_hook(DSL_OWNER_LOADER, a_rf, (void *)h_refresh, (void **)&o_refresh, "loader rows SaveLoadPresenter.Refresh");
+    dsl_log("rows: filters before the first frame: OpenLoad %s, Refresh %s", r3 ? "hook OFF (the poll)" : "on", r4 ? "hook OFF (the poll)" : "on");
 }
 
 static const char *pn_label(int k) {
-    return k == LK_VAN ? TR("Vanilla & Vanilla+") : k == LK_MOD ? TR("Modded") : k == LK_MP ? TR("Multiplayer") : TR("Latest save only");
+    return k == LK_VAN ? TR("Vanilla & Vanilla+") : k == LK_MOD ? TR("Modded") : k == LK_MP ? TR("Multiplayer") : k == LK_N ? TR("Latest save only") : TR("Show tags");
 }
 static const char *pn_tip(int k) {
     return k == LK_VAN ? TR("Worlds with no mods, or only fixes, mods that do not change the gameplay and small Vanilla+ mods such as Weapon skill slot.")
          : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay. Fixes and Vanilla+ mods do not count.")
          : k == LK_MP ? TR("Worlds you played with friends.")
-         : TR("Each world shows only its newest save. Off: every save.");
+         : k == LK_N ? TR("Each world shows only its newest save. Off: every save.")
+         : TR("Tags after the world names: Modded, and Multiplayer for worlds you played with friends. Off: the names only.");
 }
 static void rows_rebuild(Obj slv, const char *why);
 static void pn_change(void *ud, DSLObj w) {
-    int k = (int)(intptr_t)ud; const DSLUi *u = dsl_ui_kit(); if (!u || k < 0 || k > LK_N) return;
+    int k = (int)(intptr_t)ud; const DSLUi *u = dsl_ui_kit(); if (!u || k < 0 || k > LK_TAGS) return;
     int on = u->toggle_get(w) != 0;
-    if (k < LK_N) lf_on[k] = on; else lf_latest = on;
+    *lf_val(k) = on;
     lf_save();
     dsl_log("rows: filter panel: %s %s", lf_key[k], on ? "on" : "off");
     Obj slv = h_slv ? gc_get(h_slv) : NULL;
@@ -563,7 +582,7 @@ static void pn_drop(void) {
     const DSLUi *u = dsl_ui_kit(); DSLObj p = held(&pn_h);
     if (u && p) u->destroy(p);
     if (pn_h) { gc_free(pn_h); pn_h = 0; }
-    for (int k = 0; k <= LK_N; k++) if (pn_tog_h[k]) { gc_free(pn_tog_h[k]); pn_tog_h[k] = 0; }
+    for (int k = 0; k <= LK_TAGS; k++) if (pn_tog_h[k]) { gc_free(pn_tog_h[k]); pn_tog_h[k] = 0; }
 }
 /* made once per Load window (its child: it shows and goes with the window), again after a language change */
 static DSLObj pn_build(Obj slv) {
@@ -578,10 +597,14 @@ static DSLObj pn_build(Obj slv) {
     hold(&pn_h, pn); hold(&pn_fr_h, fr); pn_gen = dsi_generation(); pn_mp = lf_is_mp != NULL;
     u->text(pn, PN_PAD, 10, PN_W - 2 * PN_PAD, 30, TR("Filters"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF);
     float y = 48;
-    for (int k = 0; k <= LK_N; k++) {
+    for (int k = 0; k <= LK_TAGS; k++) {
         if (k == LK_MP && !lf_is_mp) continue;                          /* no multiplayer mod: its worlds are sorted by their mods */
-        if (k == LK_N) y += 12;                                         /* the saves toggle apart from the world kinds */
-        DSLObj tg = u->toggle(pn, PN_PAD, y, PN_W - 2 * PN_PAD, pn_label(k), k < LK_N ? lf_on[k] : lf_latest, pn_change, (void *)(intptr_t)k);
+        if (k == LK_N) {                                                /* the view options apart from the kinds: the title menu's ornament line */
+            float dh = 0; DSLObj dv = dsl_ui_menu_divider(pn, PN_PAD, y + 2, PN_W - 2 * PN_PAD, &dh);
+            if (!dv && (dv = u->panel(pn, PN_PAD + 10, y + 6, PN_W - 2 * PN_PAD - 20, 1, 0x8C7356FF))) { dsl_ui_flat(dv, 0x8C7356FF); dh = 9; }
+            y += (dh > 4 ? dh : 9) + 10;
+        }
+        DSLObj tg = u->toggle(pn, PN_PAD, y, PN_W - 2 * PN_PAD, pn_label(k), *lf_val(k), pn_change, (void *)(intptr_t)k);
         if (tg) { u->tooltip(tg, pn_label(k), pn_tip(k)); dsl_ui_tip_below(tg); }   /* never over the panel or the Load window */
         hold(&pn_tog_h[k], tg); y += PN_ROW;
     }
@@ -622,7 +645,7 @@ static void pn_frame(Obj slv) {
     if (!lf_panel) { DSLObj p = held(&pn_h); if (p) u->set_active(p, 0); return; }
     DSLObj p = pn_build(slv); if (!p) return;
     u->set_active(p, 1);
-    for (int k = 0; k <= LK_N; k++) { DSLObj t = held(&pn_tog_h[k]); if (t && u->toggle_get(t) != (k < LK_N ? lf_on[k] : lf_latest)) u->toggle_set(t, k < LK_N ? lf_on[k] : lf_latest); }
+    for (int k = 0; k <= LK_TAGS; k++) { DSLObj t = held(&pn_tog_h[k]); if (t && u->toggle_get(t) != *lf_val(k)) u->toggle_set(t, *lf_val(k)); }
     pn_place();
 }
 
@@ -639,7 +662,7 @@ static void filters_apply(Obj slv) {
         w->kind = world_kind(w);
         if (o_cur >= 0 && AT(cs, o_cur, uint8_t)) show = 1;                 /* the world being played always shows */
         else {
-            if (lf_panel && !lf_on[w->kind]) { show = 0; why = 1; }
+            if (lf_panel && !lf_on[w->kind] && !lf_all_off()) { show = 0; why = 1; }
             for (int f = 0; f < nf && show; f++) if (F[f].mode != DSL_LIST_OFF && !F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on)) { show = 0; why = 2; }
         }
         w->hid = !show; w->why = why;
@@ -692,43 +715,16 @@ static void toggles_build(Obj slv) {
     }
 }
 
-/* two groups (owner 2026-10-17): the player's game saves (played in place, also in the normal game) first, then the
-   worlds only this game has (multiplayer, worlds started here). One header line above each group, in the look of the
-   multiplayer pages' section headers (title font 20, gold). The rows are only moved (Transform.SetSiblingIndex) inside
-   the list's own layout (SaveLoadView._saveSlotParent); no game save on the list = the list as before, no header. */
-static uintptr_t hdr_h[2];                               /* GC handles (a raw pointer outlived the line: SIGBUS, v0.1.15 rc) */
+/* one list, as the normal game shows it (owner 2026-10-25: the two group headings "Game saves: also in Dungeon Settlers" /
+   "Modded saves: only in ..." of 2026-10-17 are gone): the stock SaveLoadView.RefreshLoadPanel order is kept, worlds
+   OrderByDescending by their newest save time, a world's saves OrderByDescending by save time. Counted for the log only. */
 /* a line we made, through its GC handle: NULL once Unity destroyed it (scene change), the handle freed then */
 static DSLObj held(uintptr_t *h) { Obj o = *h ? gc_get(*h) : NULL; if (!live(o)) { if (*h) gc_free(*h); *h = 0; return NULL; } return (DSLObj)o; }
 static void hold(uintptr_t *h, DSLObj o) { if (*h) gc_free(*h); *h = o ? gc_new((Obj)o, 0) : 0; }
-int dsl_rows_groups[2];                                  /* test: rows shown per group at the last rebuild */
-static void groups_apply(Obj slv) {
-    const DSLUi *u = dsl_ui_kit();
-    DSLObj hdr[2] = { held(&hdr_h[0]), held(&hdr_h[1]) };
+int dsl_rows_groups[2];                                  /* test: shown world rows of game saves / modded-only saves */
+static void groups_count(void) {
     int n[2] = { 0, 0 };
     for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs) && !W[i].hid && shown(cs)) n[W[i].game ? 0 : 1]++; }
-    int any_game = 0; for (int i = 0; i < nw; i++) any_game |= W[i].game;
-    Obj content = o_parent >= 0 ? AT(slv, o_parent, Obj) : NULL;
-    static int said;
-    int ok = u && set_sib && get_sib && live(content);
-    if (!ok && !said++) dsl_log("rows: groups off (list layout not found)");
-    if (!ok || !any_game) { for (int k = 0; k < 2; k++) if (hdr[k]) u->set_active(hdr[k], 0); dsl_rows_groups[0] = dsl_rows_groups[1] = 0; return; }
-    const char *lb[2] = { TR("Game saves: also in Dungeon Settlers"), TR("Modded saves: only in Dungeon Settlers Modded") };
-    float wd = rt_rect ? rt_rect(content, NULL).w : 600; if (wd < 100) wd = 600;
-    for (int k = 0; k < 2; k++) {
-        if (!hdr[k]) hold(&hdr_h[k], hdr[k] = u->text(content, 0, 0, wd - 24, 34, lb[k], 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF));
-        else u->set_text(hdr[k], lb[k]);
-        if (hdr[k]) u->set_active(hdr[k], n[k] > 0);
-    }
-    int base = 1 << 30;                                                     /* the first row's place in the list */
-    for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs)) { int s = get_sib(comp_tr(cs, NULL), NULL); if (s < base) base = s; } }
-    for (int k = 0; k < 2; k++) if (hdr[k]) { int s = get_sib((Obj)hdr[k], NULL); if (s < base) base = s; }
-    if (base == 1 << 30) return;
-    int at = base;
-    for (int k = 0; k < 2; k++) {
-        if (hdr[k]) set_sib((Obj)hdr[k], at++, NULL);
-        for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs) && W[i].game == !k) set_sib(comp_tr(cs, NULL), at++, NULL); }
-    }
-    refresh_size(slv, NULL);
     dsl_rows_groups[0] = n[0]; dsl_rows_groups[1] = n[1];
 }
 
@@ -795,11 +791,10 @@ static void hidden_apply(Obj slv) {
     }
     dsi_utf8_fix_end(top); dsi_utf8_fix_end(end);
     hid_show(0, content, wd, top); hid_show(1, content, wd, end);
-    DSLObj hid[2] = { held(&hid_h[0]), held(&hid_h[1]) }, hdr[2] = { held(&hdr_h[0]), held(&hdr_h[1]) };
-    if (top[0] && hid[0]) {                                                 /* before the first row / group header */
+    DSLObj hid[2] = { held(&hid_h[0]), held(&hid_h[1]) };
+    if (top[0] && hid[0]) {                                                 /* before the first row */
         int base = get_sib((Obj)hid[0], NULL);                             /* its own place too: moving down shifts the rest up */
         for (int i = 0; i < nw; i++) { Obj cs = gc_get(W[i].cs); if (live(cs)) { int s = get_sib(comp_tr(cs, NULL), NULL); if (s < base) base = s; } }
-        for (int k = 0; k < 2; k++) if (hdr[k]) { int s = get_sib((Obj)hdr[k], NULL); if (s < base) base = s; }
         set_sib((Obj)hid[0], base == 1 << 30 ? 0 : base, NULL);
     }
     if (end[0] && hid[1]) set_last((Obj)hid[1], NULL);
@@ -856,8 +851,8 @@ static void new_campaign_frame(void) {
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
 DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
 
-/* test only: the filter panel's box k (0 Vanilla & Vanilla+, 1 Modded, 2 Multiplayer, 3 Latest save only), for a hover */
-DSLObj dsl_rows_test_pn(int k) { return k >= 0 && k <= LK_N && pn_tog_h[k] ? held(&pn_tog_h[k]) : NULL; }
+/* test only: the filter panel's box k (0 Vanilla & Vanilla+, 1 Modded, 2 Multiplayer, 3 Latest save only, 4 Show tags), for a hover */
+DSLObj dsl_rows_test_pn(int k) { return k >= 0 && k <= LK_TAGS && pn_tog_h[k] ? held(&pn_tog_h[k]) : NULL; }
 
 /* test only: the "Change" of world row i, as a click */
 void dsl_rows_test_change(int i) { change_click((void *)(intptr_t)i, NULL); }
@@ -887,8 +882,8 @@ static void lf_state_write(Obj slv) {
     fprintf(f, "{\"open\": %d, \"panel_on\": %d, \"panel_shown\": %d, \"panel\": [%.1f, %.1f, %.1f, %.1f], \"scale\": %.3f, \"window_shown\": %d, "
                "\"window\": [%.1f, %.1f, %.1f, %.1f], \"corner_shown\": %d, \"corner\": [%.1f, %.1f, %.1f, %.1f], \"screen\": [%.0f, %.0f], ",
             list_open, lf_panel, pshown, pr[0], pr[1], pr[2], pr[3], dsl_rows_pn_scale, fshown, fr[0], fr[1], fr[2], fr[3], cshown, cr[0], cr[1], cr[2], cr[3], sw, sh);
-    fprintf(f, "\"boxes\": {\"vanilla\": %d, \"modded\": %d, \"multiplayer\": %d, \"latest_only\": %d, \"mp_box\": %d}, ",
-            lf_on[0], lf_on[1], lf_on[2], lf_latest, pn_tog_h[LK_MP] && held(&pn_tog_h[LK_MP]) ? 1 : 0);
+    fprintf(f, "\"boxes\": {\"vanilla\": %d, \"modded\": %d, \"multiplayer\": %d, \"latest_only\": %d, \"show_tags\": %d, \"mp_box\": %d}, ",
+            lf_on[0], lf_on[1], lf_on[2], lf_latest, lf_tags, pn_tog_h[LK_MP] && held(&pn_tog_h[LK_MP]) ? 1 : 0);
     char esc[600]; jesc_(esc, sizeof esc, nm);
     fprintf(f, "\"selected\": \"%s\", \"selected_world\": %d, \"selected_row\": %d, \"load_clickable\": %d, \"remove_clickable\": %d, \"guard\": %d, \"hidden_line\": %d, \"worlds\": [",
             esc, wi, si, lok, rok, dsl_rows_guard_n, dsl_rows_hidden[1]);
@@ -897,9 +892,12 @@ static void lf_state_write(Obj slv) {
         Obj slots = live(cs) ? AT(cs, o_slots, Obj) : NULL; Obj sa = slots ? AT(slots, 0x10, Obj) : NULL; sn = slots ? AT(slots, 0x18, int32_t) : 0;
         char names[1200] = "", list[2400] = "";
         Obj d = live(slv) ? AT(slv, o_dict, Obj) : NULL, ents = d ? AT(d, 0x18, Obj) : NULL; int dn = d ? AT(d, 0x20, int32_t) : 0;
+        char srs[1200] = "";                                               /* the shown save rows' screen rects */
         for (int k = 0; k < sn && sa; k++) {
             Obj sg = AT(sa, 0x20 + 8 * k, Obj); if (!sg || !alive(sg, NULL) || !go_tree(sg, NULL)) continue;
             sh_++;
+            { float q[4]; DSLObj gt = go_trf ? (DSLObj)go_trf(sg, NULL) : NULL;   /* sg is the save row's GameObject */
+              if (gt && dsl_ui_screen_rect(gt, q) == 1) snprintf(srs + strlen(srs), sizeof srs - strlen(srs), "%s[%.1f, %.1f, %.1f, %.1f]", srs[0] ? ", " : "", q[0], q[1], q[2], q[3]); }
             for (int e = 0; e < dn && ents; e++) {                         /* its save name (the dictionary's key) */
                 char *en = (char *)ents + 0x20 + 24 * e; if (AT(en, 4, int32_t) < -1) continue;
                 Obj key = AT(en, 8, Obj), val = AT(en, 16, Obj);
@@ -918,10 +916,22 @@ static void lf_state_write(Obj slv) {
             if (dsl_ui_text_rendered(W[i].line, &rw, &rh)) { rw *= sx; rh *= sx; }
         }
         char lt[700] = "", lte[1400] = ""; if (lon) { dsl_ui_text_get(W[i].line, lt, sizeof lt); jesc_(lte, sizeof lte, lt); }
+        float RR[4] = { 0 }; if (on) dsl_ui_screen_rect((DSLObj)comp_tr(cs, NULL), RR);
+        char ntx[700] = "", nte[1400] = ""; Obj nt = on && o_title_name >= 0 ? AT(cs, o_title_name, Obj) : NULL;
+        if (live(nt)) { dsl_ui_text_get((DSLObj)nt, ntx, sizeof ntx); jesc_(nte, sizeof nte, ntx); }
+        int rm_on = 0; { DSLObj ch[64]; int k = on ? dsl_ui_children((DSLObj)comp_tr(cs, NULL), ch, 64) : 0; char t4[16];   /* the multiplayer mod's "Remove tag" */
+          for (int q = 0; q < k; q++) if (dsl_ui_shown(ch[q]) && dsl_ui_text_get(ch[q], t4, sizeof t4) && !strncmp(t4, "<u>", 3)) rm_on = 1; }
         fprintf(f, "%s{\"guid\": \"%s\", \"name\": \"%s\", \"kind\": %d, \"shown\": %d, \"saves_shown\": %d, \"saves\": %d, \"button_count\": %d, \"shown_names\": [%s], "
-                   "\"line_shown\": %d, \"line_rect\": [%.1f, %.1f, %.1f, %.1f], \"left_end\": %.1f, \"rendered\": [%.1f, %.1f], \"line_text\": \"%s\"}",
+                   "\"line_shown\": %d, \"line_rect\": [%.1f, %.1f, %.1f, %.1f], \"left_end\": %.1f, \"rendered\": [%.1f, %.1f], \"line_text\": \"%s\", "
+                   "\"row_rect\": [%.1f, %.1f, %.1f, %.1f], \"save_rects\": [%s], \"name_text\": \"%s\", \"remove_tag\": %d}",
                 i ? ", " : "", g, names, W[i].kind, on, sh_, sn, live(cs) && o_bcount >= 0 ? AT(cs, o_bcount, int32_t) : -1, list,
-                lon, LR[0], LR[1], LR[2], LR[3], le, rw, rh, lte);
+                lon, LR[0], LR[1], LR[2], LR[3], le, rw, rh, lte, RR[0], RR[1], RR[2], RR[3], srs, nte, rm_on);
+    }
+    fprintf(f, "], \"hid_lines\": [");
+    for (int k = 0; k < 2; k++) {                                         /* top / bottom hidden-worlds line */
+        DSLObj l = hid_h[k] ? held(&hid_h[k]) : NULL; float q[4] = { 0 }; int lsh = l && dsl_ui_screen_rect(l, q) == 1;
+        char tx[900] = "", te[1800] = ""; if (lsh) { dsl_ui_text_get(l, tx, sizeof tx); jesc_(te, sizeof te, tx); }
+        fprintf(f, "%s{\"shown\": %d, \"rect\": [%.1f, %.1f, %.1f, %.1f], \"text\": \"%s\"}", k ? ", " : "", lsh, q[0], q[1], q[2], q[3], te);
     }
     fprintf(f, "]}\n"); fclose(f); rename(tmp, p);
 }
@@ -930,7 +940,7 @@ void dsl_rows_test_cmd(const char *c, const JNode *j) {
     static void *a_slot, *a_cur, *a_rm;
     if (!a_slot) { a_slot = ma(k_slv, "OnClickLoadSlot", 1); a_cur = ma(k_slv, "get_CurrentSelectedSaveName", 0); a_rm = ma(k_slv, "OnClickRemove", 0); }
     if (!strcmp(c, "lf")) {
-        for (int k = 0; k <= LK_N; k++) {
+        for (int k = 0; k <= LK_TAGS; k++) {
             JNode *v = json_get(j, lf_key[k]); if (!v || (v->t != JN_BOOL && v->t != JN_NUM)) continue;
             int on = v->t == JN_BOOL ? v->b != 0 : v->num != 0;
             DSLObj t = pn_tog_h[k] ? held(&pn_tog_h[k]) : NULL;
@@ -949,14 +959,61 @@ void dsl_rows_test_cmd(const char *c, const JNode *j) {
     lf_state_write(slv);
 }
 
+/* ------------------------------------------------------------------ tags (owner 2026-10-25, "Show tags" on the panel)
+   On: the world row's name, then "Modded" (dsl_world_is_modded: the Modded box's rule, Vanilla+ mods do not count) and the
+   multiplayer mod's tag ("Multiplayer  with <names>": that mod writes it into the same name text at the row's Init, with
+   its "Remove tag" link, a child of the row). Off: the name alone and no link. The multiplayer part is kept per world while
+   it is off (the mod writes it only at the row's Init); a world the multiplayer mod no longer tags (Remove tag) loses it. */
+#define TAG_MARK "  <size=75%><color=#E3A65B>"              /* our "Modded" tag (its colour marks it in any language) */
+static struct { char guid[40], mp[600]; } TG[MAXW]; static int ntg;
+static Obj tag_link(Obj cs) {                             /* the multiplayer mod's "Remove tag" (<u>...</u>), a child of the row */
+    DSLObj ch[64]; int k = dsl_ui_children((DSLObj)comp_tr(cs, NULL), ch, 64); char t4[16];
+    for (int q = 0; q < k; q++) if (dsl_ui_text_get(ch[q], t4, sizeof t4) && !strncmp(t4, "<u>", 3)) return (Obj)ch[q];
+    return NULL;
+}
+static void tags_apply(void) {
+    const DSLUi *u = dsl_ui_kit(); if (!u || o_title_name < 0) return;
+    char mt[200]; snprintf(mt, sizeof mt, "%s%s</color></size>", TAG_MARK, TR("Modded"));
+    int nmod = 0, nmp = 0, show = lf_tags || !lf_panel;                  /* no panel (a module's own list): the tags as before */
+    for (int i = 0; i < nw; i++) {
+        WRow *w = &W[i]; Obj cs = gc_get(w->cs), nt = live(cs) ? AT(cs, o_title_name, Obj) : NULL;
+        char cur[1200], rest[1200], name[1200], mp[600] = "", want[1800];
+        if (!live(nt) || !dsl_ui_text_get((DSLObj)nt, cur, sizeof cur)) continue;
+        snprintf(rest, sizeof rest, "%s", cur);
+        char *m = strstr(rest, TAG_MARK), *me = m ? strstr(m, "</color></size>") : NULL;
+        if (me) memmove(m, me + 15, strlen(me + 15) + 1);              /* our tag out: name + the multiplayer part */
+        char *sp = strstr(rest, "  ");
+        snprintf(name, sizeof name, "%.*s", sp ? (int)(sp - rest) : (int)strlen(rest), rest);
+        if (sp) snprintf(mp, sizeof mp, "%s", sp);
+        int k = -1; for (int q = 0; q < ntg; q++) if (!strcmp(TG[q].guid, w->guid)) k = q;
+        int is_mp = lf_is_mp ? lf_is_mp(w->guid) > 0 : -1;
+        if (mp[0] && is_mp != 0) { if (k < 0 && ntg < MAXW) k = ntg++; if (k >= 0) { snprintf(TG[k].guid, 40, "%s", w->guid); snprintf(TG[k].mp, sizeof TG[k].mp, "%s", mp); } }
+        else if (!mp[0] && is_mp > 0 && k >= 0) snprintf(mp, sizeof mp, "%s", TG[k].mp);
+        else if (is_mp == 0) { mp[0] = 0; if (k >= 0) TG[k] = TG[--ntg]; }
+        int mod = dsl_world_is_modded(w->guid);
+        snprintf(want, sizeof want, "%s%s%s", name, show && mod ? mt : "", show ? mp : "");
+        nmod += show && mod; nmp += show && mp[0];
+        if (strcmp(want, cur)) u->set_text((DSLObj)nt, want);
+        Obj rm = tag_link(cs); if (!rm) continue;
+        int on = show && mp[0]; set_on(rm, on);
+        float N[4], R[4], nwd = dsl_ui_width((DSLObj)nt);                  /* the link after the name text, as the mod places it */
+        if (!on || nwd <= 1 || dsl_ui_screen_rect((DSLObj)comp_tr(nt, NULL), N) != 1 || dsl_ui_screen_rect((DSLObj)rm, R) != 1) continue;
+        float sn = (N[2] - N[0]) / nwd, pw = dsl_ui_text_line_w((DSLObj)nt); if (pw > nwd) pw = nwd;
+        float dx = N[0] + (pw + 14) * sn - R[0];
+        if (dx > 0.5f || dx < -0.5f) dsl_ui_move_screen((DSLObj)rm, dx, 0);
+    }
+    static int last = -1; int sig = show * 10000 + nmod * 100 + nmp;
+    if (sig != last) { last = sig; dsl_log("rows: tags %s: %d Modded, %d Multiplayer", show ? "on" : "off", nmod, nmp); }
+}
 static void rows_rebuild(Obj slv, const char *why) {
     sig_last = list_sig(slv); dirty = 0;
     build_rows(slv);
     filters_apply(slv);
     if (latest_apply()) refresh_size(slv, NULL);
     sel_guard(slv, why);
+    tags_apply();
     decorate();
-    groups_apply(slv);
+    groups_count();
     hidden_apply(slv);
     sig_last = list_sig(slv);
     int hidden = 0, kinds[LK_N] = { 0 }; for (int i = 0; i < nw; i++) { hidden += W[i].hid; kinds[W[i].kind]++; }
@@ -965,17 +1022,8 @@ static void rows_rebuild(Obj slv, const char *why) {
             why, nw, hidden, nr, nf, dsl_rows_groups[0], dsl_rows_groups[1], dsl_rows_hidden[0], dsl_rows_hidden[1],
             lf_panel ? "on" : "off", kinds[LK_VAN], kinds[LK_MOD], kinds[LK_MP], lf_panel && lf_latest);
 }
-void dsl_rows_frame(void) {
-    if (!ok) return;
-    static unsigned fr; ++fr;
-    if (list_open && lt_applied && h_slv) {                                 /* every frame: a world opened by the player shows its */
-        Obj slv = gc_get(h_slv);                                            /* older saves for one frame at most */
-        if (live(slv) && latest_apply()) refresh_size(slv, NULL);
-    }
-    if (fr % 6) return;                                                     /* 10 times a second at 60 fps */
-    Obj slv = h_slv ? gc_get(h_slv) : NULL;
-    if (!live(slv)) { if (h_slv) gc_free(h_slv); h_slv = 0; slv = (fr % 30 == 0) ? find_obj(t_slv, 1, NULL) : NULL; if (slv) h_slv = gc_new(slv, 0); }
-    if (fr % 30 == 0) new_campaign_frame();
+/* the open Load list: opened -> panel + rows; changed -> rows again; closed -> ours off */
+static void list_poll(Obj slv) {
     int open = live(slv) && shown(slv) && o_lowload >= 0 && shown(AT(slv, o_lowload, Obj));   /* the Load panel (not Save) */
     if (!open) {
         if (list_open) { list_open = 0; rows_clear(); hidden_off(); lt_applied = 0; }
@@ -988,4 +1036,79 @@ void dsl_rows_frame(void) {
     pn_frame(slv);
     if (s != sig_last || dirty) rows_rebuild(slv, sig_last ? "list changed" : "list opened");
     else sel_guard(slv, "poll");
+}
+static Obj slv_find(void) {                               /* the shown SaveLoadView first (the title's and the multiplayer page's) */
+    Obj slv = h_slv ? gc_get(h_slv) : NULL;
+    if (live(slv) && shown(slv)) return slv;
+    Obj a = find_obj(t_slv, 0, NULL); if (!a) a = find_obj(t_slv, 1, NULL);
+    if (a && a != slv) { if (h_slv) gc_free(h_slv); h_slv = gc_new(a, 0); }
+    return a ? a : (live(slv) ? slv : NULL);
+}
+/* owner 2026-10-25: on the first open after a start the whole list showed for a moment, then the filters hid worlds (the
+   new SaveLoadView was found by the 30-frame search, then the 6-frame poll). Now the panel and the rows are made right after
+   the game filled the list (SaveLoadPresenter.OpenLoad / Refresh, called through its update table: never inlined), and
+   every frame right before the UI is drawn (dsl_rows_late): the first frame the player sees is filtered. */
+static void h_open_load(Obj self, Obj data, const void *mi) { o_open_load(self, data, mi); Obj s = slv_find(); if (s) list_poll(s); }
+static void h_refresh(Obj self, Obj data, const void *mi) { o_refresh(self, data, mi); Obj s = slv_find(); if (s) list_poll(s); }
+static void open_monitor(void);
+void dsl_rows_late(void) {
+    if (!ok) return;
+    Obj slv = h_slv ? gc_get(h_slv) : NULL;
+    if (live(slv)) {
+        int open = shown(slv) && o_lowload >= 0 && shown(AT(slv, o_lowload, Obj));
+        if (open != list_open || (open && (dirty || list_sig(slv) != sig_last))) list_poll(slv);
+    }
+    open_monitor();
+}
+/* test only (DSL_SOFT_TEST=1 and DSL_ROWS_OPEN_TEST=1, never in a player's start): the 30 frames after each opening of the
+   Load list, right before they are drawn: how many world rows show that the filters hide ("rows test: open frame") */
+static void open_monitor(void) {
+    static int on = -1; static uintptr_t hv; static int was, k;
+    if (on < 0) on = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1' && getenv("DSL_ROWS_OPEN_TEST") && *getenv("DSL_ROWS_OPEN_TEST") == '1';
+    if (!on) return;
+    Obj slv = hv ? gc_get(hv) : NULL;
+    if (!live(slv) || !shown(slv)) { Obj a = find_obj(t_slv, 0, NULL); if (a) { if (hv) gc_free(hv); hv = gc_new(a, 0); slv = a; } }
+    int open = live(slv) && shown(slv) && o_lowload >= 0 && shown(AT(slv, o_lowload, Obj));
+    if (open && !was) k = 0;
+    was = open;
+    if (!open || k >= 30) return;
+    lf_load(); int panel = !lf_own();
+    Obj l = AT(slv, o_cases, Obj); int n = l ? AT(l, 0x18, int32_t) : 0; Obj a = l ? AT(l, 0x10, Obj) : NULL;
+    Obj d = AT(slv, o_dict, Obj), ents = d ? AT(d, 0x18, Obj) : NULL; int dn = d ? AT(d, 0x20, int32_t) : 0;
+    int drawn = 0, bad = 0;
+    for (int i = 0; i < n && a; i++) {
+        Obj cs = AT(a, 0x20 + 8 * i, Obj); if (!live(cs) || !shown(cs)) continue;
+        drawn++;
+        Obj slots = AT(cs, o_slots, Obj); int sn = slots ? AT(slots, 0x18, int32_t) : 0; Obj sa = slots ? AT(slots, 0x10, Obj) : NULL;
+        WRow w; memset(&w, 0, sizeof w);
+        for (int e = 0; e < dn && ents && !w.guid[0]; e++) {
+            char *en = (char *)ents + 0x20 + 24 * e; if (AT(en, 4, int32_t) < -1) continue;
+            Obj key = AT(en, 8, Obj), val = AT(en, 16, Obj);
+            if (!key || !val || obj_class(key) != k_str || obj_class(val) != k_btn) continue;
+            Obj vg = comp_go(val, NULL); int mine = 0;
+            for (int s = 0; s < sn && sa && !mine; s++) mine = AT(sa, 0x20 + 8 * s, Obj) == vg;
+            if (!mine) continue;
+            char sv[256]; utf8_of(key, sv, sizeof sv); const char *g = guid_of_save(sv); if (g) snprintf(w.guid, sizeof w.guid, "%s", g);
+        }
+        if (!w.guid[0] || (o_cur >= 0 && AT(cs, o_cur, uint8_t))) continue;
+        if (!lf_is_mp) lf_syms();
+        int kind = world_kind(&w);
+        bad += panel && !lf_on[kind] && !lf_all_off();
+    }
+    dsl_log("rows test: open frame %d: %d world row(s) drawn, %d of them hidden by the filters", k, drawn, bad);
+    k++;
+}
+void dsl_rows_frame(void) {
+    if (!ok) return;
+    static unsigned fr; ++fr;
+    if (list_open && lt_applied && h_slv) {                                 /* every frame: a world opened by the player shows its */
+        Obj slv = gc_get(h_slv);                                            /* older saves for one frame at most */
+        if (live(slv) && latest_apply()) refresh_size(slv, NULL);
+    }
+    if (fr % 6) return;                                                     /* 10 times a second at 60 fps */
+    Obj slv = h_slv ? gc_get(h_slv) : NULL;
+    if (!live(slv)) { if (h_slv) gc_free(h_slv); h_slv = 0; slv = (fr % 30 == 0) ? find_obj(t_slv, 1, NULL) : NULL; if (slv) h_slv = gc_new(slv, 0); }
+    if (fr % 30 == 0) new_campaign_frame();
+    if (slv) list_poll(slv);
+    else if (list_open) list_poll(NULL);
 }
