@@ -5,6 +5,8 @@
 //   cmd state | click {target} | hover {target} | key {code} | type {text} | wheel {target, dy} | capture {name}
 //       | api {op, ...}   (toggle_set, value_set, field_set, set_text, place, set_active, set_enabled, destroy,
 //                          clipboard_set, clipboard_get, tooltip_off, notice1, open, hover_off)
+//       targets: the panel's names, notice_ok / notice_cancel, title:<label>, cm:<prefix>:<name> (Units Laboratory's
+//                cm_test_target, when that module runs)
 //       | stock {what}   the game's own button method (escape test, loader/test/esc_test.py): title_load, title_bug,
 //                          esc_load, esc_bug (TitleMenuView / SystemMenuView); the state then says which stock views show
 // Escape (kit 0.1.28): the panel is pushed on the kit's Escape stack (Escape = Close).
@@ -165,6 +167,12 @@ static DSLObj target(const char *t) {
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
     if (!strncmp(t, "title:", 6)) return t_title(t + 6, NULL, 0);
+    if (!strncmp(t, "cm:", 3)) {                                       /* Units Laboratory's controls ("cm:mu:rename"), as units_driver finds them */
+        static DSLObj (*cmt)(const char *);
+        if (!cmt) { char p[1200]; snprintf(p, sizeof p, "%s/../custom-modes/custom-modes.dylib", H->module_dir(ME));
+                    void *img = dlopen(p, RTLD_NOLOAD | RTLD_LOCAL); if (img) *(void **)&cmt = dlsym(img, "cm_test_target"); }
+        return cmt ? cmt(t + 3) : NULL;
+    }
     if (!strcmp(t, "update")) { static DSLObj (*ut)(void); if (!ut) *(void **)&ut = dlsym(RTLD_DEFAULT, "dsl_update_test_toggle"); return ut ? ut() : NULL; }
     return NULL;
 }
