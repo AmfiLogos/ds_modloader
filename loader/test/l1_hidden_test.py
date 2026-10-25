@@ -4,9 +4,10 @@ lost"). Test copy DSL_TEST_COPY (default Y; hidden, muted, staged off screen; ta
 ~/ds_multiplayer/rig/rig.py lease hiddenworlds --pid <this pid>). Own save folders only, as l1_saves_test.py: the game
 folder is <copy>/gameroot/data/Saves, the modded folder <copy>/data/Saves. The owner's saves and prefs: hash before/after.
 Real breaks this catches (each: the player thinks worlds are lost, or is told a wrong number):
- M  multiplayer + gcd-cdr + custom-modes, title Load list: the modded-only world tagged Multiplayer is hidden by the
-    loader's filter panel (Multiplayer off, kit v0.1.23; before: the multiplayer mod's box under the list) -> bottom line
-    "1 world is hidden by the filters on the right"; Multiplayer ticked on the panel -> the world shows, the line goes.
+ M  multiplayer + gcd-cdr + custom-modes, title Load list: all four filter boxes are on by default (kit 0.1.28; up to
+    0.1.27 Multiplayer was off), so the modded-only world tagged Multiplayer shows and there is no bottom line;
+    Multiplayer unticked on the panel -> the world is hidden by the loader's filter panel -> bottom line "1 world is
+    hidden by the filters on the right"; Multiplayer ticked again -> the world shows, the line goes.
     A game save the game cannot read stays in the game folder (never quarantined) -> top line "1 game save could not be
     read". The panel must be SEEN in the frame (bright checkbox pixels of its Multiplayer box): custom-modes' filter has
     no toggle, and the loader's empty toggle strip once covered the multiplayer box with a dark bar (owner 2026-10-20).
@@ -144,18 +145,22 @@ def run_m(code):
     S.start_modded(('multiplayer', 'gcd-cdr', 'custom-modes'), worlds={})
     mark = open_list()
     L = T.dlog()[mark:]
-    check(f'M {code}: the multiplayer world is hidden by the filter panel, the line says 1 world',
-          'bottom 1 (kind 0, 0 by other filters, 0 by ours, 1 by the panel)' in L, lines_log(mark))
+    check(f'M {code}: every filter box on by default: the multiplayer world shows, no bottom line',
+          'bottom 0 (kind 0, 0 by other filters, 0 by ours, 0 by the panel)' in L, lines_log(mark))
     check(f'M {code}: the unreadable game save stays in the game folder and the top line says 1',
           os.path.exists(os.path.join(GSAVES, 'Broken save.json')) and 'unreadable 1)' in L, lines_log(0)[-4:])
+    mark = len(T.dlog())
+    st = lf('lf', multiplayer=0); time.sleep(2.5)
+    L = T.dlog()[mark:]
+    check(f'M {code}: Multiplayer unticked -> the multiplayer world is hidden by the filter panel, the line says 1 world',
+          'bottom 1 (kind 0, 0 by other filters, 0 by ours, 1 by the panel)' in L, (st.get('boxes'), lines_log(mark)))
     check(f'M {code}: screenshot', shot(f'M_{code}'))
     ok, why = box_seen(f'M_{code}', lf())
     check(f'M {code}: the filter panel is visible (not covered by an empty dark strip)', ok, why)
     mark = len(T.dlog())
-    st = lf('lf', multiplayer=1); time.sleep(2.5)
+    st = lf('lf', multiplayer=1); time.sleep(2.5)                    # the panel remembers it (loadlist.json): back to the default
     L = T.dlog()[mark:]
     check(f'M {code}: Multiplayer ticked -> the world shows, the bottom line goes', 'bottom 0 (kind 0, 0 by other filters' in L, (st.get('boxes'), lines_log(mark)))
-    lf('lf', multiplayer=0)                                          # the panel remembers it (loadlist.json): back to the default
     check(f'M {code}: screenshot (ticked)', shot(f'M_{code}_ticked'))
     S.stop_all()
 
