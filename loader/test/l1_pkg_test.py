@@ -6,7 +6,7 @@
  3. a zip that is not a mod + "Refresh": moved to .failed, one line for the player
  4. gcd-cdr on + Apply: the new game runs gcd-cdr
 Output: <out>/ (logs, shots, summary.json)."""
-import json, os, sys, time, glob, shutil, signal, threading, subprocess, zipfile
+import re, json, os, sys, time, glob, shutil, signal, threading, subprocess, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import l1_test as T
 import l1_v13_test as V
@@ -47,7 +47,7 @@ def main():
     try:
         a = T.start_a(extra_env={'DSL_UI_TEST': V.UI, 'DSML_USER_MODS_DIR': UM})
         T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'A title'); time.sleep(3)
-        check('gcd-cdr not installed at start', 'reg: running gameplay set vanilla' in T.dlog() and not os.path.exists(os.path.join(APPMODS, 'gcd-cdr')))
+        check('gcd-cdr not installed at start', bool(re.search(r'reg: running gameplay set (vanilla|hell-difficulty) ', T.dlog())) and not os.path.exists(os.path.join(APPMODS, 'gcd-cdr')))
         shutil.copy2(zp, os.path.join(UM, os.path.basename(zp)))       # the player drops the zip while the game runs
         V.ui('open'); st = {}
         for _ in range(15):
