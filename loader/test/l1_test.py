@@ -8,7 +8,7 @@
 3. In a world: Apply is refused (v13: mods change only at the title), no new process.
 Output: <out>/ (logs, screenshots, summary.json).
 """
-import json, os, shutil, signal, subprocess, sys, threading, time, glob
+import re, json, os, shutil, signal, subprocess, sys, threading, time, glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lrig as r
 
@@ -181,7 +181,8 @@ def main():
         check('kit ready', 'ui: kit ready' in L, [l for l in L.splitlines() if 'ui:' in l][:3])
         check('reg ready', 'reg: ready' in L)
         check('rows service on', 'rows: load list service on' in L)
-        check('running set (multiplayer is not in the key)', 'reg: running gameplay set vanilla' in L)
+        rk = re.search(r'reg: running gameplay set (\S+) ', L)                # Hell runs always since dshell2 (in the key, not in a world's set)
+        check('running set (multiplayer is not in the key)', bool(rk) and rk.group(1) in ('vanilla', 'hell-difficulty'), rk and rk.group(1))
         check('no refused hook', 'refused' not in L.replace('world check: REFUSED', ''), [l for l in L.splitlines() if 'refused' in l][:3])
         shot('1_title')
         r.send(X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
