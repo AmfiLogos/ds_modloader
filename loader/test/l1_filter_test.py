@@ -11,7 +11,8 @@ kind; the multiplayer mod's box under the list is gone; Latest save only shows t
 come back after a restart.
 Worlds: Elven (game save, gcd-cdr + hell-difficulty, installed and off = Modded), Template (the wiki's public base save, only the fix gcd-cdr =
 Vanilla & Vanilla+: a fix never counts as Modded, owner 2026-10-24; two saves),
-Moonlight (tagged Multiplayer).
+Moonlight (tagged Multiplayer), Slot (the base save as another world: gcd-cdr + weapon-slot, installed and off =
+Vanilla & Vanilla+: weapon-slot's mod.json says "vanilla_plus", owner 2026-10-25).
 Usage: l1_filter_test.py <out dir>   (env DSL_TEST_MODS = built mods, default this tree's loader/build/mods;
 LF_RUNS = comma list of runs, default main,restart,sizes; langs = every language's rows, one shot each)"""
 import json, os, re, sys, time, shutil, glob, threading, subprocess
@@ -29,6 +30,8 @@ ELVEN_GUID, MOON_GUID = S.GUID, '41e9c1bb-8790-492c-bdc1-0f4dcad22179'
 TPL_SRC = os.path.expanduser('~/dungeonsettlersdb/site/assets/saves/base_25846389.json')   # public (the wiki's base save)
 TPL_GUID = '491bc260-98aa-4cd1-b63f-82da78369aaf'
 TPL_NEW, TPL_OLD = 'Template__AutoSave_491bc26098aa4cd1b63f82da78369aaf_0', 'Template older'
+SLOT_GUID = '5107aa11-0000-4c1e-9a7e-000000000001'                   # the base save as another world: gcd-cdr + weapon-slot
+SLOT = 'Slot__AutoSave_5107aa1100004c1e9a7e000000000001_0'
 LANG = {'en': 0, 'ko': 1, 'fr': 2, 'de': 3, 'ru': 4, 'zh-Hans': 5, 'zh-Hant': 6, 'ja': 7, 'es': 8, 'pt-BR': 9}
 STATE = os.path.join(T.SDIR, 'lf_state.json')
 GFILE = os.path.join(GSAVES, ELVEN + '.json')
@@ -40,6 +43,10 @@ def install():
     copy whose Info.plist changed after its last signature is killed at start: Code Signature Invalid)"""
     app = os.path.join(I, 'DungeonSettlers.app'); lang = os.path.join(app, 'Contents', 'Frameworks', 'lang'); aside = os.path.join(app, 'Contents', 'lang_aside')
     if os.path.isdir(lang): os.replace(lang, aside)
+    md = os.path.join(app, 'Contents', 'Resources', 'mods', 'weapon-slot')   # installed, not on (as hell-difficulty): its mod.json flag
+    for f in glob.glob(os.path.join(os.environ['DSL_TEST_MODS'], 'weapon-slot', '*')):
+        if os.path.isfile(f): os.makedirs(md, exist_ok=True); shutil.copy2(f, md)
+    shutil.copy2(os.path.join(os.path.dirname(HERE), 'modules', 'weapon-slot', 'mod.json'), os.path.join(md, 'mod.json'))   # this tree's
     try:
         S.install()
     finally:
@@ -62,10 +69,12 @@ def seed():
     json.dump(t, open(os.path.join(MSAVES, TPL_NEW + '.json'), 'w'))
     h = t['CampaignSaveHeader']; h.update(SaveName=TPL_OLD, DisplayName=TPL_OLD, SaveTime='2026-09-01 08:00:00', IsAutoSave=False)
     json.dump(t, open(os.path.join(MSAVES, TPL_OLD + '.json'), 'w'))
+    h.update(CampaignGuid=SLOT_GUID, ClanName='Slot', SaveName=SLOT, DisplayName='Slot', SaveTime='2026-09-02 08:00:00', IsAutoSave=True)
+    json.dump(t, open(os.path.join(MSAVES, SLOT + '.json'), 'w'))
     open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
 
 
-WORLDS = {ELVEN_GUID: 'gcd-cdr+hell-difficulty', TPL_GUID: 'gcd-cdr'}
+WORLDS = {ELVEN_GUID: 'gcd-cdr+hell-difficulty', TPL_GUID: 'gcd-cdr', SLOT_GUID: 'gcd-cdr+weapon-slot'}
 FAKEROOT = os.path.join(I, 'lf_root')
 
 
@@ -169,6 +178,8 @@ def run_main():
     check('defaults = the list as before: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box')) == (1, 1, 0, 0, 1), b)
     e, t, m = world(st, ELVEN_GUID), world(st, TPL_GUID), world(st, MOON_GUID)
     check('kinds: Elven (gcd-cdr + hell-difficulty) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
+    sl = world(st, SLOT_GUID)
+    check('kinds: Slot (gcd-cdr + weapon-slot, "vanilla_plus") is Vanilla & Vanilla+ and shows', (sl.get('kind'), sl.get('shown')) == (0, 1), sl)
     check('Multiplayer off: Moonlight hidden, the others shown; the line counts 1', (e.get('shown'), t.get('shown'), m.get('shown'), st.get('hidden_line')) == (1, 1, 0, 1), st)
     ml = mp('mpm_list')
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,

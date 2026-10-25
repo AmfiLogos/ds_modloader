@@ -10,6 +10,7 @@
  "sim": true,
  "save_dependent": true,
  "save_backup": true,
+ "vanilla_plus": true,
  "default_on": false,
  "game_builds": [
   "25846389"

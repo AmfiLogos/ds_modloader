@@ -155,6 +155,7 @@ static void mods_scan(void) {
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         { const char *ca = json_str(m, "category"); x->feature = ca ? !strcmp(ca, "feature") : feature_builtin(id); x->fix = ca && !strcmp(ca, "fix"); }
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
+        JNode *vp = json_get(m, "vanilla_plus"); x->vanilla_plus = vp && vp->t == JN_BOOL && vp->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         JNode *sb = json_get(m, "save_backup"); MI_savebak[nmi - 1] = sb && sb->t == JN_BOOL && sb->b;
         int on = 1;
@@ -638,14 +639,15 @@ int dsl_world_mods_all(const char *guid, const char **ids, int max) {
     return n;
 }
 /* the Load list's filter panel (dsl_rows.c, owner 2026-10-24): 1 = the world plays with a mod that changes the gameplay
-   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only fixes and
-   mods that change nothing in the gameplay ("Vanilla & Vanilla+"). Launcher features are not world mods. */
+   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only fixes,
+   mods that change nothing in the gameplay and mods with "vanilla_plus" (owner 2026-10-25) ("Vanilla & Vanilla+").
+   Launcher features are not world mods. The world kind only: the world check, flow K and the HELLO hash use the set. */
 int dsl_world_is_modded(const char *guid) {
     const char *ids[MAXM]; int n = dsl_world_mods(guid, ids, MAXM);
     for (int i = 0; i < n; i++) {
         if (dsl_mod_is_feature(ids[i])) continue;
         const DSLModInfo *m = mod_by_id(ids[i]);
-        if (m && m->fix) continue;                                    /* a fix for a bug of the game (owner 2026-10-24) */
+        if (m && (m->fix || m->vanilla_plus)) continue;               /* a fix for a bug of the game (owner 2026-10-24), Vanilla+ (10-25) */
         if (!m || strcmp(m->scope, "client")) return 1;
     }
     return 0;
