@@ -82,10 +82,11 @@ def tog(s): return s['toggles'][0] if s.get('toggles') else {}
 
 
 def side_ok(s, tag):
-    """the Custom difficulty panel: right of the New Game window, its top level with the combat difficulty row, on screen"""
-    S, W, R, sc = s['side'], s['window'], s['row'], s['screen']
-    check(f'{tag}: Custom difficulty panel right of the window, level with the combat row, on screen',
-          s['side_shown'] == 1 and S[0] >= W[2] and abs(S[3] - R[3]) <= 2 and S[2] <= sc[0] and S[1] >= 0, (S, W, R, sc))
+    """the Custom difficulty panel: right of the New Game window, its top level with the settings list's top (fixed while the
+    list scrolls, owner 2026-10-25; lower only under the title corner), on screen (newgame_side_test.py: scroll, sizes)"""
+    S, W, L, C, sc = s['side_now'], s['frame'], s['list'], s['corner'], s['screen']
+    check(f'{tag}: Custom difficulty panel right of the window, level with the list top, on screen',
+          s['side_now_shown'] == 1 and S[0] >= W[2] and (abs(S[3] - L[3]) <= 2 or (s['corner_shown'] and S[3] <= C[1])) and S[2] <= sc[0] and S[1] >= 0, (S, W, L, C, sc))
 
 
 def save_of(guid):
