@@ -1083,3 +1083,30 @@ home page goes Back, Bring Units runs its callback, a HUD panel has none), so a 
 Tests (real Escape key events on the game's view, hidden copies): loader esc_test 44/44 (title + world: demo panel, field,
 notice, Mods window, name row, Settings page Back, Load list + a world's Mods window, Bug report; Esc menu / Load list under
 ours stay), Units Laboratory esc_test 46/46, multiplayer esc_kit_test 37/37 + esc_mini_pair 5/5.
+
+## Red X, UI Scale, right-drag move (owner 2026-10-25, UX review L1 L2 L4 + MOVE RULE; kit 0.1.28, lane dskit) - `src/dsl_ui.c` "the game's look"
+Three DSLUi calls appended after esc_drop (dsl_sdk.h; wrappers `dsl_close_x`, `dsl_ui_scale`, `dsl_scale_follow`, `dsl_movable`
+give NULL / 1 / -1 with an older kit):
+- `close_x(parent, x, y, size, win)`: the game's red X. A copy of the Load Campaign window's own close button (popup prefab 5,
+  `SaveLoadView._closeButton`: 32 x 32, frame sprite topLineButton_Frame1 + child Img_cross) with its Button off, inside a kit
+  title button whose frame is off: the copy draws, its images take the click, the kit button gets it (crafted Action) and
+  its DASButton transition drives the copy's images with the close button's own colours (hover / press as the game's).
+  A click runs the close that `win` registered with esc_push: the same action as Escape, cleanup included (one place to
+  get it right). NULL when the game's button is not found: the caller keeps its text "X".
+  Used on: the Mods window (title and a world's), the bug report. Units Laboratory and multiplayer take it in their repos.
+- `ui_scale()` = UIScaleManager.Instance.Scale (Settings > UI Scale, 0.75 .. 1.4), 1 when unknown.
+- `scale_follow(win)`: OPT-IN per window (Units Laboratory and Bring Units apply UI Scale themselves; a global scale of the
+  kit layer would scale them twice). localScale = UI Scale, smaller when the window would not fit in its parent; applied
+  at once, on a UI Scale change (polled every frame, two calls) and every 30 frames (game window resized). Used on: the
+  Mods window, the bug report, the title corner (one group, dsl_ui_group, scaled from the top-right corner). The Load
+  list's filter panel and the New Game panels sit inside the game's own windows and already follow it.
+- `movable(panel, key)`: OPT-IN. A right press on the panel (the newest movable one under the pointer) and a move of 6 px
+  starts the drag (a right-click alone stays a click); the panel follows the pointer (rt_move_screen: any canvas), is kept
+  on the screen (all of it; its top-left when bigger), and on release its anchoredPosition is kept under key in
+  `<DSML_DATA>/Mods/ui_places.tsv` (key, x, y). The next movable() with that key puts it back (then on the screen). All
+  movable panels are put back on the screen every 30 frames (a smaller game window).
+- L2: the title corner (Auto-update switch, version, notice line, buttons) hides while a window of the game shows (any active
+  `Refactor.UI.PopUpUI_Base`: Options, Load Campaign, New Game, Credits, a notice), checked every 5 frames; it crossed the
+  Options window's red X at UI Scale 1.4.
+Test: `test/kitlook_test.py` (hidden copy KIT, uikit-demo driver: rdrag / rclick fake right mouse, api follow / movable /
+uiscale): 19/19 on this kit; main 5e213f1: 13 FAIL (no red X, nothing follows UI Scale, the corner over Options, no move).
