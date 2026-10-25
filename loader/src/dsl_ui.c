@@ -887,7 +887,7 @@ static Obj mk_btn(Obj parent, float x, float y, float w, float h, const char *la
 }
 static float btn_fs(float h) { return h >= 44 ? 18 : h >= 30 ? 16 : 14; }
 /* The close rule's guard (owner 2026-10-25: one close control, the game's red X; kit close_x). Test copies only: a text
-   "X" button put straight on a window of ours (a root panel) logs CLOSE-TEXT-X "<the window's first text>"; the kit test
+   "X" button put straight on a window of ours (a root panel) logs UI-RULE close-text-x "<the window's first text>"; the kit test
    (test/kitlook_test.py) fails on it. A text X in a list (a group's delete "x") is not a window's close: not flagged. */
 static int guard_on = -1;
 static void guard_text(Obj t, char *out, size_t cap, int depth);
@@ -898,7 +898,7 @@ static void close_x_guard(DSLObj parent, const char *label) {
     if (!pw || pw->kind != W_PANEL || tr_parent(pr) != hget(h_layer)) return;
     char t[200] = ""; guard_text(pr, t, sizeof t, 0);
     for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
-    dsl_log("CLOSE-TEXT-X \"%s\": a window of ours closes with a text X (use dsl_close_x: the game's red X)", t[0] ? t : "(no text)");
+    dsl_log("UI-RULE close-text-x \"%s\": a window of ours closes with a text X (dsl_window_std, or dsl_close_x: the game's red X)", t[0] ? t : "(no text)");
 }
 static DSLObj k_button(DSLObj parent, float x, float y, float w, float h, const char *label, dsl_ui_cb click, void *ud) {
     if (!ready_basic()) return NULL;
