@@ -262,11 +262,19 @@ const char *dsl_profile_file(void) { return profile_path; }
 const char *dsl_log_dir(void) { return logdir; }
 int dsl_plugin_index(DSLPlugin *self) { return self ? self->idx : -1; }
 const char *dsl_plugin_name(DSLPlugin *self) { return self ? self->id : "loader"; }
-/* the dependency reason (dsl_deps.h text, current language) of a switched-on mod this process does not run; 0 = none */
+/* dsl_reg.c: an installed mod's name as the Mods window shows it (current language), NULL = not installed / not read yet */
+__attribute__((weak)) const char *dsl_mod_name_of(const char *id) { (void)id; return NULL; }
+/* the dependency reason (dsl_deps.h text, current language) of a switched-on mod this process does not run; 0 = none.
+   UX L6: the needed mod by its name in the list ("Locked Slots", "Gesperrte Plätze"), not its folder id; turned off: what to do */
 int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
     DslDep *x = dsl_dep_find(DEPS, ndeps, id);
     if (!x || !x->on || x->ok || x->why == DSL_DEP_OK) return 0;
-    dsl_dep_text(x, out, cap);
+    DslDep y = *x; size_t n = strcspn(x->arg, "<>=! ");
+    char need[64]; snprintf(need, sizeof need, "%.*s", (int)n, x->arg);
+    const char *nm = dsl_mod_name_of(need);
+    if (nm && *nm) snprintf(y.arg, sizeof y.arg, "%s%s", nm, x->arg + n);
+    dsl_dep_text(&y, out, cap);
+    if (x->why == DSL_DEP_OFF && out[0]) { char t[600]; snprintf(t, sizeof t, TR("%s. Turn it on."), out); snprintf(out, cap, "%s", t); dsi_utf8_fix_end(out); }
     return 1;
 }
 int dsl_mod_state(const char *id, const char **why) {

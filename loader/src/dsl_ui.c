@@ -886,6 +886,20 @@ static Obj mk_btn(Obj parent, float x, float y, float w, float h, const char *la
     return bc;
 }
 static float btn_fs(float h) { return h >= 44 ? 18 : h >= 30 ? 16 : 14; }
+/* The close rule's guard (owner 2026-10-25: one close control, the game's red X; kit close_x). Test copies only: a text
+   "X" button put straight on a window of ours (a root panel) logs CLOSE-TEXT-X "<the window's first text>"; the kit test
+   (test/kitlook_test.py) fails on it. A text X in a list (a group's delete "x") is not a window's close: not flagged. */
+static int guard_on = -1;
+static void guard_text(Obj t, char *out, size_t cap, int depth);
+static void close_x_guard(DSLObj parent, const char *label) {
+    if (guard_on < 0) guard_on = dsl_soft_test_copy() != NULL;
+    if (guard_on != 1 || !parent || !label || (strcmp(label, "X") && strcmp(label, "x") && strcmp(label, "\xC3\x97"))) return;
+    W *pw = w_of(parent); Obj pr = pw ? w_root(pw) : (Obj)parent;
+    if (!pw || pw->kind != W_PANEL || tr_parent(pr) != hget(h_layer)) return;
+    char t[200] = ""; guard_text(pr, t, sizeof t, 0);
+    for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
+    dsl_log("CLOSE-TEXT-X \"%s\": a window of ours closes with a text X (use dsl_close_x: the game's red X)", t[0] ? t : "(no text)");
+}
 static DSLObj k_button(DSLObj parent, float x, float y, float w, float h, const char *label, dsl_ui_cb click, void *ud) {
     if (!ready_basic()) return NULL;
     Obj p = parent_or_layer(parent); if (!p) return NULL;
@@ -894,6 +908,7 @@ static DSLObj k_button(DSLObj parent, float x, float y, float w, float h, const 
     if (!b) { w_free(nws - 1); return NULL; }
     wd->cb = click; wd->ud = ud; wd->w = w; wd->h = h;
     hset(&wd->h_btn, b); hset(&wd->h_label, btn_label(b));
+    close_x_guard(parent, label);
     return w_done(wd, tr_of(b), NULL);
 }
 
@@ -1688,7 +1703,7 @@ static int esc_holder(Obj field) {                                   /* the inne
    "ESC-MISSING <its first text>"; the esc tests fail on it. No default registration: the kit cannot know a window's own
    Close (the Unit Builder's Cancel asks first, the home page goes Back, Bring Units runs its callback, a HUD has none). */
 #define GUARD_MAX 64
-static struct { uintptr_t h; int64_t made; int done; } groots[GUARD_MAX]; static int ngroots, guard_on = -1;
+static struct { uintptr_t h; int64_t made; int done; } groots[GUARD_MAX]; static int ngroots;
 static void esc_guard_root(DSLObj root) {
     if (guard_on < 0) guard_on = dsl_soft_test_copy() != NULL;
     if (!guard_on || !root) return;

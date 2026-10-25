@@ -7,6 +7,8 @@ multiplayer (test control socket) and the test module uikit-demo (fake mouse, ki
  UI Scale: the demo panel (scale_follow), the Mods window and the title corner grow 1.4x when Settings > UI Scale goes
            1.0 -> 1.4 (the game's UIScaleManager.SetScale) and come back at 1.0.
  L2:       with the game's Options window open, the title corner is hidden (it crossed that window's red X at 1.4).
+ L3:       a world's Mods window: every switch it shows is kept by "Save for this world" (reopened: as saved); the client
+           mod Multi-unit view has no switch there.
  move:     movable panel: a right-drag moves it by the drag, a right-click alone does not, a drag past the edge leaves it
            on the screen, its place is kept (ui_places.tsv) and put back when the panel is built again.
 Shots (local only, never commit): <out>/shots/<lang>_ui<scale>/*.png for en (this run) and --langs de,ru (one start each).
@@ -107,6 +109,30 @@ def move_cases():
     ui('api', op='destroy', target='panel')
 
 
+def world_l3():
+    """L3: every switch a world's Mods window shows is kept by "Save for this world" (a client mod, Multi-unit view, showed a
+    switch, said "Saved", and was not stored: a world's set holds gameplay mods only)"""
+    opened = lambda: wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10)
+    win('open_world', guid=E.GUID, world='Elven Expedition'); opened(); time.sleep(0.6)
+    ao = {c['name']: c['on'] for c in win('state', dump=1).get('controls', [])}.get('active-only')
+    if ao == 1: win('click', target='active-only'); time.sleep(0.6)    # every installed mod, not only the ones on for this world
+    j = win('state', dump=1); sw = {c['name']: c['on'] for c in j.get('controls', []) if c.get('name', '').startswith('mod:') and c.get('kind') == 1}
+    check('L3: the world\'s Mods window shows mod switches', len(sw) > 0, sw)
+    for n in sw: win('click', target=n)
+    want = {n: 1 - v for n, v in sw.items()}
+    win('click', target='apply'); time.sleep(1.0); shot('en', '1.0', 'world_saved')
+    win('close'); time.sleep(0.5)
+    win('open_world', guid=E.GUID, world='Elven Expedition'); opened(); time.sleep(0.6)
+    j = win('state', dump=1); got = {c['name']: c['on'] for c in j.get('controls', []) if c.get('name', '').startswith('mod:') and c.get('kind') == 1}
+    lost = {n: (want[n], got.get(n)) for n in want if got.get(n) != want[n]}
+    check('L3: reopened, every switch is as "Save for this world" kept it', not lost, lost)
+    check('L3: a mod that is the same in all worlds (Multi-unit view) has no switch in a world\'s window', 'mod:multi-bar' not in got, sorted(got))
+    for n in want: win('click', target=n)                              # the world's set as it was
+    win('click', target='apply'); time.sleep(0.6)
+    if ao == 1: win('click', target='active-only'); time.sleep(0.4)
+    win('close'); time.sleep(0.4)
+
+
 def lang_shots(lang):
     """one start in lang: the corner, Mods window, demo panel and bug report at UI 1.0 and 1.4 (local shots)"""
     for v in (1.0, 1.4):
@@ -138,7 +164,7 @@ def run(lang):
         wait_for(lambda: (lambda s: s if s.get('scene') == 1 and not s.get('busy') else None)(E.ctl({'cmd': 'status'}, 5)), 240, 1)
         wait_for(lambda: (lambda j: j if j.get('kit') == 1 else None)(st()), 60, 1)
         time.sleep(4)
-        if lang == 'en': red_x_cases(); scale_cases(); move_cases()
+        if lang == 'en': red_x_cases(); scale_cases(); move_cases(); world_l3()
         lang_shots(lang)
     except Exception as e:
         check(f'{lang}: run finished', False, repr(e))
@@ -158,11 +184,21 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     if '--no-build' not in sys.argv: E.build()
     E.install()
+    for mid in ('multi-bar', 'locked-slots'):                          # L3: a client mod and a gameplay game mod (installed, off)
+        mb = os.path.join(E.LW, 'build', 'mods', mid)
+        if not os.path.isdir(mb): raise SystemExit(f'build/mods/{mid} missing: run modules/build_mods.sh first')
+        for root, _, files in os.walk(mb):
+            for f in files: E.put(os.path.join(root, f), os.path.join(E.APP, 'Contents', 'Resources', 'mods', mid, os.path.relpath(os.path.join(root, f), mb)))
+    E.subprocess.run(['codesign', '-f', '-s', '-', os.path.join(E.APP, 'Contents', 'MacOS', 'Dungeon Settlers')], capture_output=True)
     g = threading.Thread(target=E.guard, daemon=True); g.start()
     for lang in ['en'] + [l for l in LANGS.split(',') if l in LANG and l != 'en']:
         if os.getloadavg()[0] > 20: check(f'{lang}: load under 20 for the start', False, os.getloadavg()[0]); continue
         run(lang)
     E.stop.set()
+    for lang in ['en'] + [l for l in LANGS.split(',') if l in LANG and l != 'en']:   # the close rule's guard (dsl_ui.c close_x_guard)
+        lf = os.path.join(OUT, f'{lang}_dsload.log')
+        tx = [l for l in open(lf, errors='replace').read().splitlines() if 'CLOSE-TEXT-X' in l] if os.path.exists(lf) else ['no dsload.log']
+        check(f'{lang}: no window of ours closes with a text X (CLOSE-TEXT-X)', not tx, tx[:3])
     fails = [c for c in E.checks if not c['ok']]
     json.dump({'checks': E.checks, 'violations': E.violations}, open(os.path.join(OUT, 'summary.json'), 'w'), indent=1)
     bad = len(fails) + (1 if E.violations else 0)

@@ -200,6 +200,12 @@ static void mods_scan(void) {
     mods_lang();
 }
 int dsl_mods_count(void) { mods_scan(); return nmi; }
+/* dsl_main.c dsl_mod_dep_text: an installed mod's name in the current language (the reason line names it as the list does) */
+const char *dsl_mod_name_of(const char *id) {
+    int L = dsi_lang();
+    for (int i = 0; id && i < nmi; i++) if (MI[i].id && !strcmp(MI[i].id, id)) return MT[i].name[L] ? MT[i].name[L] : MT[i].name[0];
+    return NULL;
+}
 /* read the mods folder again (a mod package installed while the game runs, ui/dsl_pkg.c): the list for the Mods window.
    What runs does not change (the running key, loaded modules); old DSLModInfo pointers are invalid afterwards. */
 void dsl_mods_rescan(void) {
