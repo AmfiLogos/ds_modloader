@@ -8,7 +8,7 @@
   "win-x64"
  ],
  "mp_pin": "d35e7c1dfb25d977702900b90f5749f3dbf7a062",
- "cm_pin": "f48a239029479de55d2577e58065cd9580468f78",
+ "cm_pin": "196b3d4b5663e469a1dabfaf82634dcdfdf7e762",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -4808,6 +4808,40 @@
   {
    "owner": "custom-modes",
    "kind": "detour",
+   "method": "Refactor.CampaignSaveLoader$$TryLoad",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x8143cc"
+    },
+    "win-x64": {
+     "rva": "0x58c4b0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes CampaignSaveLoader.TryLoad",
+   "source": "ds_custommodes:fights/tf_worlds.c",
+   "key": "custom-modes|tf_worlds.c|h_load|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.UI.LatestCampaignSaveSelector$$TrySelect",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xe6f45c"
+    },
+    "win-x64": {
+     "rva": "0xb66680"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes LatestCampaignSaveSelector.TrySelect",
+   "source": "ds_custommodes:fights/tf_worlds.c",
+   "key": "custom-modes|tf_worlds.c|h_trysel|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
    "method": "Refactor.SaveLoadHelper$$DeserializeCampaignSaveDataSafely",
    "platforms": {
     "mac-arm64": {
@@ -4821,6 +4855,40 @@
    "label": "custom-modes SaveLoadHelper.DeserializeCampaignSaveDataSafely",
    "source": "ds_custommodes:fights/tf_worlds.c",
    "key": "custom-modes|tf_worlds.c|h_deser|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.SaveLoadHelper$$SaveOutGameRecord",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x87978c"
+    },
+    "win-x64": {
+     "rva": "0x5e2230"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes SaveLoadHelper.SaveOutGameRecord",
+   "source": "ds_custommodes:fights/tf_worlds.c",
+   "key": "custom-modes|tf_worlds.c|h_saveog|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.TitleBasePreviewSaveSelector$$TryLoadCampaignSaveData",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf91704"
+    },
+    "win-x64": {
+     "rva": "0xc9d3e0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes TitleBasePreviewSaveSelector.TryLoadCampaignSaveData",
+   "source": "ds_custommodes:fights/tf_worlds.c",
+   "key": "custom-modes|tf_worlds.c|h_tryload|"
   },
   {
    "owner": "gcd-cdr",
