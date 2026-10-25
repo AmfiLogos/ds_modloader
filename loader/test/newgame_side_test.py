@@ -12,7 +12,8 @@ list at the top, the middle and the bottom:
  b. the mods ("Mods for this world", with Change) are outside the New Game window (the old line lay over "Even small
     waste can lead to downfall", Seed and Time Limit);
  c. both panels: right of the window, inside the screen, off the title corner, the mods under the Custom difficulty
-    panel without overlap; the mods' text inside its panel (a long list ends with "+N", never runs out).
+    panel without overlap; the mods' text inside its panel; a long list (fewer lines allowed by a test request) ends with
+    "+N" and never runs out.
 A shot per start (text fit in de / ru / ja by eye). Exit 0 = every check passed. Output: <out>/ (logs, shots, summary.json).
 NG_RUNS = comma list of run indexes (0-5), default all."""
 import glob, json, os, shutil, signal, sys, threading, time
@@ -90,7 +91,8 @@ def one_run(i, size, scale, lang, enabled):
         H.ng('scroll', pos=pos); time.sleep(1.2); st[pos] = H.ng('state')
     T.shot(f'{i}_{size[0]}x{size[1]}_ui{scale}_{lang}')
     s = st[0]; sw, sh = s['screen']; F = s['frame']; C = s['corner']
-    log(tag, 'screen', s['screen'], 'window', F, 'list', s['list'], 'corner', C, 'side', [st[p]['side_now'] for p in st], 'mods', [st[p]['mods'] for p in st])
+    log(tag, 'screen', s['screen'], 'window', F, 'list', s['list'], 'corner', C, 'side', [st[p]['side_now'] for p in st], 'mods', [st[p]['mods'] for p in st],
+        'scale', s.get('side_scale'))
     check(f'{tag}: the screen is the size asked', abs(sw - size[0]) <= 2 and abs(sh - size[1]) <= 2, s['screen'])
     check(f'{tag}: combat Hell chosen (the tallest description)', s['combat'] == 5, s['combat'])
     check(f'{tag}: the settings list scrolled (the combat row moved)', abs(st[1]['row'][3] - st[0]['row'][3]) > 20 or abs(st[1]['row'][1] - st[0]['row'][1]) > 20,
@@ -114,8 +116,17 @@ def one_run(i, size, scale, lang, enabled):
     fit = s.get('mods_fit', {})
     check(f'{tag}: c. the mods text stays inside its panel (wrapped or "+N")', fit.get('ok') == 1, fit)
     check(f'{tag}: c. Change inside the mods panel', fit.get('btn_in') == 1, fit)
-    check(f'{tag}: c. the side panels are not scaled below 0.5', s.get('side_scale', 0) >= 0.5 - 1e-3, s.get('side_scale'))
+    check(f'{tag}: c. the side panels readable (scale at least 0.45; 800x600 UI 1.4 needs 0.48 to stay on screen)', s.get('side_scale', 0) >= 0.45, s.get('side_scale'))
     log(tag, 'mods text', fit.get('text'))
+    # a long list (fewer lines allowed, test request): the first names then "+N", still inside its panel and the screen
+    H.ng('mods_lines', n=2); time.sleep(1.2); s2 = H.ng('state'); f2 = s2.get('mods_fit', {})
+    n, k = f2.get('names', 0), f2.get('shown_names', -1)
+    check(f'{tag}: long list: the first names then "+N", inside its panel', n >= 3 and 0 <= k < n and f2.get('text', '').rstrip().endswith(f'+{n - k}')
+          and f2.get('ok') == 1 and f2.get('btn_in') == 1, f2)
+    check(f'{tag}: long list: the mods inside the screen, off the window and the title corner',
+          inside(s2['mods'], sw, sh) and not overlap(s2['mods'], F) and (not s2['corner_shown'] or not overlap(s2['mods'], C)), (s2['mods'], F, C))
+    if i == 0: T.shot(f'{i}_{size[0]}x{size[1]}_ui{scale}_{lang}_plusN')
+    H.ng('mods_lines', n=0); time.sleep(1)
     H.one_process(a, tag)
     stop_copy()
 

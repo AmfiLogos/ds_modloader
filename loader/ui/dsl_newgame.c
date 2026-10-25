@@ -29,7 +29,6 @@ typedef void *Obj;
 #define CALL(mi, R, ...) ((R (*)(__VA_ARGS__, const void *))(*(void **)(mi)))
 
 int dsl_mod_difficulty(const char *id);                 /* dsl_reg.c: mod.json "difficulty" value, 0 = none */
-int dsl_rows_test_newcampaign_rect(float r[4]);         /* dsl_rows.c, test: the "Mods for this world" line + [Change] */
 
 static const DSLUi *U;
 static int ok;
@@ -42,6 +41,8 @@ static void *m_next, *m_refresh, *m_forced, *m_ironinter, *m_lockset, *m_namechg
             *m_magictext, *m_setname, *m_setseed, *m_newgame, *m_intext, *m_alive, *m_find, *m_comp_go, *m_comp_tr,
             *m_go_tree, *m_parent, *m_lockinc, *m_inter;
 static Obj t_title;                                      /* System.Type of TitleMenuView (FindObjectOfType, test "open") */
+static Obj t_set;                                        /* System.Type of SubUI_CampaignSetting (the mods' panel without the switches) */
+static int side_ok;                                      /* the side column can be drawn (the mods panel; the switches need ok too) */
 static Obj t_sr; static void *m_getcomp, *m_sr_vpos;      /* test "scroll": the settings list's ScrollRect */
 static Obj (*str_new)(const char *);
 static uintptr_t (*gc_weak)(Obj, uint8_t); static uintptr_t (*gc_new)(Obj, uint8_t); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
@@ -222,19 +223,33 @@ static void tog_tip(int k, DSLObj w) {
     dsi_utf8_fix_end(body);
     U->tooltip(w, m ? m->name : D[k].id, body);
 }
-/* the switches' panel: outside the New Game window, on its right, top level with the combat difficulty row (it follows the
-   row while the settings scroll, inside the list's height), like the Load list's filter panel (dsl_rows.c). A child of the
-   settings panel: it shows and goes with it. Local units of that panel from screen rects. */
+/* ------------------------------------------------------------------ the side column: Custom difficulty + the world's mods
+   Owner 2026-10-25: "Custom difficulty toggle moves at the same time as the scroll" (the panel followed the combat row);
+   "Mods for this world appear atop the interface - should likely be below or on the side below custom difficulty" (the line
+   lay over the settings list). Both panels sit outside the New Game window on its right, one width, children of the
+   settings panel (they show and go with it): the Custom difficulty panel (its switches), its top level with the settings
+   list's top whatever the scroll; right under it "Mods of this world" (the mods a world made here plays with, one name per
+   line, at most MP_LINES lines: then the first names and "+N", the hover card has them all; Change = the Mods window). The
+   Load list filter panel's placing rules (dsl_rows.c): never over the title corner, inside the screen, scaled down when the
+   screen is too narrow or too short for it. Local units of the settings panel from screen rects. */
 #define PN_W 300.f
 #define PN_PAD 14.f
 #define PN_ROW 42.f
 #define PN_GAP 16.f
-static uintptr_t h_pn; static unsigned pn_gen; static float pn_w = PN_W, pn_ht, pn_last[5];
-float dsl_newgame_pn_rect[4], dsl_newgame_frame_rect[4], dsl_newgame_row_rect[4];   /* test: screen rects at the last placing */
+#define MP_BODY_Y 48.f
+#define MP_BTN_W 110.f
+#define MP_BTN_H 34.f
+#define MP_LINES 7
+static uintptr_t h_pn, h_pn_tt, h_mp, h_mp_tt, h_mp_body, h_mp_btn, h_found;
+static unsigned pn_gen, mp_gen; static float pn_need, pn_ht, mp_need, mp_btn_w = MP_BTN_W, mp_bh, mp_ht, col_w, col_last[7];
+static char mp_all[1200], mp_text[1300]; static int mp_n, mp_k, mp_stale = 1, mp_lines = MP_LINES;   /* mp_lines: test "mods_lines" */
+static float mp_fill_w; static int mp_fill_lines;
+float dsl_newgame_pn_rect[4], dsl_newgame_mp_rect[4], dsl_newgame_frame_rect[4], dsl_newgame_col_scale;   /* test: the last placing */
 static void pn_drop(void) {
     DSLObj p = held(&h_pn); if (p) U->destroy(p);
-    hold(&h_pn, NULL); for (int k = 0; k < MAXD; k++) hold(&D[k].h_tog, NULL);
+    hold(&h_pn, NULL); hold(&h_pn_tt, NULL); for (int k = 0; k < MAXD; k++) hold(&D[k].h_tog, NULL);
 }
+/* the Custom difficulty panel: its title and one switch per difficulty mod; pn_need = the width its texts need on one line */
 static DSLObj pn_build(Obj set) {
     DSLObj pn = held(&h_pn);
     if (pn && pn_gen != dsi_generation()) { pn_drop(); pn = NULL; }   /* a language change: built again */
@@ -242,61 +257,134 @@ static DSLObj pn_build(Obj set) {
     diff_scan(); if (!nd) return NULL;
     pn = U->panel(tr_of(set), 0, 0, PN_W, 100, 0);                     /* the game's dark Box panel */
     if (!pn) return NULL;
-    hold(&h_pn, pn); pn_gen = dsi_generation(); memset(pn_last, 0, sizeof pn_last);
+    hold(&h_pn, pn); pn_gen = dsi_generation(); col_w = 0;
     DSLObj tt = U->text(pn, PN_PAD, 10, PN_W - 2 * PN_PAD, 30, TR("Custom difficulty"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF);
+    hold(&h_pn_tt, tt);
     float need = (tt ? dsl_ui_text_line_w(tt) : 0) + 2 * PN_PAD, y = 48;
-    DSLObj w[MAXD] = { 0 };
     for (int k = 0; k < nd; k++) {
         const DSLModInfo *m = mod_of(D[k].id); if (!m) continue;
-        w[k] = U->toggle(pn, PN_PAD, y, PN_W - 2 * PN_PAD, m->name, running(D[k].id) && show_get(D[k].id), tog_click, (void *)(intptr_t)k);
-        if (!w[k]) continue;
-        hold(&D[k].h_tog, w[k]); tog_tip(k, w[k]);
-        if (!running(D[k].id)) U->set_enabled(w[k], 0);
-        float lw = dsl_ui_text_line_w(w[k]) + 76 + 2 * PN_PAD; if (lw > need) need = lw;   /* label + the box, one line */
+        DSLObj w = U->toggle(pn, PN_PAD, y, PN_W - 2 * PN_PAD, m->name, running(D[k].id) && show_get(D[k].id), tog_click, (void *)(intptr_t)k);
+        if (!w) continue;
+        hold(&D[k].h_tog, w); tog_tip(k, w);
+        if (!running(D[k].id)) U->set_enabled(w, 0);
+        float lw = dsl_ui_text_line_w(w) + 76 + 2 * PN_PAD; if (lw > need) need = lw;   /* label + the box, one line */
         y += PN_ROW;
     }
-    pn_w = need < PN_W ? PN_W : need > 2 * PN_W ? 2 * PN_W : need;
-    pn_ht = y + PN_PAD - (PN_ROW - 36);
-    if (tt) U->place(tt, PN_PAD, 10, pn_w - 2 * PN_PAD, 30);
-    for (int k = 0, yy = 48; k < nd; k++) if (w[k]) { U->place(w[k], PN_PAD, (float)yy, pn_w - 2 * PN_PAD, 36); yy += (int)PN_ROW; }
-    dsl_log("newgame: Custom difficulty panel made on the New Game screen (%d switch(es), width %.0f)", nd, pn_w);
+    pn_need = need; pn_ht = y + PN_PAD - (PN_ROW - 36);
+    dsl_log("newgame: Custom difficulty panel made on the New Game screen (%d switch(es), width needed %.0f)", nd, need);
     return pn;
 }
-static void pn_place(Obj set, DSLObj pn) {
+static void pn_layout(float w) {
+    DSLObj tt = held(&h_pn_tt); if (tt) U->place(tt, PN_PAD, 10, w - 2 * PN_PAD, 30);
+    for (int k = 0, y = 48; k < nd; k++) { DSLObj t = held(&D[k].h_tog); if (t) { U->place(t, PN_PAD, (float)y, w - 2 * PN_PAD, 36); y += (int)PN_ROW; } }
+}
+static void mp_click(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("newgame: Mods of this world [Change]"); dsl_newworld_change(); }
+static void mp_drop(void) {
+    DSLObj p = held(&h_mp); if (p) U->destroy(p);
+    hold(&h_mp, NULL); hold(&h_mp_tt, NULL); hold(&h_mp_body, NULL); hold(&h_mp_btn, NULL);
+}
+/* the "Mods of this world" panel: its title, the names, Change; mp_need = the width its title and button need */
+static DSLObj mp_build(Obj set) {
+    DSLObj mp = held(&h_mp);
+    if (mp && mp_gen != dsi_generation()) { mp_drop(); mp = NULL; }
+    if (mp) return mp;
+    mp = U->panel(tr_of(set), 0, 0, PN_W, 100, 0);
+    if (!mp) return NULL;
+    hold(&h_mp, mp); mp_gen = dsi_generation(); col_w = 0; mp_stale = 1; mp_fill_w = 0;
+    DSLObj tt = U->text(mp, PN_PAD, 10, PN_W - 2 * PN_PAD, 30, TR("Mods of this world"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, 0xD9BE8FFF);
+    DSLObj body = U->text(mp, PN_PAD, MP_BODY_Y, PN_W - 2 * PN_PAD, 24, "", 16, DSL_TXT_LEFT, 0xD9C7B0FF);
+    DSLObj btn = U->button(mp, PN_W - PN_PAD - MP_BTN_W, MP_BODY_Y + 34, MP_BTN_W, MP_BTN_H, TR("Change"), mp_click, NULL);
+    hold(&h_mp_tt, tt); hold(&h_mp_body, body); hold(&h_mp_btn, btn);
+    float bl = btn ? dsl_ui_text_line_w(btn) + 32 : 0;                 /* the button's label + its frame */
+    mp_btn_w = bl > MP_BTN_W ? bl : MP_BTN_W;
+    mp_need = (tt ? dsl_ui_text_line_w(tt) : 0) + 2 * PN_PAD;
+    if (mp_btn_w + 2 * PN_PAD > mp_need) mp_need = mp_btn_w + 2 * PN_PAD;
+    dsl_log("newgame: Mods of this world panel made on the New Game screen (width needed %.0f)", mp_need);
+    return mp;
+}
+static float text_h(DSLObj t, float w) { return U->text_height ? U->text_height(t, w) : 0; }
+/* the names at width w: every one (long ones wrap), else the first k and "+N" so the text keeps to mp_lines lines (the Load
+   list's "+N" rule); k = 0: "+N" alone. Returns 1 when the text or its height changed. */
+static int mp_fill(float w) {
+    DSLObj body = held(&h_mp_body); if (!body) return 0;
+    if (!mp_stale && w == mp_fill_w && mp_lines == mp_fill_lines) return 0;
+    mp_stale = 0; mp_fill_w = w; mp_fill_lines = mp_lines;
+    U->set_text(body, mp_all);
+    float one = text_h(body, 100000.f) / (mp_n > 1 ? mp_n : 1), max = one * mp_lines + 0.5f, h = text_h(body, w);   /* one line in its own font */
+    char t[1300]; snprintf(t, sizeof t, "%s", mp_all); int k = mp_n;
+    while (k > 0 && h > max) {
+        k--;
+        size_t n = 0; int c = 0;
+        while (mp_all[n] && c < k && n < sizeof t - 16) { if (mp_all[n] == '\n') c++; n++; }   /* the first k names, each with its line break */
+        memcpy(t, mp_all, n); snprintf(t + n, sizeof t - n, "+%d", mp_n - k);
+        U->set_text(body, t); h = text_h(body, w);
+    }
+    if (k < mp_n) dsl_log("newgame: Mods of this world: %d of %d name(s), then +%d (the hover card lists them all)", k, mp_n, mp_n - k);
+    U->tooltip(body, TR("Mods of this world"), k < mp_n ? mp_all : NULL);
+    float bh = h > one ? h : one; int changed = strcmp(t, mp_text) || bh != mp_bh;
+    snprintf(mp_text, sizeof mp_text, "%s", t); mp_bh = bh; mp_k = k;
+    return changed;
+}
+static void mp_layout(float w) {
+    DSLObj tt = held(&h_mp_tt), body = held(&h_mp_body), btn = held(&h_mp_btn);
+    if (tt) U->place(tt, PN_PAD, 10, w - 2 * PN_PAD, 30);
+    if (body) U->place(body, PN_PAD, MP_BODY_Y, w - 2 * PN_PAD, mp_bh);
+    if (btn) U->place(btn, w - PN_PAD - mp_btn_w, MP_BODY_Y + mp_bh + 10, mp_btn_w, MP_BTN_H);
+    mp_ht = MP_BODY_Y + mp_bh + 10 + MP_BTN_H + PN_PAD;
+}
+/* both panels from the screen: x right of the window, top level with the list's top, under the title corner when they would
+   meet it, inside the screen (moved up, then smaller when too tall) */
+static void col_place(Obj set, DSLObj pn, DSLObj mp) {
+    float need = pn ? pn_need : 0; if (mp && mp_need > need) need = mp_need;
+    float W = need < PN_W ? PN_W : need > 2 * PN_W ? 2 * PN_W : need; int relaid = 0;
+    if (W != col_w) { col_w = W; if (pn) pn_layout(W); mp_fill_w = 0; relaid = 1; }
+    if (mp && (mp_fill(W - 2 * PN_PAD) || relaid)) mp_layout(W);
     Obj str = tr_of(set), fr = str ? CALL(m_parent, Obj, Obj)(str, m_parent) : NULL;   /* the window (Panel_CreateCampaignPanel) */
-    Obj row = o_inc >= 0 ? tr_of(AT(set, o_inc, Obj)) : NULL;                          /* arrow -> its content -> the row */
-    for (int i = 0; i < 2 && row; i++) { Obj up = CALL(m_parent, Obj, Obj)(row, m_parent); if (!up || up == str) break; row = up; }
-    float P[4], F[4], R[4], L[4], C[4], sw, sh;
+    float P[4], F[4], L[4], C[4], sw, sh;
     if (!str || dsl_ui_screen_rect((DSLObj)str, P) != 1) return;
     if (!fr || dsl_ui_screen_rect((DSLObj)fr, F) != 1) memcpy(F, P, sizeof F);
-    if (!row || dsl_ui_screen_rect((DSLObj)row, R) != 1) memcpy(R, P, sizeof R);
     DSLObj vp = dsl_ui_child((DSLObj)str, "Viewport"); if (!vp || dsl_ui_screen_rect(vp, L) != 1) memcpy(L, P, sizeof L);
     float lw = dsl_ui_width((DSLObj)str), s = lw > 50 ? (P[2] - P[0]) / lw : 0; if (s <= 0) return;   /* px per unit; not laid out yet */
     dsl_ui_screen_size(&sw, &sh);
-    float m = 8 * s, x0 = F[2] + PN_GAP * s, k = (sw - m - x0) / (pn_w * s);
+    float ph = pn ? pn_ht : 0, gap = pn && mp ? PN_GAP : 0, H = ph + gap + (mp ? mp_ht : 0);
+    float m = 8 * s, x0 = F[2] + PN_GAP * s, k = (sw - m - x0) / (W * s);
     if (k > 1) k = 1;
-    if (k < 0.5f) k = 0.5f;
-    float pw = pn_w * s * k, ph = pn_ht * s * k, top = R[3];
-    if (top > L[3]) top = L[3];                                        /* the row scrolled up out of the list: the list's top */
-    if (top - ph < L[1]) top = L[1] + ph;                              /* ... down: the list's bottom */
-    if (dsl_update_corner_rect(C) && x0 < C[2] && x0 + pw > C[0] && top > C[1] - PN_GAP * s && top - ph < C[3]) top = C[1] - PN_GAP * s;
-    if (top - ph < m) top = m + ph;
-    if (top > sh - m) top = sh - m;
-    float v[5] = { (x0 - P[0]) / s, (P[3] - top) / s, pn_w, pn_ht, k }; int same = 1;
-    for (int i = 0; i < 5; i++) { float d = v[i] - pn_last[i]; same &= d > -0.5f && d < 0.5f; }
+    float top = L[3], tmax = sh - m;                                   /* the list's top: the list scrolls, the column does not */
+    if (dsl_update_corner_rect(C) && x0 < C[2] && x0 + W * s * k > C[0] && C[1] - PN_GAP * s < tmax) tmax = C[1] - PN_GAP * s;
+    if (top > tmax) top = tmax;
+    if (top - H * s * k < m) top = m + H * s * k < tmax ? m + H * s * k : tmax;   /* too low: up, never over the corner */
+    if (top - H * s * k < m && H > 0) k = (top - m) / (H * s);         /* still too tall: smaller */
+    if (k <= 0.05f) return;
+    float v[7] = { (x0 - P[0]) / s, (P[3] - top) / s, W, ph, (P[3] - top) / s + (ph + gap) * k, mp ? mp_ht : 0, k }; int same = !relaid;
+    for (int i = 0; i < 7; i++) { float d = v[i] - col_last[i]; same &= d > -0.5f && d < 0.5f; }
     if (same) return;
-    memcpy(pn_last, v, sizeof v);
-    U->place(pn, v[0], v[1], v[2], v[3]); dsl_ui_set_scale(pn, k);
-    float pr[4] = { x0, top - ph, x0 + pw, top }; memcpy(dsl_newgame_pn_rect, pr, sizeof pr);
-    memcpy(dsl_newgame_frame_rect, F, sizeof F); memcpy(dsl_newgame_row_rect, R, sizeof R);
+    memcpy(col_last, v, sizeof v);
+    if (pn) { U->place(pn, v[0], v[1], W, ph); dsl_ui_set_scale(pn, k); }
+    if (mp) { U->place(mp, v[0], v[4], W, v[5]); dsl_ui_set_scale(mp, k); }
+    float pr[4] = { x0, top - ph * s * k, x0 + W * s * k, top }, mt = top - (ph + gap) * s * k, mr[4] = { x0, mt - v[5] * s * k, x0 + W * s * k, mt };
+    memcpy(dsl_newgame_pn_rect, pn ? pr : (float[4]){ 0 }, sizeof pr); memcpy(dsl_newgame_mp_rect, mp ? mr : (float[4]){ 0 }, sizeof mr);
+    memcpy(dsl_newgame_frame_rect, F, sizeof F); dsl_newgame_col_scale = k;
+    dsl_log("newgame: side panels placed: screen %.0fx%.0f, window right %.0f (%.2f px/unit), column %.0f,%.0f..%.0f,%.0f, width %.0f, scale %.2f%s",
+            sw, sh, F[2], s, x0, top - H * s * k, x0 + W * s * k, top, W, k, k < 0.5f ? " (small: little room right of the window)" : "");
 }
-static void toggles_frame(void) {
+/* the settings step's panel (SubUI_CampaignSetting) while it shows: the live presenter's; without the switches (a name
+   missing) the one FindObjectOfType finds, looked for every 30 frames, so the mods still show */
+static Obj side_set(unsigned f) {
+    if (ok) { Obj p = presenter(), set = setpanel_of(view_of(p)); return set && shown(set) && AT(p, o_vt, int32_t) == 2 ? set : NULL; }
+    Obj s = (Obj)held(&h_found);
+    if (!s && f % 30 == 0 && m_find && t_set) { s = CALL(m_find, Obj, Obj, uint8_t)(t_set, 0, m_find); if (live(s)) hold(&h_found, (DSLObj)s); else s = NULL; }
+    return s && shown(s) ? s : NULL;
+}
+static void side_frame(void) {
     static unsigned f; if (++f % 2) return;
-    Obj p = presenter(), v = view_of(p), set = setpanel_of(v);
-    if (!set || !shown(set) || AT(p, o_vt, int32_t) != 2) return;      /* a child of the settings panel: hidden with it */
-    clamp(p);
-    DSLObj pn = pn_build(set); if (!pn) return;
-    pn_place(set, pn);
+    Obj set = side_set(f); if (!set) return;                           /* children of the settings panel: hidden with it */
+    if (ok) clamp(presenter());
+    DSLObj pn = ok ? pn_build(set) : NULL, mp = mp_build(set);
+    if (mp && (mp_stale || f % 30 == 0)) {                             /* the names follow the levels chosen (Hell) */
+        char all[sizeof mp_all]; int n = dsl_newworld_names(all, sizeof all);
+        if (n != mp_n || strcmp(all, mp_all)) { snprintf(mp_all, sizeof mp_all, "%s", all); mp_n = n; mp_stale = 1; }
+    }
+    if (pn || mp) col_place(set, pn, mp);
 }
 /* dsl_reg.c (the New Campaign line "Mods for this world"): the levels chosen on the settings step now; 0 = not there */
 int dsl_newgame_levels(int *combat, int *management) {
@@ -340,6 +428,9 @@ void dsl_newgame_install(void) {
     gc_get = dsl_ga_sym("il2cpp_gchandle_get_target"); gc_free = dsl_ga_sym("il2cpp_gchandle_free");
     void *(*ctype)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*tobj)(void *) = dsl_ga_sym("il2cpp_type_get_object");
     if (ctype && tobj && k_title) t_title = tobj(ctype(k_title));
+    if (ctype && tobj && k_set) t_set = tobj(ctype(k_set));
+    side_ok = U && m_alive && m_comp_go && m_comp_tr && m_go_tree && m_parent && gc_new && gc_get && gc_free;
+    if (!side_ok) dsl_log("newgame: side panels OFF (names missing)");
     void *k_sr = dsl_find_class("UnityEngine.UI", "ScrollRect");       /* test only */
     if (ctype && tobj && k_sr) t_sr = tobj(ctype(k_sr));
     m_getcomp = kComp ? dsl_find_method(kComp, "GetComponentInChildren", 1) : NULL; m_sr_vpos = k_sr ? dsl_find_method(k_sr, "set_verticalNormalizedPosition", 1) : NULL;
@@ -362,8 +453,8 @@ void dsl_newgame_install(void) {
     dsl_log("newgame: custom difficulty switches on (%d difficulty mod(s)%s%s)", nd, nd ? ": " : "", sv);
 }
 void dsl_newgame_frame(void) {
-    if (!ok) return;
-    toggles_frame();
+    if (!side_ok) return;
+    side_frame();
 }
 
 /* ------------------------------------------------------------------ test only (dsl_reg.c, DSL_SOFT_TEST) */
@@ -400,18 +491,29 @@ static void state_write(void) {
                 w ? dsl_ui_text_line_w(w) : 0, w ? dsl_ui_width(w) : 0);
     }
     float P[4] = { 0 }; Obj ptr = set ? tr_of(set) : NULL; if (ptr) dsl_ui_screen_rect((DSLObj)ptr, P);
-    float *S = dsl_newgame_pn_rect, *F = dsl_newgame_frame_rect, *W = dsl_newgame_row_rect; float sw, sh; dsl_ui_screen_size(&sw, &sh);
-    float SR[4] = { 0 }, L[4] = { 0 }, FR[4] = { 0 }, C[4] = { 0 }, M[4] = { 0 };             /* screen rects now (the side panel's, not its last placing) */
+    float *S = dsl_newgame_pn_rect, *F = dsl_newgame_frame_rect, W[4] = { 0 }; float sw, sh; dsl_ui_screen_size(&sw, &sh);
+    Obj row = set && o_inc >= 0 ? tr_of(AT(set, o_inc, Obj)) : NULL;                  /* the combat row: arrow -> its content -> the row */
+    for (int i = 0; i < 2 && row; i++) { Obj up = CALL(m_parent, Obj, Obj)(row, m_parent); if (!up || up == ptr) break; row = up; }
+    if (row) dsl_ui_screen_rect((DSLObj)row, W);
+    float SR[4] = { 0 }, L[4] = { 0 }, FR[4] = { 0 }, C[4] = { 0 }, M[4] = { 0 };             /* screen rects now (not the last placing) */
     DSLObj pn = held(&h_pn); int pn_on = pn && dsl_ui_screen_rect(pn, SR) == 1 && dsl_ui_shown(pn);
     DSLObj vp = ptr ? dsl_ui_child((DSLObj)ptr, "Viewport") : NULL; if (vp) dsl_ui_screen_rect(vp, L);
     Obj fr = ptr ? CALL(m_parent, Obj, Obj)(ptr, m_parent) : NULL; if (fr) dsl_ui_screen_rect((DSLObj)fr, FR);
-    int c_on = dsl_update_corner_rect(C), m_on = dsl_rows_test_newcampaign_rect(M);
+    DSLObj mp = held(&h_mp), body = held(&h_mp_body), btn = held(&h_mp_btn);
+    int c_on = dsl_update_corner_rect(C), m_on = mp && dsl_ui_screen_rect(mp, M) == 1 && dsl_ui_shown(mp);
+    /* the mods' text inside its box (TMP rendered size vs the box, local units) and Change inside the panel */
+    float rw = 0, rh = 0, B[4] = { 0 }; int fit = 0, btn_in = 0; char mt[1300] = "", em[2700];
+    if (body && dsl_ui_text_rendered(body, &rw, &rh)) fit = rh <= mp_bh + 1 && rw <= dsl_ui_width(body) + 1;
+    if (btn && m_on && dsl_ui_screen_rect(btn, B) == 1) btn_in = B[0] >= M[0] - 0.5f && B[2] <= M[2] + 0.5f && B[1] >= M[1] - 0.5f && B[3] <= M[3] + 0.5f && dsl_ui_shown(btn);
+    if (body) dsl_ui_text_get(body, mt, sizeof mt); jesc(em, sizeof em, mt);
     fprintf(f, "], \"panel\": [%.1f, %.1f, %.1f, %.1f], \"side\": [%.1f, %.1f, %.1f, %.1f], \"window\": [%.1f, %.1f, %.1f, %.1f], \"row\": [%.1f, %.1f, %.1f, %.1f], "
                "\"side_shown\": %d, \"screen\": [%.0f, %.0f], ", P[0], P[1], P[2], P[3], S[0], S[1], S[2], S[3], F[0], F[1], F[2], F[3], W[0], W[1], W[2], W[3],
             pn ? dsl_ui_shown(pn) : 0, sw, sh);
     fprintf(f, "\"side_now\": [%.1f, %.1f, %.1f, %.1f], \"side_now_shown\": %d, \"list\": [%.1f, %.1f, %.1f, %.1f], \"frame\": [%.1f, %.1f, %.1f, %.1f], "
-               "\"corner\": [%.1f, %.1f, %.1f, %.1f], \"corner_shown\": %d, \"mods\": [%.1f, %.1f, %.1f, %.1f], \"mods_shown\": %d}\n",
-            SR[0], SR[1], SR[2], SR[3], pn_on, L[0], L[1], L[2], L[3], FR[0], FR[1], FR[2], FR[3], C[0], C[1], C[2], C[3], c_on, M[0], M[1], M[2], M[3], m_on);
+               "\"corner\": [%.1f, %.1f, %.1f, %.1f], \"corner_shown\": %d, \"mods\": [%.1f, %.1f, %.1f, %.1f], \"mods_shown\": %d, \"side_scale\": %.3f, "
+               "\"mods_fit\": {\"ok\": %d, \"btn_in\": %d, \"rendered\": [%.1f, %.1f], \"box\": [%.1f, %.1f], \"names\": %d, \"shown_names\": %d, \"text\": \"%s\"}}\n",
+            SR[0], SR[1], SR[2], SR[3], pn_on, L[0], L[1], L[2], L[3], FR[0], FR[1], FR[2], FR[3], C[0], C[1], C[2], C[3], c_on, M[0], M[1], M[2], M[3], m_on,
+            dsl_newgame_col_scale, fit, btn_in, rw, rh, body ? dsl_ui_width(body) : 0, mp_bh, mp_n, mp_k, em);
     fclose(f); rename(tmp, pth);
 }
 void dsl_newgame_test_cmd(const JNode *j) {
@@ -442,6 +544,9 @@ void dsl_newgame_test_cmd(const JNode *j) {
         JNode *n = json_get(j, "pos"); float pos = n && n->t == JN_NUM ? (float)n->num : 1;
         if (live(sr)) CALL(m_sr_vpos, void, Obj, float)(sr, pos, m_sr_vpos);
         dsl_log("newgame test: scroll %.2f (%s)", pos, live(sr) ? "ScrollRect" : "no ScrollRect");
+    } else if (!strcmp(op, "mods_lines")) {                            /* the most lines of names (a long list's "+N") */
+        JNode *n = json_get(j, "n"); mp_lines = n && n->t == JN_NUM && n->num >= 1 ? (int)n->num : MP_LINES; mp_stale = 1;
+        dsl_log("newgame test: mods_lines %d", mp_lines);
     } else if (!strcmp(op, "force")) {                                 /* a level written past the selectors (a key path): clamp() */
         JNode *n = json_get(j, "combat"); if (p && n && n->t == JN_NUM) AT(p, o_cd, int32_t) = (int)n->num;
         dsl_log("newgame test: force combat %d", p ? AT(p, o_cd, int32_t) : -1);
