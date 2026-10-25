@@ -163,6 +163,27 @@ typedef struct DSLUi {
        DSL_ESC_HUD logs "ESC-MISSING <its first text>" in dsload.log; the esc tests fail on that line. */
     int (*esc_push)(DSLObj win, void (*close)(void *ud), void *ud, int flags);
     void (*esc_drop)(DSLObj win);            /* the window closed (or hid) another way */
+    /* appended (check size, or use the wrappers below; kit 0.1.28): the game's own look and settings for our windows.
+       close_x: the game's red X close button (a copy of the Load Campaign window's own), size x size at x, y in parent
+       (the game draws it about 34 units). A click runs the close that `win` registered with esc_push: the SAME action as
+       Escape, cleanup included; push `win` before the player can click (a click with no registration only logs).
+       NULL = the game's button was not found (or an older kit): put your own text "X" button there instead. */
+    DSLObj (*close_x)(DSLObj parent, float x, float y, float size, DSLObj win);
+    /* the game's UI Scale (Settings > UI Scale, UIScaleManager.Scale, 0.75 .. 1.4); 1 when unknown */
+    float (*ui_scale)(void);
+    /* opt-in, one call per window: `win` (a root panel of this kit, parent NULL, or any RectTransform) follows the game's
+       UI Scale like the game's own windows: drawn at its size x UI Scale around its pivot, and smaller when that would
+       not fit in its parent (a small or tall game window), never cut. The kit sets the window's scale (localScale) at
+       once, when the player changes UI Scale, and when the game window is resized; do not set it yourself. Windows that
+       apply UI Scale themselves (Units Laboratory, Bring Units) must not call it (it would scale them twice). 0 = ok. */
+    int (*scale_follow)(DSLObj win);
+    /* opt-in (owner 2026-10-25, MOVE RULE: in-game windows and panels that are not full screen): `panel` (a kit panel
+       or any RectTransform, also on another canvas) moves with a RIGHT-click drag that starts on it (a right-click that
+       does not move stays a right-click), always stays on the screen, and keeps its place under `key` (use
+       "<mod id>.<panel>") across closes and game starts (a file in the loader's data folder). Call it right after the
+       panel is built and placed: a place kept from before is put back at once. After the call, do not place the panel
+       again (that undoes the player's move); size changes are fine. 0 = ok. */
+    int (*movable)(DSLObj panel, const char *key);
 } DSLUi;
 enum { DSL_ESC_EDIT = 1, DSL_ESC_HUD = 2 };   /* esc_push flags (DSL_ESC_HUD: close may be NULL) */
 
@@ -335,6 +356,12 @@ static inline int dsl_on_setting_change(const DSLHost *h, DSLPlugin *self, void 
 static inline int dsl_esc_push(const DSLUi *ui, DSLObj win, void (*close)(void *ud), void *ud, int flags) {
     return DSL_UI_HAS(ui, esc_push) ? ui->esc_push(win, close, ud, flags) : -1; }
 static inline void dsl_esc_drop(const DSLUi *ui, DSLObj win) { if (DSL_UI_HAS(ui, esc_drop)) ui->esc_drop(win); }
+/* red X, UI Scale, right-drag move (kit 0.1.28): NULL / 1 / -1 with an older kit (then: a text "X", no scale, no move) */
+static inline DSLObj dsl_close_x(const DSLUi *ui, DSLObj parent, float x, float y, float size, DSLObj win) {
+    return DSL_UI_HAS(ui, close_x) ? ui->close_x(parent, x, y, size, win) : NULL; }
+static inline float dsl_ui_scale(const DSLUi *ui) { return DSL_UI_HAS(ui, ui_scale) ? ui->ui_scale() : 1.0f; }
+static inline int dsl_scale_follow(const DSLUi *ui, DSLObj win) { return DSL_UI_HAS(ui, scale_follow) ? ui->scale_follow(win) : -1; }
+static inline int dsl_movable(const DSLUi *ui, DSLObj panel, const char *key) { return DSL_UI_HAS(ui, movable) ? ui->movable(panel, key) : -1; }
 
 #ifdef __cplusplus
 }

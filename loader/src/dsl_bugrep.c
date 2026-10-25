@@ -144,15 +144,6 @@ static void centre(DSLObj rt) {
     CALL(m_pivot, void, Obj, V2)(rt, h, m_pivot); CALL(m_pos, void, Obj, V2)(rt, z, m_pos);
 }
 typedef struct { float x, y, w, h; } R4;
-static float win_scale;
-static void fit_window(void) {                                        /* a screen smaller than the window: scale it down (never up) */
-    if (!w_back || !w_win || !m_rect || !m_tr_setscale) return;
-    R4 r = CALL(m_rect, R4, Obj)(w_back, m_rect);                     /* the dim layer fills the screen layer */
-    if (r.w < 100 || r.h < 100) return;
-    float s = (r.w - 16) / WIN_W, t = (r.h - 16) / WIN_H; if (t < s) s = t; if (s > 1) s = 1;
-    if (s == win_scale) return;
-    win_scale = s; CALL(m_tr_setscale, void, Obj, V3)(w_win, (V3){ s, s, 1 }, m_tr_setscale);
-}
 static void fill_parent(DSLObj rt) {
     if (!rt || !m_amin || !m_amax || !m_pivot || !m_pos || !m_size) return;
     V2 z = { 0, 0 }, o = { 1, 1 }, h = { 0.5f, 0.5f };
@@ -465,7 +456,8 @@ static void build(void) {
     flat(U->panel(w_win, 4, 4, WIN_W - 8, BAND_H - 4, 0), 0x2D2A31FF);
     flat(U->panel(w_win, 4, BAND_H, WIN_W - 8, 1, 0), 0xB6835AFF);
     U->text(w_win, L, 4, 700, BAND_H - 4, TR("Bug report"), 30, DSL_TXT_LEFT | DSL_TXT_TITLE, 0);
-    DSLObj x = U->button(w_win, WIN_W - 66, 20, 42, 42, "X", cancel_click, NULL);
+    DSLObj x = U->close_x(w_win, WIN_W - 60, 21, 38, w_win);           /* the game's red X: the window's Escape close (esc_close) */
+    if (!x) x = U->button(w_win, WIN_W - 66, 20, 42, 42, "X", cancel_click, NULL);
     U->tooltip(x, NULL, TR("Close (Esc)"));
     U->text(w_win, L, 96, CW, 30, TR("What happened? What did you expect?"), 18, DSL_TXT_LEFT, GOLD);
     w_text = U->field(w_win, L, 130, CW, 290, TR("For example: I opened the shop and the game froze. I expected to buy a sword."), "", NULL, NULL);
@@ -487,7 +479,7 @@ static void build(void) {
     w_cancel = U->button(w_win, WIN_W - 32 - 260 - 12 + 0, 636, 130, 48, TR("Cancel"), cancel_click, NULL);
     w_send = U->button(w_win, WIN_W - 32 - 130, 636, 130, 48, TR("Send"), send_click, NULL);
     saved_label();
-    win_scale = 0; fit_window();
+    U->scale_follow(w_win);                                            /* UI Scale as the game's windows; a small screen: smaller, never cut */
 }
 static void close_window(void) {
     if (!is_open) return;
@@ -600,7 +592,6 @@ void dsl_bugrep_frame(void) {
         }
     }
     if (is_open) {
-        fit_window();                                                 /* the game window may be resized under it */
         pthread_mutex_lock(&mu); int dc = done_code; char m[1400]; snprintf(m, sizeof m, "%s", done_msg); if (dc) done_code = 0; int sn = sending; pthread_mutex_unlock(&mu);
         if (dc) {
             status(m, dc == 1 ? GOLD : WARN);
