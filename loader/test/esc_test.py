@@ -8,7 +8,8 @@ menu in a world, the stock window under ours stays), and the next press does the
  title: demo panel; demo panel + its text field with the keyboard (1st press leaves the field, 2nd closes the panel);
         demo panel + the kit's notice box (1st = Cancel, 2nd closes the panel); Mods window; Mods window + its "Save these
         mods as a group" name row (1st = Cancel, 2nd closes); the stock Load list + a world's Mods window (only ours
-        closes); Bug report window.
+        closes); Bug report window; a mod's Settings page in the Mods window (1st = its Back: the list again, the window
+        stays; 2nd closes; owner 2026-10-25 "Go Back one level").
  world: Escape with none of ours opens the Esc menu (the key path works); demo panel (no Esc menu); Mods window (no Esc
         menu); Esc menu + Bug report (only ours closes); Esc menu > Load + a world's Mods window (only ours closes).
 Old loaders fail: Escape leaves the demo panel and the notice open, and in a world the game also opens or closes its menus.
@@ -211,6 +212,16 @@ def title_cases():
     press(); b = bug('state'); s = st()
     check('title 7: Escape closes the Bug report window', not b.get('open'), b)
     check('title 7: the title menu is still there', s.get('titlemenu') == 1, s.get('titlemenu'))
+    # 8. a mod's Settings page inside the Mods window (multiplayer's, a launcher mod): Escape = Back first
+    names = lambda j: [c.get('name') for c in j.get('controls', [])]
+    win('open'); wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10); time.sleep(0.5)
+    win('click', target='tab-mods:launcher'); time.sleep(0.5); win('click', target='settings:multiplayer')
+    w = wait_for(lambda: (lambda j: j if 'set-back' in names(j) else None)(win('state', dump=1)), 6) or win('state')
+    check('title 8: the Settings page shows in the Mods window', 'set-back' in names(w), names(w)[:12])
+    press(); w = win('state')
+    check('title 8: 1st Escape = Back (the mod list again, the window stays)', w.get('open') and 'set-back' not in names(w) and 'settings:multiplayer' in names(w), (w.get('open'), names(w)[:12]))
+    press(); w = win('state')
+    check('title 8: 2nd Escape closes the window', not w.get('open'), w.get('open'))
 
 
 def world_cases():
