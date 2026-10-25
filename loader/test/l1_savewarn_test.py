@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Owner item 9: a mod whose saves need the loader (mod.json "save_dependent": hell-difficulty) shows a warning, on
+"""Owner item 9: a mod whose saves need the loader (mod.json "save_dependent": zetu-suite; Hell difficulty has no switch since
+2026-10-25 and counts only for worlds on Hell) shows a warning, on
 test copy K (hidden, muted, staged; take a lease first). Uses this worktree's build/.
  1. Load list: the world (gcd-cdr) has no warning in its hover card
- 2. its "Change" -> Mods window: Hell off = no warning line; Hell on = "Saves made with Hell difficulty may not work
+ 2. its "Change" -> Mods window: ZET-U off = no warning line; ZET-U on = "Saves made with ZET-U Mod Suite may not work
     without the mod loader." under its switch
  3. "Save for this world" -> the world's hover card ends with that warning
 Output: <out>/ (logs, shots, summary.json)."""
@@ -17,7 +18,8 @@ V.UI = os.path.join(OUT, 'ui'); os.makedirs(V.UI, exist_ok=True)
 check, log = T.check, T.log
 X = os.environ.get('DSL_TEST_COPY', 'K')                # its own copy (S is shared with other lanes); make_instance.sh K
 T.X = X; T.I = r.idir(X); T.SDIR = os.path.join(T.I, 'softrestart'); T.MODS = os.path.join(T.I, 'data', 'Mods')
-WARN = 'Saves made with Hell difficulty may not work without the mod loader.'
+DEP = 'zetu-suite'
+WARN = 'Saves made with ZET-U Mod Suite may not work without the mod loader.'
 
 
 def card(name):
@@ -27,7 +29,7 @@ def card(name):
 
 
 def warn_text(st):
-    return [c['text'] for c in st.get('controls', []) if c['name'] == 'savewarn:hell-difficulty']
+    return [c['text'] for c in st.get('controls', []) if c['name'] == 'savewarn:' + DEP]
 
 
 def main():
@@ -44,26 +46,26 @@ def main():
         T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'A title'); time.sleep(3)
         r.send(T.X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
         check('Load list rows rebuilt', T.wait_log('rows: Load list rebuilt', 20)); time.sleep(1.5)
-        b0 = card('0_card_no_hell'); S['card_before'] = b0
+        b0 = card('0_card_no_dep'); S['card_before'] = b0
         check('no warning without a save_dependent mod', b0 and 'Saves made with' not in b0, b0)
         T.request({'cmd': 'change', 'row': 0}); st = {}
         for _ in range(15):
             time.sleep(1); st = V.ui('state')
             if st.get('open'): break
-        # "Show only active mods" (on by default, owner 2026-10-24) hides Hell, which is off in this world: show every mod
+        # "Show only active mods" (on by default, owner 2026-10-24) hides ZET-U, which is off in this world: show every mod
         if any(c['name'] == 'active-only' and c.get('on') == 1 for c in st.get('controls', [])):
             V.ui('click', target='active-only'); time.sleep(1); st = V.ui('state')
         w = warn_text(st); S['warn_off'] = w
-        check('Hell off: warning line hidden', w == [''], w)
-        V.ui('click', target='mod:hell-difficulty'); time.sleep(0.5); st = V.ui('state')
+        check('ZET-U off: warning line hidden', w == [''], w)
+        V.ui('click', target='mod:' + DEP); time.sleep(0.5); st = V.ui('state')
         w = warn_text(st); S['warn_on'] = w
-        check('Hell on: warning line under its switch', w == [WARN], w)
-        T.shot('1_mods_window_hell_on')
+        check('ZET-U on: warning line under its switch', w == [WARN], w)
+        T.shot('1_mods_window_zetu_on')
         V.ui('click', target='apply'); time.sleep(1)
         wj = json.load(open(os.path.join(T.MODS, 'worlds.json'))).get('worlds', {})
-        check('world saved with Hell', wj.get(T.GUID) == 'gcd-cdr+hell-difficulty', wj)
+        check('world saved with ZET-U', wj.get(T.GUID) == 'gcd-cdr+' + DEP, wj)
         V.ui('close'); time.sleep(1.5)
-        b1 = card('2_card_hell'); S['card_after'] = b1
+        b1 = card('2_card_dep'); S['card_after'] = b1
         check('hover card ends with the warning', b1.endswith('<color=#EA9F3D>%s</color>' % WARN), b1)
     except Exception as e:
         check('run finished', False, repr(e))

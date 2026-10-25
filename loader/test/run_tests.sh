@@ -116,6 +116,31 @@ print -r -- '{"world":null,"modset":"aaa","rule":"mods","worlds":{"22222222-2222
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_copy.json" DSML_MODSET=aaa HOST_COPY_MODS="22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333")
 check "the copy gets the world's stored set and its fixes off (not the running set); the world keeps its own" '[[ "$r" == *"COPYMODS rc=0"* ]] && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); w=d[\"worlds\"]; f=d.get(\"fix_off\",{}); n=\"33333333-3333-3333-3333-333333333333\"; o=\"22222222-2222-2222-2222-222222222222\"; sys.exit(0 if w.get(n)==\"aaa+bbb\" and f.get(n)==\"fixmod\" and w.get(o)==\"aaa+bbb\" and f.get(o)==\"fixmod\" else 1)" "$OUT/session_copy.json"'
 
+# custom difficulty (owner 2026-10-25: Hell runs whenever installed; a world uses it only when its combat or management
+# level is Hell, read from its save). Breaks caught: a Hell world loads in a game without Hell (the stock game cannot read
+# it: the load never ends); a world not on Hell asks for Hell / a restart; the multiplayer set has Hell for a world not on
+# Hell (every guest without Hell refused) or lacks it for a Hell world (a guest without Hell gets a save it cannot read).
+print "== T1f custom difficulty: runs always, only worlds on its level use it"
+mod hellmod 3 '{"id":"hellmod","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"gameplay","save_dependent":true,"difficulty":{"value":5,"name":"Hell"}}'
+cp "$M/profile.json" "$OUT/profile.json.keep"; print '{"enabled":["early-mod"],"provided":["notch-fix"]}' > "$M/profile.json"
+HSESS='{"world":null,"modset":"aaa","rule":"mods","worlds":{"11111111-1111-1111-1111-111111111111":"early-mod+hellmod","22222222-2222-2222-2222-222222222222":"early-mod+hellmod"}}'
+print -r -- "$HSESS" > "$OUT/session_hell.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;4,1")
+check "not switched on in the profile: it runs anyway" 'log | grep -q "hellmod: custom difficulty: runs whenever installed" && log | grep -q "hellmod 1.0.0: loaded"'
+check "a Hell world and a level-4 world registered with Hell both load, no refusal" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
+check "multiplayer set while the level-4 world loads: no Hell" '! grep -q "hellmod@" "$OUT/session_hell.json"'
+print -r -- "$HSESS" > "$OUT/session_hell.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="4,1;1,5")
+check "multiplayer set while a Hell world (management Hell) loads: Hell in it" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && grep -q "hellmod@1.0.0" "$OUT/session_hell.json"'
+sed -i '' 's/"game_builds":\["test"\]/"game_builds":["1"]/' "$M/hellmod/mod.json"     # Hell installed but not running here
+print -r -- "$HSESS" > "$OUT/session_hell.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;0,5")
+check "game without Hell running: a world on combat or management Hell is refused" '[[ "$r" == *"WORLD save1_state=-2 save2_state=-2 cancels=2"* ]]'
+print -r -- "$HSESS" > "$OUT/session_hell.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="4,1;2,3")
+check "game without Hell running: worlds not on Hell load, although registered with it" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
+mv "$OUT/profile.json.keep" "$M/profile.json"; mv "$M/hellmod" "$OUT/hellmod.off"
+
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")
 check "game runs, modules load, foreign entry kept" '[[ "$r" == *"$EXPECT"* ]] && log | grep -q "floor-logger 1.0.0: loaded" && [[ "$r" == *"ENV DYLD_INSERT_LIBRARIES=$FW/foreign.dylib"* ]]'

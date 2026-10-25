@@ -60,6 +60,7 @@
  "(and %d more)": "(그 외 %d개)",
  "After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day.": "충돌, 멈춤, 동기화 오류, 참가 실패가 있으면 다음 실행 때 로그와 버전 정보를 보냅니다. 이름과 IP 주소는 제외됩니다. 하루 최대 3건.",
  "Almost done": "거의 완료",
+ "Always on. Only worlds on %s use it. To show %s on the New Game screen, turn on its switch under \"Custom difficulty\".": "항상 켜짐. %s 난이도 월드에서만 사용합니다. 새로운 게임 화면에 %s 난이도를 표시하려면 \"사용자 지정 난이도\" 아래에서 그 스위치를 켜십시오.",
  "Apply": "적용",
  "Applying mods": "모드 적용 중",
  "Applying mods...": "모드 적용 중...",
@@ -96,6 +97,7 @@
   "클라우드 백업: Steam 클라우드에 세이브 %d개가 있습니다. 확인 시각: %s."
  ],
  "Contact (optional): your Discord name, so we can ask you questions": "연락처(선택): 질문을 드릴 수 있도록 Discord 이름",
+ "Custom difficulty": "사용자 지정 난이도",
  "Default values": "기본값",
  "Delete": "삭제",
  "Delete the group \"%s\"? The mods stay installed.": "\"%s\" 그룹을 삭제하시겠습니까? 모드는 설치된 상태로 남습니다.",
@@ -211,6 +213,7 @@
  "Settings": "설정",
  "Settings: %s": "설정: %s",
  "Show only active mods": "켜진 모드만 표시",
+ "Shows %s in the combat and management difficulty lists. A world made on %s keeps it. Other worlds do not change.": "%s 난이도를 전투 난이도와 운영 난이도 목록에 표시합니다. %s 난이도로 만든 월드는 이를 유지합니다. 다른 월드는 바뀌지 않습니다.",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "Steam을 시작할 수 없습니다. Steam을 설치하고 실행한 뒤 로그인하고, Dungeon Settlers Modded를 다시 여십시오.",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam이 준비되지 않았습니다. Steam을 실행하고 로그인한 뒤 Dungeon Settlers Modded를 다시 여십시오.",
  "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again.": "Steam이 실행 중이지만 게임 연결을 받아들이지 않았습니다. Steam에 로그인되어 있고 온라인 상태인지 확인한 뒤 Dungeon Settlers Modded를 다시 여십시오.",

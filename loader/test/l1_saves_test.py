@@ -9,7 +9,7 @@ Real breaks this catches:
     nothing is written to the modded folder.
  N  "normal game" copy (no loader, no mod: the test rig dsrig.dylib only; its save folder = the game folder): the same save loads
     with the progress of run A (TimeSaveData.Tick); the modded-only save is not there and does not load.
- B  modded copy with hell-difficulty (save_dependent): loading the game save asks first (no loading screen); Cancel = not
+ B  modded copy with zetu-suite (save_dependent; Hell counts only for worlds on Hell): loading the game save asks first (no loading screen); Cancel = not
     loaded; again + Load = loaded, the answer kept in worlds.json "save_warned".
  C  same mods again: no question.
  D  delete (owner 2026-10-17): the save's remove answered Yes in the game's own box asks once more ("also used by
@@ -52,7 +52,7 @@ def install():
     app = os.path.join(I, 'DungeonSettlers.app'); T.require_hidden_copy(app)
     fw = os.path.join(app, 'Contents', 'Frameworks'); md = os.path.join(app, 'Contents', 'Resources', 'mods')
     shutil.copy2(LBUILD, os.path.join(fw, 'dsload.dylib.tmp')); os.replace(os.path.join(fw, 'dsload.dylib.tmp'), os.path.join(fw, 'dsload.dylib'))
-    for m in ('multiplayer', 'gcd-cdr', 'hell-difficulty'):
+    for m in ('multiplayer', 'gcd-cdr', 'zetu-suite'):
         src = os.path.join(MODSRC, m)
         for f in glob.glob(os.path.join(src, '**', '*'), recursive=True):
             if os.path.isfile(f):
@@ -235,8 +235,8 @@ def main():
         if np_.poll() is None: np_.kill()
         # ---------------------------------------------------------------- B
         shutil.copy2(os.path.join(T.MODS, 'worlds.json'), os.path.join(OUT, 'worlds_after_A.json'))
-        start_modded(('multiplayer', 'gcd-cdr', 'hell-difficulty'), worlds={})
-        check('B: hell-difficulty runs', 'hell-difficulty' in json.dumps(json.load(open(os.path.join(I, 'dsload_modset.json')))), '')
+        start_modded(('multiplayer', 'gcd-cdr', 'zetu-suite'), worlds={})
+        check('B: zetu-suite runs', 'zetu-suite' in json.dumps(json.load(open(os.path.join(I, 'dsload_modset.json')))), '')
         mark = len(T.dlog())
         r.send(X, {'cmd': 'load_save', 'name': ELVEN}, timeout=20, connect_wait=0)
         check('B: the question shows before loading', wait_line('saves: warning shown for ' + ELVEN, mark, 20), T.dlog()[mark:][-300:])
@@ -248,12 +248,12 @@ def main():
         r.send(X, {'cmd': 'load_save', 'name': ELVEN}, timeout=20, connect_wait=0)
         check('B: asked again after Cancel', wait_line('saves: warning shown for ' + ELVEN, mark, 20))
         time.sleep(1.5); T.request({'cmd': 'warn_load'})
-        st = T.wait(lambda s: s.get('scene') == 2, 'world after Load (hell without its table half may keep loading here: the scene is enough)', 180)
+        st = T.wait(lambda s: s.get('scene') == 2, 'world after Load', 180)
         wj = json.load(open(os.path.join(T.MODS, 'worlds.json')))
-        check('B: Load = loaded; the answer kept for this world', st.get('scene') == 2 and wj.get('save_warned', {}).get(GUID) == 'hell-difficulty', wj.get('save_warned'))
+        check('B: Load = loaded; the answer kept for this world', st.get('scene') == 2 and wj.get('save_warned', {}).get(GUID) == 'zetu-suite', wj.get('save_warned'))
         stop_all()
         # ---------------------------------------------------------------- C
-        start_modded(('multiplayer', 'gcd-cdr', 'hell-difficulty'))
+        start_modded(('multiplayer', 'gcd-cdr', 'zetu-suite'))
         mark = len(T.dlog())
         r.send(X, {'cmd': 'load_save', 'name': ELVEN}, timeout=20, connect_wait=0); st = T.wait(lambda s: s.get('scene') == 2, 'world (C)', 180)
         check('C: same world, same mods: no question again', st.get('scene') == 2 and 'saves: warning shown' not in T.dlog()[mark:], T.dlog()[mark:][-300:])

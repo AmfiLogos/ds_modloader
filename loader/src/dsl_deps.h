@@ -68,6 +68,13 @@ static inline DslDep *dsl_dep_find(DslDep *d, int n, const char *id) {
     for (int i = 0; i < n; i++) if (!strcmp(d[i].id, id)) return &d[i];
     return NULL;
 }
+/* mod.json "difficulty": {"value": N}: a custom difficulty mod (Hell difficulty: 5). It runs whenever it is installed, switched
+   on or not (owner 2026-10-25: "keep it always on & have the toggle just activate its display"); only worlds on level N use it
+   (dsl_reg.c). 0 = not one. */
+static inline int dsl_mf_difficulty(const JNode *mf) {
+    const JNode *v = json_get(json_get(mf, "difficulty"), "value");
+    return v && v->t == JN_NUM && v->num > 0 ? (int)v->num : 0;
+}
 /* one installed mod (or, mf NULL and fixed, one the launcher provides) into d[*n]. en / order: the profile's "enabled"
    and "order" arrays (en NULL = no profile: every mod is on, the loader's rule). idx: its place in the folder list. */
 static inline DslDep *dsl_dep_add(DslDep *d, int *n, int cap, const char *id, const JNode *mf, const JNode *en, const JNode *order, int idx) {
@@ -83,7 +90,7 @@ static inline DslDep *dsl_dep_add(DslDep *d, int *n, int cap, const char *id, co
     if (order && order->t == JN_ARR) for (const JNode *c = order->child; c; c = c->next, i++) if (c->t == JN_STR && !strcmp(c->str, id)) { pos = i; break; }
     i = 0;
     if (en && en->t == JN_ARR) for (const JNode *c = en->child; c; c = c->next, i++) if (c->t == JN_STR && !strcmp(c->str, id)) { epos = i; break; }
-    x->on = !(en && en->t == JN_ARR) || epos >= 0;
+    x->on = !(en && en->t == JN_ARR) || epos >= 0 || dsl_mf_difficulty(mf);
     x->order = pos >= 0 ? pos : epos >= 0 ? epos : 1000 + idx;
     return x;
 }

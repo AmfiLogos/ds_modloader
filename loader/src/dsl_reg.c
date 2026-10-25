@@ -16,6 +16,7 @@
 #include "dsl_menu.h"
 #include "dsl_bie.h"
 #include "dsl_ml.h"
+#include "dsl_deps.h"
 #include "dsl_bugrep.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -119,6 +120,9 @@ static void mods_lang(void) {                           /* the current language'
 }
 static int MI_savedep[MAXM];                            /* mod.json "save_dependent": saves need the loader (owner item 9) */
 static int MI_savebak[MAXM];                            /* mod.json "save_backup": copy a game save before it loads (ZET-U) */
+static int MI_diff[MAXM];                               /* mod.json "difficulty": {"value": N}: adds CombatDifficulty N (Hell 5) */
+static char MI_dname[MAXM][32];                         /* its "difficulty": {"name"} ("Hell"), else the mod's short name */
+static int MI_profon[MAXM];                             /* switched on in the profile (a difficulty mod runs anyway: dsl_deps.h) */
 static int cmpstr_ids(const void *a, const void *b) { return strcmp(*(const char *const *)a, *(const char *const *)b); }
 static int mods_scanned;
 static void mods_scan(void) {
@@ -158,8 +162,12 @@ static void mods_scan(void) {
         JNode *vp = json_get(m, "vanilla_plus"); x->vanilla_plus = vp && vp->t == JN_BOOL && vp->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         JNode *sb = json_get(m, "save_backup"); MI_savebak[nmi - 1] = sb && sb->t == JN_BOOL && sb->b;
+        MI_diff[nmi - 1] = dsl_mf_difficulty(m);
+        { const char *dn = json_str(json_get(m, "difficulty"), "name"); snprintf(MI_dname[nmi - 1], sizeof MI_dname[0], "%s", dn && *dn ? dn : id); }
         int on = 1;
         if (en && en->t == JN_ARR) { on = 0; for (JNode *c = en->child; c; c = c->next) if (c->t == JN_STR && !strcmp(c->str, id)) on = 1; }
+        MI_profon[nmi - 1] = on;
+        if (MI_diff[nmi - 1]) on = 1;                                  /* a custom difficulty runs whenever installed */
         x->enabled = on;
         const char *why = NULL; int st = dsl_mod_state(id, &why);
         if (!strcmp(x->kind, "bepinex")) {                               /* BepInEx plugin: run by the OS start part */
@@ -230,6 +238,10 @@ void dsl_mod_short(const char *id, char *out, size_t cap) {
 }
 /* mod.json "save_dependent": true = a save made with this mod on may not work in the game started without the loader */
 int dsl_mod_save_dependent(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI_savedep[i]; return 0; }
+/* mod.json "difficulty": {"value": N}: the mod adds that difficulty level (the New Game screen's toggle, ui/dsl_newgame.c); 0 = none */
+int dsl_mod_difficulty(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI_diff[i]; return 0; }
+/* its level's name for texts ("Hell"): mod.json "difficulty": {"name"}, else the id */
+const char *dsl_mod_difficulty_name(const char *id) { mods_scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI_dname[i]; return id; }
 /* the player's warning for these mods (owner item 9): "Saves made with A and B may not work without the mod loader."
    out = "" and 0 when none of them is save_dependent; else the number of such mods */
 const char *dsl_mod_name(const char *id);
@@ -246,15 +258,6 @@ int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap) {
     snprintf(out, cap, TR("Saves made with %s may not work without the mod loader."), list);
     dsi_utf8_fix_end(out);
     return k;
-}
-/* the running mods whose saves need the loader (mod.json "save_dependent"; the dsl_saves.c warning): ids sorted,
-   key = "a+b"; returns the count */
-int dsl_running_save_dependent(const char **ids, int max, char *key, size_t kcap) {
-    mods_scan(); int n = 0;
-    for (int i = 0; i < nmi && n < max; i++) if (MI[i].active == 1 && MI_savedep[i]) ids[n++] = MI[i].id;
-    qsort(ids, (size_t)n, sizeof *ids, cmpstr_ids);
-    if (key && kcap) { key[0] = 0; for (int i = 0; i < n; i++) { if (i) strlcat(key, "+", kcap); strlcat(key, ids[i], kcap); } }
-    return n;
 }
 /* 1 = a running save_dependent mod also asks for mod.json "save_backup": true (dsl_saves.c: the warning's Load first
    copies the world's game-save files to <DSML_DATA>/Mods/save_backups/). Opt-in per mod: Hell difficulty has no backup. */
@@ -414,6 +417,63 @@ static void worlds_load(void) {
     JNode *w = json_get(worlds_doc, "worlds");
     if (w && w->t == JN_OBJ) { for (JNode *c = w->child; c; c = c->next) strip_mp(c); migrate_save_keys(w); }
 }
+/* ------------------------------------------------------------------ custom difficulty (owner 2026-10-25)
+   A mod with mod.json "difficulty": {"value": N} (Hell difficulty: 5) runs whenever it is installed (dsl_deps.h); the New Game
+   screen's toggle only shows or hides level N (ui/dsl_newgame.c). Its presence changes nothing for a world on the stock levels
+   0..4 (loader/NOTES.md "Hell always loaded": every patch, the staff strip, the environment swap and the tables checked).
+   So a world uses it only when its combat OR management level is N, read from the world's save (CampaignSaveHeader, any
+   old world too) or from the open world: only then it is in the world's set (label, Modded filter, world check / flow K,
+   save warning, multiplayer set). Every other world plays and joins as without it. Levels are kept per world guid while
+   the game runs (save headers read by the Load list, the world check, the save warning; the open world's own setting). */
+#define MAXLV 512
+static struct { char guid[40]; int c, m; } LV[MAXLV]; static int nlv, lv_next;
+void dsl_world_note_level(const char *guid, int c, int m) {
+    if (!guid || !*guid) return;
+    for (int i = 0; i < nlv; i++) if (!strcasecmp(LV[i].guid, guid)) { LV[i].c = c; LV[i].m = m; return; }
+    int k = nlv < MAXLV ? nlv++ : (lv_next++ % MAXLV);               /* full: the oldest entries go first */
+    snprintf(LV[k].guid, sizeof LV[k].guid, "%s", guid); LV[k].c = c; LV[k].m = m;
+}
+static int mi_index(const char *id) { for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return i; return -1; }
+/* 1 = the world plays with installed mod i (a difficulty mod: the world is on its level), 0 = not, -1 = its level is not
+   known yet (callers keep what the stored key says) */
+static int world_uses_diff(const char *guid, int i) {
+    if (i < 0 || !MI_diff[i]) return -1;
+    for (int k = 0; guid && k < nlv; k++) if (!strcasecmp(LV[k].guid, guid)) return LV[k].c == MI_diff[i] || LV[k].m == MI_diff[i];
+    return -1;
+}
+static int world_level_known(const char *guid) { for (int k = 0; guid && k < nlv; k++) if (!strcasecmp(LV[k].guid, guid)) return 1; return 0; }
+/* the running mods whose saves need the loader (mod.json "save_dependent"; the dsl_saves.c warning) as that world uses them
+   (a custom difficulty only on its level: a world not on Hell saves as the stock game does): ids sorted, key = "a+b"; count */
+int dsl_world_save_dependent(const char *guid, const char **ids, int max, char *key, size_t kcap) {
+    mods_scan(); int n = 0;
+    for (int i = 0; i < nmi && n < max; i++) if (MI[i].active == 1 && MI_savedep[i] && (!MI_diff[i] || world_uses_diff(guid, i) == 1)) ids[n++] = MI[i].id;
+    qsort(ids, (size_t)n, sizeof *ids, cmpstr_ids);
+    if (key && kcap) { key[0] = 0; for (int i = 0; i < n; i++) { if (i) strlcat(key, "+", kcap); strlcat(key, ids[i], kcap); } }
+    return n;
+}
+int dsl_mod_is_difficulty(const char *id) { mods_scan(); int i = id ? mi_index(id) : -1; return i >= 0 && MI_diff[i] > 0; }
+/* key with its custom difficulty mods set for that world: an installed difficulty mod is in it only when the world is on its
+   level (running = 1: and it runs here, for "the set this game plays the world with"); a world whose level is not known yet
+   keeps what `key` says. Other ids as they are. */
+static void key_diff(const char *guid, const char *key, int running, char *out, size_t cap) {
+    char b[512]; snprintf(b, sizeof b, "%s", key ? key : ""); const char *v[MAXM]; int k = 0;
+    mods_scan();
+    for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && k < MAXM; t = strtok_r(NULL, "+", &sv)) {
+        if (!*t || !strcmp(t, "vanilla")) continue;
+        int i = mi_index(t);
+        if (i >= 0 && MI_diff[i] && world_uses_diff(guid, i) == 0) continue;
+        v[k++] = t;
+    }
+    for (int i = 0; i < nmi && k < MAXM; i++) {
+        if (!MI_diff[i] || world_uses_diff(guid, i) != 1 || (running && MI[i].active != 1)) continue;
+        int dup = 0; for (int j = 0; j < k; j++) dup |= !strcmp(v[j], MI[i].id);
+        if (!dup) v[k++] = MI[i].id;
+    }
+    qsort(v, (size_t)k, sizeof *v, cmpstr);
+    out[0] = 0; for (int i = 0; i < k; i++) { if (i) strlcat(out, "+", cap); strlcat(out, v[i], cap); }
+    if (!k) snprintf(out, cap, "vanilla");
+}
+
 /* ------------------------------------------------------------------ fixes (owner 2026-10-24)
    mod.json "category": "fix" = a fix for a bug of the game (Global cooldown fix, Sound settings fix). Per world like a game
    mod, but in its own tab of the Mods window, and a world with only fixes (and client mods) stays "Vanilla & Vanilla+" on
@@ -498,14 +558,16 @@ static void world_offs_put(const char *guid, const char *ids) {
     if (c->t == JN_STR) free(c->str);
     c->t = JN_STR; c->str = strdup(ids);
 }
+/* the set a world plays with: its stored key + the fixes on in all worlds - its own offs; a custom difficulty mod only when
+   the world is on its level (in or out of the stored key; level not known yet = as the stored key says) */
 static void key_eff(const char *guid, const char *stored, char *out, size_t cap) {
     char b[512], offs[512]; snprintf(b, sizeof b, "%s", stored ? stored : ""); snprintf(offs, sizeof offs, "%s", world_offs(guid));
     const char *v[MAXM]; int k = 0;
-    for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && k < MAXM; t = strtok_r(NULL, "+", &sv))
-        if (*t && strcmp(t, "vanilla") && !dsl_mod_is_feature(t) && !in_plus(offs, t)) v[k++] = t;
     mods_scan();
+    for (char *sv = NULL, *t = strtok_r(b, "+", &sv); t && k < MAXM; t = strtok_r(NULL, "+", &sv))
+        if (*t && strcmp(t, "vanilla") && !dsl_mod_is_feature(t) && !in_plus(offs, t) && world_uses_diff(guid, mi_index(t)) != 0) v[k++] = t;
     for (int i = 0; i < nmi && k < MAXM; i++) {
-        if (!fix_default(i) || in_plus(offs, MI[i].id)) continue;
+        if (!(fix_default(i) && !in_plus(offs, MI[i].id)) && world_uses_diff(guid, i) != 1) continue;   /* + a world on Hell: Hell */
         int dup = 0; for (int j = 0; j < k; j++) dup |= !strcmp(v[j], MI[i].id);
         if (!dup) v[k++] = MI[i].id;
     }
@@ -525,10 +587,23 @@ static const char *world_key(const char *guid) {
 /* modset_lines (JSON members) and the HELLO hash of the running gameplay set; see worlds_save. Launcher features
    (category "feature": multiplayer, Units Laboratory) are never in it (owner 2026-10-20: a launcher mod never blocks a
    join); multiplayer's own HELLO checks its build + protocol. */
+/* A custom difficulty mod is in the set only for the world the set is about (hello_guid: the open world, or the one that
+   starts loading; dsl_world_hello): when that world is on its level. At the title (no world) only when the profile switches
+   it on: "Get the host's mods" does that for a host on Hell (dsl_hostmods.c), so that guest joins with it. */
+static char hello_guid[40], hello_ms[65]; static int hello_own;
+static int hello_has(int i) {
+    if (!MI_diff[i]) return 1;
+    return hello_guid[0] ? world_uses_diff(hello_guid, i) == 1 : MI_profon[i];
+}
+/* 1 = that mod is in this game's multiplayer set now (dsl_hostmods.c: what the host compares) */
+int dsl_mod_in_hello(const char *id) {
+    mods_scan(); int i = id ? mi_index(id) : -1;
+    return i >= 0 && MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && hello_has(i);
+}
 static void set_lines(char *out, size_t cap, char ms[65]) {
 #define MAXL (MAXM * 4)
     static char ln[MAXL][2048]; const char *lp[MAXL]; int nl = 0; char hs[1800], e1[2100];
-    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && strcmp(MI[i].id, "multiplayer")) {
+    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && strcmp(MI[i].id, "multiplayer") && hello_has(i)) {
         extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
         dsl_mod_hashes(MI[i].id, hs, sizeof hs);
         snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;
@@ -566,7 +641,7 @@ static void worlds_save(const char *add_guid, const char *add_key) {
     /* "modset_lines": <id>@<version>:<sha256s of every platform's files> of each running gameplay mod (multiplayer
        left out), sorted; "modset" = sha256 of those lines ('\n'-joined), "" = no gameplay mod. That is what the
        multiplayer HELLO sends and compares: the same on Mac and Windows for the same mods, names in a refusal. */
-    { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
+    { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms); snprintf(hello_ms, sizeof hello_ms, "%s", ms);
       PUT("%s\"modset_lines\":[%s],\"modset\":\"%s\",\"worlds\":{", first ? "" : ",", lj, ms); first = 0; }
     int k = 0; JNode *w = json_get(st, "worlds");
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) {
@@ -594,7 +669,23 @@ const char *dsl_world_warned(const char *guid) {
 /* 1 = the world is registered with another gameplay set than the running one: dsl_world.c refuses it (flow K) */
 int dsl_world_set_differs(const char *guid) {
     const char *k = guid ? world_key(guid) : NULL; const char *mine = getenv("DSML_MODSET");
-    return k && !dsl_key_same(k, mine && *mine ? mine : run_key);
+    return k && !dsl_world_key_match(guid, k, mine && *mine ? mine : run_key);
+}
+/* the world's set `eff` (dsl_world_key_eff) against this game's set `mine` (DSML_MODSET), both as for that world: a custom
+   difficulty mod that runs here counts only when the world is on its level (owner 2026-10-25: a world not on Hell loads with
+   no restart in a game that has Hell) */
+int dsl_world_key_match(const char *guid, const char *eff, const char *mine) {
+    char m2[512]; key_diff(guid, mine, 1, m2, sizeof m2);
+    return dsl_key_same(eff, m2);
+}
+/* the multiplayer set is about this world now ("" = none: the title): worlds.json "modset" / "modset_lines" written again when
+   that changes it (a host on a Hell world sends Hell, on any other world not; multiplayer reads them when a session starts) */
+void dsl_world_hello(const char *guid) {
+    if (!strcmp(hello_guid, guid ? guid : "")) return;
+    snprintf(hello_guid, sizeof hello_guid, "%s", guid ? guid : "");
+    if (!hello_own) return;                                            /* an old launcher's session file: kept as it is */
+    static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
+    if (strcmp(ms, hello_ms)) { worlds_save(NULL, NULL); dsl_log("reg: multiplayer set for %s: %s", hello_guid[0] ? hello_guid : "the title", ms[0] ? ms : "none"); }
 }
 void dsl_world_set_warned(const char *guid, const char *key) {
     worlds_load();
@@ -614,14 +705,16 @@ void dsl_world_set_warned(const char *guid, const char *key) {
 }
 int dsl_world_label(const char *guid, char *out, size_t cap) {
     const char *k = guid ? world_key(guid) : NULL;
-    char nm[400]; key_names(k ? k : run_key, nm, sizeof nm);
+    char rk[512]; key_diff(guid, run_key, 1, rk, sizeof rk);         /* unknown world = the mods that run now, for its level */
+    char nm[400]; key_names(k ? k : rk, nm, sizeof nm);
     snprintf(out, cap, TR("Mods: %s"), nm); dsi_utf8_fix_end(out);
     return k != NULL;
 }
 static char world_ids_buf[512];
 int dsl_world_mods(const char *guid, const char **ids, int max) {
     const char *k = guid ? world_key(guid) : NULL;
-    if (!k) k = run_key;                                              /* unknown world = the mods that run now (lead 2026-10-15) */
+    static char rk[512];
+    if (!k) { key_diff(guid, run_key, 1, rk, sizeof rk); k = rk; }  /* unknown world = the mods that run now (lead 2026-10-15), for its level */
     if (!strcmp(k, "vanilla")) return 0;
     snprintf(world_ids_buf, sizeof world_ids_buf, "%s", k); int n = 0;
     for (char *sv = NULL, *t = strtok_r(world_ids_buf, "+", &sv); t && n < max; t = strtok_r(NULL, "+", &sv)) ids[n++] = t;
@@ -660,7 +753,14 @@ int dsl_features_on(const char **ids, int max) {
 }
 int dsl_world_set_mods(const char *guid, const char *const *ids, int n) {
     if (!guid || !*guid) return -1;
-    char k[512]; key_of(ids, n, k, sizeof k);
+    char k0[512], k[512]; key_of(ids, n, k0, sizeof k0);
+    { const char *wk = world_key(guid); char d[512];                  /* custom difficulty: by the world's level, not a switch */
+      if (!world_level_known(guid) && wk) {                            /* level not known: as the world had it */
+          snprintf(d, sizeof d, "%s", k0);
+          for (int i = 0; i < nmi; i++) if (MI_diff[i] && in_plus(wk, MI[i].id)) plus_add(d, sizeof d, MI[i].id);
+          key_norm(d, k0, sizeof k0);
+      }
+      key_diff(guid, k0, 0, k, sizeof k); }
     /* fixes: one switched off here becomes the world's own off when it is on in all worlds or was on in this world (the
        world plays as the window showed it); an off stays while the fix stays off; on = no off. Offs of fixes not
        installed now are kept. */
@@ -695,7 +795,9 @@ int dsl_world_copy_mods(const char *from, const char *to) {
     char key[512], offs[512] = "";
     JNode *w = json_get(worlds_doc, "worlds"); const char *k = NULL;
     if (w && w->t == JN_OBJ) for (JNode *c = w->child; c; c = c->next) if (c->key && !strcasecmp(c->key, from) && c->t == JN_STR) { k = c->str; break; }
-    snprintf(key, sizeof key, "%s", k ? k : run_key);
+    char rk[512]; key_diff(from, run_key, 1, rk, sizeof rk);         /* custom difficulty: as `from` uses it (Hell only on Hell) */
+    snprintf(key, sizeof key, "%s", k ? k : rk);
+    for (int i = 0; i < nlv; i++) if (!strcasecmp(LV[i].guid, from)) { dsl_world_note_level(to, LV[i].c, LV[i].m); break; }   /* same world data, same level */
     if (k) snprintf(offs, sizeof offs, "%s", world_offs(from));
     else for (int i = 0; i < nmi; i++) if (fix_default(i) && !in_plus(run_key, MI[i].id)) plus_add(offs, sizeof offs, MI[i].id);
     world_offs_put(to, offs);
@@ -709,7 +811,13 @@ void dsl_world_change(const char *guid, const char *save_name) {
     else if (dsl_win_open) dsl_win_open(NULL);
     else dsl_log("reg: world [Change]: no Mods window in this build");
 }
-void dsl_newworld_label(char *out, size_t cap) { char nm[400]; key_names(run_key, nm, sizeof nm); snprintf(out, cap, TR("Mods for this world: %s"), nm); dsi_utf8_fix_end(out); }
+int dsl_newgame_levels(int *combat, int *management);
+/* the New Campaign line: the running set as the world made there will use it (Hell only when a level chosen is Hell) */
+void dsl_newworld_label(char *out, size_t cap) {
+    int c = -1, m = -1; dsl_newgame_levels(&c, &m); dsl_world_note_level("new", c, m);
+    char k[512], nm[400]; key_diff("new", run_key, 1, k, sizeof k); key_names(k, nm, sizeof nm);
+    snprintf(out, cap, TR("Mods for this world: %s"), nm); dsi_utf8_fix_end(out);
+}
 void dsl_newworld_change(void) { if (dsl_win_open) dsl_win_open(NULL); else dsl_log("reg: New Campaign [Change]: no Mods window in this build"); }
 
 static Obj mainflow(void);
@@ -826,7 +934,7 @@ void dsl_mods_draft(const char *const *ids, int n) {
 static int draft_is_running(void) {
     if (dsl_settings_pending(NULL)) return 0;                         /* a gameplay setting changed: another set */
     for (int i = 0; i < nmi; i++) {
-        if (MI[i].hidden) continue;
+        if (MI[i].hidden || MI_diff[i]) continue;                     /* a custom difficulty runs anyway (no switch) */
         int in = 0; for (int j = 0; j < dr_n; j++) in |= !strcmp(dr_ids[j], MI[i].id);
         if (in != (MI[i].enabled != 0)) return 0;
     }
@@ -1008,21 +1116,33 @@ static void k_frame(void) {
 }
 
 static char seen_guid[40];
+static int32_t off_cset = -1, off_start = -1, off_lc = -1, off_lm = -1;   /* MainFlow._campaignSetting -> its CampaignStartSetting */
+static int open_levels(int *c, int *m) {                                  /* the open world's combat / management level */
+    Obj mf = mainflow(); if (!mf || off_cset < 0 || off_start < 0 || off_lc < 0 || off_lm < 0) return 0;
+    Obj cs = AT(mf, off_cset, Obj), st = cs ? AT(cs, off_start, Obj) : NULL; if (!st) return 0;
+    *c = AT(st, off_lc, int32_t); *m = AT(st, off_lm, int32_t);
+    return 1;
+}
 int dsl_world_is_temporary(const char *guid);                          /* dsl_world.c: a module's temporary world */
 static void world_frame(void) {
-    static unsigned f; if (++f % 30) return;
-    Obj mf = mainflow(); if (!mf || off_scene < 0 || AT(mf, off_scene, int32_t) != 2) { seen_guid[0] = 0; return; }
+    static unsigned f; if (++f % 5) return;
+    Obj mf = mainflow(); int sc = mf && off_scene >= 0 ? AT(mf, off_scene, int32_t) : -1;
+    if (sc == 1) dsl_world_hello("");                                     /* the title: the multiplayer set as the profile says */
+    if (sc != 2) { seen_guid[0] = 0; return; }
     char g[40]; if (!world_guid(g) || !strcmp(g, seen_guid)) return;
     snprintf(seen_guid, sizeof seen_guid, "%s", g);
+    int c, m; if (open_levels(&c, &m)) dsl_world_note_level(g, c, m);
+    dsl_world_hello(g);
     if (dsl_world_is_temporary(g)) { dsl_log("reg: world %s is a mod's temporary world: not registered", g); return; }
+    char rk[512]; key_diff(g, run_key, 1, rk, sizeof rk);                 /* the running set as this world uses it (Hell: only on Hell) */
     const char *k = world_key(g);
     if (!k) {                                       /* a fix on in all worlds that does not run now: off for this world, so
                                                        the world keeps the set it was made with */
         char offs[512] = ""; for (int i = 0; i < nmi; i++) if (fix_default(i) && !in_plus(run_key, MI[i].id)) plus_add(offs, sizeof offs, MI[i].id);
         world_offs_put(g, offs);
-        worlds_save(g, run_key); dsl_log("reg: world %s registered with this mod set (%s)%s%s", g, run_key, offs[0] ? ", fixes off: " : "", offs);
+        worlds_save(g, rk); dsl_log("reg: world %s registered with this mod set (%s)%s%s", g, rk, offs[0] ? ", fixes off: " : "", offs);
     }
-    else if (strcmp(k, run_key)) dsl_log("reg: world %s is open with %s, registered with %s (multiplayer guest or a launcher load)", g, run_key, k);
+    else if (!dsl_key_same(k, rk)) dsl_log("reg: world %s is open with %s, registered with %s (multiplayer guest or a launcher load)", g, rk, k);
 }
 
 /* ------------------------------------------------------------------ test only (DSL_SOFT_TEST=1, never in a player's start) */
@@ -1049,6 +1169,11 @@ __attribute__((weak)) void dsl_saves_test_answer(int load) { (void)load; }
 __attribute__((weak)) void dsl_saves_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
 __attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
+/* weak defaults: builds without loader/ui (host tests) link; ui/dsl_newgame.c gives the real ones */
+__attribute__((weak)) void dsl_newgame_install(void) {}
+__attribute__((weak)) void dsl_newgame_frame(void) {}
+__attribute__((weak)) void dsl_newgame_test_cmd(const JNode *j) { (void)j; }
+__attribute__((weak)) int dsl_newgame_levels(int *combat, int *management) { (void)combat; (void)management; return 0; }
 int dsl_ui_test_tip_targets(DSLObj *out, int max);
 int dsl_ui_test_tip_keep(float el[4], float keep[][4], int max);
 static int hv_wait; static char hv_what[120];
@@ -1128,6 +1253,7 @@ static void test_frame(void) {
     else if (c && !strcmp(c, "title")) { char b[2000]; dsl_ui_test_title(NULL, b, sizeof b); dsl_log("reg test: title %s", b); }
     else if (c && !strcmp(c, "hover")) hover_test(json_str(j, "what") ? json_str(j, "what") : "");
     else if (c && (!strcmp(c, "lf") || !strncmp(c, "lf_", 3))) { void dsl_rows_test_cmd(const char *, const JNode *); dsl_rows_test_cmd(c, j); }   /* the Load list's filter panel */
+    else if (c && !strcmp(c, "newgame")) dsl_newgame_test_cmd(j);     /* the New Game screen and its difficulty toggle */
     json_free(j);
 }
 
@@ -1196,6 +1322,7 @@ void dsl_frame_hook(void) {
     dsl_bugrep_frame();
     dsl_hostmods_frame();
     if (dsl_win_frame) dsl_win_frame();
+    dsl_newgame_frame();
     dsl_progress_frame();
 }
 
@@ -1223,8 +1350,13 @@ void dsl_reg_ready(DSLHost *h) {
     h->ui = dsl_ui_kit();
     dsl_rows_install();
     void *kmf = dsl_find_class("Refactor.Main", "MainFlow");
-    if (kmf) { off_scene = dsl_field_offset(kmf, "_currentScene"); off_cd = dsl_field_offset(kmf, "_campaignData"); }
+    if (kmf) { off_scene = dsl_field_offset(kmf, "_currentScene"); off_cd = dsl_field_offset(kmf, "_campaignData"); off_cset = dsl_field_offset(kmf, "_campaignSetting"); }
+    { void *kc = dsl_find_class("Refactor.Main", "CampaignSettingContainer"), *ks = dsl_find_class("Refactor.Main", "CampaignStartSetting");
+      if (kc) off_start = dsl_field_offset(kc, "<CampaignStartSetting>k__BackingField");
+      if (ks) { off_lc = dsl_field_offset(ks, "_combatDifficulty"); off_lm = dsl_field_offset(ks, "_managementDifficulty"); }
+      if (off_cset < 0 || off_start < 0 || off_lc < 0 || off_lm < 0) dsl_log("reg: the open world's difficulty fields not found (%d %d %d %d)", off_cset, off_start, off_lc, off_lm); }
     if (h->ui && dsl_win_init) dsl_win_init();
+    if (h->ui) dsl_newgame_install();                                  /* the New Game screen's difficulty toggle */
     if (h->ui) dsl_bugrep_install();                                   /* before the modules: the loader owns the Bug Report buttons */
     if (h->ui) dsl_ui_title_add("loader", TR("Mods"), 100, NULL, on_title_mods, NULL);   /* no hover card (owner 2026-10-16 #1) */
     dsl_log("reg: ready (data %s, kit %s, Mods window %s)", dsl_reg_data_dir(), h->ui ? "on" : "OFF", dsl_win_open ? "on" : "not built");
@@ -1241,11 +1373,12 @@ void dsl_reg_after_init(void) {
     { static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
       /* an old launcher that passes DSML_MODSET owns its session file: kept as it is */
       int own = !(given && *given) || (getenv("DSL_MODSET_OWN") && !strcmp(getenv("DSL_MODSET_OWN"), "1"));   /* B of our soft restart */
+      hello_own = own; snprintf(hello_ms, sizeof hello_ms, "%s", old && own ? old : ms);
       if (own && (worlds_migrated || !old || strcmp(old, ms) || !json_get(worlds_doc, "modset_lines"))) worlds_save(NULL, NULL); }
     if (dsl_soft_wanted()) {                                           /* the new game of a soft restart: its first progress step */
         extern void dsl_soft_progress(int pct, const char *key, const char *arg);
         char t[512] = ""; int k = 0;
-        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden) { char sh[128]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
+        for (int i = 0; i < nmi; i++) if (MI[i].active == 1 && !MI[i].hidden && !MI_diff[i]) { char sh[128]; dsl_mod_short(MI[i].id, sh, sizeof sh); if (k++) strlcat(t, ", ", sizeof t); strlcat(t, sh, sizeof t); }
         dsi_utf8_fix_end(t);
         if (k) dsl_soft_progress(10, TR_NOOP("Loading %s"), t); else dsl_soft_progress(10, TR_NOOP("Loading mods"), NULL);
     }
@@ -1257,6 +1390,9 @@ void dsl_reg_after_init(void) {
                                   strcmp(MI[i].scope, "gameplay") ? "client: the same in all worlds" : fix_default(i) ? "on in all worlds" : "per world");
           strlcat(fx, one, sizeof fx); }
       if (fx[0]) dsl_log("reg: fixes: %s", fx); }
+    for (int i = 0; i < nmi; i++) if (MI_diff[i])
+        dsl_log("reg: custom difficulty %s (level %d, %s): %s; only worlds on that level use it; at the title the multiplayer set %s it",
+                MI[i].id, MI_diff[i], MI_dname[i], MI[i].active == 1 ? "runs" : "does NOT run", MI_profon[i] ? "has" : "leaves out");
     dsl_moddata_after_init();                                          /* data folder per mod + moddata.json */
     dsl_update_start();
     dsl_crash_start();
