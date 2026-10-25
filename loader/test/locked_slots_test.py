@@ -12,10 +12,13 @@ the owner is read or written.
 Real breaks it catches:
  N  the game's own Ban / Allow Auto Repair orders (the same event with a real slot in Index) still change the item's
     auto-repair flag and never touch a lock (only the marked Index is the mod's).
- M  the stock right-click of a slot (UIInput ShowInteraction_Inventory) shows the row "Keep on return" (an EMPTY slot
-    too); its click (InteractionOptionUI.OnSelect, the element's own call) locks the slot through the game's order;
-    right-click again shows "Do not keep on return"; the lock icon shows on the locked slots only; the lock is in
-    the mod's data file.
+ M  the stock right-click of a slot (UIInput ShowInteraction_Inventory) shows the row "Keep On Return" (Title Case like
+    the stock rows; an EMPTY slot too); its click (InteractionOptionUI.OnSelect, the element's own call) locks the slot
+    through the game's order; right-click again shows "Do Not Keep On Return"; the lock icon shows on the locked slots
+    only; the lock is in the mod's data file.
+    Hover cards (the slot's own hover path, the card read from the UI): the item card of a locked slot has the line
+    "Kept On Return", the item card of an unlocked slot has not; an empty locked slot shows the card "Kept On Return";
+    unlocked again, that empty slot shows no card (stock).
  S  Sort (the game's SortItemRequested order): the locked slots keep their items, the empty locked slot stays
     empty, the other items fill the first unlocked slots in the stock game's order (the same items sorted by the
     game in an unlocked unit), no item lost or doubled.
@@ -234,6 +237,16 @@ def menu(u, slot):
     return next((x for x in rows or [] if x.get('ours')), None), rows
 
 
+KEPT = 'Kept On Return'                           # the card line of a locked slot (English)
+def card(u, slot, want=True):
+    """the pointer on a bag slot (its own hover path), the card shown for it then (None = no card), the pointer away"""
+    cmd({'cmd': 'lks_hover', 'unit': u, 'slot': slot, 'on': 1})
+    get = lambda: (lambda x: x if x.get('card') else None)(cmd({'cmd': 'lks_card', 'unit': u, 'slot': slot}))
+    c = wait('card of slot %d' % slot, get, timeout=4, every=0.25) if want else (time.sleep(1.5) or get())
+    cmd({'cmd': 'lks_hover', 'unit': u, 'slot': slot, 'on': 0}); time.sleep(0.5)
+    return c
+
+
 def on_map(m):                                    # on that map, no transition running
     s = status(); return s.get('map') == m and not s.get('map_transition') and not s.get('busy') and not (s.get('map_loading') or {}).get('is_loading')
 
@@ -241,7 +254,7 @@ def on_map(m):                                    # on that map, no transition r
 # ------------------------------------------------------------------------------------------------ phase A: mod on
 def run_a(out):
     mark = up(out, ['multiplayer', 'locked-slots'])
-    check('A: module on (6 hooks)', 'locked slots on (6 hooks' in dlog(), [l for l in dlog().splitlines() if 'locked-slots' in l][-6:])
+    check('A: module on (every hook)', 'locked slots on (' in dlog(), [l for l in dlog().splitlines() if 'locked-slots' in l][-6:])
     fx = os.path.join(out, 'save_in', 'lks_fixture.json'); world = make_fixture(fx)
     load(fx, out)
     st = lstate(); check('A: the world is known', st.get('world') == world, st)
@@ -253,13 +266,13 @@ def run_a(out):
     check('M: the unit window shows its bag slots (36)', icons and len(icons) == 36, icons and len(icons))
     for slot in LOCK:
         row, rows = menu(U[0], slot)
-        check('M: right-click slot %d shows "Keep on return"%s' % (slot, ' (empty slot)' if slot == 5 else ''),
-              row and row['text'] == 'Keep on return' and row['lock'] == 1, rows)
+        check('M: right-click slot %d shows "Keep On Return"%s' % (slot, ' (empty slot)' if slot == 5 else ''),
+              row and row['text'] == 'Keep On Return' and row['lock'] == 1, rows)
         cmd({'cmd': 'lks_pick'})
         ok = wait('lock %d' % slot, lambda: slot in locked(U[0]), timeout=10)
         check('M: its click locks slot %d (game order)' % slot, ok, lstate())
     row, rows = menu(U[0], 0)
-    check('M: right-click a locked slot shows "Do not keep on return"', row and row['text'] == 'Do not keep on return' and row['lock'] == 0, rows)
+    check('M: right-click a locked slot shows "Do Not Keep On Return"', row and row['text'] == 'Do Not Keep On Return' and row['lock'] == 0, rows)
     cmd({'cmd': 'lks_pick'}); wait('unlock 0', lambda: 0 not in locked(U[0]), timeout=10)
     check('M: its click unlocks the slot', locked(U[0]) == [3, 5], lstate())
     menu(U[0], 0); cmd({'cmd': 'lks_pick'}); wait('lock 0 again', lambda: 0 in locked(U[0]), timeout=10)
@@ -267,6 +280,18 @@ def run_a(out):
     icons = {s['slot']: s['icon'] for s in cmd({'cmd': 'lks_icons'}).get('slots', []) if s['unit'] == U[0]}
     check('M: the lock icon shows on locked slots only', icons and all(icons.get(i) == (1 if i in LOCK else 0) for i in icons),
           sorted(i for i, v in icons.items() if v))
+    c = card(U[0], 0)                             # hover cards: what a player reads on the slot
+    check('M: the item card of a locked slot has the line "Kept On Return"', c and c.get('card') == 'Tooltip_Item'
+          and any(r[0] == KEPT for r in c.get('rows', [])), c)
+    c = card(U[0], 2)
+    check('M: the item card of an unlocked slot has no such line', c and c.get('card') == 'Tooltip_Item' and c.get('title')
+          and not any(r[0] == KEPT for r in c.get('rows', [])), c)
+    c = card(U[0], 5)
+    check('M: an empty locked slot shows the card "Kept On Return"', c and c.get('title') == KEPT, c)
+    menu(U[0], 5); cmd({'cmd': 'lks_pick'}); wait('unlock 5', lambda: 5 not in locked(U[0]), timeout=10)
+    c = card(U[0], 5, want=False)
+    check('M: unlocked again, the empty slot shows no card (stock)', 5 not in locked(U[0]) and c is None, c)
+    menu(U[0], 5); cmd({'cmd': 'lks_pick'}); wait('lock 5 again', lambda: 5 in locked(U[0]), timeout=10)
     menu(U[0], 3); time.sleep(1)                  # one picture for the owner: lock icons + the open menu row
     log('picture', cmd({'cmd': 'ui_capture', 'path': os.path.join(out, 'locked_slots_menu.png')}))
     lf = os.path.join(I, 'data', 'ModData', 'locked-slots', 'locks_%s.txt' % world)
