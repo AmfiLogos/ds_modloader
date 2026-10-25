@@ -31,6 +31,8 @@ const DSLUi *dsl_ui_kit(void) { return NULL; }
 void dsl_ui_place_tr(DSLObj w, float r, float t, float wd, float h) { (void)w; (void)r; (void)t; (void)wd; (void)h; }
 int dsl_ui_title_shown(void) { return 0; }
 int dsl_ui_widget_rect(DSLObj o, float r[4]) { (void)o; (void)r; return 0; }   /* dsl_update_corner_rect (the Load list's filter panel) */
+DSLObj dsl_ui_group(DSLObj parent, float x, float y, float w, float h) { (void)parent; (void)x; (void)y; (void)w; (void)h; return NULL; }   /* dsl_update_frame: the title corner group (f011ec9) */
+int dsl_ui_game_window_shown(void) { return 0; }       /* dsl_update_frame: the title corner hides while a game window shows (f011ec9) */
 int dsl_reg_scene(void) { return 1; }
 int dsl_soft_title_idle(void) { return 0; }
 int dsl_soft_wanted(void) { return 0; }
