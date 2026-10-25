@@ -33,7 +33,7 @@ int dsl_mod_hashes(const char *id, char *out, size_t cap); /* dsl_main.c: sorted
 #define HM_MAX 64
 typedef struct { char id[64], ver[32], files[2048], set[2048]; } HostMod;
 typedef struct {
-    char id[64], name[128], host_ver[32], my_ver[32], host_set[2048], my_set[2048];
+    char id[64], name[128], host_ver[32], my_ver[32], host_set[2048], my_set[2048], why[300];
     int my_on, official; const char *action;
 } Row;
 typedef struct { char id[64], name[128], ver[32], files[2048], url[1024], asset[160], sha[65], file[1100]; int host_older; } Job;
@@ -203,7 +203,15 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
         else if (strcmp(r->my_ver, h->ver)) r->action = "reinstall";            /* "1.0" vs "1.0.0": the host's exact one */
         else {
             char mine[2048]; dsl_mod_hashes(h->id, mine, sizeof mine);
+            char dep[400];
             if (h->files[0] && mine[0] && strcasecmp(h->files, mine)) r->action = "reinstall";
+            /* the host's files, on in the profile, but it does not run here (crash guard, failed start, other build):
+               "Get the host's mods" changes nothing for it, and its soft restart + rejoin would be refused again and
+               again. A missing requirement is left to "turn_on": the host's mods may bring it. */
+            else if (m->active == -1 && m->enabled && !strcmp(m->kind, "code") && !dsl_mod_dep_text(h->id, dep, sizeof dep)) {
+                r->action = "not_running"; snprintf(r->why, sizeof r->why, "%s", m->reason && *m->reason ? TR(m->reason) : TR("did not load"));
+                dsi_utf8_fix_end(r->why);
+            }
             else if (!r->my_on) r->action = "turn_on";
             else if (strcmp(r->host_set, r->my_set)) r->action = "settings";
             else r->action = "same";
@@ -227,7 +235,7 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
 static int plan_can_fix(int diff) {
     if (diff <= 0) return 0;
     for (int i = 0; i < nr; i++) {
-        if (!strcmp(R[i].action, "not_official")) return 0;
+        if (!strcmp(R[i].action, "not_official") || !strcmp(R[i].action, "not_running")) return 0;
         if (strcmp(R[i].action, "settings")) continue;                 /* same version, other gameplay settings: */
         if (!settings_can_copy() || !R[i].host_set[0]) return 0;       /* nothing here can make them equal */
     }
@@ -255,11 +263,11 @@ HM_EXPORT int dsl_hostmods_plan(const char *host_lines, int vanilla, char *out, 
 #define PUT(...) do { int w_ = snprintf(out + k, cap - k, __VA_ARGS__); if (w_ < 0 || (size_t)w_ >= cap - k) { over = 1; break; } k += (size_t)w_; } while (0)
     PUT("{\"rows\":[");
     for (int i = 0; i < nr && !over; i++) {
-        const Row *r = &R[i]; char e[6][1300];
+        const Row *r = &R[i]; char e[7][1300];
         jesc(e[0], sizeof e[0], r->id); jesc(e[1], sizeof e[1], r->name); jesc(e[2], sizeof e[2], r->host_ver);
-        jesc(e[3], sizeof e[3], r->my_ver); jesc(e[4], sizeof e[4], r->host_set); jesc(e[5], sizeof e[5], r->my_set);
-        PUT("%s{\"id\":\"%s\",\"name\":\"%s\",\"host_ver\":\"%s\",\"my_ver\":\"%s\",\"my_on\":%d,\"official\":%d,\"action\":\"%s\",\"host_set\":\"%s\",\"my_set\":\"%s\"}",
-            i ? "," : "", e[0], e[1], e[2], e[3], r->my_on, r->official, r->action, e[4], e[5]);
+        jesc(e[3], sizeof e[3], r->my_ver); jesc(e[4], sizeof e[4], r->host_set); jesc(e[5], sizeof e[5], r->my_set); jesc(e[6], sizeof e[6], r->why);
+        PUT("%s{\"id\":\"%s\",\"name\":\"%s\",\"host_ver\":\"%s\",\"my_ver\":\"%s\",\"my_on\":%d,\"official\":%d,\"action\":\"%s\",\"host_set\":\"%s\",\"my_set\":\"%s\",\"why\":\"%s\"}",
+            i ? "," : "", e[0], e[1], e[2], e[3], r->my_on, r->official, r->action, e[4], e[5], e[6]);
         dls += is_download(r);
     }
     PUT("],\"can_fix\":%d,\"downloads\":%d,\"names_pending\":%d}", plan_can_fix(diff), dls, names_pending);
@@ -351,6 +359,10 @@ HM_EXPORT int dsl_hostmods_get(const char *host_lines, int vanilla, const char *
     for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_official")) {
         snprintf(why, cap, TR("%s cannot be downloaded here: it is not one of the mod loader's own mods."), R[i].name); dsi_utf8_fix_end(why);
         dsl_log("hostmods: refused: %s %s is not official", R[i].id, R[i].host_ver); return -1;
+    }
+    for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_running")) {           /* never a soft restart for it */
+        snprintf(why, cap, TR("%s is on but did not start on this computer: %s"), R[i].name, R[i].why); dsi_utf8_fix_end(why);
+        dsl_log("hostmods: refused: %s %s is on but does not run here (%s)", R[i].id, R[i].my_ver, R[i].why); return -1;
     }
     if (!plan_can_fix(diff)) { snprintf(why, cap, "%s", TR("The host's mod settings cannot be copied by this version of the mod loader.")); return -1; }
     nj = 0; nwant = 0; nsets = 0; sets_taken = 0; installed_ok = 0; err = E_NONE; pct = 0;
