@@ -474,6 +474,7 @@ def main():
         for x in (H, G):
             HP.make_copy(x)
         env = prepare(driver_pkg())
+        json.dump({'multiplayer': {'host_port': port}}, open(os.path.join(lrig.idir(H), 'data', 'Mods', 'settings.json'), 'w'))   # the menu host listens on the leased pair port, never the default 47777 (the owner's game)
         api = 'http://127.0.0.1:9'                                    # no release server: nothing is downloaded
         HP.room_for(len(XS))
         for x in XS:

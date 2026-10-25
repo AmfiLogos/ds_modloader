@@ -64,11 +64,15 @@ def prep(x, out, mp):
     json.dump(mp, open(os.path.join(I, 'mp.json'), 'w'))
 
 
+OWNER_OK = os.environ.get('WS_OWNER_PLAY_OK') == '1'   # the lead's rule (2026-10-25): one pair at a time while he plays, never on 47777 (this test's host has an OS-chosen port)
+owner_runs = lambda: not OWNER_OK and r.owner_game_running()
+
+
 def main():
     out = os.path.abspath(next((a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--') and sys.argv[i - 1] not in ('--minutes', '--world')),
                                os.path.join(T.LB, 'test_env', 'weapon_slot_pair')))
     os.makedirs(out, exist_ok=True); T.OUT = out
-    if r.owner_game_running(): raise SystemExit('refused: the owner\'s game runs (this test needs 2 copies)')
+    if owner_runs(): raise SystemExit('refused: the owner\'s game runs (this test needs 2 copies)')
     lane, pair = T.lease()
     # a port of its own: lrig.pair_port gives 7891 to every K..Z copy and other lanes' guests also point at the rig's
     # pair ports (2026-10-25: copy R joined a run on 7891, copy T one on 7831), so the OS picks a free port for this run;
@@ -105,7 +109,7 @@ def main():
         r.wait_for(H_, lambda s: s.get('scene') == 1 and not s.get('busy'), 'host title', timeout=900)
         log('host load', c(H_, cmd='load_save', file=src, det=1))
         wait('host locked', lambda: st(H_).get('det', {}).get('locked'))
-        if r.owner_game_running(): raise SystemExit('the owner started his game: stop before the second copy')
+        if owner_runs(): raise SystemExit('the owner started his game: stop before the second copy')
         os.environ['DSML_DATA'] = os.path.join(r.idir(G_), 'data')
         r.start(G_, window=True)
         wait('guest joined', lambda: (lambda s: s if s.get('det', {}).get('locked') and s.get('mp', {}).get('loads', 0) >= 1 else None)(st(G_)))
@@ -149,7 +153,7 @@ def main():
                 f = min(foes, key=lambda e: math.dist(e['cell'], u['cell']))
                 rc = inject(x, 'UseSkillTargetRequested', i32_16=mp, guid_20=u['guid'], guid_36=f['guid'], str_56=w)
                 if rc.get('ok'): casts[x] += 1
-            if r.owner_game_running(): log('the owner started his game: stop early'); break
+            if owner_runs(): log('the owner started his game: stop early'); break
             time.sleep(8)
         time.sleep(3)
         sh, sg = st(H_), st(G_)
