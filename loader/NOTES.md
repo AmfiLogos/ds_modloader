@@ -372,6 +372,20 @@ Helpers (opus): soft restart work in `test/soft/NOTES_v13.md` (branch loaderui-s
 - Hover cards (dsl_ui.c): the card's top-left = the panel's right edge (+8 px), level with the element's top. Panel =
   the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list). After layout, a card that
   leaves the screen on the right or was pushed back over the panel by the stock clamp moves outside the panel's left edge.
+  2026-10-25 (owner: the filter card covered the filter panel, "barely usable"): that move never happened. The stock card
+  places itself 2 frames after the show (`Tooltip_Base.DelayedAlignment`: parked, layout, 2 frames, `SetTooltipAlignment`,
+  `_alignmentRoutine` = null; no room on the right -> flipped left of the position = over the panel), and a second
+  `ShowTooltipAtScreenPosition` with the same id is ignored (`TooltipUI._tooltipHolder` has it). Now the kit waits for
+  `_alignmentRoutine` = null and MOVES the card (Transform.position) right before the UI is drawn (h_cur_perform), so the
+  stock place never shows. Sides in order: right, left, below the panel (its left edge), above; a side counts when the
+  card is inside the screen there and covers neither the panel nor any ancestor narrower than 3/4 of the screen (the Load
+  window around the filter panel); no free side = the one that covers least. `dsl_ui_tip_below(target)` (the filter
+  boxes): below first, then the free side nearest the box. Tests: `l1_filter_test.py` runs `tips` (5 sizes / UI scales /
+  languages) and `tiplangs` (10 languages), old placement 12 overlap FAILs, new 104/104 + 204/204; `tip_sweep_test.py`
+  (every card of the title, Mods window, a mod's settings, a world's mods window, the Load list). At 4:3 with UI 1.4 the
+  big cards have no free side (Mods window, Load list rows): they cover the least (measured 20 px of the Mods window's
+  top; the Load window's right 111 px, never the filter panel). Load list row cards still sit right of the Load window,
+  over the filter panel while the row is hovered (not changed: not asked).
 - World rows (dsl_rows.c): right half of the world row: "Mods: <short names> · ... +N" (as many as fit), "Change" at the
   end; the hover card "Mods of this world" lists every mod, one per line. Short name = mod.json "short_name" (new,
   optional), else the name cut at a word before 22 characters. The left half keeps the world name + multiplayer tag.

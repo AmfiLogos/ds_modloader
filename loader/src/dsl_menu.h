@@ -19,6 +19,7 @@ void dsl_ui_field_multiline(DSLObj f, int max_chars);   /* a kit field takes man
 int dsl_ui_screen_rect(DSLObj o, float r[4]);       /* a kit widget or any RectTransform */
 int dsl_ui_widget_rect(DSLObj o, float r[4]);       /* a kit widget kept as a plain pointer: 0 once the kit forgot it */
 void dsl_ui_screen_size(float *w, float *h);
+void dsl_ui_tip_below(DSLObj target);              /* its hover card right below its panel first (the filter boxes) */
 DSLObj dsl_ui_child(DSLObj parent, const char *path);   /* Transform.Find */
 void dsl_ui_set_scale(DSLObj o, float s);
 float dsl_ui_width(DSLObj o);                       /* RectTransform.rect.width, local units */
