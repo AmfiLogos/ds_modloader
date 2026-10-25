@@ -4,7 +4,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
-### Unreleased (0.1.28)
+### 0.1.28 (2026-10-25)
 
 - Escape closes the windows of the mods: the Mods window, the bug report window and the mod message boxes. On a mod's Settings page, Escape goes back first. The game does not see that press, so its own Escape menu does not open.
 - The Mods window and the bug report window close with the game's red X, and they follow the game's UI Scale.
