@@ -187,12 +187,12 @@ def hub_pvp():
         c(H, cmd='mpm_pvp', action='arrow', row=4, dir=1); time.sleep(1.2)
     q = c(H, cmd='mpm_pvp'); log('PvP rules', q.get('mode'), q.get('bo'), q.get('secs'), q['rows'][4])
     worlds = sorted(f for f in os.listdir(os.path.join(lrig.idir(H), 'data', 'Saves')) if WORLD.search(f))
-    info['world_saves_on_disk'] = worlds                             # the hub's own saves are on disk now: they must not show
+    info['world_saves_on_disk'] = worlds                             # the mod's own world saves on disk (none since multiplayer 0.1.26); never in the list
     picks = {}
     for x in (H, G):
         s = open_cards(x, f'pvp_{x}', pvp=True)
         check(f'PvP 1 ({x}): the PvP window\'s Bring Units opens the CARD window (cards with game icons, real worlds only: no hub world saves)',
-              cards_ok(s) and len(worlds) > 0, f'{s} | world saves on disk {len(worlds)}')
+              cards_ok(s), f'{s} | world saves on disk {len(worlds)}')   # multiplayer 0.1.26: the hub leaves no save (hub_nosave), so none may be on disk
         picks[x] = pick(x, 2, f'pvp_{x}')
     try:
         u = wait('host has 4 brought units', lambda: (lambda q: q if q.get('received') == 4 else None)(c(H, cmd='pvp_units_status')), timeout=90, every=1)
