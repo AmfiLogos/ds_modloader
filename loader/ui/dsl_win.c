@@ -679,6 +679,7 @@ static void settings_click(void *ud, DSLObj w) {
 }
 static void num_commit_all(int quiet);
 static void back_click(void *ud, DSLObj w) { (void)ud; (void)w; num_commit_all(1); keep_switches(); set_page[0] = 0; mods_tab_reload(); }
+static void set_esc(void *ud) { back_click(ud, NULL); }               /* the page's body is destroyed by the reload: off the Escape stack */
 static int st_enabled(int i) { const DSLSettingInfo *in = dsl_settings_at(set_page, i); return in && !applying && (!in->gameplay || !read_only); }
 /* the controls show the values (after Undo / Default values) */
 static void settings_values(void) {
@@ -756,6 +757,7 @@ static void settings_open(DSLObj root, float w, float h) {
     DSLObj df = named(U->button(root, w - 412, 0, 200, 34, TR("Default values"), defaults_click, NULL), 0, "set-defaults", defaults_click, NULL, TR("Default values"));
     U->tooltip(df, TR("Default values"), TR("Puts every setting of this mod back to its default value."));
     named(U->button(root, w - 200, 0, 200, 34, TR("Back"), back_click, NULL), 0, "set-back", back_click, NULL, TR("Back"));
+    U->esc_push(root, set_esc, NULL, 0);                               /* Escape = Back first (owner 2026-10-25), then the window */
     /* what the two kinds mean (owner: no restart wording; Apply = the loading screen) */
     char note[600] = "";
     if (ng && read_only) snprintf(note, sizeof note, "%s", TR("Gameplay settings change only at the title screen."));
