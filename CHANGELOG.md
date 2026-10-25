@@ -4,6 +4,10 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.29)
+
+- Load Campaign: worlds that a mod hides as its own (old multiplayer hub and PvP worlds, Units Laboratory test worlds) no longer add the line "worlds are hidden by a filter under the list". There is no box that shows them.
+
 ### 0.1.28 (2026-10-25)
 
 - Escape closes the windows of the mods: the Mods window, the bug report window and the mod message boxes. On a mod's Settings page, Escape goes back first. The game does not see that press, so its own Escape menu does not open.
