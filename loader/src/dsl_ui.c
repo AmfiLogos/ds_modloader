@@ -1556,8 +1556,10 @@ static void path_breaks(const char *s, char *out, size_t cap) {
     }
     out[o] = 0;
 }
+static void esc_notice_push(Obj v, int two);
+static int nb_esc_off;
 static void k_notice(const char *text, const char *ok_label, const char *cancel_label, dsl_ui_cb ok, dsl_ui_cb cancel, void *ud) {
-    notice_unfit(); nview_last = -1000; Obj v = notice_view();
+    notice_unfit(); nview_last = -1000; Obj v = notice_view(); nb_esc_off = 0;
     if (!v || !m_nv_select || !m_nv_confirm || f_nv_text < 0) { dsl_log("ui: notice: no CommonNoticeView in this scene: \"%s\" not shown", text ? text : ""); return; }
     NB.serial = (NB.serial + 1) & 0x0FFFFFFF; NB.ok = ok; NB.cancel = cancel; NB.ud = ud;
     path_breaks(text ? text : "", NB.text, sizeof NB.text); dsi_utf8_fix_end(NB.text);   /* the box shows (and k_notice_close compares) this copy */
@@ -1574,6 +1576,7 @@ static void k_notice(const char *text, const char *ok_label, const char *cancel_
     nfit_tries = 60;
     go_active(v, 1);
     raise_view(v, 32040);
+    esc_notice_push(v, cancel_label != NULL);                       /* Escape = its Cancel (OK with one button) */
     dsl_log("ui: notice %d shown (%s): %s", NB.serial, cancel_label ? "two buttons" : "one button", text ? text : "");
 }
 
@@ -1589,6 +1592,159 @@ static void k_notice_close(void) {
 
 /* the game's notice box is on screen (any owner): dsl_crash.c asks only when it is free */
 int dsl_ui_notice_shown(void) { Obj v = notice_view(); return v && on_tree(v); }
+
+/* ------------------------------------------------------------------ Escape (kit 0.1.28; owner 2026-10-25: "make sure Escape
+   works to close our custom windows"). ONE owner of the key for every mod: windows push themselves (esc_push); a press closes
+   the top-most one that still shows (the last pushed), exactly as its own Close / Cancel / X (its close callback), one per
+   press. The kit's own notice box is pushed here too: Escape = its Cancel (its OK when it has one button), through the stock
+   OnClick_Cancle / OnClick_Confirm, so the box closes the game's way and its callback runs as for a click.
+   The game must not act on that same press. It reads its keys in KeyInputDispatcher.UpdateInputStream: List.AddRange over
+   the iterator <GetInputOnKeyDown>d__N, whose MoveNext (an interface call, never inlined) asks Input.GetKeyDown per bound key.
+   The hook there skips KeyCode.Escape while one of these windows shows or the kit used the press this frame: no
+   EscapeActionRequested, so no pause menu, no stock popup under ours closed, no construction cancel. The kit reads the key
+   itself in its frame tick (Input.GetKeyDown, not through that iterator), so the order of the game's input and the
+   EventSystem tick in a frame does not matter.
+   A text field that had the keyboard (any TMP_InputField; it takes Escape in EventSystem.Update, before this tick, and has
+   let go by now): that press only leaves the field. DSL_ESC_EDIT on the innermost pushed window holding the field = that
+   window closes too (an edit row: its Cancel drops the edit). The next press closes the window. With none of these windows
+   shown, the game gets Escape as before (multiplayer's own boxes keep their InputEventHandler Escape hook). */
+#define ESC_MAX 32
+typedef struct { uintptr_t h; DSLObj id; void (*close)(void *); void *ud; int flags, seq, notice; } EscE;   /* id: identity only; notice: the kit notice's serial */
+static EscE escs[ESC_MAX]; static int nesc, esc_seq;
+static int32_t esc_used = -1;                                        /* the frame whose Escape the kit used */
+static uintptr_t esc_foc;                                            /* the TMP_InputField that had the keyboard at the last tick */
+static void *m_es_cur, *m_es_selgo, *m_es_setsel, *m_nv_okclick, *m_nv_cancelclick;
+static uintptr_t (*x_weak)(Obj, bool);
+static int32_t esc_frame(void) { return m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : -1; }
+static void esc_free(int i) { hfree(&escs[i].h); escs[i] = escs[--nesc]; }
+static int esc_notice_up(const EscE *e) {                            /* the kit notice of this entry still shows (not answered, not replaced) */
+    Obj v = e->notice == NB.serial && NB.text[0] ? hget(e->h) : NULL; if (!v || !on_tree(v)) return 0;
+    char cur[1024] = ""; utf8_of(tmp_get(AT(v, f_nv_text, Obj)), cur, sizeof cur);
+    return !strcmp(cur, NB.text);
+}
+static void esc_sweep(void) { for (int i = nesc - 1; i >= 0; i--) if (escs[i].notice ? !esc_notice_up(&escs[i]) : !hget(escs[i].h)) esc_free(i); }
+static int esc_shown(const EscE *e) { return e->notice || on_tree(hget(e->h)); }
+static EscE *esc_top(void) {
+    esc_sweep();
+    EscE *t = NULL;
+    for (int i = 0; i < nesc; i++) if (esc_shown(&escs[i]) && (!t || escs[i].seq > t->seq)) t = &escs[i];
+    return t;
+}
+static int k_esc_push(DSLObj win, void (*close)(void *), void *ud, int flags) {
+    W *w = w_of(win); Obj o = w ? w_root(w) : (Obj)win;
+    if (!close || !alive(o)) return -1;
+    int i = 0; while (i < nesc && (escs[i].notice || escs[i].id != win)) i++;
+    if (i == nesc) {
+        if (nesc == ESC_MAX) esc_sweep();
+        if (nesc == ESC_MAX) { dsl_log("ui: Escape: more than %d windows pushed: refused", ESC_MAX); return -1; }
+        i = nesc++; memset(&escs[i], 0, sizeof escs[i]); escs[i].id = win;
+    }
+    hfree(&escs[i].h); escs[i].h = x_weak ? x_weak(o, false) : hnew(o);   /* always this object (a new one can sit where a dead one was) */
+    escs[i].close = close; escs[i].ud = ud; escs[i].flags = flags; escs[i].seq = ++esc_seq;
+    return 0;
+}
+static void k_esc_drop(DSLObj win) { for (int i = nesc - 1; win && i >= 0; i--) if (!escs[i].notice && escs[i].id == win) esc_free(i); }
+static void esc_notice_close(void *ud) {                             /* the box's own button: Cancel (two buttons) or OK */
+    Obj v = notice_view(); void *m = ud ? m_nv_cancelclick : m_nv_okclick;
+    if (v && on_tree(v) && m) CALL(m, void, Obj)(v, m);
+}
+static void esc_notice_none(void *ud) { (void)ud; dsl_log("ui: Escape: this notice waits for an answer (Escape does not answer it)"); }
+static void esc_notice_push(Obj v, int two) {                        /* k_notice: the box just shown */
+    for (int i = nesc - 1; i >= 0; i--) if (escs[i].notice) esc_free(i);
+    if (nesc == ESC_MAX || !v) return;
+    EscE *e = &escs[nesc++]; memset(e, 0, sizeof *e);
+    e->h = hnew(v); e->notice = NB.serial; e->seq = ++esc_seq;
+    e->close = nb_esc_off ? esc_notice_none : esc_notice_close; e->ud = two ? (void *)1 : NULL;
+}
+/* dsl_crash.c: the consent box (Yes / No, a lasting answer) is not answered by a stray Escape; the game still never sees it */
+void dsl_ui_notice_no_esc(void) { nb_esc_off = 1; for (int i = 0; i < nesc; i++) if (escs[i].notice) escs[i].close = esc_notice_none; }
+static Obj esc_focused(void) {                                       /* the TMP_InputField with the keyboard now, or NULL */
+    if (!m_es_cur || !m_es_selgo || !m_in_focused) return NULL;
+    Obj es = CALL0(m_es_cur, Obj)(m_es_cur); if (!alive(es)) return NULL;
+    Obj go = CALL(m_es_selgo, Obj, Obj)(es, m_es_selgo);
+    Obj f = alive(go) ? comp_get(go, K.TMP_Input) : NULL;
+    return f && CALL(m_in_focused, bool, Obj)(f, m_in_focused) ? f : NULL;
+}
+/* the field lets go of the selection too: a field that only lost the keyboard took it back when a notice box showed over
+   its window (the next Escape then only "left the field" again instead of answering the box; dsesc-cm, Unit Builder) */
+static void esc_deselect(Obj field) {
+    Obj es = m_es_cur ? CALL0(m_es_cur, Obj)(m_es_cur) : NULL;
+    Obj sel = alive(es) && m_es_selgo ? CALL(m_es_selgo, Obj, Obj)(es, m_es_selgo) : NULL;
+    if (sel && sel == go_of(field) && m_es_setsel) CALL(m_es_setsel, void, Obj, Obj)(es, NULL, m_es_setsel);
+}
+static int esc_holder(Obj field) {                                   /* the innermost shown window holding the field, -1 = none */
+    for (Obj t = tr_of(field); t; t = tr_parent(t))
+        for (int i = 0; i < nesc; i++) if (!escs[i].notice) { Obj o = hget(escs[i].h); if (o && tr_of(o) == t && on_tree(o)) return i; }
+    return -1;
+}
+static void esc_tick(void) {
+    Obj had = hget(esc_foc), now = esc_focused();
+    int32_t fc = esc_frame();
+    if (nesc && m_input_keydown && esc_used != fc && CALL(m_input_keydown, bool, int)(27, m_input_keydown)) {
+        EscE *t = esc_top();
+        if (t) {
+            esc_used = fc;
+            Obj field = now ? now : had; int k = field ? esc_holder(field) : -1;
+            char nm[96] = "";
+            if (field) esc_deselect(field);
+            if (field && (k < 0 || !(escs[k].flags & DSL_ESC_EDIT))) dsl_log("ui: Escape left a text field (the window stays)");
+            else {
+                EscE e = field ? escs[k] : *t;                       /* a copy: close() may drop the entry */
+                obj_name(go_of(hget(e.h)), nm, sizeof nm);
+                dsl_log("ui: Escape closes %s%s", e.notice ? "the notice box" : nm[0] ? nm : "a window", field ? " (an edit with the keyboard: its Cancel)" : "");
+                e.close(e.ud);
+            }
+        }
+    }
+    hset(&esc_foc, esc_focused());                                   /* after: a field this press left is free now */
+}
+/* the game's key-down reader: KeyCode.Escape skipped while ours takes it (one log line per press) */
+static bool (*o_kd_next)(Obj, const void *);
+static int32_t off_kd_cur = -1, esc_kept = -1;
+static bool h_kd_next(Obj it, const void *mi) {
+    for (;;) {
+        bool r = o_kd_next(it, mi);
+        if (!r || AT(it, off_kd_cur, int32_t) != 27) return r;
+        int32_t fc = esc_frame();
+        if (!(esc_used == fc && fc >= 0) && !esc_top()) return r;
+        if (esc_kept != fc) { esc_kept = fc; dsl_log("ui: Escape kept from the game (one of our windows takes it)"); }
+    }
+}
+static void esc_install(void) {
+    void *(*nested)(void *, void **) = (void *(*)(void *, void **))dsl_il2cpp_fn("il2cpp_class_get_nested_types");
+    const char *(*cname)(void *) = (const char *(*)(void *))dsl_il2cpp_fn("il2cpp_class_get_name");
+    *(void **)&x_weak = dsl_il2cpp_fn("il2cpp_gchandle_new_weakref");
+    void *k = dsl_find_class("Refactor.Main.InputModule", "KeyInputDispatcher"), *it = NULL, *nk, *mi = NULL;
+    while (k && nested && cname && (nk = nested(k, &it)))
+        if (!strncmp(cname(nk), "<GetInputOnKeyDown>d__", 22)) { mi = mi_sig(nk, "MoveNext", 0, NULL); off_kd_cur = dsl_field_offset(nk, "<>2__current"); break; }
+    void *kES = dsl_find_class("UnityEngine.EventSystems", "EventSystem");
+    m_es_cur = kES ? mi_sig(kES, "get_current", 0, NULL) : NULL; m_es_selgo = kES ? mi_sig(kES, "get_currentSelectedGameObject", 0, NULL) : NULL;
+    m_es_setsel = kES ? mi_sig(kES, "SetSelectedGameObject", 1, NULL) : NULL;
+    m_nv_okclick = K.Notice ? mi_sig(K.Notice, "OnClick_Confirm", 0, NULL) : NULL; m_nv_cancelclick = K.Notice ? mi_sig(K.Notice, "OnClick_Cancle", 0, NULL) : NULL;
+    if (!mi || !*(void **)mi || off_kd_cur < 0)
+        dsl_log("ui: Escape: the game's key reader not found (MoveNext %p, current %d): an Escape that closes our window also reaches the game", mi, off_kd_cur);
+    else if (dsl_hook(DSL_OWNER_LOADER, *(void **)mi, (void *)h_kd_next, (void **)&o_kd_next, "loader ui Escape (KeyInputDispatcher key-down reader)"))
+        dsl_log("ui: Escape: key reader hook refused: an Escape that closes our window also reaches the game");
+    dsl_log("ui: Escape for our windows ready (fields %s, notice buttons %s)", m_es_cur && m_es_selgo ? "on" : "OFF", m_nv_okclick && m_nv_cancelclick ? "on" : "OFF");
+}
+/* a module that reads Escape itself (multiplayer's title pages, its in-game boxes) leaves the press alone while the kit
+   takes it: one of the pushed windows shows, or the kit used this frame's press. Found by name (Windows: baselib.dll). */
+#ifdef _WIN32
+__declspec(dllexport)
+#else
+__attribute__((visibility("default")))
+#endif
+int dsl_esc_taken(void) { int32_t fc = esc_frame(); return (esc_used == fc && fc >= 0) || esc_top() != NULL; }
+__attribute__((visibility("default"))) int dsl_ui_test_typing(void) { return esc_focused() != NULL; }   /* test: a text field has the keyboard */
+/* test only: the pushed windows, top last ("name|shown|flags;...") */
+__attribute__((visibility("default"))) int dsl_ui_test_esc(char *out, size_t cap) {
+    esc_sweep(); size_t o = 0; if (cap) out[0] = 0;
+    for (int i = 0; i < nesc && o + 120 < cap; i++) {
+        char nm[96] = ""; obj_name(go_of(hget(escs[i].h)), nm, sizeof nm);
+        o += (size_t)snprintf(out + o, cap - o, "%s%s|%d|%d|%d", i ? ";" : "", escs[i].notice ? "notice" : nm, esc_shown(&escs[i]), escs[i].flags, escs[i].seq);
+    }
+    return nesc;
+}
 
 /* ------------------------------------------------------------------ place / active / enabled / destroy / clipboard */
 static void k_set_text(DSLObj o, const char *s) {
@@ -1646,6 +1802,7 @@ static void k_set_enabled(DSLObj o, int on) {
 }
 static void k_destroy(DSLObj o) {
     if (!o) return;
+    k_esc_drop(o);
     W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o;
     if (hget(h_tip_shown_target) && (hget(h_tip_shown_target) == o || hget(h_tip_shown_target) == r)) tip_hide();
     destroy_obj(go_of(r));
@@ -1666,7 +1823,8 @@ static DSLUi KIT = {
     .field = k_field, .field_get = k_field_get, .field_set = k_field_set, .scroll = k_scroll, .scroll_height = k_scroll_height,
     .image_png = k_image_png, .tooltip = k_tooltip, .notice = k_notice, .notice_close = k_notice_close, .place = k_place, .set_active = k_set_active,
     .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
-    .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set
+    .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
+    .esc_push = k_esc_push, .esc_drop = k_esc_drop
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -2086,6 +2244,7 @@ static void tick(void) {
     if (!o_cur_perform) brand_frame();                              /* else right before the UI is drawn (h_cur_perform) */
     run_queue();
     fields_frame();
+    esc_tick();
     sliders_frame();
     tips_frame();
     if (!o_cur_perform) tip_place_frame();                          /* else right before the UI is drawn (h_cur_perform) */
@@ -2323,6 +2482,7 @@ void dsl_ui_install(void) {
           && dsl_hook(DSL_OWNER_LOADER, *(void **)m_cur_perform, (void *)h_cur_perform, (void **)&o_cur_perform, "loader ui CanvasUpdateRegistry.PerformUpdate"))
           o_cur_perform = NULL;
       dsl_log("ui: title menu placed %s, rows %s", o_cur_perform ? "before the UI is drawn" : "in the EventSystem tick", m_lr_force ? "rebuilt first" : "as last drawn"); }
+    esc_install();
     kit_ok = 1;
     dsl_log("ui: kit ready (DSLUi size %zu, tooltip %s, notice %s, fields %s, images %s)", sizeof(DSLUi), tip_ok() ? "on" : "OFF",
             m_nv_select && m_nv_confirm ? "on" : "OFF", m_in_focused ? "on" : "OFF", m_tex_load && m_spr_create ? "on" : "OFF");

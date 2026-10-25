@@ -48,6 +48,7 @@
 int dsl_reg_scene(void);
 int dsl_ui_title_shown(void);
 int dsl_ui_notice_shown(void);
+void dsl_ui_notice_no_esc(void);                                         /* dsl_ui.c: Escape does not answer the box shown last */
 int dsl_soft_b_live(void);
 
 static int on, role_b, live_marked, title_marked, ended, asked, sending;
@@ -448,6 +449,7 @@ static void ask(void) {
              TR("Only after a crash, a freeze, a desync or a failed join: the logs and versions, without names or IP addresses."), priv);
     dsi_utf8_fix_end(t);
     u->notice(t, TR("Yes"), TR("No"), yes_cb, no_cb, NULL);
+    dsl_ui_notice_no_esc();                                           /* a stray Escape must not record a lasting No */
     dsl_log("crash: consent notice shown");
 }
 
