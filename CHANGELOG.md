@@ -332,7 +332,7 @@ Fixes:
 
 ## ZET-U Mod Suite (zetu-suite)
 
-### Unreleased (0.1.3)
+### 0.1.3 (2026-10-25)
 
 - Supplies step with 6 to 8 units: the units show in pages of 4 at the game's own size. Two buttons in the title bar, "1-4" and "5-8", change the page. With 5 units, one row.
 - Result window with 5 to 8 units: the portraits show in two lines at the game's own size, and the window grows by one line. A party of 4 or fewer keeps the game's own line (before, its portraits were also made half size).
@@ -381,7 +381,7 @@ Fixes:
 
 ## Locked Slots (locked-slots)
 
-### Unreleased (0.1.2)
+### 0.1.2 (2026-10-25)
 
 - The lock is now a small white padlock with a thin dark edge, about half the old size, in the slot's top-left corner. It grows and shrinks with the slot and the UI Scale.
 - The item card of a locked slot has one more row: "Kept On Return". An empty locked slot shows a "Kept On Return" card too.
@@ -393,7 +393,7 @@ Fixes:
 
 ## Live building HP (live-hp)
 
-### Unreleased (0.1.0)
+### 0.1.0 (2026-10-25)
 
 - First release, a fix: when a building is selected, its durability number and bar in the bottom panel and its rows in the Inspect window follow its real durability when it takes damage or gets repaired, not only the value it had when you selected it.
 - On by default, on the Fixes tab of the Mods window.
