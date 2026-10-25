@@ -4,9 +4,9 @@
 // Runtime hooks found by il2cpp name (Mac and Windows), GameAssembly and the game's UI bundle unchanged.
 // Build 25846389 (DS_B.0.4.29). Port of the old binary patch (memory DungeonSettlers_WeaponSlotMod, 2026-10-04).
 //
-// Data: QuickSlotData._quickSlots grows from 4 to 5; the weapon skill is quickSlots[4] (WS). Indexes 0..3 stay the
-// stock free slots, so keys (UseSkill_1..4 -> UI 1..4), the skill-tree "set slot" menu and the right-click menus of
-// the free slots work unchanged. The stock code is bounded by the array length (never by MAX_SLOT = 4) except:
+// Data: QuickSlotData._quickSlots grows from 4 to 5 IN MEMORY; the weapon skill is quickSlots[4] (WS). Indexes 0..3
+// stay the stock free slots, so keys (UseSkill_1..4 -> UI 1..4), the skill-tree "set slot" menu and the right-click
+// menus of the free slots work unchanged. The stock code is bounded by the array length (never by MAX_SLOT = 4) except:
 //   - the inlined `new string[4]` (QuickSlotData ctor in OnSpawned / container Deserialize, the save copy in
 //     Serialize): arrays are grown after the stock code made them, and Serialize runs on 4-long views;
 //   - the free-slot search (TryRegisterQuickSlot): runs on 4 slots; a weapon skill goes to WS instead;
@@ -15,11 +15,15 @@
 //   - skill reset (PlayerUnitDataContainer.ResetSkill clears every slot): WS is kept (the weapon skill stays active);
 //   - unequip: WS is cleared after ProcessUnequip (its IsRegistered check still sees WS, so the skill is removed);
 //   - AI auto-use (DecideSkill takes the first usable skill in slot order): it sees WS first, as in the old mod.
-// Saves: 5 slots per unit. A 4-slot save (stock game, or the loader without this mod) is migrated when it loads: the
-// weapon skill moves from its free slot to WS, the other skills keep their place. A save of the old binary mod
-// (weapon skill at index 0) is turned into this layout. The stock game reads the first 4 slots of a 5-slot save
-// (QuickSlotData.Deserialize copies Math.Min of the two lengths), so only the weapon slot is lost there. When the load
-// ends, an empty weapon slot gets the equipped weapon's skill as an equip would give it (0.1.1, "fill on load").
+// Saves (0.1.2): what the stock game writes, so a world saved with the mod loads in the game without mods. Each unit
+// is saved with 4 slots: the free slots, and WS's skill where the stock equip puts it (ItemControlProcessor.ProcessEquip
+// -> OnAddExtraSkill -> TryRegisterQuickSlot: the first empty of the 4 slots). With the 4 free slots full it is in no
+// slot and stays in the unit's skills (ActiveSkills, its AutoUse choice): the stock state after another skill was set
+// on its slot (InputEventHandler.OnEvent(SetQuickSlotRequested) overwrites the slot and keeps the old skill on the
+// unit; only the Unset handler removes it). The in-memory weapon slot does not change. Loading such a save (or any
+// 4-slot save): the weapon skill moves from its free slot to WS, the other skills keep their place; when the load ends,
+// an empty weapon slot gets the equipped weapon's skill as an equip gives it (0.1.1, "fill on load"). Older 5-slot saves
+// (0.1.0 / 0.1.1: WS = index 4; the old binary mod: weapon skill at index 0) are read and written back in stock form.
 // UI: QuickSlotUI._skillSlots gets a 6th SkillSlotUI appended (UI_W = 5 = quickSlots[4]), a runtime copy of the first
 // free slot, placed between the basic attack and the free slots (owner's layout, 2026-10-04: panel 362 -> 430 px).
 // Its key box is hidden, it cannot be dragged from, dropped on or right-clicked.
@@ -176,6 +180,13 @@ static void grow_all(Obj qsc) {
     const DL *L = dict_l(d);
     DICT_FOR(d, L, e) qsd_grow(AT(e, L->val, Obj));
 }
+/* Where the stock game keeps the weapon skill w in the 4 free slots of a: its slot if it is there, else the first empty
+   one (TryRegisterQuickSlot: String.IsNullOrEmpty), else -1 (no slot). */
+static int stock_index(Obj a, Obj w) {
+    for (int i = 0; i < WS; i++) if (str_eq(aget(a, i), w)) return i;
+    for (int i = 0; i < WS; i++) if (!slen(aget(a, i))) return i;
+    return -1;
+}
 
 /* The skills that are a weapon's own skill: Equipment_ItemDefaultSkills[1] of every item (8 in this build, one per
    weapon type; none of them is in a skill tree). Read once from DataSheetManager._itemTable.tableDatas. */
@@ -288,11 +299,12 @@ static void my_qsc_deser(Obj self, Obj data, const void *mi) {
            units, from4, moved, old);
 }
 
-/* ------------------------------------------------------------------------------------------------ save: 5 slots */
+/* ------------------------------------------------------------------------------------------------ save: stock form */
 /* The stock save copy (QuickSlotData.Serialize, inlined in the container's Serialize on Windows) writes into a new
    string[4] and indexes it with the live array's length: a 5-long array throws. It runs on 4-long copies here, then
-   every saved entry gets the 5 slots. The live arrays are kept in a managed holder while the copies are in place
-   (the GC does not see C memory). */
+   each saved entry with a weapon skill gets a new string[4]: the free slots, and the weapon skill where the stock game
+   keeps it (stock_index; none = not in the bar). The live arrays are kept in a managed holder while the copies are in
+   place (the GC does not see C memory). */
 static int n_ser;
 static Obj (*o_qsc_ser)(Obj, const void *);
 static Obj my_qsc_ser(Obj self, const void *mi) {
@@ -313,17 +325,18 @@ static Obj my_qsc_ser(Obj self, const void *mi) {
     Obj r = o_qsc_ser(self, mi);
     for (int i = 0; i < k; i++) { Obj q = aget(hold, (uintptr_t)i * 2); setref(q, &AT(q, f_qsd_slots, Obj), aget(hold, (uintptr_t)i * 2 + 1)); }
     const DL *R = dict_l(r);
-    int put = 0;
+    int put = 0, out = 0;
     DICT_FOR(r, R, e) {
-        Obj a = qsd_grow(qsd_of(self, (const WGuid *)(e + R->key)));
-        if (alen(a) != NSLOT) continue;
-        Obj s = I.array_new(k_string, NSLOT);
+        Obj a = qsd_grow(qsd_of(self, (const WGuid *)(e + R->key))), w = alen(a) == NSLOT ? aget(a, WS) : NULL;
+        if (!slen(w)) continue;
+        Obj s = I.array_new(k_string, WS);
         if (!s) continue;
-        for (uintptr_t i = 0; i < NSLOT; i++) aset(s, i, aget(a, i));
+        for (uintptr_t i = 0; i < WS; i++) aset(s, i, aget(a, i));
+        int k = stock_index(a, w);
+        if (k >= 0) { aset(s, (uintptr_t)k, w); put++; } else out++;
         setref(_ea, e + R->val + f_qssd_slots, s);
-        put++;
     }
-    if (logn(&n_ser, 5)) H->log(ME, "save: %d units with 5 slots", put);
+    if (logn(&n_ser, 5)) H->log(ME, "save: 4 slots per unit (stock); weapon skill in a free slot %d, out of the bar (free slots full) %d", put, out);
     return r;
 }
 

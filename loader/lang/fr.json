@@ -71,6 +71,7 @@
  "(and %d more)": "(et %d de plus)",
  "After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day.": "Après un plantage, un blocage, une désynchronisation ou une connexion échouée, le démarrage suivant envoie les journaux et les versions, sans noms ni adresses IP. 3 par jour au maximum.",
  "Almost done": "Presque terminé",
+ "Always on. Only worlds on %s use it. To show %s on the New Game screen, turn on its switch under \"Custom difficulty\".": "Toujours activé. Seuls les mondes réglés sur %s l'utilisent. Pour afficher %s dans l'écran Nouvelle partie, activez son interrupteur sous \"Difficulté personnalisée\".",
  "Apply": "Appliquer",
  "Applying mods": "Application des mods",
  "Applying mods...": "Application des mods...",
@@ -110,6 +111,7 @@
   "Sauvegarde cloud : %d sauvegardes dans votre Steam Cloud, vérifiées à %s."
  ],
  "Contact (optional): your Discord name, so we can ask you questions": "Contact (facultatif) : votre nom Discord, pour vous poser des questions",
+ "Custom difficulty": "Difficulté personnalisée",
  "Default values": "Valeurs par défaut",
  "Delete": "Supprimer",
  "Delete the group \"%s\"? The mods stay installed.": "Supprimer le groupe « %s » ? Les mods restent installés.",
@@ -225,6 +227,7 @@
  "Settings: %s": "Réglages : %s",
  "Show only active mods": "Afficher seulement les mods actifs",
  "Show tags": "Afficher les étiquettes",
+ "Shows %s in the combat and management difficulty lists. A world made on %s keeps it. Other worlds do not change.": "Affiche %s dans les listes de difficulté de combat et de gestion. Un monde créé en %s le conserve. Les autres mondes ne changent pas.",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "Impossible de démarrer Steam. Installez Steam, démarrez-le et connectez-vous, puis ouvrez de nouveau Dungeon Settlers Modded.",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam n'a pas été prêt à temps. Démarrez Steam et connectez-vous, puis ouvrez de nouveau Dungeon Settlers Modded.",
  "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again.": "Steam est ouvert, mais il n'a pas laissé entrer le jeu. Vérifiez que vous êtes connecté à Steam et que Steam est en ligne, puis rouvrez Dungeon Settlers Modded.",

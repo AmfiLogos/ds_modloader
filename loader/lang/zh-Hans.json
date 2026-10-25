@@ -60,6 +60,7 @@
  "(and %d more)": "（还有 %d 个）",
  "After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day.": "发生崩溃、卡死、不同步或加入失败后，下次启动时会发送日志和版本信息，不含名称和 IP 地址。每天最多 3 份。",
  "Almost done": "即将完成",
+ "Always on. Only worlds on %s use it. To show %s on the New Game screen, turn on its switch under \"Custom difficulty\".": "始终开启。只有%s难度的世界使用它。要在新游戏界面显示%s，请打开“自定义难度”下的对应开关。",
  "Apply": "应用",
  "Applying mods": "正在应用模组",
  "Applying mods...": "正在应用模组...",
@@ -96,6 +97,7 @@
   "云备份：你的 Steam 云中有 %d 个存档，检查时间为 %s。"
  ],
  "Contact (optional): your Discord name, so we can ask you questions": "联系方式（可选）：你的 Discord 名称，方便我们向你提问",
+ "Custom difficulty": "自定义难度",
  "Default values": "默认值",
  "Delete": "删除",
  "Delete the group \"%s\"? The mods stay installed.": "要删除组合“%s”吗？模组仍保持安装。",
@@ -210,6 +212,7 @@
  "Settings: %s": "设置：%s",
  "Show only active mods": "只显示已开启的模组",
  "Show tags": "显示标签",
+ "Shows %s in the combat and management difficulty lists. A world made on %s keeps it. Other worlds do not change.": "在战斗难度和管理难度列表中显示%s。在%s难度下创建的世界会保留它。其他世界不会改变。",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "无法启动 Steam。请安装 Steam，启动并登录，然后重新打开 Dungeon Settlers Modded。",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steam 未能就绪。请启动 Steam 并登录，然后重新打开 Dungeon Settlers Modded。",
  "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again.": "Steam 正在运行，但没有让游戏连接。请确认你已登录 Steam 且 Steam 处于在线状态，然后重新打开 Dungeon Settlers Modded。",

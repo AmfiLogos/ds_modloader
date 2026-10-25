@@ -872,6 +872,64 @@ category like bug fixes"; Modded off in the Load list filters hid every world (e
 - Log: `reg: fixes: gcd-cdr (on in all worlds), sound-fix (client: the same in all worlds)` at start; `reg: world <guid>
   set to <key>, fixes off: <ids>`; the world check logs the set it compares (with the fixes).
 
+## Hell always loaded, New Game switch shows it (owner 2026-10-25, branch feat/hell-toggle) - `ui/dsl_newgame.c`, `src/dsl_reg.c`
+Owner, first ask: "a toggle in the difficulty selection screen, to its right ... which then keeps turned on the custom
+difficulty for the newly created world"; then (final): "We can keep it always on & have the toggle just activate its
+display. It's not evident to me that not loading a game in hell mode should require a reload." "Hell is a custom
+difficulty. We don't HAVE to use it because it's a possibility." No restart anywhere.
+- **Always loaded.** A mod whose mod.json has `"difficulty": {"value": N}` (Hell difficulty: 5) runs whenever it is
+  installed, switched on in the profile or not (`dsl_mf_difficulty`, `dsl_deps.h`: the loader core, the Mac stub and the
+  Windows starter decide the same way). Log: `hell-difficulty: custom difficulty: runs whenever installed`.
+- **Neutral for every other world** (checked before this was built; lane dshell2, full tables in PLAN_v013.md):
+  - the 20 Mac / 23 Windows code patches give the stock result for levels 0..4 (gameplay: treatment mood + dungeon
+    stay, the fall-through only 4 reached; tooltips: only the > 4 branch); the New Game selector's top level moves 4 -> 5
+    (that is what shows Hell; the switch below locks it again);
+  - the staff strip (`is_hell`: combat == 5) and the environment swap (`difficulty == 5`) act on 5 only;
+  - tables: AffecterTable / TextKeyTable / CampaignStartingTable only get rows at their end; 5 GameSystemTable arrays get a
+    6th entry, and every game reader indexes them by level after a bounds check; the save header's
+    StatusBalanceFingerprint differs (it hashes all AffecterTable rows), the stock game only logs that
+    (CampaignDataContainer.Deserialize -> LogStatusBalanceFingerprintChange, void);
+  - a Hell host and a guest without Hell on a world not on Hell: 0 desyncs (`test/hell_mp_pair.py`).
+- **Only worlds on Hell use it.** A world uses a difficulty mod only when its combat OR management level is N, read from
+  the world's save header (`dsl_hdr_levels`, CampaignSaveHeader by field name: the Load list rows, the world check, the save
+  warning) or from the open world (MainFlow._campaignSetting -> CampaignStartSetting); levels are kept per world guid
+  while the game runs (`dsl_world_note_level`). Old worlds work the same way. Then:
+  - `key_eff` (every reader: "Mods:" label, Modded filter, `dsl_world_mods`): the mod in the world's set only on its level,
+    whatever its stored key says (a world registered with Hell while it was on, at Very Hard, is Vanilla+ now);
+  - world check / flow K: `dsl_world_key_match` compares the world's set with this game's set as for that world (Hell
+    counts only when the world is on Hell and Hell runs): a world not on Hell loads with no restart in any game; a Hell
+    world in a game where Hell does not run is refused (flow K), never loaded into a game that cannot read it;
+  - new worlds are registered with the running set as that world uses it (`key_diff`); a world's Change window has no
+    Hell row (its level decides) and its Save keeps Hell for a Hell world;
+  - save warning (`dsl_world_save_dependent`): Hell asks only for a world on Hell;
+  - multiplayer set (worlds.json "modset" / "modset_lines", read by multiplayer when a session starts): Hell only while
+    the open world, or the one starting to load (`dsl_world_hello` from the world check), is on Hell; at the title only
+    when the profile switches it on. "Get the host's mods" (`dsl_hostmods.c`, `dsl_mod_in_hello`) switches it on for a host
+    on Hell and off for one that is not, so a guest joins either; a guest without Hell joins every host on a world not on
+    Hell.
+- **New Game switch** (`ui/dsl_newgame.c`): a "Custom difficulty" panel right of the settings' combat difficulty row (same
+  look and placing rules as the Load list's filter panel), one switch per difficulty mod. It only shows or hides level N
+  in the combat and management selectors: saved at once in `<data>/Mods/newgame.json` `{"show": {"<id>": bool}}`, off by
+  default. Hidden: after the presenter's own RefreshDifficultyIncreaseButtonState (hooked, "loader New Game screen custom
+  difficulty lock") the "+" at N-1 is locked with the game's SetDifficultyIncreaseLocked (as at its top level; not while
+  Devastation is still locked: the game's own lock and card stay); a level N chosen anyway (switch turned off with Hell
+  chosen, a key) falls back to N-1 at once. A mod that does not run: its switch is greyed, its card says why. The New
+  Campaign line "Mods for this world" follows the chosen levels. The presenter by a weak GC handle (OnActivateView
+  hooked), fields and methods by name, C# bool returns as uint8_t: one source, Mac and Windows.
+- **Mods window**: the difficulty mod's row is on and greyed (no switch: never in an Apply, a group or a world's set by
+  hand) with one gold line: "Always on. Only worlds on Hell use it. To show Hell on the New Game screen, turn on its switch
+  under "Custom difficulty"." (not shown when it does not run: the row says why). Its mod.json `default_on: false` stays:
+  it keeps Hell out of the first profile, so the title's multiplayer set leaves it out.
+- Logs: `reg: custom difficulty hell-difficulty (level 5, Hell): runs; ...`, `reg: multiplayer set for <guid|the title>:
+  <hash>`, `newgame: hell-difficulty ON on the New Game screen (level 5 shown, no restart)`, `newgame: a hidden level was
+  chosen: combat 4, management 4 now`.
+- Tests: host `run_tests.sh` T1f (a Hell world refused where Hell does not run, worlds not on Hell load although
+  registered with Hell, the multiplayer set with / without Hell by the loading world's level); hidden copy
+  `test/hell_toggle_test.py` (one process all along: switch off = no Hell, switch on = Hell, a Hell world keeps Hell after a
+  reload, a Very Hard world has none; `LANGTYPE=3|4|7` = Mods window row + settings panel shots, text fit); pair
+  `test/hell_mp_pair.py` (Hell host, guest without Hell, 0 desyncs). l1_savewarn / l1_saves / l1_filter use ZET-U as their
+  save_dependent / game mod now (Hell counts only on Hell); hostmods_pair expects Hell out of both sets on its seed world.
+
 ## Startup time: stock vs patched file vs loader vs BepInEx / MelonLoader (lane modguide, 2026-10-20)
 Mac M4 Max, one hidden copy (BT), 3 rounds round-robin, process start -> title ready (MainFlow scene Title + `_bootReady`,
 read by `test/boottime/boot_probe.c`; equals dsload's "boot done (title ready)" within 0.01 s). Script: `test/boottime/boot_compare.py`.

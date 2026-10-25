@@ -60,6 +60,7 @@
  "(and %d more)": "（ほか%d個）",
  "After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day.": "クラッシュ、フリーズ、同期ずれ、参加の失敗があったとき、次回の起動時にログとバージョン情報を送信します。名前とIPアドレスは除きます。1日最大3件。",
  "Almost done": "まもなく完了",
+ "Always on. Only worlds on %s use it. To show %s on the New Game screen, turn on its switch under \"Custom difficulty\".": "常にオン。%sのワールドでのみ使われます。ニューゲーム画面に%sを表示するには、「カスタム難易度」の下にあるそのスイッチをオンにしてください。",
  "Apply": "適用",
  "Applying mods": "MODを適用中",
  "Applying mods...": "MODを適用中...",
@@ -96,6 +97,7 @@
   "クラウドバックアップ：Steamクラウドに%d件のセーブがあります（%s 時点で確認）。"
  ],
  "Contact (optional): your Discord name, so we can ask you questions": "連絡先（任意）：こちらから質問するためのDiscord名",
+ "Custom difficulty": "カスタム難易度",
  "Default values": "初期値",
  "Delete": "削除",
  "Delete the group \"%s\"? The mods stay installed.": "グループ「%s」を削除しますか？MODはインストールされたままです。",
@@ -210,6 +212,7 @@
  "Settings: %s": "設定：%s",
  "Show only active mods": "オンのMODだけ表示",
  "Show tags": "タグを表示",
+ "Shows %s in the combat and management difficulty lists. A world made on %s keeps it. Other worlds do not change.": "%sを戦闘難易度と管理難易度の一覧に表示します。%sで作成されたワールドは、それを保持します。他のワールドは変わりません。",
  "Steam could not be started. Install Steam, start it and sign in, then open Dungeon Settlers Modded again.": "Steamを起動できませんでした。Steamをインストールし、起動してサインインしてから、Dungeon Settlers Moddedを開き直してください。",
  "Steam did not get ready. Start Steam and sign in, then open Dungeon Settlers Modded again.": "Steamの準備ができませんでした。Steamを起動してサインインしてから、Dungeon Settlers Moddedを開き直してください。",
  "Steam is running, but it did not let the game in. Make sure you are signed in to Steam and Steam is online, then open Dungeon Settlers Modded again.": "Steamは起動していますが、ゲームの接続を受け付けませんでした。Steamにサインインしていてオンラインであることを確認してから、Dungeon Settlers Moddedを開き直してください。",

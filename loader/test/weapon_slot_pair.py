@@ -11,7 +11,7 @@ backup (old weapon-slot layout: converted on load, 4 units in the dungeon).
 
 Real break caught: a desync (mp desync counters, DESYNC / FULL-STATE / deep lines, det tick errors, fp.log), or the
 two players' quick slots differing after the weapon swap and the casts."""
-import json, math, os, shutil, subprocess, sys, time
+import json, math, os, shutil, socket, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
 import weapon_slot_test as T
@@ -70,6 +70,13 @@ def main():
     os.makedirs(out, exist_ok=True); T.OUT = out
     if r.owner_game_running(): raise SystemExit('refused: the owner\'s game runs (this test needs 2 copies)')
     lane, pair = T.lease()
+    # a port of its own: lrig.pair_port gives 7891 to every K..Z copy and other lanes' guests also point at the rig's
+    # pair ports (2026-10-25: copy R joined a run on 7891, copy T one on 7831), so the OS picks a free port for this run;
+    # lrig.start's fix_mp_port reads pair_port
+    with socket.socket() as s_:
+        s_.bind(('127.0.0.1', 0)); port0 = s_.getsockname()[1]
+    pp = r.pair_port
+    r.pair_port = lambda x: port0 if x in (H_, G_) else pp(x)
     try:
         md = os.path.join(out, 'mods')
         if os.path.exists(md): T.aside(md, out)
@@ -132,7 +139,8 @@ def main():
         casts = {H_: 0, G_: 0}; t0 = time.time()
         while time.time() - t0 < MINUTES * 60:
             r._with_leases(lambda d: [l.update(used=time.time()) for p_, l in d.items() if l.get('lane') == lane])
-            us = c(H_, cmd='list_units')['units']
+            us = c(H_, cmd='list_units').get('units')
+            if us is None: log('host world not ready (map change, game over, reload): casts stop'); break
             foes = [e for e in us if e.get('faction') == 3 and not e.get('dead') and 'cell' in e]
             for u in [u for u in us if u.get('faction') == 1 and not u.get('dead') and 'cell' in u]:
                 x = G_ if u['guid'] in claim else H_
