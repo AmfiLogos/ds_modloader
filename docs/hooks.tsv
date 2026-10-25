@@ -8,6 +8,8 @@ loader	detour	export il2cpp_init	0x6f8a6c	0x49dac0	always (the loader's start: d
 loader	detour	export il2cpp_init_utf16	0x6f8aa0	0x49daf0	always (the loader's start)	loader il2cpp_init_utf16	ds_modloader:loader/src/dsl_main.c
 loader	detour	Refactor.UI.SaveLoadPresenter$$ClickLoadButton	0xf6f778	0xc81f30	always	loader rows SaveLoadPresenter.ClickLoadButton	ds_modloader:loader/src/dsl_rows.c
 loader	detour	Refactor.UI.SaveLoadPresenter$$ClickRemoveButton	0xf6ffd4	0xc82450	always	loader rows SaveLoadPresenter.ClickRemoveButton	ds_modloader:loader/src/dsl_rows.c
+loader	detour	Refactor.UI.SaveLoadPresenter$$OpenLoad	0xf6e4f8	0xc83160	always	loader rows SaveLoadPresenter.OpenLoad	ds_modloader:loader/src/dsl_rows.c
+loader	detour	Refactor.UI.SaveLoadPresenter$$Refresh	0xf6e8a8	0xc83500	always	loader rows SaveLoadPresenter.Refresh	ds_modloader:loader/src/dsl_rows.c
 loader	detour	Refactor.CampaignSaveLoader$$DeleteCampaignSaves	0x815808	0x5892e0	always when the launcher starts the game with the game's save folder (DSML_GAME_SAVES, DSML_DATA)	loader saves CampaignSaveLoader.DeleteCampaignSaves	ds_modloader:loader/src/dsl_saves.c
 loader	detour	Refactor.Main.EventQueue$$AddEvent	0xccfad4	0x9dffa0	always when the launcher starts the game with the game's save folder (DSML_GAME_SAVES, DSML_DATA)	loader saves EventQueue.AddEvent	ds_modloader:loader/src/dsl_saves.c
 loader	detour	Refactor.SaveLoadHelper$$GetAllSavePaths	0x87262c	0x5debb0	always when the launcher starts the game with the game's save folder (DSML_GAME_SAVES, DSML_DATA)	loader saves GetAllSavePaths	ds_modloader:loader/src/dsl_saves.c

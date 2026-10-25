@@ -69,7 +69,7 @@ def seed():
     json.dump(t, open(os.path.join(MSAVES, TPL_NEW + '.json'), 'w'))
     h = t['CampaignSaveHeader']; h.update(SaveName=TPL_OLD, DisplayName=TPL_OLD, SaveTime='2026-09-01 08:00:00', IsAutoSave=False)
     json.dump(t, open(os.path.join(MSAVES, TPL_OLD + '.json'), 'w'))
-    h.update(CampaignGuid=SLOT_GUID, ClanName='Slot', SaveName=SLOT, DisplayName='Slot', SaveTime='2026-09-02 08:00:00', IsAutoSave=True)
+    h.update(CampaignGuid=SLOT_GUID, ClanName='Slot', SaveName=SLOT, DisplayName='Slot', SaveTime='2026-10-20 08:00:00', IsAutoSave=True)   # the newest world (before the game save Elven); Template (2 saves) the last
     json.dump(t, open(os.path.join(MSAVES, SLOT + '.json'), 'w'))
     open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
 
@@ -85,7 +85,7 @@ def fake_root():
     open(os.path.join(FAKEROOT, 'loader', 'RELEASE'), 'w').write('0.1.23\n')
     open(os.path.join(FAKEROOT, 'update', 'notice.txt'), 'w').write('The last update could not be installed. The game stays on 0.1.22.\n')
     cr = os.path.join(I, 'crashrep_test'); os.makedirs(cr, exist_ok=True); open(os.path.join(cr, 'answer'), 'w').write('no')   # a fresh copy's consent box: No
-    return {'DSML_ROOT': FAKEROOT, 'DSL_UPDATE': '0', 'DSL_CRASHREP_TEST': cr}
+    return {'DSML_ROOT': FAKEROOT, 'DSL_UPDATE': '0', 'DSL_CRASHREP_TEST': cr, 'DSL_ROWS_OPEN_TEST': '1'}   # the open frames are logged
 
 
 def start(size=(960, 540), scale=None, lang='en'):
@@ -167,15 +167,55 @@ def row_checks(tag, st):
         check(f'{tag}: {w["name"]}: the Mods line is one line', rh <= (lr[3] - lr[1]) * 1.35, (rh, lr[3] - lr[1], w['line_text'][:80]))
 
 
+NEWEST = {ELVEN_GUID: '2026-10-11 18:25:31', MOON_GUID: '2026-10-04 19:56:07', TPL_GUID: '2026-09-04 09:59:06', SLOT_GUID: '2026-10-20 08:00:00'}
+MOD_MARK, MP_MARK = '<color=#E3A65B>', '<color=#8FC4FF>'                # the loader's "Modded" tag, the multiplayer mod's tag
+
+
+def open_checks(mark):
+    """owner 2026-10-25: on the first open after a start the whole list showed for a moment, then the filters hid worlds.
+    Every frame from the opening on (logged right before it is drawn, DSL_ROWS_OPEN_TEST) shows no world the filters hide."""
+    t0 = time.time()
+    while time.time() - t0 < 10 and T.dlog()[mark:].count('rows test: open frame') < 30: time.sleep(0.3)
+    fr = re.findall(r'rows test: open frame (\d+): (\d+) world row\(s\) drawn, (\d+) of them hidden by the filters', T.dlog()[mark:])
+    bad = [f for f in fr if int(f[2]) > 0]
+    check('first open after the start: 30 frames logged from the opening', len(fr) >= 30, len(fr))
+    check('first open after the start: no frame draws a world the filters hide (no flash)', fr and not bad, bad[:5])
+
+
+def order_checks(tag, st):
+    """owner 2026-10-25: one list in the stock order (worlds by their newest save, newest first), no group headings"""
+    ws = sorted([w for w in st.get('worlds', []) if w.get('shown') and w['guid'] in NEWEST], key=lambda w: -w['row_rect'][3])
+    times = [NEWEST[w['guid']] for w in ws]
+    check(f'{tag}: one list, newest world first (the stock order; a modded-only world above an older game save)', times == sorted(times, reverse=True) and len(ws) >= 3,
+          [(w['name'], NEWEST[w['guid']]) for w in ws])
+
+
+def tag_checks(tag, st, on):
+    """owner 2026-10-25 "Show tags": on = "Modded" on a Modded world (not on a fix-only or Vanilla+ world), the multiplayer
+    tag with its Remove tag on a multiplayer world; off = no tag, no Remove tag"""
+    w = {g: world(st, g) for g in (ELVEN_GUID, TPL_GUID, SLOT_GUID, MOON_GUID)}
+    if on:
+        check(f'{tag}: Elven (Modded) shows the Modded tag', MOD_MARK in w[ELVEN_GUID].get('name_text', ''), w[ELVEN_GUID].get('name_text'))
+        check(f'{tag}: Template (only a fix) and Slot (Vanilla+) show no tag', not any(m in w[g].get('name_text', '') for g in (TPL_GUID, SLOT_GUID) for m in (MOD_MARK, MP_MARK)),
+              [w[g].get('name_text') for g in (TPL_GUID, SLOT_GUID)])
+        if w[MOON_GUID].get('shown'):
+            check(f'{tag}: Moonlight shows the multiplayer tag and its Remove tag', MP_MARK in w[MOON_GUID].get('name_text', '') and w[MOON_GUID].get('remove_tag') == 1, w[MOON_GUID])
+    else:
+        shown = [x for x in w.values() if x.get('shown')]
+        check(f'{tag}: Show tags off: no tag on any row, no Remove tag', shown and not any(MOD_MARK in x.get('name_text', '') or MP_MARK in x.get('name_text', '') or x.get('remove_tag') for x in shown),
+              [(x.get('name'), x.get('name_text'), x.get('remove_tag')) for x in shown])
+
+
 def run_main():
     seed(); start()
     T.request({'cmd': 'warn_cancel'}); time.sleep(1)
-    open_list()
+    m0 = open_list()
+    open_checks(m0)
     st = lf()
     log('state', json.dumps(st)[:600])
     place_checks('main 960x540', st)
     b = st.get('boxes', {})
-    check('defaults = the list as before: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box')) == (1, 1, 0, 0, 1), b)
+    check('defaults = the list as before: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves, Show tags on', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags'), b.get('mp_box')) == (1, 1, 0, 0, 1, 1), b)
     e, t, m = world(st, ELVEN_GUID), world(st, TPL_GUID), world(st, MOON_GUID)
     check('kinds: Elven (gcd-cdr + zetu-suite) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
     sl = world(st, SLOT_GUID)
@@ -185,7 +225,20 @@ def run_main():
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,
           {k: ml.get(k) for k in ('open', 'mode', 'toggle', 'hidden', 'shown')})
     row_checks('main 960x540', st)
+    order_checks('main', st)
+    tag_checks('main, Show tags on (default)', st, True)
     shot('main_defaults')
+    st = lf('lf', multiplayer=1); time.sleep(0.5); st = lf()
+    tag_checks('main, Multiplayer box on', st, True); shot('main_tags_on')
+    st = lf('lf', show_tags=0); time.sleep(0.5); st = lf()
+    tag_checks('main, Show tags off', st, False); line_checks('main, Show tags off', st); shot('main_tags_off')
+    st = lf('lf', show_tags=1); time.sleep(0.5); st = lf()
+    tag_checks('main, Show tags on again', st, True)
+    st = lf('lf', vanilla=0, modded=0, multiplayer=0); time.sleep(0.5); st = lf()     # owner 2026-10-25: all off = every world
+    check('all three kind boxes off: every world shows (not an empty list), the line says nothing is hidden',
+          all(world(st, g).get('shown') for g in NEWEST) and not (st.get('hid_lines') or [{}, {}])[1].get('shown') and st.get('hidden_line') == 0,
+          ([(w['name'], w.get('shown')) for w in st.get('worlds', [])], (st.get('hid_lines') or [{}, {}])[1]))
+    lf('lf', vanilla=1, modded=1, multiplayer=0); time.sleep(0.5)
     # ---------------------------------------------------------------- the data guard: filter
     lf('lf_select', name=ELVEN); time.sleep(1); st = lf()            # the click reaches the game's presenter a frame later
     check('guard: the Elven save is selected, Remove File clickable', st.get('selected') == ELVEN and st.get('remove_clickable') == 1, st)
@@ -222,6 +275,33 @@ def run_main():
     S.stop_all()
 
 
+def line_checks(tag, st):
+    """owner 2026-10-25: the hidden-worlds line under the list ("3 worlds are hidden by the filters on the right.") was drawn
+    over the last save row: it must sit below every shown world row and save row"""
+    ws = [w for w in st.get('worlds', []) if w.get('shown')]
+    out = [(w['name'], r) for w in ws for r in w.get('save_rects', []) if r[1] < w['row_rect'][1] - 0.5 or r[3] > w['row_rect'][3] + 0.5]
+    check(f'{tag}: every shown save row is inside its world row (the world row is as tall as its save rows)', not out, out[:3])
+    ln = (st.get('hid_lines') or [{}, {}])[1]
+    if not ln.get('shown'): return
+    q = ln['rect']; rows = [w['row_rect'] for w in ws] + [r for w in ws for r in w.get('save_rects', [])]
+    bad = [r for r in rows if overlap(q, r) or r[1] < q[3] - 0.5]
+    check(f'{tag}: the hidden-worlds line is below every shown row (no overlap)', not bad, (q, bad[:3], ln.get('text', '')[:60]))
+
+
+def run_layout():
+    """the hidden-worlds line after filter / Latest save only changes (owner 2026-10-25: over the last save row after
+    Latest save only went off while a world with 2 saves was hidden)"""
+    seed(); start(); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+    open_list()
+    for tag, kw in (('defaults', {}), ('latest on', dict(latest_only=1)), ('Vanilla off', dict(vanilla=0)), ('latest off', dict(latest_only=0)),
+                    ('Vanilla on', dict(vanilla=1)), ('Modded off', dict(modded=0)), ('Modded on', dict(modded=1))):
+        st = lf('lf', **kw) if kw else lf(); time.sleep(0.8); st = lf()
+        log('layout', tag, 'line', (st.get('hid_lines') or [{}, {}])[1], [(w['name'], w.get('shown'), w.get('button_count'), w.get('saves_shown')) for w in st.get('worlds', [])])
+        line_checks(f'layout {tag}', st)
+        if tag == 'Vanilla on': shot('layout_after_latest')
+    S.stop_all()
+
+
 def run_restart():
     """the choices of run_main (Modded on, Multiplayer on, Latest save only on) come back after a restart"""
     start(); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
@@ -242,6 +322,17 @@ def run_sizes():
         place_checks(tag, st)
         row_checks(tag, st)
         shot(f'size_{size[0]}x{size[1]}_ui{scale}_{lang}')
+        S.stop_all()
+
+
+def run_look():
+    """de, ru, ja at 960x600: the panel (kinds, the ornament line, Latest save only, Show tags) and the tags, one shot each"""
+    seed()
+    for lang in ('de', 'ru', 'ja'):
+        start((960, 600), 1.0, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+        open_list(); st = lf('lf', multiplayer=1); time.sleep(1); st = lf()
+        tag_checks(f'look {lang}', st, True); line_checks(f'look {lang}', st); row_checks(f'look {lang}', st)
+        shot(f'look_{lang}')
         S.stop_all()
 
 
@@ -319,7 +410,7 @@ def main():
     which = os.environ.get('LF_RUNS', 'main,restart,sizes').split(',')
     try:
         for w in which:
-            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs, 'tips': run_tips, 'tiplangs': run_tiplangs}[w]()
+            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs, 'tips': run_tips, 'tiplangs': run_tiplangs, 'layout': run_layout, 'look': run_look}[w]()
             for f in ('dsload.log',):
                 if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f'{w}_{f}'))
     except Exception as e:

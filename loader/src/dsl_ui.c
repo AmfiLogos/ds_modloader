@@ -554,6 +554,7 @@ static Obj field_source(const char **from) {
     return isa(f, K.TMP_Input) ? f : NULL;
 }
 static Obj title_view(void);
+static Obj div_tpl(void);
 static int templates_ready(void) {
     if (hget(h_tpl_btn) && hget(h_tpl_img) && hget(h_tpl_txt)) return 1;
     Obj v = title_view(); if (!v || f_tv_credit < 0) return 0;
@@ -570,9 +571,43 @@ static int templates_ready(void) {
     hset(&h_tpl_img, imc);
     Obj lt = btn_label(src), t = lt ? inst(go_of(lt), hd) : NULL;
     hset(&h_tpl_txt, t ? comp_get(t, K.TMP_Text) : NULL);
+    div_tpl();                                                       /* the ornament line too, while the title is up */
     dsl_log("ui: templates from the title screen: button %s, image %s (%d children removed), text %s",
             hget(h_tpl_btn) ? "ok" : "MISSING", hget(h_tpl_img) ? "ok" : "MISSING", imc ? child_count(imc) : -1, hget(h_tpl_txt) ? "ok" : "MISSING");
     return hget(h_tpl_btn) && hget(h_tpl_img) && hget(h_tpl_txt);
+}
+/* the title menu's ornament line (owner 2026-10-25: the filter panel's divider = the line between the title's game buttons
+   and Settings): the title column's child that is no title button, holds an Image and is wider than tall, cloned once
+   into the template holder (so it also shows in a world: Esc > Load) */
+static uintptr_t h_tpl_div; static float div_w0, div_h0;
+static Obj div_tpl(void) {
+    Obj d = hget(h_tpl_div); if (d) return d;
+    static int64_t last = -1000; static int said; if (frames - last < 60) return NULL;
+    last = frames;
+    Obj v = title_view(); if (!v || f_tv_credit < 0 || !m_rt_rect) return NULL;
+    Obj col = tr_parent(AT(v, f_tv_credit, Obj)), hd = holder(); if (!col || !hd) return NULL;
+    char names[600] = "";
+    for (int i = 0, n = child_count(col); i < n; i++) {
+        Obj c = child_at(col, i); char nm[64]; obj_name(go_of(c), nm, sizeof nm);
+        int btn = comp_get(c, K.TitleButton) != NULL;
+        if (strlen(names) < 500) { strlcat(names, nm, sizeof names); strlcat(names, btn ? "(button) " : " ", sizeof names); }
+        if (btn || !first_image(tr_of(c), 0) || !isa(tr_of(c), K.RectTransform)) continue;
+        FRect r = CALL(m_rt_rect, FRect, Obj)(tr_of(c), m_rt_rect);
+        if (r.h <= 0 || r.w < 4 * r.h) continue;
+        Obj cl = inst(go_of(c), hd); if (!cl) continue;
+        hset(&h_tpl_div, cl); div_w0 = r.w; div_h0 = r.h;
+        dsl_log("ui: the title's ornament line \"%s\" (%.0f x %.0f) kept as the divider template", nm, r.w, r.h);
+        return cl;
+    }
+    if (!said++) dsl_log("ui: no ornament line in the title column (children: %s)", names);
+    return NULL;
+}
+DSLObj dsl_ui_menu_divider(DSLObj parent, float x, float y, float w, float *h) {
+    if (h) *h = 0;
+    Obj d = parent ? div_tpl() : NULL, c = d ? inst(d, (Obj)parent) : NULL; if (!c) return NULL;
+    float hh = div_h0 * w / div_w0; place_tl(c, x, y, w, hh);
+    if (h) *h = hh;
+    return (DSLObj)tr_of(c);
 }
 static Obj field_tpl(void) {
     Obj f = hget(h_tpl_field); if (f) return f;
@@ -1296,6 +1331,7 @@ static int rt_move_screen(Obj o, float dx, float dy) {
     CALL(m_tr_setwpos, void, Obj, V3)(rt, p, m_tr_setwpos);
     return 1;
 }
+int dsl_ui_move_screen(DSLObj o, float dx, float dy) { return o ? rt_move_screen((Obj)o, dx, dy) : 0; }
 static void tip_place_frame(void) {
     if (!tip_shown || tip_moves <= 0) return;
     Obj etc = hget(h_tip_etc); if (!etc) { tip_moves = 0; return; }
@@ -2064,6 +2100,7 @@ static void h_cur_perform(Obj self, const void *mi) {
         if (ntbs) title_frame();
         brand_frame();
         tip_place_frame();
+        dsl_rows_late();
         in_late = 0;
     }
     o_cur_perform(self, mi);

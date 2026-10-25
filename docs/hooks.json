@@ -164,6 +164,40 @@
   {
    "owner": "loader",
    "kind": "detour",
+   "method": "Refactor.UI.SaveLoadPresenter$$OpenLoad",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf6e4f8"
+    },
+    "win-x64": {
+     "rva": "0xc83160"
+    }
+   },
+   "active": "always",
+   "label": "loader rows SaveLoadPresenter.OpenLoad",
+   "source": "ds_modloader:loader/src/dsl_rows.c",
+   "key": "loader|dsl_rows.c|h_open_load|loader rows SaveLoadPresenter.OpenLoad"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.SaveLoadPresenter$$Refresh",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf6e8a8"
+    },
+    "win-x64": {
+     "rva": "0xc83500"
+    }
+   },
+   "active": "always",
+   "label": "loader rows SaveLoadPresenter.Refresh",
+   "source": "ds_modloader:loader/src/dsl_rows.c",
+   "key": "loader|dsl_rows.c|h_refresh|loader rows SaveLoadPresenter.Refresh"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
    "method": "Refactor.CampaignSaveLoader$$DeleteCampaignSaves",
    "platforms": {
     "mac-arm64": {

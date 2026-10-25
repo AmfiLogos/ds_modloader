@@ -20,6 +20,9 @@ int dsl_ui_screen_rect(DSLObj o, float r[4]);       /* a kit widget or any RectT
 int dsl_ui_widget_rect(DSLObj o, float r[4]);       /* a kit widget kept as a plain pointer: 0 once the kit forgot it */
 void dsl_ui_screen_size(float *w, float *h);
 void dsl_ui_tip_below(DSLObj target);              /* its hover card right below its panel first (the filter boxes) */
+DSLObj dsl_ui_menu_divider(DSLObj parent, float x, float y, float w, float *h);   /* the title menu's ornament line, w wide; *h its height */
+int dsl_ui_move_screen(DSLObj o, float dx, float dy);  /* any RectTransform moved by (dx, dy) screen pixels */
+void dsl_ui_flat(DSLObj o, uint32_t rgba);         /* a kit panel as a flat colour */
 DSLObj dsl_ui_child(DSLObj parent, const char *path);   /* Transform.Find */
 void dsl_ui_set_scale(DSLObj o, float s);
 float dsl_ui_width(DSLObj o);                       /* RectTransform.rect.width, local units */

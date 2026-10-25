@@ -4,7 +4,7 @@ lease first: ~/ds_multiplayer/rig/rig.py lease savesync --pid <this pid>). Own s
 <copy>/gameroot/data/Saves, the modded folder <copy>/data/Saves. The owner's saves and prefs: hash / check before-after.
 Real breaks this catches:
  A  modded copy (multiplayer + gcd-cdr): a modded save named like a game save (old first-start copy, other bytes) is
-    set aside, never deleted; the Load list shows the game save and the modded-only save in two groups; the game save
+    set aside, never deleted; the Load list shows the game save and the modded-only save (one list); the game save
     loads with no warning (gcd-cdr changes nothing in the save), is played and saved: the GAME file gets the progress,
     nothing is written to the modded folder.
  N  "normal game" copy (no loader, no mod: the test rig dsrig.dylib only; its save folder = the game folder): the same save loads
@@ -195,7 +195,7 @@ def main():
               [l for l in L.splitlines() if 'NEWER' in l or 'save_copies' in l][-3:])
         T.shot('A0_title_set_aside_notice'); T.request({'cmd': 'warn_cancel'}); time.sleep(1.5)
         r.send(X, {'cmd': 'mpm_open_load'}, timeout=20, connect_wait=0)
-        check('A: Load list in two groups (1 game save, 1 modded save)', T.wait_log('groups: 1 game, 1 modded', 20),
+        check('A: Load list shows the game save world and the modded-only world (one list since 2026-10-25)', T.wait_log('groups: 1 game, 1 modded', 20),
               [l for l in T.dlog().splitlines() if 'rows: Load list rebuilt' in l][-2:])
         time.sleep(1.5); T.shot('A1_load_list_groups')
         mark = len(T.dlog())

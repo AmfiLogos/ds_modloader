@@ -126,6 +126,7 @@ int dsl_saves_hidden_worlds(const char *dir, const char *not_in);   /* worlds of
 int dsl_module_syms(const char *name, void **out, int max);         /* dsl_main.c: an optional export of each running module */
 void dsl_rows_install(void);                             /* after dsl_ui_install */
 void dsl_rows_frame(void);                               /* from dsl_frame_hook */
+void dsl_rows_late(void);                                /* dsl_ui.c, right before the UI is drawn: the Load list filtered before its first frame */
 int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
 int dsl_rows_filter(const char *owner_id, const struct DSLLoadFilter *f);
 void dsl_rows_refresh(void);
