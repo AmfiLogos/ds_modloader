@@ -5,7 +5,7 @@ public base save under a new world guid, resource stacks in the bags). Nothing o
 Both copies run with the session file as the app starts them (DSML_SESSION = data/Mods/worlds.json, written by the
 loader): the multiplayer HELLO carries the running gameplay set, so the join's mod-set check is active (without it the
 set is empty and nothing is compared). The full-state check runs every 600 steps; no desync of any kind is allowed
-(the guest's unit selection no longer makes it differ: ds_multiplayer d72bf03). The host listens on an OS-chosen port.
+(the guest's unit selection no longer makes it differ: ds_multiplayer d72bf03). The host listens on the port leased for this run (rigports).
 
   locked_slots_pair.py [out]
 
@@ -128,6 +128,7 @@ def run(out, port):
                                                        and not s.get('mp', {}).get('needs_state'))(st(GX)), timeout=900, every=2)
     h, g = lk(HX), lk(GX)
     check('guest joined and loaded THIS host world', ok and g.get('world') == world, (st(GX).get('mp'), g.get('world')))
+    check('players: no extra player at the start', *r.rigports.players_guard(r.send, [HX, GX], 2, 'start'))
     check('S: both players\' multiplayer set (the HELLO) holds locked-slots: the join\'s mod-set check saw it',
           all(any(l.startswith('locked-slots@') for l in hello_lines(x)) for x in (HX, GX)), {x: hello_lines(x) for x in (HX, GX)})
     if g.get('world') != world: raise RuntimeError('the guest is not in this test world: stop')
@@ -186,6 +187,7 @@ def run(out, port):
           bags[HX] == bags[GX] and bags[HX][U[0]] and bags[HX][U[0]][0] == ['ITEM_LumaLog', 3] and bags[HX][U[1]][1] == ['ITEM_WildLongGrass', 4],
           {x: {u[:8]: (v or [])[:8] for u, v in bags[x].items()} for x in (HX, GX)})
     check('T: the module kept the same stacks on both', lk(HX).get('kept') == lk(GX).get('kept') == 3, (lk(HX), lk(GX)))
+    check('players: no extra player at the end', *r.rigports.players_guard(r.send, [HX, GX], 2, 'end'))
 
 
 def main():
@@ -198,11 +200,8 @@ def main():
         pair = p.stdout.strip() if p.returncode == 0 and p.stdout.strip() else None
         if not pair: time.sleep(20)
     if not pair: raise SystemExit('no rig lease in 30 min')
-    import socket
-    so = socket.socket(); so.bind(('127.0.0.1', 0)); port = so.getsockname()[1]; so.close()
-    log('pair', pair, 'port', port, '(OS-chosen)', 'host', HX, 'guest', GX)
-    r.pair_port = lambda x, _p=port: _p           # lrig gives every K..Z copy port 7891 and pairs have fixed ports: other
-                                                  # lanes' copies joined runs there. An OS-chosen port no copy points at.
+    port = r.pair_port(HX)                        # this run's own port (rigports): no other lane's copy points at it
+    log('pair', pair, 'port', port, '(leased for this run)', 'host', HX, 'guest', GX)
     busy = subprocess.run(['lsof', '-nP', '-iTCP:%d' % port, '-sTCP:LISTEN'], capture_output=True, text=True).stdout.strip()
     if busy:
         subprocess.run([sys.executable, f'{HOME}/ds_multiplayer/rig/rig.py', 'release', pair, lane], capture_output=True)

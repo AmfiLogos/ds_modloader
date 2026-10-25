@@ -23,6 +23,7 @@ import lrig  # noqa: E402
 RIGDIR = os.path.expanduser('~/ds_multiplayer/rig')
 sys.path.insert(1, RIGDIR)
 import rig as realrig  # noqa: E402  (leases only)
+rp = lrig.rigports                                              # each run's own TCP port + the EXTRA PLAYER guard (rigports.py)
 
 lrig.INST = os.path.join(L, 'test_env', 'instances')
 H, G = 'MDH', 'MDG'
@@ -186,6 +187,11 @@ def start(x):
     env.update(lrig.ctl_env())                                  # test control channel (v0.1.16: off without DSRIG_CTL)
     os.makedirs(os.path.join(k, 'crash'), exist_ok=True)       # the crash-report question answered: it would sit on the title
     with open(os.path.join(k, 'crash', 'consent.json'), 'w') as f: f.write('{"consent":"no"}\n')
+    sf = rp.loader_settings_file(I, env)
+    rp.clear_stale_mp(I)                                        # an mp.json from before this run (another lane's): set aside
+    rp.set_host_port(I, rp.port_for([I], 'moddata ' + x, share=True), sf)   # a menu host: this run's port, never 47777
+    rp.check_start(I, sf)                                       # GUARD: mp.json / host_port at a port this run does not own = refused
+    rp.note_started(I, x)
     args = [exe(x), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
@@ -195,6 +201,11 @@ def start(x):
 
 
 def stop(x):
+    if pids(x):
+        try:
+            rp.end_check(lrig.send, x, lrig.idir(x))             # EXTRA PLAYER: more players in its session than this run's copies
+        except Exception as e:
+            log(x, 'stop check failed', repr(e))
     for p in pids(x):
         try:
             lrig.send(x, {'cmd': 'quit'}, timeout=5, connect_wait=0)
@@ -239,6 +250,12 @@ def session_state(x):
         return None
 
 
+def players(phase):
+    """the session's player count (rigports): above 2 = EXTRA PLAYER, a FAIL (2026-10-25: runs of two lanes joined each other)"""
+    ok, lines = rp.players_guard(lrig.send, [H, G], 2, phase)
+    return check(f'players: no extra player at the {phase}', ok, '; '.join(lines))
+
+
 def run(port):
     mod = demo_mod()
     kit(H, mod, HOST_FILES); kit(G, mod, GUEST_FILES)
@@ -268,6 +285,7 @@ def run(port):
     log('guest: join by address sent')
     wait('guest joined, loaded and locked', lambda: (lambda s: s if s.get('det', {}).get('locked') and s.get('mp', {}).get('loads', 0) >= 1
                                                       and not s.get('mp', {}).get('needs_state') else None)(st(G)), timeout=900, every=1)
+    players('start')
     hl = [l for l in (flog(H, 'dsload.log') + flog(H, 'rig.log', hpos)).splitlines() if 'moddata' in l]
     gl = [l for l in (flog(G, 'dsload.log') + flog(G, 'rig.log')).splitlines() if 'moddata' in l]
     info['host_moddata_lines'] = hl[-6:]; info['guest_moddata_lines'] = gl[-6:]
@@ -291,6 +309,7 @@ def run(port):
     sh, sg = st(H), st(G)
     d = {x: s.get('mp', {}).get('desyncs', 0) - m0[x] for x, s in ((H, sh), (G, sg))}
     check('30 s of play after the join: world advanced, 0 desyncs', not any(d.values()) and (sg.get('tick') or 0) > 0, f'desyncs {d}, ticks {sh.get("tick")} {sg.get("tick")}')
+    players('end')                                              # the last moment both are in the session (the host quits next)
 
     # ---- the host quits: the guest goes back to the title and gets its own files back
     stop(H)

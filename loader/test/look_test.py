@@ -176,12 +176,14 @@ def main():
         src = os.path.join(work, 'demo_buffed.json'); make_demo_save(src)
         mc(cmd='load_save', file=src, det=1)
         HP.wait('host locked', lambda: HP.st(X).get('det', {}).get('locked'), timeout=900, every=2); time.sleep(6)
+        HP.players('start', (X,), 1)                             # hosting alone on the pair port: a second player = another run's copy
         view('game_hud')
         mc(cmd='ui_pop', open=1); view('game_cog'); mc(cmd='ui_pop', open=0)
         mc(cmd='mpm_chat', text='Hello from the look test'); mc(cmd='mpm_chat', open=1); view('game_chat'); mc(cmd='mpm_chat', escape=1); time.sleep(1)
         mc(cmd='ui_teams', action='open'); view('game_teams', 3); mc(cmd='ui_teams', action='close'); time.sleep(1)
         mc(cmd='mpm_esc'); view('game_esc'); press('ESC_INVITE', 3); view('game_invite'); mc(cmd='mpm_escape'); time.sleep(1.5)
         mc(cmd='mpm_esc'); time.sleep(2); mc(cmd='mpm_pvp', action='press_esc'); view('game_pvp', 3)
+        HP.players('end', (X,), 1)
         r = role_ref()
         check("the game's Options window: body and section head look found (reference)", len(r) == 2, r)
         if len(r) == 2:

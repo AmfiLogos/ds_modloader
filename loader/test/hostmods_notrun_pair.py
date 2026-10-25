@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A guest whose gameplay mod is on but does not start (crash guard) is refused once, with the reason, and is never
 restarted (lane dsmpfix 2026-10-25, lead's pick). A leased pair of hidden loader copies (never the owner's game, saves or
-screen); the host listens on an OS-chosen port (never a shared fixed one).
+screen); the host listens on the pair lease's own port (rigports.py: unique on the Mac, never a shared fixed one).
 
 Scenario: host and guest both have X = gcd-cdr installed and on (the same files). The guest's start finds
 dsload_state/gcd-cdr.pending (what a crash during X's start leaves), so its crash guard turns X off: X is not in the
@@ -20,7 +20,7 @@ Inputs: HM_BUILD = loader build folder (dsload.dylib + mods/multiplayer + mods/g
 a ready hidden test copy to clone (default ~/ds_launcher/loader/test_env/instances/Z). Copies NRH (host) and NRG (guest) in
 ../test_env/instances. Lease: ~/ds_multiplayer/rig/rig.py (refused while rig/release.lock exists).
 Output: ../test_env/notrun/<time>/ (logs, results.json); RESULT PASS|FAIL line."""
-import json, os, signal, shutil, socket, subprocess, sys, threading, time
+import json, os, signal, shutil, subprocess, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__)); L = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
@@ -28,6 +28,7 @@ import lrig  # noqa: E402
 RIGDIR = os.path.expanduser('~/ds_multiplayer/rig')
 sys.path.insert(1, RIGDIR)
 import rig as realrig  # noqa: E402  (leases only; its copies are never touched)
+rp = lrig.rigports                                              # each run's own TCP port + the EXTRA PLAYER guard (rigports.py)
 
 lrig.INST = os.path.join(L, 'test_env', 'instances')
 H, G = 'NRH', 'NRG'
@@ -148,6 +149,11 @@ def start(x, extra=None):
            'DSML_DATA': os.path.join(I, 'data'), 'DSL_UPDATE': '0', 'DSL_CLOUD': '0', 'DSL_CRASHREP': '0',
            'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0', 'DSMP_TEST': '1'}
     env.update(lrig.soft_test_env()); env.update(extra or {})
+    sf = rp.loader_settings_file(I, env)
+    rp.clear_stale_mp(I)                                          # an mp.json from before this run (another lane's): set aside
+    rp.set_host_port(I, rp.port_for([I], 'hostmods_notrun ' + x, share=True), sf)   # a menu host: this run's port, never 47777
+    rp.check_start(I, sf)                                         # GUARD: mp.json / host_port at a port this run does not own = refused
+    rp.note_started(I, x)
     args = [exe(x), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
@@ -156,6 +162,9 @@ def start(x, extra=None):
 
 
 def stop(x):
+    if pids(x):
+        try: rp.end_check(lrig.send, x, lrig.idir(x))             # EXTRA PLAYER: more players in its session than this run's copies
+        except Exception as e: log(x, 'stop check failed', repr(e))
     for p in pids(x):
         try: lrig.send(x, {'cmd': 'quit'}, timeout=5, connect_wait=0)
         except Exception: pass
@@ -163,6 +172,12 @@ def stop(x):
             if p not in pids(x): break
             time.sleep(0.1)
         if p in pids(x): os.kill(p, signal.SIGKILL); log(x, 'killed pid', p)
+
+
+def players(phase):
+    """the host alone in its session (the guest is refused): a second player = EXTRA PLAYER (rigports), a FAIL"""
+    ok, lines = rp.players_guard(lrig.send, [H], 1, phase)
+    return check(f'players: no extra player at the {phase} (the host alone: the guest is refused)', ok, '; '.join(lines))
 
 
 def run(port):
@@ -207,6 +222,7 @@ def run(port):
     want = t1.replace('%s', x_name, 1).replace('%s', t2, 1)
     check('the box says the mod is on but did not start here, with the reason; no "Get the host\'s mods" button',
           want in box and '[button none]' in box and 'turned off' not in box, box)
+    players('start')
 
     time.sleep(WAIT)                                              # the test hook would have clicked at 2 s
     gtxt, dl = flog(G, 'rig.log', rpos), flog(G, 'dsload.log', dpos)
@@ -217,6 +233,7 @@ def run(port):
     check(f'no restart, no rejoin loop ({WAIT} s): no get, the same guest process, one box, one join, still on the title',
           not gets and pids(G) == [a_pid] and len(boxes) == 1 and len(joins) == 1 and s.get('scene') == 1,
           f'gets {gets[:2]}; pids {pids(G)} (first {a_pid}); boxes {len(boxes)}; joins {joins[:3]}; scene {s.get("scene")}')
+    players('end')
 
 
 def main():
@@ -228,7 +245,7 @@ def main():
     while not pair and time.time() - t0 < 1800:
         time.sleep(15); pair = realrig.lease(LANE, os.getpid())
     if not pair: raise SystemExit('no free pair lease for 30 min')
-    s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()   # OS-chosen: never a shared port
+    port = realrig.PAIR_PORTS[pair]                               # the pair lease's own port (rigports.py): unique on the Mac
     log('lease', pair, 'port', port, 'build', BUILD, 'out', OUT)
     g = threading.Thread(target=guard, daemon=True); g.start()
     try:

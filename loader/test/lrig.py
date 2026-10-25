@@ -14,7 +14,7 @@ Two-instance test rig for Dungeon Settlers (build 25846389).
   rig.py release <pair>               give a pair back
   rig.py leases                       list leases
 Instances A..J; "both" = A+B, a pair name (AB..IJ) = its two copies. Max 5 pairs at once.
-  rig.py port <pair>                  host TCP port of the pair (AB 7791, CD 7811, EF 7831, GH 7851, IJ 7871)
+  rig.py port <pair>                  none here: a run leases its own port (rigports.py); a rig pair: ~/ds_multiplayer/rig/rig.py port <pair>
   rig.py smoke [PAIR]                 no PAIR: A alone then AB; with PAIR: both copies of that pair at once
 
 Copies live in ~/ds_multiplayer/instances/<X>/ (built by make_instance.sh). Nothing of the real
@@ -26,10 +26,23 @@ import json, os, signal, socket, subprocess, sys, time, shutil, hashlib, glob, p
 if os.path.dirname(os.path.abspath(__file__)) not in sys.path: sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ctl_token import token_line as ctl_token_line     # noqa: E402  test control channel token (first line)
 
-ROOT = os.path.expanduser('~/ds_multiplayer')            # read only here (prefs backup, tools), except the owner-prefs snapshots (rig/prefs_snap, rig/prefs_overwritten)
+ROOT = os.path.expanduser('~/ds_multiplayer')            # read only here (prefs backup, tools), except the owner-prefs snapshots (rig/prefs_snap, rig/prefs_overwritten) and the port leases (rig/port_leases.json)
 LROOT = os.path.expanduser('~/ds_launcher/loader')
 INST = os.path.join(LROOT, 'test_env', 'instances')
 DYLIB_REL = 'DungeonSettlers.app/Contents/Frameworks/dsload.dylib'
+
+
+def _rigports():
+    """the shared port helper of every pair / host test: ~/ds_multiplayer/rig/rigports.py (DSRIG_RIGDIR = another rig
+    folder); one module per process, the same one realrig (rig.py) imports"""
+    if 'rigports' not in sys.modules:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('rigports', os.path.join(os.environ.get('DSRIG_RIGDIR') or os.path.join(ROOT, 'rig'), 'rigports.py'))
+        m = importlib.util.module_from_spec(spec); sys.modules['rigports'] = m; spec.loader.exec_module(m)
+    return sys.modules['rigports']
+
+
+rigports = _rigports()
 TOOLS = os.path.join(ROOT, 'rig', 'tools')
 BACKUP = os.path.join(ROOT, 'backup_prefs_2026-10-12')
 REAL_PLIST = os.path.expanduser('~/Library/Preferences/com.CanOpener.Dungeon-Settlers.plist')
@@ -59,11 +72,10 @@ def soft_test_env():
 
 
 def pair_port(x):
-    """each pair gets its own TCP port, so one pair's client can never join another pair's host"""
-    for pair, port in PAIR_PORTS.items():          # PAIR_PORTS: defined with the pair leases below
-        if x in pair:
-            return port
-    return 7891
+    """the TCP port of this run (rigports.py, 2026-10-25): the copies one test process starts share a port that process
+    leases (or the run port of a rig pair it leased). Unique on the Mac, never 47777. Until then every K..Z copy had 7891
+    and other lanes' copies joined runs there."""
+    return rigports.port_for([idir(x)], 'lrig ' + os.path.basename(sys.argv[0]), share=True)
 def pidfile(x): return os.path.join(idir(x), 'game.pid')
 def sockpath(x): return os.path.join(idir(x), 'ctl.sock')
 
@@ -312,7 +324,9 @@ def owner_game_ran_since(t):
 
 # ------------------------------------------------------------------ instance data
 def fix_mp_port(x):
-    """mp.json (if any) always uses the pair's port, whatever the lane wrote"""
+    """an mp.json from before this run is set aside (another lane's: 2026-10-25 copy T joined a pair on 7831); this
+    run's mp.json always uses the run's port (pair_port), whatever the lane wrote"""
+    rigports.clear_stale_mp(idir(x))
     p = os.path.join(idir(x), 'mp.json')
     if not os.path.exists(p):
         return
@@ -488,6 +502,10 @@ def start(x, window=False, fps=30, show=None):
     env.setdefault('DSL_SOFT_NOACTIVATE', '1')                 # a soft restart in a test copy never activates B (loader dsl_soft.c)
     env.setdefault('DSL_NOTCH', '0')                           # the notch fix covers the whole screen: off in tests (notch_test sets 1)
     require_windowed(x)
+    sf = rigports.loader_settings_file(idir(x), env)
+    rigports.set_host_port(idir(x), pair_port(x), sf)          # a menu host listens on the run's port, never 47777
+    rigports.check_start(idir(x), sf)                          # GUARD: mp.json / host_port at a port this run does not own = refused
+    rigports.note_started(idir(x), x)
     args = [exe, '-logFile', os.path.join(idir(x), 'player.log'), '-screen-fullscreen', '0',
             '-screen-width', str(win_size()[0]), '-screen-height', str(win_size()[1])]
     if window and show:
@@ -561,6 +579,10 @@ def stop(x):
     pid = read_pid(x)
     if not alive(pid):
         print(f'{x}: not running'); return
+    try:
+        rigports.end_check(send, x, idir(x))                   # EXTRA PLAYER: more players in its session than this run's copies
+    except Exception as e:
+        print(f'{x}: stop check failed ({e})')
     try:
         send(x, {'cmd': 'quit'}, timeout=5)
     except Exception as e:
@@ -707,7 +729,7 @@ def smoke(pair=None):
 
 # ------------------------------------------------------------------ pair leases
 PAIRS = ['AB', 'CD', 'EF', 'GH', 'IJ']
-PAIR_PORTS = {'AB': 7791, 'CD': 7811, 'EF': 7831, 'GH': 7851, 'IJ': 7871}   # host TCP port per pair (net tests)
+# no PAIR_PORTS here any more (2026-10-25): a rig pair's run port is realrig.PAIR_PORTS[pair] / rig.py port <pair>
 LEASES = os.path.join(ROOT, 'rig', 'leases.json')
 LEASE_LOCK = os.path.join(ROOT, 'rig', 'leases.lock')
 STALE_S = 2 * 3600
@@ -808,7 +830,7 @@ def main():
     elif a[0] == 'smoke':
         smoke_pair(a[1]) if len(a) > 1 else smoke()
     elif a[0] == 'port':
-        print(PAIR_PORTS[a[1]])
+        print('lrig has no fixed ports: a run leases its own (rigports.py); a rig pair: ~/ds_multiplayer/rig/rig.py port <pair>', file=sys.stderr); sys.exit(1)
     elif a[0] == 'lease':
         pid = int(a[a.index('--pid') + 1]) if '--pid' in a else None
         p = lease(a[1], pid)

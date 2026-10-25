@@ -43,6 +43,7 @@ import lrig  # noqa: E402
 RIGDIR = os.path.expanduser('~/ds_multiplayer/rig')
 sys.path.insert(1, RIGDIR)
 import rig as realrig  # noqa: E402  (leases only; its copies are never touched)
+rp = lrig.rigports                                              # each run's own TCP port + the EXTRA PLAYER guard (rigports.py)
 
 lrig.INST = os.path.join(L, 'test_env', 'instances')          # our own copies, not the shared ones
 H, G = 'HMH', 'HMG'
@@ -264,6 +265,11 @@ def start(x, api, extra=None):
            'DSL_SOFT_TEST': '1', 'DSL_SOFT_STAGE': STAGE, 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NO_ALERT': '1', 'DSL_NOTCH': '0', 'DSMP_TEST': '1'}
     env.update(lrig.soft_test_env())
     env.update(extra or {})
+    sf = rp.loader_settings_file(I, env)
+    rp.clear_stale_mp(I)                                        # an mp.json from before this run (another lane's): set aside
+    rp.set_host_port(I, rp.port_for([I], os.path.basename(sys.argv[0]), share=True), sf)   # a menu host: this run's port, never 47777
+    rp.check_start(I, sf)                                       # GUARD: mp.json / host_port at a port this run does not own = refused
+    rp.note_started(I, x)
     args = [exe(x), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
@@ -273,6 +279,11 @@ def start(x, api, extra=None):
 
 
 def stop(x):
+    if pids(x):
+        try:
+            rp.end_check(lrig.send, x, lrig.idir(x))             # EXTRA PLAYER: more players in its session than this run's copies
+        except Exception as e:
+            log(x, 'stop check failed', repr(e))
     for p in pids(x):
         try:
             lrig.send(x, {'cmd': 'quit'}, timeout=5, connect_wait=0)
@@ -284,6 +295,13 @@ def stop(x):
             time.sleep(0.1)
         if p in pids(x):
             os.kill(p, signal.SIGKILL); log(x, 'killed pid', p)
+
+
+def players(phase, copies, n=None):
+    """the session's player count seen by the copies (rigports): above n (default: the copies) = EXTRA PLAYER, a FAIL.
+    2026-10-25: runs of two lanes joined each other (a hostmods run with 3 players instead of 2)"""
+    ok, lines = rp.players_guard(lrig.send, list(copies), n, phase)
+    return check(f'players: no extra player at the {phase}', ok, '; '.join(lines))
 
 
 def room_for(n):
@@ -419,6 +437,7 @@ def run(port, api, rel, pk):
     info['guest_dsload_hostmods'] = [l for l in (flog(G, 'dsload.prev.log') + dl).splitlines() if 'hostmods' in l or 'update: mod' in l][-20:]
     check('guest rejoined the same host by itself (one process swap, no command from the test)', sg and b_pid in pids(G),
           f"tick {sg.get('tick')} map {sg.get('map')} mp {json.dumps({k: sg.get('mp', {}).get(k) for k in ('started', 'loads', 'present')})}")
+    players('start', (H, G))
 
     xd = os.path.join(gk, 'loader', 'mods', X_ID)
     gv = mod_version(xd) if os.path.exists(os.path.join(xd, 'mod.json')) else None
@@ -495,6 +514,7 @@ def run(port, api, rel, pk):
     check('play: 0 desyncs (mp counters, desync / full-state / deep lines, det tick_errors, fp.log equal)',
           not any(stats['desyncs'].values()) and not any(lines.values()) and not any(te.values()) and len(com) >= 200 and first is None
           and not stats['full_fails'], json.dumps({kk: stats[kk] for kk in ('desyncs', 'tick_errors', 'fp_common_ticks', 'fp_first_diff', 'full_ok', 'full_fails')}))
+    players('end', (H, G))
 
 
 def main():

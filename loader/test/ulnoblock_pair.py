@@ -154,6 +154,7 @@ def run(port, api):
     s, rej = guest_join(port, api, pk, [CM], ['multiplayer'], 'A')
     check('A: guest WITHOUT Units Laboratory joined (no mod-set refusal)', s is not None and not rej, f'refusals {rej}; guest Units Laboratory {guest_cm_state()}')
     if s:
+        HP.players('start', (H, G))
         info['shot_A'] = shot(G, 'A_guest_joined.png')
         play(PLAY, True, 'A')
     HP.stop(G)
@@ -182,6 +183,8 @@ def run(port, api):
     info['box_C'] = box; info['refusal_C'] = ref
     check('C: host with gcd-cdr, guest without: "Could not join" box, the refusal names gcd-cdr, not Units Laboratory',
           box is not None and 'Could not join' in box and bool(ref) and X in ref[0] and 'Units Laboratory' not in ref[0] and CM not in ref[0], f'box {box}; refusal {ref}')
+    if ref:
+        HP.players('end', (H,), 1)                                # the guest is refused: the host alone in its session
 
 
 def main():

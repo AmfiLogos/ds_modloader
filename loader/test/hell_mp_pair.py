@@ -68,6 +68,7 @@ def run(port):
                                                              and not s.get('mp', {}).get('needs_state') else None)(st(G)), timeout=900, every=1)
     refusal = [l for l in flog(G, 'rig.log', rpos).splitlines() if 'modset refusal' in l or 'REJ_MODSET' in l]
     check('guest without Hell joins the Hell host with no refusal', sg and not refusal, refusal[-1:])
+    hm.players('start', (H, G))
 
     # ---- play: both give orders (hostmods_pair's loop)
     time.sleep(5)
@@ -119,6 +120,7 @@ def run(port):
     check('play: 0 desyncs between the Hell host and the stock guest (mp counters, desync / full-state / deep lines, det tick_errors, fp.log equal)',
           not any(stats['desyncs'].values()) and not any(lines.values()) and not any(te.values()) and len(com) >= 200 and first is None
           and not stats['full_fails'], json.dumps({kk: stats[kk] for kk in ('desyncs', 'tick_errors', 'fp_common_ticks', 'fp_first_diff', 'full_ok', 'full_fails')}))
+    hm.players('end', (H, G))
 
 
 def main():

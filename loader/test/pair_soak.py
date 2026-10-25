@@ -24,12 +24,13 @@ def lease(lane, pid=None):
     p = realrig.lease('loader', pid)
     if p:
         MAP.update({p[0]: 'M', p[1]: 'N'})
-        old = lrig.pair_port
-        lrig.pair_port = lambda x: realrig.PAIR_PORTS[p] if x in ('M', 'N') else old(x)   # fix_mp_port keeps M/N on the leased port
+        port = realrig.PAIR_PORTS[p]                       # the pair lease's own port (rigports.py); M/N join that port lease, so
+        if lrig.rigports.port_for([lrig.idir('M'), lrig.idir('N')], 'pair_soak', share=True) != port:   # lrig.pair_port (mp.json, host_port) gives it
+            raise SystemExit(f'refused: M/N are not on the pair port {port}')
         def keep(x, p=p):                                  # lrig.start / send mark OUR pair's lease as used
             realrig._with_leases(lambda d: d.get(p, {}).update(used=__import__('time').time()))
         lrig.touch = keep
-        print(f'[pair_soak] leased {p}: {p[0]} -> M, {p[1]} -> N, port {realrig.PAIR_PORTS[p]}', flush=True)
+        print(f'[pair_soak] leased {p}: {p[0]} -> M, {p[1]} -> N, port {port}', flush=True)
     return p
 shim.lease = lease
 shim.release = realrig.release

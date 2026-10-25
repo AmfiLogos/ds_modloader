@@ -261,6 +261,7 @@ def hub_pvp():
     time.sleep(3)
     check('PvP 5: "Back to the Hub" keeps both in the hub', all(st(x).get('scene') == 2 and c(x, cmd='fe_status').get('hub_world') and not c(x, cmd='mpm_pvp').get('result') for x in (H, G)),
           {x: (st(x).get('scene'), c(x, cmd='fe_status').get('hub_world')) for x in (H, G)})
+    HP.players('end', (H, G))
     return True
 
 
@@ -319,6 +320,7 @@ def fe(port):
     check('FE 1: the host ALONE in the hub lobby: the CARD window opens and its pick reaches its own list (no "Not in a multiplayer session")',
           cards_ok(s2) and ok_h and h_alone.get('received') == 1, f"{s2} | received {h_alone.get('received')}")
     join(port)
+    HP.players('start', (H, G))
     wait('guest knows the FE mode', lambda: c(G, cmd='mpm_fewin').get('fe_mode') == 1, timeout=90)
     s = open_cards(G, 'fe_guest')
     check('FE 1b: the guest\'s card window (cards with game icons, its own saves)', cards_ok(s), s)
@@ -474,7 +476,7 @@ def main():
         for x in (H, G):
             HP.make_copy(x)
         env = prepare(driver_pkg())
-        json.dump({'multiplayer': {'host_port': port}}, open(os.path.join(lrig.idir(H), 'data', 'Mods', 'settings.json'), 'w'))   # the menu host listens on the leased pair port, never the default 47777 (the owner's game)
+        HP.rp.set_host_port(lrig.idir(H), port)                  # the menu host listens on the leased pair port, never the default 47777 (the owner's game)
         api = 'http://127.0.0.1:9'                                    # no release server: nothing is downloaded
         HP.room_for(len(XS))
         for x in XS:

@@ -4,8 +4,8 @@ hidden loader copies (never the owner's game, saves or screen).
 
 Host HMH and guest HMG both run multiplayer + hell-difficulty (the same build files; Hell is not switched on in either
 profile: it runs anyway). The host hosts as a player does (Multiplayer > Host > Your save > the seed world set to combat
-Hell, level 5; the single-player copy box, if asked: No) on a port the OS picks for this run (its "host_port" setting;
-other lanes' stale copies point at the rig's pair ports). The guest, on the title (its multiplayer set leaves
+Hell, level 5; the single-player copy box, if asked: No) on the pair lease's own port (its "host_port" setting;
+rigports.py: unique on the Mac, never a fixed pair port that other lanes' stale copies point at). The guest, on the title (its multiplayer set leaves
 Hell out there: the case that was refused, then "Get the host's mods" restarted it), joins by address
 (title > Multiplayer > Join by address > Connect). Then both give orders for --play seconds. Last, the guest starts again
 WITHOUT Hell and joins again: refused, as before.
@@ -21,7 +21,7 @@ without Hell is refused (MODSET).
 
 Helpers (copies, lease, guard, kit, play loop): hostmods_pair.py, hell_mp_pair.py. Build: HM_BUILD (default ../build:
 dsload.dylib + mods/multiplayer + mods/hell-difficulty). Output: ../test_env/hostmods/<time>/ (results.json)."""
-import json, os, random, shutil, socket, subprocess, sys, tempfile, threading, time
+import json, os, random, shutil, subprocess, sys, tempfile, threading, time
 HERE = os.path.dirname(os.path.abspath(__file__)); L = os.path.dirname(HERE)
 BUILD = os.environ.get('HM_BUILD', os.path.join(L, 'build'))
 os.environ['HM_BUILD'] = tempfile.mkdtemp()                    # hostmods_pair's dev-key check is for its downloads: none here
@@ -58,7 +58,7 @@ def run(port):
     hp.kit(H, True); hp.kit(G, True)
     # the host hosts as a player does: the world first (Multiplayer > Host > Your save > the pick), then the session, so
     # its HELLO is about that world (an mp.json host starts its session on the title: its set would leave Hell out)
-    json.dump({'multiplayer': {'host_port': port}}, open(os.path.join(lrig.idir(H), 'data', 'Mods', 'settings.json'), 'w'))
+    hm.rp.set_host_port(lrig.idir(H), port)                      # the menu host listens on this run's port, never 47777
     hm.room_for(2)
     api = 'http://127.0.0.1:9'                                   # no update server: nothing is downloaded in this test
     hm.start(H, api)
@@ -102,6 +102,7 @@ def run(port):
     counted = [l for l in flog(H, 'rig.log', hpos).splitlines() if 'loaded custom difficulty mods' in l]
     check('guest with Hell joins the Hell host: no refusal, the host counts its Hell', sg and not refusal and any(HELL + '@' in l for l in counted),
           f'refusal {refusal[-1:]}; host {counted[-1:]}')
+    hm.players('start', (H, G))
     soft = [l for l in flog(G, 'dsload.log', dpos).splitlines() if 'soft restart' in l.lower() or 'DSMP_REJOIN' in l or 'hostmods' in l]
     check('no restart: the same guest process all along, no soft restart', hm.pids(G) == gpid and gpid and not soft, f'pids {gpid} -> {hm.pids(G)}; {soft[-2:]}')
     c(H, cmd='mpm_press', button=B['START']); time.sleep(3)       # the host's lobby Start: the world runs
@@ -168,6 +169,8 @@ def run(port):
     refusal = [l for l in gtxt.splitlines() if 'modset refusal' in l]
     check('guest without Hell: refused (MODSET), never let into the Hell world', bool(refusal) and not st(G).get('det', {}).get('locked') and (st(G).get('scene') == 1),
           refusal[-1:])
+    if refusal:
+        hm.players('end', (H,), 1)                                # the guest is refused: the host alone in its session
 
 
 def main():
@@ -185,8 +188,7 @@ def main():
         time.sleep(15); pair = realrig.lease('helljoin', os.getpid())
     if not pair:
         raise SystemExit('no free pair lease for 30 min')
-    with socket.socket() as s_:                                   # a port of the OS's choice: other lanes' copies point at the pair ports
-        s_.bind(('127.0.0.1', 0)); port = s_.getsockname()[1]
+    port = realrig.PAIR_PORTS[pair]                               # the pair lease's own port (rigports.py): unique on the Mac
     busy = subprocess.run(['lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN'], capture_output=True, text=True).stdout.strip()
     if busy: raise SystemExit(f'port {port} in use: {busy[:200]}')
     log('lease', pair, 'port', port, 'build', BUILD, 'out', hm.OUT)

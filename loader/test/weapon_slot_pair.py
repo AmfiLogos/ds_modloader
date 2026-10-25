@@ -11,7 +11,7 @@ backup (old weapon-slot layout: converted on load, 4 units in the dungeon).
 
 Real break caught: a desync (mp desync counters, DESYNC / FULL-STATE / deep lines, det tick errors, fp.log), or the
 two players' quick slots differing after the weapon swap and the casts."""
-import json, math, os, shutil, socket, subprocess, sys, time
+import json, math, os, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
 import weapon_slot_test as T
@@ -64,7 +64,7 @@ def prep(x, out, mp):
     json.dump(mp, open(os.path.join(I, 'mp.json'), 'w'))
 
 
-OWNER_OK = os.environ.get('WS_OWNER_PLAY_OK') == '1'   # the lead's rule (2026-10-25): one pair at a time while he plays, never on 47777 (this test's host has an OS-chosen port)
+OWNER_OK = os.environ.get('WS_OWNER_PLAY_OK') == '1'   # the lead's rule (2026-10-25): one pair at a time while he plays, never on 47777 (this run leases its own port)
 owner_runs = lambda: not OWNER_OK and r.owner_game_running()
 
 
@@ -74,13 +74,6 @@ def main():
     os.makedirs(out, exist_ok=True); T.OUT = out
     if owner_runs(): raise SystemExit('refused: the owner\'s game runs (this test needs 2 copies)')
     lane, pair = T.lease()
-    # a port of its own: lrig.pair_port gives 7891 to every K..Z copy and other lanes' guests also point at the rig's
-    # pair ports (2026-10-25: copy R joined a run on 7891, copy T one on 7831), so the OS picks a free port for this run;
-    # lrig.start's fix_mp_port reads pair_port
-    with socket.socket() as s_:
-        s_.bind(('127.0.0.1', 0)); port0 = s_.getsockname()[1]
-    pp = r.pair_port
-    r.pair_port = lambda x: port0 if x in (H_, G_) else pp(x)
     try:
         md = os.path.join(out, 'mods')
         if os.path.exists(md): T.aside(md, out)
@@ -94,7 +87,7 @@ def main():
                            'DSL_CLOUD': '0', 'DSL_SOFT_TEST': '1', 'DSL_NO_ALERT': '1', 'DSL_SOFT_STAGE': '-20000,-20000',
                            'DSL_CRASHREP': '0', 'DSL_UPDATE': '0', 'DSRIG_BG': '1'})
         os.environ.update(r.soft_test_env())
-        port = r.pair_port(H_)
+        port = r.pair_port(H_)                                # this run's own port (rigports): no other lane's copy points at it
         busy = subprocess.run(['lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN'], capture_output=True, text=True).stdout.strip()
         if busy: raise SystemExit(f'port {port} in use: {busy[:200]}')
         prep(H_, out, {'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True, 'full_check_steps': 1800})
@@ -114,6 +107,7 @@ def main():
         r.start(G_, window=True)
         wait('guest joined', lambda: (lambda s: s if s.get('det', {}).get('locked') and s.get('mp', {}).get('loads', 0) >= 1 else None)(st(G_)))
         time.sleep(5)
+        check('players: no extra player at the start', *r.rigports.players_guard(r.send, [H_, G_], 2, 'start'))
         mine = [u for u in c(H_, cmd='list_units')['units'] if u.get('faction') == 1 and not u.get('dead') and 'cell' in u]
         log('units on the map', [u['guid'][:8] for u in mine])
         gq = {x: {u['guid']: c(x, cmd='ord_read', guid=u['guid']).get('quick') for u in mine} for x in (H_, G_)}
@@ -173,6 +167,7 @@ def main():
         check('pair: same bars on both after the swap and the casts; WoodClub unit has StunCharge in the weapon slot',
               q2[H_] == q2[G_] and (q2[H_].get(T.EQ_UNIT) or [None] * 5)[4] == T.EQ_SKILL, q2)
         if claim: check('pair: the guest\'s write to slot 4 changed nothing', q2[G_].get(claim[0]) == gq[G_].get(claim[0]), (gq[G_].get(claim[0]), q2[G_].get(claim[0])))
+        check('players: no extra player at the end', *r.rigports.players_guard(r.send, [H_, G_], 2, 'end'))
     finally:
         for x in (G_, H_):
             try:
