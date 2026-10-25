@@ -658,6 +658,11 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   while on (a world the player opens shows its older saves for one frame at most). Off: the stock count back.
 - Hidden line: "N worlds are hidden by the filters on the right." (rows the panel hid); the toggles under the list keep
   "by a filter under the list"; the multiplayer mod's own modes keep their lines.
+- A filter with no label (dsl_sdk.h loadlist_filter label NULL / ""; owner 2026-10-25) hides a mod's own worlds: the
+  multiplayer hub / PvP worlds (multiplayer 0.1.28, mp_worldsave.h), Units Laboratory's test worlds. No box can show them,
+  so they are not on the hidden-worlds line (it said "N worlds are hidden by a filter under the list" with no box there);
+  the log line "rows: hidden-worlds lines" counts them. Such a filter wins over the panel and the toggles (dsl_rows.c why 3).
+  Test: ds_multiplayer ext/dsmphide/hub_hide_test.py (fails on a loader without it).
 - Data guard (the one real break): Load and Remove File act on `SaveLoadPresenter._selectedSaveName` (set by a click on a
   save row), not on the view's selected row; `SaveLoadView.UnselectAllSlots` + `LockLoadButtons` change only the view. So:
   (1) a selected save that a filter or Latest save only hides is unselected and both buttons locked (each apply + each

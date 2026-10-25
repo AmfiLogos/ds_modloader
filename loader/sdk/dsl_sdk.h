@@ -299,7 +299,9 @@ typedef struct DSLHost {
     int (*loadrow_add)(DSLPlugin *self, const struct DSLLoadRow *row);
     /* loadlist_filter: show(ud, guid, save_name, toggle_on) -> 1 show / 0 hide. The loader adds ONE toggle row per
        filter above the list with label(ud) (e.g. "Show multiplayer worlds"); toggle_on = its state (starts 0).
-       mode(ud) is asked each time the list opens; DSL_LIST_OFF = this filter does nothing for this opening. */
+       mode(ud) is asked each time the list opens; DSL_LIST_OFF = this filter does nothing for this opening.
+       label NULL / "" = no toggle: the worlds it hides are the module's own (not the player's), so the hidden-worlds
+       line under the list does not count them (loader 0.1.29). */
     int (*loadlist_filter)(DSLPlugin *self, const struct DSLLoadFilter *f);
     void (*loadlist_refresh)(void);           /* re-run texts + filters on the open list (after a tag removal, ...) */
 

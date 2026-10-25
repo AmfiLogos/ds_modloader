@@ -151,7 +151,7 @@ static const char *guid_of_save(const char *name) {
 
 /* ------------------------------------------------------------------ the open list */
 #define MAXW 64
-typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid, game, kind, play, why; } WRow;   /* kind LK_VAN / LK_MOD, play LK_SOLO / LK_MP; why: 1 the panel hid it, 2 a toggle under the list */
+typedef struct { uintptr_t cs; char guid[40], save[256], name[160]; DSLObj line, chg; int hid, game, kind, play, why; } WRow;   /* kind LK_VAN / LK_MOD, play LK_SOLO / LK_MP; why: 1 the panel hid it, 2 a toggle under the list, 3 a filter with no label (a mod's own worlds: never on the hidden-worlds line) */
 static WRow W[MAXW]; static int nw;
 static uintptr_t h_slv; static uint32_t sig_last; static int list_open;
 static DSLObj band;                                     /* our toggles' strip */
@@ -680,9 +680,13 @@ static void filters_apply(Obj slv) {
         int show = 1, why = 0;
         world_kinds(w);
         if (o_cur >= 0 && AT(cs, o_cur, uint8_t)) show = 1;                 /* the world being played always shows */
-        else {
-            if (lf_panel && lf_hides(w)) { show = 0; why = 1; }
-            for (int f = 0; f < nf && show; f++) if (F[f].mode != DSL_LIST_OFF && !F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on)) { show = 0; why = 2; }
+        else {                                                              /* a filter with no label (a mod's own worlds) first, then the panel, then the toggles */
+            for (int f = 0; f < nf && why != 3; f++) if (F[f].mode != DSL_LIST_OFF && !F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on)) {
+                const char *lb = F[f].f.label ? F[f].f.label(F[f].f.ud) : NULL;
+                why = lb && *lb ? 2 : 3;
+            }
+            if (why != 3 && lf_panel && lf_hides(w)) why = 1;
+            show = !why;
         }
         w->hid = !show; w->why = why;
         Obj g = comp_go(cs, NULL); if (!g || go_self(g, NULL) == show) continue;   /* rows are rebuilt: compare with the game object */
@@ -751,7 +755,9 @@ static void groups_count(void) {
    would be, with how many and why. Top (where the game saves would be): the game's worlds this list cannot show
    (dsl_saves.c: its hooks off this session, or a save the game could not read). Bottom: world rows a filter hides, the
    kind from the module that hides them (dsl_sdk.h dsl_loadlist_hidden: the multiplayer list filter), else the loader's
-   own filter toggles; with no such export the line says "a filter". */
+   own filter toggles; with no such export the line says "a filter". A filter with no label hides a mod's own worlds (the
+   multiplayer hub / PvP worlds, Units Laboratory's test worlds; owner 2026-10-25): not the player's worlds and no box can
+   show them, so they are not on the line (the log counts them). */
 static uintptr_t hid_h[2];                               /* 0 top, 1 bottom (GC handles, see held()) */
 int dsl_rows_hidden[2];                                  /* test: worlds named by the top / bottom line at the last rebuild */
 static void hid_show(int k, Obj content, float wd, const char *txt) {
@@ -782,11 +788,11 @@ static void hidden_apply(Obj slv) {
         if (top[0]) strlcat(top, "\n", sizeof top);
         strlcat(top, one, sizeof top);
     }
-    int ours = 0, panel = 0, others = 0;                                    /* inactive world rows: our toggles' / the panel's / someone else's */
+    int ours = 0, panel = 0, others = 0, own = 0;                           /* inactive world rows: our toggles' / the panel's / someone else's / a mod's own */
     for (int i = 0; i < nw; i++) {
         Obj cs = gc_get(W[i].cs); Obj g = live(cs) ? comp_go(cs, NULL) : NULL;
         if (!g || go_self(g, NULL)) continue;
-        if (hid_find(W[i].guid) < 0) others++; else if (W[i].why == 1) panel++; else ours++;
+        if (hid_find(W[i].guid) < 0) others++; else if (W[i].why == 1) panel++; else if (W[i].why == 3) own++; else ours++;
     }
     int kind = 0;
     if (others) {
@@ -818,10 +824,11 @@ static void hidden_apply(Obj slv) {
     }
     if (end[0] && hid[1]) set_last((Obj)hid[1], NULL);
     refresh_size(slv, NULL);
-    int h0 = off + unread, h1 = others + ours + panel;
-    if (h0 != dsl_rows_hidden[0] || h1 != dsl_rows_hidden[1])
-        dsl_log("rows: hidden-worlds lines: top %d (game worlds not listed %d, unreadable %d), bottom %d (kind %d, %d by other filters, %d by ours, %d by the panel)",
-                h0, off, unread, h1, kind, others, ours, panel);
+    int h0 = off + unread, h1 = others + ours + panel; static int own_last = -1;
+    if (h0 != dsl_rows_hidden[0] || h1 != dsl_rows_hidden[1] || own != own_last)
+        dsl_log("rows: hidden-worlds lines: top %d (game worlds not listed %d, unreadable %d), bottom %d (kind %d, %d by other filters, %d by ours, %d by the panel); "
+                "%d mod world(s) hidden by a filter with no label, not on the line", h0, off, unread, h1, kind, others, ours, panel, own);
+    own_last = own;
     dsl_rows_hidden[0] = top[0] ? h0 : 0; dsl_rows_hidden[1] = end[0] ? h1 : 0;
 }
 static void hidden_off(void) {
