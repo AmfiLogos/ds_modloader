@@ -5,9 +5,13 @@
 //   (bad: .failed). Mac: the player's folder is ROOT/mods (DSML_USER_MODS_DIR) and a mod is copied from there into the
 //   loader's folder ROOT/loader/mods/<id> (marker .player_mod, quarantine cleared), as the stub does. Windows: the
 //   player's folder IS the loader's folder (ROOT\mods).
+// A player copy older than the loader's copy of that id (the app's or auto-update's) never replaces it: the newer one
+// runs, one log line (Mac: not copied into the loader; Windows: the zip goes to .installed, the installed mod stays).
+// An equal or newer player copy wins.
 // A new mod is off. Turning it on uses the normal Apply (restart behind the loading screen at the title).
 #include "../src/dsl_internal.h"
 #include "../src/dsl_menu.h"
+#include "../src/dsl_deps.h"                                           /* dsl_dep_vcmp: the loader's version rule */
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +54,19 @@ static int mod_id(const char *dir, char *id, size_t cap) {             /* dir/mo
     if (ok) snprintf(id, cap, "%s", s);
     json_free(m); return ok;
 }
+/* 1 = the mod.json texts a (player copy) and b (the loader's copy) both have a "version" and a's is older */
+static int older_text(const char *a, const char *b, char *va, char *vb, size_t n) {
+    JNode *x = a ? json_parse(a) : NULL, *y = b ? json_parse(b) : NULL;
+    const char *s = json_str(x, "version"), *t = json_str(y, "version");
+    int r = s && t && dsl_dep_vcmp(s, t) < 0;
+    snprintf(va, n, "%s", s ? s : ""); snprintf(vb, n, "%s", t ? t : "");
+    json_free(x); json_free(y); return r;
+}
+static int older_dir(const char *a_dir, const char *b_dir, char *va, char *vb, size_t n) {
+    char p[1500]; snprintf(p, sizeof p, "%s/mod.json", a_dir); char *a = slurp(p);
+    snprintf(p, sizeof p, "%s/mod.json", b_dir); char *b = slurp(p);
+    int r = a && b && older_text(a, b, va, vb, n); free(a); free(b); return r;
+}
 static void stamp(char *out, size_t n) { time_t t = time(NULL); struct tm tm; 
 #ifdef _WIN32
     localtime_s(&tm, &t);
@@ -83,6 +100,7 @@ static int unzip(const char *zip, const char *dest) {
 
 /* one zip -> <um>/<id>. 1 = installed (id in id); 2 = staged in <um>/.pending/<id>: the running game holds the old
    version (Windows locks a loaded DLL, so its folder cannot move), the starter swaps it in at the next start;
+   3 = older than the loader's copy in that same folder (Windows): not installed, zip to .installed;
    0 = not a mod package; -1 = a mod, but it could not be put in place (disk / permissions) */
 static int install_zip(const char *um, const char *name, char *id, size_t icap) {
     char zp[1400], tmp[1400], src[1500] = "", dst[1400], keep[1400], kz[1600], ts[32];
@@ -101,8 +119,12 @@ static int install_zip(const char *um, const char *name, char *id, size_t icap) 
         if (d) closedir(d);
     }
     int is_mod = src[0] != 0, res = 0;
-    if (is_mod) {
-        snprintf(dst, sizeof dst, "%s/%s", um, id);
+    const char *lm = dsl_mods_dir(); char va[32], vb[32];
+    if (is_mod) snprintf(dst, sizeof dst, "%s/%s", um, id);
+    if (is_mod && lm && !strcmp(um, lm) && exists(dst) && older_dir(src, dst, va, vb, sizeof va)) {
+        res = 3; dsl_log("pkg: %s (%s %s) is older than the installed %s (app or auto-update): not installed", name, id, va, vb);
+    }
+    else if (is_mod) {
         /* test only (with DSL_SOFT_TEST=1, never in a player's start): DSL_PKG_TEST_INUSE=<id> acts as Windows does for a
            loaded DLL (wine lets the folder move) */
         const char *tst = getenv("DSL_SOFT_TEST"), *tin = tst && !strcmp(tst, "1") ? getenv("DSL_PKG_TEST_INUSE") : NULL;
@@ -166,6 +188,7 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
         }
         else if (r == 2) { if (!staged++) snprintf(first_staged, sizeof first_staged, "%s", names[i]); dsl_log("pkg: %s: %s is in use, the new version waits in .pending for the next start", names[i], id); }
         else if (r < 0) { if (!stuck++) snprintf(first_stuck, sizeof first_stuck, "%s", names[i]); dsl_log("pkg: %s (%s) could not be put in place (moved to .failed)", names[i], id); }
+        else if (r == 3) {}                                            /* older than the installed one: logged, kept */
         else { if (!bad++) snprintf(first_bad, sizeof first_bad, "%s", names[i]); dsl_log("pkg: %s is not a mod package (moved to .failed)", names[i]); }
     }
 #ifndef _WIN32
@@ -177,8 +200,10 @@ int dsl_pkg_refresh(char *fail, size_t fcap) {
             snprintf(dir, sizeof dir, "%s/%s", um, e->d_name);
             if (!mod_id(dir, id, sizeof id) || strcmp(id, e->d_name)) continue;
             snprintf(a_p, sizeof a_p, "%s/mod.json", dir); snprintf(dst, sizeof dst, "%s/%s", lm, id); snprintf(b_p, sizeof b_p, "%s/mod.json", dst);
-            char *a = slurp(a_p), *b = slurp(b_p);
-            if (a && (!b || strcmp(a, b))) {
+            char *a = slurp(a_p), *b = slurp(b_p), va[32], vb[32];
+            if (a && b && older_text(a, b, va, vb, sizeof va))
+                dsl_log("pkg: player mod %s %s is older than the loader's %s (app or auto-update): not copied", id, va, vb);
+            else if (a && (!b || strcmp(a, b))) {
                 if (copy_in(dir, dst, id) == 0) { changed++; dsl_log("pkg: player mod %s copied into the loader", id); }
             }
             free(a); free(b);
