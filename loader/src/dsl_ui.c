@@ -1613,7 +1613,7 @@ typedef struct { uintptr_t h; DSLObj id; void (*close)(void *); void *ud; int fl
 static EscE escs[ESC_MAX]; static int nesc, esc_seq;
 static int32_t esc_used = -1;                                        /* the frame whose Escape the kit used */
 static uintptr_t esc_foc;                                            /* the TMP_InputField that had the keyboard at the last tick */
-static void *m_es_cur, *m_es_selgo, *m_nv_okclick, *m_nv_cancelclick;
+static void *m_es_cur, *m_es_selgo, *m_es_setsel, *m_nv_okclick, *m_nv_cancelclick;
 static uintptr_t (*x_weak)(Obj, bool);
 static int32_t esc_frame(void) { return m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : -1; }
 static void esc_free(int i) { hfree(&escs[i].h); escs[i] = escs[--nesc]; }
@@ -1665,6 +1665,13 @@ static Obj esc_focused(void) {                                       /* the TMP_
     Obj f = alive(go) ? comp_get(go, K.TMP_Input) : NULL;
     return f && CALL(m_in_focused, bool, Obj)(f, m_in_focused) ? f : NULL;
 }
+/* the field lets go of the selection too: a field that only lost the keyboard took it back when a notice box showed over
+   its window (the next Escape then only "left the field" again instead of answering the box; dsesc-cm, Unit Builder) */
+static void esc_deselect(Obj field) {
+    Obj es = m_es_cur ? CALL0(m_es_cur, Obj)(m_es_cur) : NULL;
+    Obj sel = alive(es) && m_es_selgo ? CALL(m_es_selgo, Obj, Obj)(es, m_es_selgo) : NULL;
+    if (sel && sel == go_of(field) && m_es_setsel) CALL(m_es_setsel, void, Obj, Obj)(es, NULL, m_es_setsel);
+}
 static int esc_holder(Obj field) {                                   /* the innermost shown window holding the field, -1 = none */
     for (Obj t = tr_of(field); t; t = tr_parent(t))
         for (int i = 0; i < nesc; i++) if (!escs[i].notice) { Obj o = hget(escs[i].h); if (o && tr_of(o) == t && on_tree(o)) return i; }
@@ -1679,6 +1686,7 @@ static void esc_tick(void) {
             esc_used = fc;
             Obj field = now ? now : had; int k = field ? esc_holder(field) : -1;
             char nm[96] = "";
+            if (field) esc_deselect(field);
             if (field && (k < 0 || !(escs[k].flags & DSL_ESC_EDIT))) dsl_log("ui: Escape left a text field (the window stays)");
             else {
                 EscE e = field ? escs[k] : *t;                       /* a copy: close() may drop the entry */
@@ -1711,6 +1719,7 @@ static void esc_install(void) {
         if (!strncmp(cname(nk), "<GetInputOnKeyDown>d__", 22)) { mi = mi_sig(nk, "MoveNext", 0, NULL); off_kd_cur = dsl_field_offset(nk, "<>2__current"); break; }
     void *kES = dsl_find_class("UnityEngine.EventSystems", "EventSystem");
     m_es_cur = kES ? mi_sig(kES, "get_current", 0, NULL) : NULL; m_es_selgo = kES ? mi_sig(kES, "get_currentSelectedGameObject", 0, NULL) : NULL;
+    m_es_setsel = kES ? mi_sig(kES, "SetSelectedGameObject", 1, NULL) : NULL;
     m_nv_okclick = K.Notice ? mi_sig(K.Notice, "OnClick_Confirm", 0, NULL) : NULL; m_nv_cancelclick = K.Notice ? mi_sig(K.Notice, "OnClick_Cancle", 0, NULL) : NULL;
     if (!mi || !*(void **)mi || off_kd_cur < 0)
         dsl_log("ui: Escape: the game's key reader not found (MoveNext %p, current %d): an Escape that closes our window also reaches the game", mi, off_kd_cur);
