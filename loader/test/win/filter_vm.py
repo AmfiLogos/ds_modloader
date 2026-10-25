@@ -3,7 +3,7 @@
 win/winbot, WINBOT_DIR), VM running visibly with the agent up and the kit under test installed (multiplayer 0.1.22 in it).
   python3 filter_vm.py [--out DIR]
 Worlds: three copies of the wiki's public base save (never a player's save): Vanilla (two saves, the older one named
-"Template older"), Modded (gcd-cdr + hell-difficulty in worlds.json; the Vanilla world has only the fix gcd-cdr), Multiplayer (in the profile's mp_tags.txt). What the profile had
+"Template older"), Modded (gcd-cdr + zetu-suite in worlds.json, installed and off; Hell would not count: since dshell2 only worlds on Hell count it; the Vanilla world has only the fix gcd-cdr), Multiplayer (in the profile's mp_tags.txt). What the profile had
 (mp_tags.txt, loadlist.json) is moved aside and back; the test saves are moved to C:\\dsm\\to_delete after (never deleted).
 Checks: the guard hooks install on Windows; the panel shows right of the Load window, inside the screen, off the title
 corner; kinds; the multiplayer box under the list is gone; the data guard (a selected save hidden by Latest save only
@@ -82,7 +82,7 @@ def main():
         if w.exists(p): w.move(p, TO_DEL + '\\kept_' + ntpath.basename(p)); kept.append(p)
     try:
         w.prepare(lang=0, consent='no', active=['multiplayer', 'gcd-cdr'], saves=files)
-        w.write(W.DATA + r'\Mods\worlds.json', json.dumps({'worlds': {G_V: 'gcd-cdr', G_M: 'gcd-cdr+hell-difficulty'}}))
+        w.write(W.DATA + r'\Mods\worlds.json', json.dumps({'worlds': {G_V: 'gcd-cdr', G_M: 'gcd-cdr+zetu-suite'}}))
         w.write(W.PROF + r'\mp_tags.txt', f'{G_P}\tHost\tGuest\n')
         w.start(env={'DSL_SOFT_TEST': '1'})
         L = R.dlog()
@@ -98,7 +98,7 @@ def main():
         check('defaults: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves; Multiplayer box there',
               (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box')) == (1, 1, 0, 0, 1), b)
         v, m, mp = world(st, G_V), world(st, G_M), world(st, G_P)
-        check('kinds: vanilla (only the fix gcd-cdr) / modded (gcd-cdr + hell-difficulty) / multiplayer (tag)', (v.get('kind'), m.get('kind'), mp.get('kind')) == (0, 1, 2), (v, m, mp))
+        check('kinds: vanilla (only the fix gcd-cdr) / modded (gcd-cdr + zetu-suite) / multiplayer (tag)', (v.get('kind'), m.get('kind'), mp.get('kind')) == (0, 1, 2), (v, m, mp))
         check('Multiplayer off: the multiplayer world hidden, the others shown', (v.get('shown'), m.get('shown'), mp.get('shown')) == (1, 1, 0), (v, m, mp))
         ml = w.cmd(cmd='mpm_list')
         check("the multiplayer mod's box under the list is gone", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,
