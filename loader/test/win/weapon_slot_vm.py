@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Windows VM run of the weapon-slot checks (test/weapon_slot_test.py phases A, D and F = the 0.1.1 fill on load)
-through winrig (ds_multiplayer win/winbot, WINBOT_DIR), the VM running visibly with the agent up. The mod-off phases
-(B, C) run the stock quick-slot code, the same on both systems: Mac only.
+"""Windows VM run of the weapon-slot checks (test/weapon_slot_test.py: A = E1, the owner's 5-slot world saved in stock
+form; D = the old binary-mod layout; F = the 0.1.1 fill on load) through winrig (ds_multiplayer win/winbot, WINBOT_DIR),
+the VM running visibly with the agent up. Saves are stock 4-slot bars since 0.1.2 (on Windows the stock save copy is
+inlined in UnitQuickSlotContainer.Serialize). The mod-off phases (E2, E3) run the stock quick-slot code, the same on
+both systems: Mac only. E1's world: WS_E1_SAVE or the owner's autosave (copied).
   python3 weapon_slot_vm.py --mods <dir with weapon-slot/> [--out DIR]
 weapon-slot goes into the profile's mods folder for the run; anything installed under that name is moved aside and
 moved back after (never deleted). Exit 0 = every check passed."""
@@ -57,18 +59,20 @@ def phase_a(w, out):
     check('A: module on (16 hooks, AI order)', 'weapon skill slot on (16 hooks; AI auto-use order weapon skill first)' in L,
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
     before = T.units_of(T.OWNER_SAVE)
-    load(w, T.OWNER_SAVE, 'owner_4slot')
+    load(w, T.OWNER_SAVE, 'owner_world')
     L = w.text(W.PROF + r'\dsload.log') or ''
     wl = [l for l in L.splitlines() if 'weapon skills (' in l]
     check('A: the 8 weapon skills read from the game table', wl and set(wl[-1].split(': ', 2)[-1].split()) == T.W, wl[-1:])
     exp = {g: T.expect_new(u) for g, u in before.items()}
     got = live(w, list(before))
-    check('A: live slots (units on the map) migrated', len(got) >= 2 and all(got[g] == exp[g] for g in got),
+    check('A: live slots (units on the map) = the saved world with its weapon slots', len(got) >= 2 and all(got[g] == exp[g] for g in got),
           {g[:8]: (got[g], exp[g]) for g in got if got[g] != exp[g]} or len(got))
     check('A: the bar has its weapon slot', 'skill bar: weapon slot added' in L, [l for l in L.splitlines() if 'skill bar' in l][-2:])
     after = T.units_of(save_now(w, out, 'ws_vm_a'))
-    check('A: the save written: every unit migrated, 5 slots', {g: u['quick'] for g, u in after.items()} == exp,
-          {g[:8]: (after.get(g, {}).get('quick'), exp[g]) for g in exp if after.get(g, {}).get('quick') != exp[g]})
+    check('A: the save written: 4 slots per unit, the weapon skill where the stock game keeps it (first empty free slot, or none)',
+          after and set(after) == set(before) and not T.stock_form(after, exp), T.stock_form(after, exp) or len(after))
+    check('A: nothing else of the units changes in the save (skill trees, skills + auto-use choices, items)',
+          after and not T.same_units(before, after), T.same_units(before, after))
     mp = w.cmd(cmd='status').get('map', 0)
     g = next((g for g in got if exp[g][4]), None)
     if g:
@@ -89,17 +93,17 @@ def phase_d(w, out):
     exp = {g: T.expect_new(u, old_layout=True) for g, u in before.items()}
     got = live(w, list(before))
     s0 = T.units_of(save_now(w, out, 'ws_vm_d0'))
-    check('D: an old binary-mod save gets the new layout (live + saved)',
-          all(got[g] == exp[g] for g in got) and {g: u['quick'] for g, u in s0.items()} == exp,
-          {g[:8]: (got.get(g), s0.get(g, {}).get('quick'), exp[g]) for g in before if s0.get(g, {}).get('quick') != exp[g]})
+    check('D: an old binary-mod save gets the new layout (live) and is saved in stock form',
+          all(got[g] == exp[g] for g in got) and s0 and not T.stock_form(s0, exp),
+          ({g[:8]: (got.get(g), exp[g]) for g in got if got[g] != exp[g]}, T.stock_form(s0, exp)))
     u0 = s0.get(T.EQ_UNIT, {}); inv = u0.get('inv') or []
     if T.EQ_UNIT in got and T.EQ_ITEM in inv:
         mp = w.cmd(cmd='status').get('map', 0)
         w.cmd(cmd='ord_select', guids=T.EQ_UNIT, group=3003); time.sleep(1)
         inject(w, 'EquipItemRequested', i32_16=mp, guid_20=T.EQ_UNIT, i32_36=0, guid_40=T.EQ_UNIT, i32_56=inv.index(T.EQ_ITEM)); time.sleep(4)
         q = live(w, [T.EQ_UNIT]).get(T.EQ_UNIT)
-        want = [None if s == T.EQ_SKILL else s for s in u0['quick'][:4]] + [T.EQ_SKILL]
-        check('D: equip WoodClub: weapon slot = StunCharge, free slots unchanged', q == want, (u0['quick'], q, want))
+        want = list(exp[T.EQ_UNIT][:4]) + [T.EQ_SKILL]
+        check('D: equip WoodClub: weapon slot = StunCharge, free slots unchanged', q == want, (exp[T.EQ_UNIT], q, want))
         act = (T.units_of(save_now(w, out, 'ws_vm_d1')).get(T.EQ_UNIT, {}).get('skills') or {}).get('ActiveSkills') or []
         check('D: the unit has StunCharge and no longer WhirlwindSlash', T.EQ_SKILL in act and T.OLD_SKILL not in act, act)
     else:
@@ -115,9 +119,9 @@ def phase_f(w, out):
     exp = {g: T.expect_new(u) for g, u in before.items()}
     got = live(w, list(before))
     after = T.units_of(save_now(w, out, 'ws_vm_f'))
-    check('F: fill on load: every armed unit has its weapon skill in the weapon slot (live + saved)',
-          len(got) >= 2 and all(got[g] == exp[g] for g in got) and all(after.get(g, {}).get('quick') == exp[g] for g in before),
-          {g[:8]: (got.get(g), after.get(g, {}).get('quick'), exp[g]) for g in before})
+    check('F: fill on load: every armed unit has its weapon skill in the weapon slot (live), the save in stock form',
+          len(got) >= 2 and all(got[g] == exp[g] for g in got) and all(exp[g][4] == s_ for g, s_ in want.items()) and not T.stock_form(after, exp),
+          ({g[:8]: (got.get(g), exp[g]) for g in got if got[g] != exp[g]}, T.stock_form(after, exp)))
     once = lambda lst, s_: (lst or []).count(s_) == 1
     check('F: the weapon skill once in the unit\'s skills and extra skills',
           all(once((after[g]['skills'] or {}).get('ActiveSkills'), s_) and once((after[g]['tree'] or {}).get('ExtraSkills'), s_) for g, s_ in want.items()),
