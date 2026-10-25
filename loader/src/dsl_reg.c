@@ -155,6 +155,7 @@ static void mods_scan(void) {
         const char *sc = json_str(m, "scope"); x->scope = xstrdup(sc && !strcmp(sc, "client") ? "client" : "gameplay");
         { const char *ca = json_str(m, "category"); x->feature = ca ? !strcmp(ca, "feature") : feature_builtin(id); x->fix = ca && !strcmp(ca, "fix"); }
         JNode *h = json_get(m, "hidden"); x->hidden = h && h->t == JN_BOOL && h->b;
+        JNode *vp = json_get(m, "vanilla_plus"); x->vanilla_plus = vp && vp->t == JN_BOOL && vp->b;
         JNode *sd = json_get(m, "save_dependent"); MI_savedep[nmi - 1] = sd && sd->t == JN_BOOL && sd->b;
         JNode *sb = json_get(m, "save_backup"); MI_savebak[nmi - 1] = sb && sb->t == JN_BOOL && sb->b;
         int on = 1;
@@ -638,14 +639,15 @@ int dsl_world_mods_all(const char *guid, const char **ids, int max) {
     return n;
 }
 /* the Load list's filter panel (dsl_rows.c, owner 2026-10-24): 1 = the world plays with a mod that changes the gameplay
-   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only fixes and
-   mods that change nothing in the gameplay ("Vanilla & Vanilla+"). Launcher features are not world mods. */
+   (mod.json scope "gameplay", or a mod that is not installed: unknown counts as gameplay); 0 = no mod, or only fixes,
+   mods that change nothing in the gameplay and mods with "vanilla_plus" (owner 2026-10-25) ("Vanilla & Vanilla+").
+   Launcher features are not world mods. The world kind only: the world check, flow K and the HELLO hash use the set. */
 int dsl_world_is_modded(const char *guid) {
     const char *ids[MAXM]; int n = dsl_world_mods(guid, ids, MAXM);
     for (int i = 0; i < n; i++) {
         if (dsl_mod_is_feature(ids[i])) continue;
         const DSLModInfo *m = mod_by_id(ids[i]);
-        if (m && m->fix) continue;                                    /* a fix for a bug of the game (owner 2026-10-24) */
+        if (m && (m->fix || m->vanilla_plus)) continue;               /* a fix for a bug of the game (owner 2026-10-24), Vanilla+ (10-25) */
         if (!m || strcmp(m->scope, "client")) return 1;
     }
     return 0;
@@ -1001,7 +1003,8 @@ static void world_frame(void) {
 /* <log dir>/softrestart/reg_request.json: {"cmd":"k_ok"} = the "Load it with them?" box answered Load; {"cmd":"apply",
    "ids":[..]} = Mods tab Apply; {"cmd":"mods"} = the title "Mods" click; {"cmd":"world_set","guid":..,"ids":[..]};
    {"cmd":"warn_load"} / {"cmd":"warn_cancel"} = the game-save warning (dsl_saves.c) answered */
-/* v13 checks: {"cmd":"title"} logs the title column; {"cmd":"hover","what":"title:<label>" | "row:<i>" | "win:<control>"}
+/* v13 checks: {"cmd":"title"} logs the title column; {"cmd":"hover","what":"title:<label>" | "row:<i>" | "win:<control>" |
+   "pn:<k>" (the Load list's filter box k)}
    hovers that element (no mouse) and logs the hover card's rect and its panel's rect 20 frames later */
 DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap);
 void dsl_ui_test_hover(DSLObj target);
@@ -1010,6 +1013,7 @@ int dsl_ui_test_tip_rects(float card[4], float panel[4]);
 void dsl_ui_test_tip_body(char *out, size_t cap);
 size_t dsl_ui_test_label(DSLObj o, char *out, size_t cap);
 DSLObj dsl_rows_test_line(int i);
+DSLObj dsl_rows_test_pn(int k);
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_progress.c gives the real one */
 __attribute__((weak)) void dsl_progress_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_pkg.c gives the real one */
@@ -1019,12 +1023,30 @@ __attribute__((weak)) void dsl_saves_test_answer(int load) { (void)load; }
 __attribute__((weak)) void dsl_saves_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
 __attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
+int dsl_ui_test_tip_targets(DSLObj *out, int max);
+int dsl_ui_test_tip_keep(float el[4], float keep[][4], int max);
 static int hv_wait; static char hv_what[120];
+/* {"cmd":"tipsweep"}: every hover card of the views open now, one after the other (12 frames each: the stock card places
+   itself 2 frames after the show, the kit moves it then); logs each card's rect, its panel and the rects it keeps off */
+static DSLObj sw_t[96]; static int sw_n, sw_i = -1, sw_wait;
+static void sweep_frame(void) {
+    if (sw_i < 0 || --sw_wait > 0) return;
+    if (sw_i > 0) {
+        float c[4], p[4], e[4], k[8][4]; char tt[200] = "", ks[600] = ""; int on = dsl_ui_test_tip_rects(c, p); dsl_ui_test_tip(tt, sizeof tt);
+        int nk = dsl_ui_test_tip_keep(e, k, 8);
+        for (int i = 0; i < nk; i++) snprintf(ks + strlen(ks), sizeof ks - strlen(ks), "%s%.0f,%.0f,%.0f,%.0f", i ? ";" : "", k[i][0], k[i][1], k[i][2], k[i][3]);
+        dsl_log("reg test: tipsweep %d/%d shown %d title '%s' el %.0f,%.0f,%.0f,%.0f card %.0f,%.0f,%.0f,%.0f panel %.0f,%.0f,%.0f,%.0f keep %s", sw_i, sw_n, on, tt,
+                e[0], e[1], e[2], e[3], c[0], c[1], c[2], c[3], p[0], p[1], p[2], p[3], ks);
+    }
+    if (sw_i >= sw_n) { dsl_ui_test_hover(NULL); dsl_log("reg test: tipsweep done %d", sw_n); sw_i = -1; return; }
+    dsl_ui_test_hover(sw_t[sw_i++]); sw_wait = 12;
+}
 static void hover_test(const char *what) {
     DSLObj t = NULL; char b[2000] = "";
     if (!strncmp(what, "title:", 6)) t = dsl_ui_test_title(what + 6, b, sizeof b);
     else if (!strncmp(what, "row:", 4)) { t = dsl_rows_test_line(atoi(what + 4)); if (t) dsl_ui_test_label(t, b, sizeof b); }
     else if (!strncmp(what, "win:", 4)) t = dsl_win_test_control(what + 4);
+    else if (!strncmp(what, "pn:", 3)) { t = dsl_rows_test_pn(atoi(what + 3)); if (t) dsl_ui_test_label(t, b, sizeof b); }
     dsl_log("reg test: hover %s: target %s%s%s", what, t ? "found" : "MISSING", b[0] ? ", text: " : "", b);
     if (!t) return;
     dsl_ui_test_hover(t); hv_wait = 140; snprintf(hv_what, sizeof hv_what, "%s", what);   /* rects at 20 frames, held 2 s for a shot */
@@ -1041,7 +1063,7 @@ static void hover_frame(void) {
 static void test_frame(void) {
     static int on = -1; static unsigned f;
     if (on < 0) on = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1';
-    if (on) hover_frame();
+    if (on) { hover_frame(); sweep_frame(); }
     if (!on || ++f % 5 || dsl_soft_wanted()) return;                  /* a hidden B (prewarm) leaves the requests to A */
     char p[1300]; snprintf(p, sizeof p, "%s/softrestart/reg_request.json", dsl_log_dir());
     char *t = slurp(p, 1 << 16); if (!t) return;
@@ -1053,6 +1075,7 @@ static void test_frame(void) {
     if (c && !strcmp(c, "k_ok")) k_ok(NULL, NULL);
     else if (c && !strcmp(c, "apply")) { char why[300] = ""; if (dsl_apply_mods(ids, n, why, sizeof why)) dsl_log("reg test: apply refused: %s", why); }
     else if (c && !strcmp(c, "mods")) on_title_mods(NULL);
+    else if (c && !strcmp(c, "tipsweep")) { sw_n = dsl_ui_test_tip_targets(sw_t, 96); sw_i = 0; sw_wait = 1; dsl_log("reg test: tipsweep of %d hover card(s)", sw_n); }
     else if (c && !strcmp(c, "shot")) dsl_log("reg test: shot %s: %s", json_str(j, "path"), dsl_soft_shot(json_str(j, "path")) ? "FAILED" : "ok");
     else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }
     else if (c && !strcmp(c, "world_set")) dsl_world_set_mods(json_str(j, "guid"), ids, n);
