@@ -194,7 +194,8 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
         else names_pending |= release_name(h->id, h->ver, r->name, sizeof r->name, fetch_names);
         snprintf(r->host_set, sizeof r->host_set, "%s", h->set);
         r->official = dsl_update_mod_repo(h->id) != NULL && safe_ver(h->ver);
-        if (m) { snprintf(r->my_ver, sizeof r->my_ver, "%s", m->version ? m->version : ""); r->my_on = m->active == 1; settings_mine(h->id, r->my_set, sizeof r->my_set); }
+        if (m) { snprintf(r->my_ver, sizeof r->my_ver, "%s", m->version ? m->version : ""); r->my_on = m->active == 1 && dsl_mod_in_hello(m->id);   /* Hell runs always, */
+                 settings_mine(h->id, r->my_set, sizeof r->my_set); }                                                                                 /* in the set on Hell */
         int c = m ? dsl_update_vcmp(r->my_ver, h->ver) : 0;
         if (!m) r->action = "download";
         else if (c < 0) r->action = "update";
@@ -212,7 +213,7 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
         diff += strcmp(r->action, "same") != 0;
     }
     for (int i = 0; i < dsl_mods_count() && nr < HM_MAX * 2; i++) {      /* my running gameplay mods the host does not use */
-        const DSLModInfo *m = dsl_mods_at(i); if (!m || m->active != 1 || !is_gameplay(m)) continue;
+        const DSLModInfo *m = dsl_mods_at(i); if (!m || m->active != 1 || !is_gameplay(m) || !dsl_mod_in_hello(m->id)) continue;
         int in = 0; for (int k = 0; k < nh; k++) in |= !strcmp(H[k].id, m->id);
         if (in) continue;
         Row *r = &R[nr++]; memset(r, 0, sizeof *r);

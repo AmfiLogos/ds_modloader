@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """"Get the host's mods" (v0.1.14) on a leased pair of hidden loader copies (never the owner's game, saves or screen).
 
-Scenario: the host runs gameplay mods X = gcd-cdr and Y = hell-difficulty. The guest does NOT have X installed and has Y
-installed but OFF. The guest joins by address (title > Multiplayer > Join by address > Connect), is refused (MODSET),
-the box shows (DSMP_HOSTMODS_TEST=1 clicks its button after 2 s), the loader downloads X from a LOCAL release server
-(relserver.py = official releases: tag <id>-v<ver>, asset <id>-<ver>.zip, sha256 digest), turns X and Y on, the quiet
-soft restart runs and the new guest process joins the same host by itself (DSMP_REJOIN). Then both play for --play
-seconds with orders from both sides.
+Scenario: the host runs gameplay mod X = gcd-cdr and has Y = hell-difficulty installed. The guest does NOT have X
+installed and has Y installed but OFF. Y is a custom difficulty: it runs on both whenever installed, and the seed world is
+not on Hell, so Y is in neither mod set (owner 2026-10-25). The guest joins by address (title > Multiplayer > Join by
+address > Connect), is refused (MODSET), the box shows (DSMP_HOSTMODS_TEST=1 clicks its button after 2 s), the loader
+downloads X from a LOCAL release server (relserver.py = official releases: tag <id>-v<ver>, asset <id>-<ver>.zip, sha256
+digest), turns X on, the quiet soft restart runs and the new guest process joins the same host by itself (DSMP_REJOIN).
+Then both play for --play seconds with orders from both sides.
 Checks: refusal + box, X downloaded (only official release URLs in requests.log, Y not downloaded again), X installed
 at the host's version, the guest's mod-set lines equal the host's, rejoin without any command from the test, time from
 the click to the rejoin, 0 desyncs (mp desyncs, DESYNC / FULL-STATE / deep lines, det tick_errors, fp.log equal).
@@ -366,7 +367,8 @@ def run(port, api, rel, pk):
     wait('host locked', lambda: st(H).get('det', {}).get('locked'), timeout=900, every=2)
     hl = session_lines(H)
     info['host_lines'] = hl
-    check('host runs X and Y', hl and any(l.startswith(f'{X_ID}@{xv}') for l in hl) and any(l.startswith(f'{Y_ID}@{yv}') for l in hl), hl)
+    check('host runs X; Y (Hell) runs too but stays out of the set on this world (not on Hell)',
+          hl and any(l.startswith(f'{X_ID}@{xv}') for l in hl) and not any(l.startswith(f'{Y_ID}@') for l in hl) and f'{Y_ID}: custom difficulty: runs whenever installed' in flog(H, 'dsload.log'), hl)
     if SETTINGS:
         check(f'host runs {S_ID} with {S_SET} = {S_HOST} (default {s_def})', S_HOST != s_def and s_line in (hl or []), hl)
 
@@ -424,8 +426,8 @@ def run(port, api, rel, pk):
     act = json.load(open(os.path.join(lrig.idir(G), 'data', 'Mods', 'active.json'))).get('enabled', [])
     gl = session_lines(G)
     info['guest_lines'] = gl
-    check('guest runs X and Y now: active set and mod-set lines equal to the host' + (' (settings lines included)' if SETTINGS else ''),
-          X_ID in act and Y_ID in act and gl == hl and (not SETTINGS or (S_ID in act and s_line in (gl or []))), f'enabled {act}; guest lines {gl}')
+    check('guest runs X now: active set and mod-set lines equal to the host' + (' (settings lines included)' if SETTINGS else ''),
+          X_ID in act and gl == hl and (not SETTINGS or (S_ID in act and s_line in (gl or []))), f'enabled {act}; guest lines {gl}')
     if SETTINGS:
         sf = settings_file(G); info['guest_settings_file'] = sf
         at_load = [l for l in (flog(G, 'dsload.log')).splitlines() if 'settings-demo at load:' in l]

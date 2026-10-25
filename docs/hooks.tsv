@@ -27,6 +27,8 @@ loader	detour	UnityEngine.UI.CanvasUpdateRegistry$$PerformUpdate	0x52544b8	0x3ab
 loader	detour	UnityEngine.EventSystems.EventSystem$$Update	0x54b0d68	0x3d0f930	always (Mods window and menu kit)	loader ui EventSystem.Update	ds_modloader:loader/src/dsl_ui.c
 loader	detour	Refactor.Main.Event.CampaignLoadingEventHandler$$LoadCampaign	0xd6c900	0xa71310	always when the launcher starts the game (DSML_SESSION)	loader world check LoadCampaign	ds_modloader:loader/src/dsl_world.c
 loader	detour	UnityEngine.Application$$get_persistentDataPath	-	0x38e9dd0	Windows start with a data folder (DSRIG_DIR)	Application.get_persistentDataPath	ds_modloader:loader/start/win/dsl_start_win.c
+loader	detour	Refactor.UI.CreateCampaignPresenter$$RefreshDifficultyIncreaseButtonState	0xe6278c	0xb61a70	always	loader New Game screen custom difficulty lock	ds_modloader:loader/ui/dsl_newgame.c
+loader	detour	Refactor.UI.CreateCampaignPresenter$$OnActivateView	0xe618a0	0xb5fea0	always	loader New Game screen difficulty toggle	ds_modloader:loader/ui/dsl_newgame.c
 multiplayer	detour	UnityEngine.Application$$get_persistentDataPath	0x507b74c	-	always (module loaded)	multiplayer Application.get_persistentDataPath	ds_modloader:loader/modules/multiplayer/mp_module.c
 multiplayer	detour	Refactor.Main.MainFlow$$Update	0xd1b648	-	always (module loaded)	multiplayer MainFlow.Update	ds_modloader:loader/modules/multiplayer/mp_module.c
 multiplayer	detour	Refactor.View.EntityObjectPresenter$$OnRefreshHideVision	0xe1fd90	0xb1e970	always (module loaded)	multiplayer EntityObjectPresenter.OnRefreshHideVision	ds_multiplayer:src/mp_fog.c

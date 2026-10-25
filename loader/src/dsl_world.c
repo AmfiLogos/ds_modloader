@@ -5,6 +5,7 @@
 //   guid:  the game's own TryGetSaveHeader(saveName, out CampaignSaveHeader, out CampaignSaveLoadSet); CampaignGuid @0
 //   rule:  worlds[guid] exists and != this copy's modset -> refuse; unknown guid -> allow; a module that exports
 //          dsl_world_check_skip() returning 1 (multiplayer guest: the HELLO check covers it) -> allow
+//   a module that exports dsl_world_temporary(guid) returning 1: that world is never registered (dsl_reg.c world_frame)
 //   refuse: the game's CancelIronModeLoad(notice, log) (closes the loading view, shows a popup with that text) and
 //          the original coroutine object with its state set to "finished", so the caller's `yield return` ends at once.
 // The world check also fills dsload_modset.json (dsl_main.c) with what the session file says.
@@ -29,6 +30,14 @@ static void (*cancel_notice)(void *self, void *notice, void *log, const void *mi
 static void *(*str_new)(const char *);
 static int (*skip_fns[32])(void);
 static int nskip;
+/* a module's temporary worlds (multiplayer: the Foreign Expedition hub, made new for each session and never saved, owner
+   2026-10-25): never registered in worlds.json (dsl_reg.c world_frame). Module export int dsl_world_temporary(const char *guid). */
+static int (*temp_fns[32])(const char *);
+static int ntemp;
+int dsl_world_is_temporary(const char *guid) {
+    for (int i = 0; i < ntemp; i++) if (temp_fns[i](guid)) return 1;
+    return 0;
+}
 int dsl_world_refusals;
 
 static char *read_all(const char *p) {
@@ -48,6 +57,21 @@ static void str_ascii(void *s, char *out, size_t n) {
 static void guid_text(const uint8_t *b, char *out) {
     snprintf(out, 40, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
              *(const uint32_t*)b, *(const uint16_t*)(b + 4), *(const uint16_t*)(b + 6), b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+}
+
+/* a save header's combat / management level (CampaignSaveHeader, a value type: field offsets by name, from CampaignGuid at 0);
+   dsl_rows.c uses it too. 0 = the fields are not known. */
+int dsl_hdr_levels(const uint8_t *hdr, int *c, int *m) {
+    static int32_t oc = -2, om = -2;
+    if (oc == -2) {
+        void *k = dsl_find_class("Refactor", "CampaignSaveHeader");
+        int32_t g = k ? dsl_field_offset(k, "CampaignGuid") : -1, a = k ? dsl_field_offset(k, "CombatDifficulty") : -1, b = k ? dsl_field_offset(k, "ManagementDifficulty") : -1;
+        oc = g >= 0 && a > g ? a - g : -1; om = g >= 0 && b > g ? b - g : -1;
+        if (oc < 0 || om < 0) dsl_log("world check: save header difficulty fields not found");
+    }
+    if (oc < 0 || om < 0 || oc + 4 > 0x100 || om + 4 > 0x100) return 0;
+    *c = *(const int32_t *)(hdr + oc); *m = *(const int32_t *)(hdr + om);
+    return 1;
 }
 
 /* a game save with save_dependent mods that did not come through the load request (dsl_saves.c asks there first):
@@ -85,12 +109,14 @@ static void *my_load(void *self, void *name, const void *mi) {
     uint8_t hdr[0x100] = {0}; void *set = NULL;
     if (!try_header || !try_header(self, name, hdr, &set, NULL)) { dsl_log("world check: no header for %s: the game handles it", nm); json_free(s); return it; }
     char g[40]; guid_text(hdr, g);
+    { int lc, lm; if (dsl_hdr_levels(hdr, &lc, &lm)) dsl_world_note_level(g, lc, lm); }   /* custom difficulty: by its level */
+    dsl_world_hello(g);                                                  /* a host's multiplayer set: as this world uses it */
     dsl_saves_loading(nm, g);                                            /* a game world: its next saves go to the game's folder */
     JNode *worlds = json_get(s, "worlds"), *w = NULL;
     if (worlds && worlds->t == JN_OBJ) for (JNode *c = worlds->child; c; c = c->next) if (c->key && !strcasecmp(c->key, g)) w = c;
     if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return gate(self, it, nm); }
     char ek[512]; dsl_world_key_eff(g, w->str, ek, sizeof ek);          /* + fixes on in all worlds - the world's offs */
-    if (mine && dsl_key_same(ek, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
+    if (mine && dsl_world_key_match(g, ek, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, ek, mine ? mine : "?");
     int in_world = dsl_reg_scene() == 2;
     if (!in_world) dsl_world_mismatch(nm, g, ek);       /* asks "Load it with them?" (flow K, dsl_reg.c) */
@@ -109,6 +135,8 @@ void dsl_world_install(void **modules, int n) {
     for (int i = 0; i < n && nskip < 32; i++) {
         int (*f)(void) = modules[i] ? (int (*)(void))dsl_os_dlsym(modules[i], "dsl_world_check_skip") : NULL;
         if (f) skip_fns[nskip++] = f;
+        int (*t)(const char *) = modules[i] && ntemp < 32 ? (int (*)(const char *))dsl_os_dlsym(modules[i], "dsl_world_temporary") : NULL;
+        if (t) temp_fns[ntemp++] = t;
     }
     if (!getenv("DSML_SESSION")) { dsl_log("world check: off (game not started by the launcher)"); return; }
     const char *ns = "Refactor.Main.Event", *k = "CampaignLoadingEventHandler";

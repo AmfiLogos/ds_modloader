@@ -208,6 +208,7 @@ static void draft(void) {                                              /* unappl
 static int group_is_current(int g) {
     const char *ids[NM]; int n = dsl_group_mods(g, ids, NM);
     for (int i = 0; i < nmods; i++) {
+        if (dsl_mod_is_difficulty(mods[i].m->id)) continue;            /* no switch: never part of a group */
         int in = 0; for (int k = 0; k < n; k++) if (!strcmp(ids[k], mods[i].m->id)) in = 1;
         if (in != mods[i].on) return 0;
     }
@@ -293,7 +294,7 @@ static void groups_build(void);
 static void group_pick(void *ud, DSLObj w) {
     (void)w; int g = (int)(intptr_t)ud;
     const char *ids[NM]; int n = dsl_group_mods(g, ids, NM);
-    for (int i = 0; i < nmods; i++) { int in = 0; for (int k = 0; k < n; k++) if (!strcmp(ids[k], mods[i].m->id)) in = 1; mods[i].on = in; }
+    for (int i = 0; i < nmods; i++) { int in = 0; for (int k = 0; k < n; k++) if (!strcmp(ids[k], mods[i].m->id)) in = 1; mods[i].on = in && !dsl_mod_is_difficulty(mods[i].m->id); }
     m_note[0] = 0;
     dsl_log("win: group %s chosen", dsl_group_name(g));
     if (world_mode && active_only()) { keep_switches(); mods_tab_reload(); return; }   /* the list shows the group's mods */
@@ -474,6 +475,7 @@ static void subtabs_show(void) {
 }
 static void settings_click(void *ud, DSLObj w);
 static float mod_row(DSLObj list, int i, float y);
+static void diff_click(void *ud, DSLObj w) { (void)ud; U->toggle_set(w, 1); }   /* greyed; a click never turns it off */
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
@@ -488,7 +490,10 @@ static void mods_open(DSLObj root, float w, float h) {
             const DSLModInfo *m = dsl_mods_at(i);
             if (!m || m->hidden || tab_of(m) != pass) continue;
             if (world_mode && (pass == 2 || (pass == 1 && m->scope && !strcmp(m->scope, "client")))) continue;
-            mods[nmods].m = m; mods[nmods].base = m->enabled != 0; mods[nmods].row = mods[nmods].warn = mods[nmods].allw = NULL; nmods++;
+            if (world_mode && dsl_mod_is_difficulty(m->id)) continue;   /* a world uses Hell by its level, never by a switch */
+            /* a custom difficulty runs always (owner 2026-10-25): its row has no switch of its own, so it is never in an
+               Apply's set (the profile keeps it off: the title's multiplayer set leaves it out, dsl_reg.c hello_has) */
+            mods[nmods].m = m; mods[nmods].base = m->enabled != 0 && !dsl_mod_is_difficulty(m->id); mods[nmods].row = mods[nmods].warn = mods[nmods].allw = NULL; nmods++;
         }
     if (world_mode) {                                                  /* gameplay mods: the world's set; client mods stay as they run */
         const char *wid[NM]; int wn = dsl_world_mods(world_guid, wid, NM);
@@ -576,13 +581,18 @@ static float mod_row(DSLObj list, int i, float y) {
     char lb[160], nm[100];
     snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
     int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
+    int diff = dsl_mod_is_difficulty(m->id);
+    if (diff) {                                                        /* custom difficulty: on and greyed, its line says why */
+        DSLObj t = U->toggle(list, 0, y, m_lw - 32, lb, 1, diff_click, NULL); U->set_enabled(t, 0);
+        snprintf(nm, sizeof nm, "mod:%s", m->id); named(t, 3, nm, NULL, NULL, "always");
+    } else
     mods[i].row = U->toggle(list, 0, y, m_lw - 32 - (has_set ? 132 : 0), lb, mods[i].on, mod_change, (void *)(intptr_t)i);
     if (has_set) {
         DSLObj sb = U->button(list, m_lw - 32 - 124, y, 124, 36, TR("Settings"), settings_click, (void *)(intptr_t)i);
         snprintf(nm, sizeof nm, "settings:%s", m->id); named(sb, 0, nm, settings_click, (void *)(intptr_t)i, TR("Settings"));
         U->tooltip(sb, m->name, TR("Change the settings of this mod."));
     }
-    snprintf(nm, sizeof nm, "mod:%s", m->id); named(mods[i].row, 1, nm, mod_change, (void *)(intptr_t)i, mods[i].on ? "on" : "off");
+    if (!diff) { snprintf(nm, sizeof nm, "mod:%s", m->id); named(mods[i].row, 1, nm, mod_change, (void *)(intptr_t)i, mods[i].on ? "on" : "off"); }
     int bad = m->enabled && m->active != 1 && m->reason && m->reason[0];
     char d[1200];
     if (bad) snprintf(d, sizeof d, TR("Not running: %s"), TR(m->reason));   /* reason: an English key (or a starter's text) */
@@ -601,7 +611,16 @@ static float mod_row(DSLObj list, int i, float y) {
        description while it is switched on */
     int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
     char wr[300]; const char *one = m->id;
-    if (dsl_save_warning(&one, 1, wr, sizeof wr)) {
+    if (diff && !bad) {                                               /* one gold line: how a world gets it */
+        char dl[400]; const char *dn = dsl_mod_difficulty_name(m->id);
+        snprintf(dl, sizeof dl, TR("Always on. Only worlds on %s use it. To show %s on the New Game screen, turn on its switch under \"Custom difficulty\"."), dn, dn);
+        dsi_utf8_fix_end(dl);
+        float wh = 20;
+        DSLObj dt = U->text(list, 12, y + rh, m_lw - 56, wh, dl, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, GOLD);
+        { float ph = dt && U->text_height ? U->text_height(dt, m_lw - 56) : 0; if (ph > wh + 2) { wh = ph; U->place(dt, 12, y + rh, m_lw - 56, wh); } }
+        snprintf(nm, sizeof nm, "always:%s", m->id); named(dt, 3, nm, NULL, NULL, dl);
+        rh += wh + 4;
+    } else if (dsl_save_warning(&one, 1, wr, sizeof wr)) {
         float wh = 20;                                            /* one line; wraps and grows when longer (de / fr / ru) */
         mods[i].warn = U->text(list, 12, y + rh, m_lw - 56, wh, wr, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, WARN);
         { float ph = mods[i].warn && U->text_height ? U->text_height(mods[i].warn, m_lw - 56) : 0; if (ph > wh + 2) { wh = ph; U->place(mods[i].warn, 12, y + rh, m_lw - 56, wh); } }

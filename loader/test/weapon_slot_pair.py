@@ -132,7 +132,8 @@ def main():
         casts = {H_: 0, G_: 0}; t0 = time.time()
         while time.time() - t0 < MINUTES * 60:
             r._with_leases(lambda d: [l.update(used=time.time()) for p_, l in d.items() if l.get('lane') == lane])
-            us = c(H_, cmd='list_units')['units']
+            us = c(H_, cmd='list_units').get('units')
+            if us is None: log('host world not ready (map change, game over, reload): casts stop'); break
             foes = [e for e in us if e.get('faction') == 3 and not e.get('dead') and 'cell' in e]
             for u in [u for u in us if u.get('faction') == 1 and not u.get('dead') and 'cell' in u]:
                 x = G_ if u['guid'] in claim else H_

@@ -377,7 +377,6 @@ static void move_old_copies(void) {
 }
 
 /* ------------------------------------------------------------------ warning before a game save loads with deep mods */
-int dsl_running_save_dependent(const char **ids, int max, char *key, size_t kcap);   /* dsl_reg.c */
 const char *dsl_world_warned(const char *guid);                                      /* dsl_reg.c, worlds.json */
 int dsl_world_set_differs(const char *guid);
 void dsl_world_set_warned(const char *guid, const char *key);
@@ -395,9 +394,9 @@ static char f_text[1024]; static int f_frames;            /* the backup failed: 
 /* 1 = this load needs the question first (a game save, a save_dependent mod runs, not asked for this world and set) */
 static int needs_warning(const char *name, char *guid, char *key, size_t kcap) {
     if (!on || !dsl_saves_is_game(name)) return 0;
-    const char *ids[64]; int n = dsl_running_save_dependent(ids, 64, key, kcap);
-    if (!n) return 0;
     if (!game_guid(name, guid)) snprintf(guid, 40, "save:%s", name);
+    const char *ids[64]; int n = dsl_world_save_dependent(guid, ids, 64, key, kcap);   /* Hell only for a world on Hell */
+    if (!n) return 0;
     if (dsl_world_set_differs(guid)) return 0;      /* the world check refuses it first and loads it with its own set */
     const char *seen = dsl_world_warned(guid);
     if (seen) {                                                               /* every running id already answered for */

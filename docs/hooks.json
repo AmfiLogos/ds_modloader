@@ -7,7 +7,7 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "6f6557cc64bcc4fa9e628cbd1cfc2fcdcb8bce43",
+ "mp_pin": "de9b90939b20d503d39fc0532ba79101f49d3a3b",
  "cm_pin": "45b7004247ae96579398e70600d2f2c783456dfc",
  "fields": {
   "owner": "loader or the mod id",
@@ -499,6 +499,40 @@
    "label": "Application.get_persistentDataPath",
    "source": "ds_modloader:loader/start/win/dsl_start_win.c",
    "key": "loader|dsl_start_win.c|my_pdp|Application.get_persistentDataPath"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.CreateCampaignPresenter$$RefreshDifficultyIncreaseButtonState",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xe6278c"
+    },
+    "win-x64": {
+     "rva": "0xb61a70"
+    }
+   },
+   "active": "always",
+   "label": "loader New Game screen custom difficulty lock",
+   "source": "ds_modloader:loader/ui/dsl_newgame.c",
+   "key": "loader|dsl_newgame.c|h_refresh|loader New Game screen custom difficulty lock"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.CreateCampaignPresenter$$OnActivateView",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xe618a0"
+    },
+    "win-x64": {
+     "rva": "0xb5fea0"
+    }
+   },
+   "active": "always",
+   "label": "loader New Game screen difficulty toggle",
+   "source": "ds_modloader:loader/ui/dsl_newgame.c",
+   "key": "loader|dsl_newgame.c|h_activate|loader New Game screen difficulty toggle"
   },
   {
    "owner": "multiplayer",

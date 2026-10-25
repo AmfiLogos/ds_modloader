@@ -38,6 +38,10 @@
 // every world, never in a world's mod set). See ../NOTES.md "Fixes" and "Launcher features vs game mods".
 // A module may export `int dsl_world_check_skip(void)`: 1 = the world check (mods per world) lets the current load
 // through (multiplayer guest loading the host's world).
+// A module may export `int dsl_world_temporary(const char *guid)`: 1 = a temporary world of the mod (multiplayer: the
+// Foreign Expedition hub, made new for each session), never registered in worlds.json.
+// The loader exports `int dsl_world_copy_mods(const char *from, const char *to)` (kit 0.1.27): world `to` (a copy the mod
+// wrote, e.g. multiplayer's single-player copy) plays with the mods of `from`. 0 ok.
 // A module that hides world rows of the stock Load list itself may export `int dsl_loadlist_hidden(int *kind)`: the
 // number of world rows it hides in the open list now; *kind 1 = multiplayer worlds, 2 = single-player worlds, else 0.
 // The loader writes one line under the list ("5 multiplayer worlds are hidden ...") so a player knows they are not lost.
