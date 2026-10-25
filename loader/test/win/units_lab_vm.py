@@ -101,8 +101,8 @@ def run(w, out, d, ids, gname, gsave, mname, msave):
         for e in w.a('ls', path=folder).get('entries', []):
             if e['name'].endswith('.json'): mt[e['name'][:-5]] = max(mt.get(e['name'][:-5], 0), e['mtime'])
     order = [mt.get(x[2], -1) for x in sp]
-    check('World units: the game saves\' world and the modded saves\' world, in one list, newest first',
-          any(x[2] == gsave for x in sp) and any(x[2] == msave for x in sp) and order == sorted(order, reverse=True), list(zip(worlds, order)))
+    check('World units: the game saves\' world and the modded saves\' world, in one list, newest first (the times on the rows, UX U11)',
+          any(x[2] == gsave for x in sp) and any(x[2] == msave for x in sp) and [x[3] for x in sp] == sorted((x[3] for x in sp), reverse=True), list(zip(worlds, order)))
     check('World units: no hub / multiplayer temp world listed', not any(h in x[2].lower() for x in sp for h in HUB_GUIDS) and not any(x[2].startswith(('MPHub_', 'MPFE_', 'MPPvP_', 'mp_')) for x in sp), worlds)
     # ---- Delete team: the box, Cancel
     d.click('mu:team0'); d.click('mu:delete_team')
@@ -151,9 +151,10 @@ def run(w, out, d, ids, gname, gsave, mname, msave):
     try: w.gshot(os.path.join(out, 'win_src_en.png'), 'ulab_src')
     except W.GameError as e: log('picture:', e)
     want = sum(1 for u in lib.get('units', [])[pg * pp:pg * pp + pp] if u.get('source'))
-    t = d('rect', target='mu:src0').get('text') or ''
-    check('a snapshot unit\'s card shows its source on one line (world + save time)', want >= 1 and s.get('src_lines') == want and hdr[0] in t and hdr[3] in t,
-          (s.get('src_lines'), want, pg, pp, t, hdr))
+    cs = [c for c in s.get('card_list') or [] if c.get('id') in {u['id'] for u in new}]   # as ds_custommodes worlds_test (0.1.35+ card)
+    check('a snapshot unit\'s card shows its source inside the card (world + snapshot time; the full line with the save time on hover)',
+          want >= 1 and s.get('src_lines') == want and cs and all(hdr[0] in c['src'] and hdr[0] in c['src_full'] and hdr[3] in c['src_full'] for c in cs),
+          (s.get('src_lines'), want, pg, pp, cs, hdr))
     # (mu_test_overflow needs the loader's dsl_ui_test_rect, which the Windows loader does not export: Mac only)
     # ---- the modded saves' world shows too
     mi = next((i for i, x in enumerate(sp) if x[2] == msave), -1)
