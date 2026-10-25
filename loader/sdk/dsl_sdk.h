@@ -94,6 +94,7 @@ typedef struct DSLLoadFilter {
    Coordinates: pixels inside `parent`, origin top-left, y down. Every create call returns the widget's
    RectTransform (DSLObj) or NULL. Strings are copied. Callbacks run on the main thread between frames. */
 typedef void (*dsl_ui_cb)(void *ud, DSLObj w);
+struct DSLWinStd; struct DSLWinParts;                      /* the window template (below DSLUi) */
 enum { DSL_TXT_LEFT = 0, DSL_TXT_CENTER = 1, DSL_TXT_RIGHT = 2, DSL_TXT_WRAP = 4, DSL_TXT_TITLE = 8 /* Cinzel */ };
 typedef struct DSLUi {
     uint32_t size;                           /* sizeof(DSLUi) of the loader; functions only get appended */
@@ -184,7 +185,43 @@ typedef struct DSLUi {
        panel is built and placed: a place kept from before is put back at once. After the call, do not place the panel
        again (that undoes the player's move); size changes are fine. 0 = ok. */
     int (*movable)(DSLObj panel, const char *key);
+    /* appended (check size, or use the wrappers below; kit 0.1.28): THE TEMPLATES (owner 2026-10-25: "templated rules /
+       pattern to keep applying everywhere"). NEW WINDOW OR PANEL? USE window_std: every owner rule is on by default.
+       DSL_WIN_MODAL: the dim backdrop that takes the clicks behind it, the window centred, the header (the title in the
+       game's title font over the copper line), the game's red X and Escape (Back first when o->back says a sub-page is
+       open, then the close), UI Scale. DSL_WIN_PANEL (an in-game panel, HUD): no backdrop, at o->x, o->y until the player
+       moves it, right-drag move with a kept place (o->move_key), Escape never takes it, UI Scale; a red X when o->close is
+       set. Put the content in out->win below out->body_y. NULL = not built (the title screen's templates not seen yet).
+       close: what the window's Close does (red X; Escape after Back); it ends with window_close(win). NULL = window_close.
+       window_close(win): destroys the window and its backdrop and takes it off the Escape stack. */
+    DSLObj (*window_std)(const struct DSLWinStd *o, struct DSLWinParts *out);
+    void (*window_close)(DSLObj win);
+    /* the CARD RULE template: a click anywhere on `card` (a panel or row; not on its own buttons, fields or toggles) =
+       a click on its check box `check` (a kit toggle: flipped, its change callback runs), or click(ud, card) when check is
+       NULL. Call it after the card's content is built (its texts and images stop taking clicks). Hover cards still show. */
+    int (*card_toggle)(DSLObj card, DSLObj check, dsl_ui_cb click, void *ud);
+    /* a window that applies a rule by its own code (Units Laboratory applies UI Scale itself): DSL_RULE_* flags; the
+       UI-RULE guard does not flag them. DSL_RULE_X only for a small popup that is not a window (a list closed by a click
+       outside): every window has the red X. */
+    int (*rules_own)(DSLObj win, int rules);
 } DSLUi;
+enum { DSL_WIN_MODAL = 0, DSL_WIN_PANEL = 1 };                /* DSLWinStd.kind */
+enum { DSL_WIN_OWN_SCALE = 1 };                               /* DSLWinStd.flags: the caller applies UI Scale itself */
+enum { DSL_RULE_SCALE = 1, DSL_RULE_MOVE = 2, DSL_RULE_X = 4 };   /* rules_own */
+typedef struct DSLWinStd {
+    uint32_t size;                           /* sizeof(DSLWinStd) of the caller: set it (fields only get appended) */
+    int kind;                                /* DSL_WIN_MODAL / DSL_WIN_PANEL */
+    float w, h;                              /* its size in units of the screen layer (1920 x 1080 design) */
+    const char *title;                       /* header text over the copper line; NULL = no header (body_y 0) */
+    void (*close)(void *ud);                 /* the window's Close (red X; Escape after Back); NULL = window_close */
+    int (*back)(void *ud);                   /* Escape first: a sub-page is open -> go Back one level, return 1; 0 = none */
+    void *ud;
+    int flags;                               /* DSL_WIN_OWN_SCALE */
+    const char *move_key;                    /* DSL_WIN_PANEL: the kept place's key "<mod id>.<panel>" (required) */
+    float x, y;                              /* DSL_WIN_PANEL: its first place, top-left on the screen layer */
+    float band_h, title_x, title_size;       /* header band height (0 = 72), title left at title_x (0 = centred), size (0 = 30) */
+} DSLWinStd;
+typedef struct DSLWinParts { DSLObj win, backdrop, close_x, title; float body_y; } DSLWinParts;
 enum { DSL_ESC_EDIT = 1, DSL_ESC_HUD = 2 };   /* esc_push flags (DSL_ESC_HUD: close may be NULL) */
 
 typedef struct DSLHost {
@@ -362,6 +399,13 @@ static inline DSLObj dsl_close_x(const DSLUi *ui, DSLObj parent, float x, float 
 static inline float dsl_ui_scale(const DSLUi *ui) { return DSL_UI_HAS(ui, ui_scale) ? ui->ui_scale() : 1.0f; }
 static inline int dsl_scale_follow(const DSLUi *ui, DSLObj win) { return DSL_UI_HAS(ui, scale_follow) ? ui->scale_follow(win) : -1; }
 static inline int dsl_movable(const DSLUi *ui, DSLObj panel, const char *key) { return DSL_UI_HAS(ui, movable) ? ui->movable(panel, key) : -1; }
+/* the templates (kit 0.1.28): NULL / nothing / -1 with an older kit (then: build the window as before) */
+static inline DSLObj dsl_window_std(const DSLUi *ui, const DSLWinStd *o, DSLWinParts *out) {
+    return DSL_UI_HAS(ui, window_std) ? ui->window_std(o, out) : NULL; }
+static inline void dsl_window_close(const DSLUi *ui, DSLObj win) { if (DSL_UI_HAS(ui, window_close)) ui->window_close(win); }
+static inline int dsl_card_toggle(const DSLUi *ui, DSLObj card, DSLObj check, dsl_ui_cb click, void *ud) {
+    return DSL_UI_HAS(ui, card_toggle) ? ui->card_toggle(card, check, click, ud) : -1; }
+static inline int dsl_rules_own(const DSLUi *ui, DSLObj win, int rules) { return DSL_UI_HAS(ui, rules_own) ? ui->rules_own(win, rules) : -1; }
 
 #ifdef __cplusplus
 }

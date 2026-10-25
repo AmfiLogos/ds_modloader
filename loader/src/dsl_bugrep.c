@@ -447,18 +447,15 @@ static void saved_label(void) {
     char t[120]; snprintf(t, sizeof t, TR("Send saved reports (%d)"), unsent_n);
     U->set_text(w_saved, t); U->set_active(w_saved, unsent_n > 0);
 }
+static void esc_close(void *ud);
 static void build(void) {
     const float L = 32, CW = 600, RX = 664, RW = WIN_W - RX - 32;
-    w_back = flat(U->panel(NULL, 0, 0, 100, 100, 0), 0x0000009E);   /* dims the game and takes its clicks */
-    fill_parent(w_back);
-    w_win = U->panel(NULL, 0, 0, WIN_W, WIN_H, 0); centre(w_win);
-    flat(U->panel(w_win, 4, 4, WIN_W - 8, WIN_H - 8, 0), 0x222025FF);
-    flat(U->panel(w_win, 4, 4, WIN_W - 8, BAND_H - 4, 0), 0x2D2A31FF);
-    flat(U->panel(w_win, 4, BAND_H, WIN_W - 8, 1, 0), 0xB6835AFF);
-    U->text(w_win, L, 4, 700, BAND_H - 4, TR("Bug report"), 30, DSL_TXT_LEFT | DSL_TXT_TITLE, 0);
-    DSLObj x = U->close_x(w_win, WIN_W - 60, 21, 38, w_win);           /* the game's red X: the window's Escape close (esc_close) */
-    if (!x) x = U->button(w_win, WIN_W - 66, 20, 42, 42, "X", cancel_click, NULL);
-    U->tooltip(x, NULL, TR("Close (Esc)"));
+    /* the window template (kit window_std): dim backdrop, header, the game's red X and Escape (= Cancel), UI Scale */
+    DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_MODAL, .w = WIN_W, .h = WIN_H, .title = TR("Bug report"), .close = esc_close,
+                    .band_h = BAND_H, .title_x = L, .title_size = 30 };
+    DSLWinParts pt; w_win = U->window_std(&o, &pt); w_back = pt.backdrop;
+    if (!w_win) return;
+    U->tooltip(pt.close_x, NULL, TR("Close (Esc)"));
     U->text(w_win, L, 96, CW, 30, TR("What happened? What did you expect?"), 18, DSL_TXT_LEFT, GOLD);
     w_text = U->field(w_win, L, 130, CW, 290, TR("For example: I opened the shop and the game froze. I expected to buy a sword."), "", NULL, NULL);
     dsl_ui_field_multiline(w_text, DSL_BUG_TEXT_MAX);
@@ -479,11 +476,10 @@ static void build(void) {
     w_cancel = U->button(w_win, WIN_W - 32 - 260 - 12 + 0, 636, 130, 48, TR("Cancel"), cancel_click, NULL);
     w_send = U->button(w_win, WIN_W - 32 - 130, 636, 130, 48, TR("Send"), send_click, NULL);
     saved_label();
-    U->scale_follow(w_win);                                            /* UI Scale as the game's windows; a small screen: smaller, never cut */
 }
 static void close_window(void) {
     if (!is_open) return;
-    U->destroy(w_win); U->destroy(w_back);
+    if (w_win) U->window_close(w_win);                                 /* the window and its backdrop */
     w_back = w_win = w_text = w_contact = w_tshot = w_tlogs = w_prev = w_noprev = w_status = w_send = w_cancel = w_saved = NULL;
     is_open = 0;
     dsl_log("bugrep: window closed");
@@ -500,7 +496,6 @@ static void open_window(void) {
     is_open = w_win != NULL;
     if (!is_open) { close_window(); dsl_log("bugrep: the window could not be built"); return; }
     if (busy) { U->set_enabled(w_send, 0); status(TR("Sending..."), SUB); }
-    U->esc_push(w_win, esc_close, NULL, 0);                            /* Escape = Cancel (the kit owns the key; the Esc menu under it stays) */
     dsl_log("bugrep: window open (from the %s, screenshot %s)", want_src == 2 ? "Esc menu" : "title", shot_ok ? "yes" : "no");
 }
 int dsl_bugrep_is_open(void) { return is_open; }

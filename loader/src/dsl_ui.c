@@ -887,7 +887,7 @@ static Obj mk_btn(Obj parent, float x, float y, float w, float h, const char *la
 }
 static float btn_fs(float h) { return h >= 44 ? 18 : h >= 30 ? 16 : 14; }
 /* The close rule's guard (owner 2026-10-25: one close control, the game's red X; kit close_x). Test copies only: a text
-   "X" button put straight on a window of ours (a root panel) logs CLOSE-TEXT-X "<the window's first text>"; the kit test
+   "X" button put straight on a window of ours (a root panel) logs UI-RULE close-text-x "<the window's first text>"; the kit test
    (test/kitlook_test.py) fails on it. A text X in a list (a group's delete "x") is not a window's close: not flagged. */
 static int guard_on = -1;
 static void guard_text(Obj t, char *out, size_t cap, int depth);
@@ -898,7 +898,7 @@ static void close_x_guard(DSLObj parent, const char *label) {
     if (!pw || pw->kind != W_PANEL || tr_parent(pr) != hget(h_layer)) return;
     char t[200] = ""; guard_text(pr, t, sizeof t, 0);
     for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
-    dsl_log("CLOSE-TEXT-X \"%s\": a window of ours closes with a text X (use dsl_close_x: the game's red X)", t[0] ? t : "(no text)");
+    dsl_log("UI-RULE close-text-x \"%s\": a window of ours closes with a text X (dsl_window_std, or dsl_close_x: the game's red X)", t[0] ? t : "(no text)");
 }
 static DSLObj k_button(DSLObj parent, float x, float y, float w, float h, const char *label, dsl_ui_cb click, void *ud) {
     if (!ready_basic()) return NULL;
@@ -1723,6 +1723,7 @@ static void guard_text(Obj t, char *out, size_t cap, int depth) {    /* the firs
     Obj tx = comp_get(t, K.TMP_Text); if (tx) { utf8_of(tmp_get(tx), out, cap); if (out[0]) return; }
     for (int i = 0, n = child_count(t); i < n && !out[0]; i++) guard_text(child_at(t, i), out, cap, depth + 1);
 }
+static void ui_guard_check(Obj root);                                /* the UI rules' guard (the templates, below) */
 static void esc_guard_frame(void) {
     if (guard_on != 1 || frames % 30) return;
     for (int i = 0; i < ngroots; i++) {
@@ -1734,6 +1735,7 @@ static void esc_guard_frame(void) {
             ok = q && guard_pushed(q);
         }
         groots[i].done = 1;
+        ui_guard_check(o);
         if (ok) continue;
         char t[200] = ""; guard_text(o, t, sizeof t, 0);
         for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
@@ -1837,13 +1839,18 @@ static Obj x_tpl(void) {
     dsl_log("ui: red X: the Load window's close button (%.0f x %.0f, sprite \"%s\", children:%s) kept as the template", s.x, s.y, nm, kids[0] ? kids : " none");
     return c;
 }
+/* the window template (window_std, below): a red X of such a window runs its Close (Escape runs its Back first) */
+typedef struct { uintptr_t h, h_back; DSLObj id, back_id; void (*close)(void *); int (*back)(void *); void *ud; int kind; } StdE;
+static StdE *std_of(DSLObj win);
+static void std_close(DSLObj win);
 static EscE *esc_of(DSLObj win) {                                    /* the Escape registration of win (not a notice) */
     EscE *e = NULL;
     for (int i = 0; win && i < nesc; i++) if (!escs[i].notice && escs[i].id == win && (!e || escs[i].seq > e->seq)) e = &escs[i];
     return e;
 }
 static void x_click(void *ud, DSLObj w) {
-    (void)w; EscE *e = esc_of((DSLObj)ud);
+    (void)w; if (std_of((DSLObj)ud)) { dsl_log("ui: red X closes a window of the template"); std_close((DSLObj)ud); return; }
+    EscE *e = esc_of((DSLObj)ud);
     if (!e || !e->close || (e->flags & DSL_ESC_HUD)) { dsl_log("ui: red X: its window has no Escape registration: nothing closes"); return; }
     EscE c = *e; char nm[96] = ""; obj_name(go_of(hget(c.h)), nm, sizeof nm);   /* a copy: close() drops the entry */
     dsl_log("ui: red X closes %s (its Escape close)", nm[0] ? nm : "a window");
@@ -1998,6 +2005,192 @@ static void mv_frame(void) {
     if (frames % 30 == 0)                                            /* the game window was resized: back on the screen */
         for (int k = 0; k < nmv; k++) { Obj q = hget(mvs[k].h); if (q && on_tree(q) && mvs[k].id != mv_id) mv_clamp(q); }
 }
+/* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
+   rules / pattern to keep applying everywhere"). window_std: a window or an in-game panel with every owner rule on by
+   default. card_toggle: the CARD RULE. rules_own: a window that applies a rule by its own code. The UI-RULE guard (test
+   copies, below) logs every window of ours that breaks one. */
+#define STD_MAX 32
+static StdE stds[STD_MAX]; static int nstd;
+static StdE *std_of(DSLObj win) { for (int i = 0; win && i < nstd; i++) if (stds[i].id == win && hget(stds[i].h)) return &stds[i]; return NULL; }
+static void std_sweep(void) { for (int i = nstd - 1; i >= 0; i--) if (!hget(stds[i].h)) { hfree(&stds[i].h); hfree(&stds[i].h_back); stds[i] = stds[--nstd]; } }
+static void k_destroy(DSLObj o);
+static void k_window_close(DSLObj win) {
+    StdE *s = std_of(win); DSLObj back = s && hget(s->h_back) ? s->back_id : NULL;
+    if (s) { hfree(&s->h); hfree(&s->h_back); *s = stds[--nstd]; }
+    if (back) k_destroy(back);
+    if (win && (s || w_of(win))) k_destroy(win);
+}
+static void std_close(DSLObj win) {                                  /* red X, Escape with no sub-page: the window's own Close */
+    StdE *s = std_of(win); if (!s) return;
+    void (*c)(void *) = s->close; void *ud = s->ud;
+    if (c) c(ud); else k_window_close(win);
+}
+static void std_esc(void *ud) {                                      /* Escape: Back one level first, then the Close */
+    StdE *s = std_of((DSLObj)ud); if (!s) return;
+    if (s->back && s->back(s->ud)) { dsl_log("ui: Escape: Back one level (a window of the template)"); return; }
+    std_close((DSLObj)ud);
+}
+#define RULE_MAX 64
+static struct { uintptr_t h; int rules; } rown[RULE_MAX]; static int nrown;
+static int rules_of(Obj root) { int r = 0; for (int i = 0; i < nrown; i++) if (hget(rown[i].h) == root) r |= rown[i].rules; return r; }
+static int k_rules_own(DSLObj win, int rules) {
+    W *w = w_of(win); Obj o = w ? w_root(w) : (Obj)win; if (!alive(o)) return -1;
+    for (int i = nrown - 1; i >= 0; i--) if (!hget(rown[i].h)) { hfree(&rown[i].h); rown[i] = rown[--nrown]; }
+    for (int i = 0; i < nrown; i++) if (hget(rown[i].h) == o) { rown[i].rules |= rules; return 0; }
+    if (nrown == RULE_MAX) return -1;
+    rown[nrown].h = x_weak ? x_weak(o, false) : hnew(o); rown[nrown].rules = rules; nrown++;
+    return 0;
+}
+static DSLObj k_window_std(const DSLWinStd *o, DSLWinParts *out) {
+    DSLWinParts p; memset(&p, 0, sizeof p); if (out) *out = p;
+    if (!o || o->size < offsetof(DSLWinStd, band_h) || o->w < 40 || o->h < 40) { dsl_log("ui: window_std: bad options"); return NULL; }
+    int panel = o->kind == DSL_WIN_PANEL;
+    if (panel && (!o->move_key || !*o->move_key)) { dsl_log("ui: window_std: a panel needs move_key (MOVE RULE)"); return NULL; }
+    if (!ready_basic()) return NULL;
+    std_sweep(); if (nstd == STD_MAX) { dsl_log("ui: window_std: more than %d windows: refused", STD_MAX); return NULL; }
+    int ext = o->size >= offsetof(DSLWinStd, title_size) + sizeof o->title_size;
+    float bh = ext && o->band_h > 0 ? o->band_h : 72, tx = ext && o->title_x > 0 ? o->title_x : 0, ts = ext && o->title_size > 0 ? o->title_size : 30;
+    DSLObj back = NULL;
+    if (!panel) {                                                    /* the dim backdrop: the game behind it takes no click */
+        back = k_panel(NULL, 0, 0, 100, 100, 0); if (!back) return NULL;
+        dsl_ui_flat(back, 0x0000009E); stretch((Obj)back);
+        Obj bi = comp_get((Obj)back, K.Image); if (bi) gr_raycast(bi, 1);   /* flat turns clicks off: the backdrop must take them */
+    }
+    DSLObj win = k_panel(NULL, 0, 0, o->w, o->h, 0);
+    if (!win) { if (back) k_destroy(back); return NULL; }
+    if (panel) place_tl((Obj)win, o->x, o->y, o->w, o->h);
+    else rt_set((Obj)win, (V2){ 0.5f, 0.5f }, (V2){ 0.5f, 0.5f }, (V2){ 0.5f, 0.5f }, (V2){ o->w, o->h }, (V2){ 0, 0 });
+    dsl_ui_flat(k_panel(win, 4, 4, o->w - 8, o->h - 8, 0), 0x222025FF);   /* one body colour inside the frame */
+    if (o->title) {                                                  /* the header: band, title in the game's title font, copper line */
+        dsl_ui_flat(k_panel(win, 4, 4, o->w - 8, bh - 4, 0), 0x2D2A31FF);
+        dsl_ui_flat(k_panel(win, 4, bh, o->w - 8, 1, 0), 0xB6835AFF);
+        p.title = k_text(win, tx > 0 ? tx : 70, 4, tx > 0 ? o->w - tx - 70 : o->w - 140, bh - 4, o->title, ts, (tx > 0 ? DSL_TXT_LEFT : DSL_TXT_CENTER) | DSL_TXT_TITLE, 0);
+        p.body_y = bh + 1;
+    }
+    StdE *s = &stds[nstd++]; memset(s, 0, sizeof *s);
+    s->id = win; s->h = x_weak ? x_weak((Obj)win, false) : hnew((Obj)win); s->close = o->close; s->back = o->back; s->ud = o->ud; s->kind = o->kind;
+    if (back) { s->back_id = back; s->h_back = x_weak ? x_weak((Obj)back, false) : hnew((Obj)back); }
+    if (!panel || o->close) {                                        /* the game's red X (a text X only when its button is not found) */
+        float xs = 38, xy = o->title ? (bh - xs) / 2 : 10;
+        p.close_x = k_close_x(win, o->w - 24 - xs, xy, xs, win);
+        if (!p.close_x) p.close_x = k_button(win, o->w - 24 - xs, xy, xs, xs, "X", x_click, win);
+    }
+    if (panel) k_esc_push(win, NULL, NULL, DSL_ESC_HUD);             /* an in-game panel never takes Escape */
+    else k_esc_push(win, std_esc, win, 0);
+    if (o->flags & DSL_WIN_OWN_SCALE) k_rules_own(win, DSL_RULE_SCALE); else k_scale_follow(win);
+    if (panel) k_movable(win, o->move_key);
+    p.win = win; p.backdrop = back;
+    if (out) *out = p;
+    return win;
+}
+
+#define CARD_MAX 256
+static struct { uintptr_t h; DSLObj id, check; dsl_ui_cb click; void *ud; } cds[CARD_MAX]; static int ncds;
+static uintptr_t h_no_targets;                                       /* an empty Image[]: the card's click layer never tints */
+static void card_click(void *ud, DSLObj w) {
+    (void)w; int i = (int)(intptr_t)ud; if (i < 0 || i >= ncds || !hget(cds[i].h)) return;
+    W *t = w_of(cds[i].check);
+    if (t && t->kind == W_TOGGLE) { if (!t->enabled) return; t->on = !t->on; toggle_look(t); if (t->cb) t->cb(t->ud, t->rt); }
+    else if (cds[i].click) cds[i].click(cds[i].ud, cds[i].id);
+}
+static void card_quiet(Obj t, Obj keep, int depth) {                 /* texts and images stop taking clicks; buttons, toggles, fields keep theirs */
+    if (!t || depth > 12) return;
+    for (int i = 0, n = child_count(t); i < n; i++) {
+        Obj c = child_at(t, i); if (c == keep || comp_get(c, K.Selectable)) continue;
+        Obj g = comp_get(c, K.Graphic); if (g) gr_raycast(g, 0);
+        card_quiet(c, keep, depth + 1);
+    }
+}
+static int k_card_toggle(DSLObj card, DSLObj check, dsl_ui_cb click, void *ud) {
+    W *cw = w_of(card); Obj root = cw ? w_root(cw) : (Obj)card;
+    if (!alive(root) || !isa(tr_of(root), K.RectTransform) || (!check && !click) || !ready_basic()) return -1;
+    int i = 0; while (i < ncds && hget(cds[i].h)) i++;
+    if (i == ncds) { if (ncds == CARD_MAX) { dsl_log("ui: card_toggle: more than %d cards: refused", CARD_MAX); return -1; } ncds++; }
+    hfree(&cds[i].h); cds[i].h = x_weak ? x_weak(root, false) : hnew(root); cds[i].id = card; cds[i].check = check; cds[i].click = click; cds[i].ud = ud;
+    W *wd = w_new(W_BUTTON); if (!wd) return -1;
+    Obj b = mk_btn(tr_of(root), 0, 0, 10, 10, "", 14, TOKEN(wd->id, P_CLICK), &wd->h_act[0]);
+    if (!b) { w_free(nws - 1); return -1; }
+    stretch(b); set_sibling(b, 0);                                   /* the whole card, under its content */
+    Obj l = btn_label(b); if (l) go_active(l, 0);
+    Obj bg = first_image(tr_of(b), 0); if (bg) { img_set(bg, NULL, (Col){ 0, 0, 0, 0 }, 0); gr_raycast(bg, 1); }
+    if (!hget(h_no_targets) && K.Image) { Obj a = I.array_new(K.Image, 0); if (a) h_no_targets = hnew(a); }
+    if (f_das_targets >= 0 && hget(h_no_targets)) AT(b, f_das_targets, Obj) = hget(h_no_targets);   /* held by a strong handle */
+    if (f_sel_trans >= 0) AT(b, f_sel_trans, int32_t) = 0;          /* Selectable.Transition.None */
+    Obj rg = comp_get(root, K.Graphic); if (rg) gr_raycast(rg, 0);
+    card_quiet(tr_of(root), tr_of(b), 0);
+    wd->cb = card_click; wd->ud = (void *)(intptr_t)i;
+    hset(&wd->h_btn, b);
+    w_done(wd, tr_of(b), NULL);
+    return 0;
+}
+
+/* The UI rules' guard (owner 2026-10-25: rule + template + guard). Test copies only, once per root panel of ours that has
+   an Escape registration (a window or an in-game panel; ESC-MISSING covers the others), 30 frames after it showed:
+   "UI-RULE <rule> "<its first text>": <what to use>" when a window has no red X, a window or panel does not follow UI
+   Scale (and did not say it applies it itself), an in-game panel (not full screen) cannot be moved, a check box card has
+   no full-area click, or a text uses a font that is not the game's. The kit and esc tests fail on any such line. */
+static int ui_rule_font_ok(Obj f) {
+    if (!alive(f)) return 0;
+    Obj ok[5] = { lang_font(0), lang_font(2), hget(h_cinzel), hget(h_body_font), NULL };
+    Obj tt = hget(h_tpl_txt); if (tt && m_tmp_getfont) ok[4] = CALL(m_tmp_getfont, Obj, Obj)(tt, m_tmp_getfont);
+    for (int i = 0; i < 5; i++) if (ok[i] && ok[i] == f) return 1;
+    return 0;
+}
+static Obj ui_bad_font(Obj t, int depth) {                           /* the first text under t whose font is not the game's */
+    if (!t || depth > 14 || !K.TMP_Text || !m_tmp_getfont) return NULL;
+    Obj tx = comp_get(t, K.TMP_Text); if (tx && !ui_rule_font_ok(CALL(m_tmp_getfont, Obj, Obj)(tx, m_tmp_getfont))) return tx;
+    for (int i = 0, n = child_count(t); i < n; i++) { Obj b = ui_bad_font(child_at(t, i), depth + 1); if (b) return b; }
+    return NULL;
+}
+static void ui_rule(const char *rule, const char *win, const char *what) {
+    dsl_log("UI-RULE %s \"%s\": %s", rule, win[0] ? win : "(no text)", what);
+}
+static void ui_guard_check(Obj root) {
+    EscE *e = NULL;
+    for (int i = 0; i < nesc && !e; i++) if (!escs[i].notice && hget(escs[i].h) == root) e = &escs[i];
+    if (!e) return;                                                  /* a backdrop, or no Escape at all (ESC-MISSING) */
+    char t[200] = ""; guard_text(root, t, sizeof t, 0); for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
+    int hud = (e->flags & DSL_ESC_HUD) != 0, own = rules_of(root); float r[4];
+    int full = rect_screen(root, r) && r[2] - r[0] >= 0.9f * screen_w() && r[3] - r[1] >= 0.9f * scr_h();
+    if (hud && full) return;                                         /* a loading overlay: not a window */
+    int x = 0, sc = 0, mv = 0;
+    for (int k = 0; k < nws && !x; k++) x = ws[k]->kind == W_BUTTON && ws[k]->cb == x_click && ws[k]->ud == (void *)e->id && hget(ws[k]->h_rt);
+    for (int k = 0; k < nsf && !sc; k++) sc = hget(sfs[k].h) == root;
+    for (int k = 0; k < nmv && !mv; k++) mv = hget(mvs[k].h) == root;
+    if (!hud && !x && !(own & DSL_RULE_X)) ui_rule("red-x", t, "a window of ours has no red X (dsl_window_std, or dsl_close_x)");
+    if (!sc && !(own & DSL_RULE_SCALE)) ui_rule("ui-scale", t, "it does not follow UI Scale (dsl_window_std, dsl_scale_follow, or dsl_rules_own DSL_RULE_SCALE when it scales itself)");
+    if (hud && !mv && !(own & DSL_RULE_MOVE)) ui_rule("move", t, "an in-game panel cannot be moved (dsl_window_std DSL_WIN_PANEL, or dsl_movable)");
+    for (int k = 0; k < nws; k++) {                                  /* a bare check box (no label: a toggle row is its own full row) */
+        W *tw = ws[k]; if (tw->kind != W_TOGGLE || !hget(tw->h_rt)) continue;   /* inside a card that is no full-area toggle */
+        char lb[64] = ""; Obj lt = hget(tw->h_label); if (lt) utf8_of(tmp_get(lt), lb, sizeof lb); if (lb[0]) continue;
+        Obj tr = w_root(tw), par = tr_parent(tr); W *pw = NULL;
+        for (int q = 0; q < nws && !pw; q++) if (ws[q]->kind == W_PANEL && w_root(ws[q]) == par) pw = ws[q];
+        if (!pw || par == root) continue;
+        int under = 0; for (Obj u = par; u && !under; u = tr_parent(u)) under = u == root; if (!under) continue;
+        int carded = 0; for (int q = 0; q < ncds && !carded; q++) carded = hget(cds[q].h) == par;
+        R4 a = m_rt_rect ? CALL(m_rt_rect, R4, Obj)(tr_of(tr), m_rt_rect) : (R4){ 0 }, b = m_rt_rect ? CALL(m_rt_rect, R4, Obj)(tr_of(par), m_rt_rect) : (R4){ 0 };
+        if (!carded && b.w * b.h > 2 * a.w * a.h) { ui_rule("card", t, "a check box card reacts only on its box (dsl_card_toggle)"); break; }
+    }
+    Obj bad = ui_bad_font(tr_of(root), 0);                         /* every text in the game's own fonts */
+    if (bad) {
+        char fn[96] = "(none)", w[160]; Obj f = CALL(m_tmp_getfont, Obj, Obj)(bad, m_tmp_getfont); if (alive(f)) obj_name(f, fn, sizeof fn);
+        snprintf(w, sizeof w, "a text uses the font \"%s\", not the game's (kit texts: ui->text)", fn); ui_rule("font", t, w);
+    }
+}
+/* test only: a loaded font asset that is not one of the game's fonts above (the guard's probe), NULL = none loaded */
+__attribute__((visibility("default"))) DSLObj dsl_ui_test_foreign_font(void) {
+    Obj a = K.FontAsset ? find_all(K.FontAsset) : NULL;
+    for (int i = 0; i < arr_n(a); i++) if (!ui_rule_font_ok(arr_at(a, i))) return (DSLObj)arr_at(a, i);
+    return NULL;
+}
+
+/* test only: give a text a font that is not the game's (the guard's "font" probe); 1 = done */
+__attribute__((visibility("default"))) int dsl_ui_test_set_foreign_font(DSLObj text) {
+    W *w = w_of(text); Obj t = w ? hget(w->h_label) : NULL, f = (Obj)dsl_ui_test_foreign_font();
+    if (!isa(t, K.TMP_Text) || !f || !m_tmp_font) return 0;
+    CALL(m_tmp_font, void, Obj, Obj)(t, f, m_tmp_font); return 1;
+}
+
 /* the loader's own: a stock window of the game shows (Options, Load Campaign, New Game, Credits, a notice ...) */
 int dsl_ui_game_window_shown(void) {
     if (!K_PopUp || !m_obj_finds) return 0;
@@ -2098,7 +2291,7 @@ static DSLUi KIT = {
     .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
     .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
     .esc_push = k_esc_push, .esc_drop = k_esc_drop, .close_x = k_close_x, .ui_scale = k_ui_scale, .scale_follow = k_scale_follow,
-    .movable = k_movable
+    .movable = k_movable, .window_std = k_window_std, .window_close = k_window_close, .card_toggle = k_card_toggle, .rules_own = k_rules_own
 };
 
 /* ------------------------------------------------------------------ title screen buttons */

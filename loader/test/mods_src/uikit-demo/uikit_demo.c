@@ -15,6 +15,9 @@
 //       | rclick {target}          a right press + release without a move
 //       api ops (kit 0.1.28, loader/test/kitlook_test.py): follow (scale_follow on the panel), movable (key
 //                          "uikit-demo.panel"), uiscale {a: scale} (the game's UIScaleManager.SetScale), the panel's red X = target "x"
+//                          | stdwin {a: 1 = a sub-page is open} the template window (dsl_window_std, modal) with a card (dsl_card_toggle):
+//                          targets stdw, std_x, std_card, std_check | stdpanel: the template's in-game panel (targets stdp, stdp_x)
+//                          | badwin {a: 1/0}: a window and a panel that break the UI rules on purpose (the UI-RULE guard's probe)
 // Escape (kit 0.1.28): the panel is pushed on the kit's Escape stack (Escape = Close).
 // Mouse: a fake mouse fed into Unity's Input (see fk_*), keys: real NSEvents given to the game window. The window stays
 // on the far-off test stage (DSL_SOFT_STAGE) and the app is never activated.
@@ -91,9 +94,55 @@ static void build(void) {
     b_x = dsl_close_x(U, panel, 512, 14, 34, panel);                   /* the game's red X: runs esc_close below */
     built = 1; status();
     dsl_esc_push(U, panel, esc_close, NULL, 0);
+    dsl_scale_follow(U, panel);                                       /* UI rules: a window follows UI Scale */
     H->log(ME, "panel built: panel %p text %p button %p toggle %p value %p field %p scroll %p image %p", panel, t_head, b_press, tg, vr, fd, sc, img);
 }
 static void on_title(void *ud) { (void)ud; n_title++; H->log(ME, "title button clicked"); build(); }
+
+/* ------------------------------------------------------------------ the templates (kit 0.1.28) and the UI-RULE probe */
+static DSLObj std_win, std_x, std_card, std_check, std_panel, std_panel_x, bad_win, bad_panel;
+static int std_sub, std_backs, std_card_clicks;
+static int std_back(void *ud) { (void)ud; if (!std_sub) return 0; std_sub = 0; std_backs++; H->log(ME, "template window: Back (sub-page closed)"); return 1; }
+static void std_closed(void *ud) { (void)ud; H->log(ME, "template window closed"); dsl_window_close(U, std_win); std_win = std_x = std_card = std_check = NULL; }
+static void std_check_change(void *ud, DSLObj w) { (void)ud; std_card_clicks++; H->log(ME, "template card: check -> %d", U->toggle_get(w)); }
+static void std_open(int sub) {
+    if (std_win) return;
+    DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_MODAL, .w = 640, .h = 420, .title = "Template Window", .close = std_closed, .back = std_back };
+    DSLWinParts pt; std_win = dsl_window_std(U, &o, &pt); std_sub = sub;
+    if (!std_win) { H->log(ME, "template window: NULL (old kit?)"); return; }
+    std_x = pt.close_x;
+    std_card = U->panel(std_win, 30, pt.body_y + 30, 580, 120, 0);
+    U->text(std_card, 20, 16, 400, 30, "A selectable card", 20, DSL_TXT_LEFT, 0);
+    U->text(std_card, 20, 54, 400, 50, "A click anywhere on it ticks the box (CARD RULE).", 15, DSL_TXT_LEFT | DSL_TXT_WRAP, 0xA69085FF);
+    std_check = U->toggle(std_card, 480, 40, 80, "", 0, std_check_change, NULL);
+    U->tooltip(std_card, "A selectable card", "Its hover card still shows.");
+    dsl_card_toggle(U, std_card, std_check, NULL, NULL);
+}
+static void stdp_closed(void *ud) { (void)ud; dsl_window_close(U, std_panel); std_panel = std_panel_x = NULL; }
+static void stdp_open(void) {
+    if (std_panel) return;
+    DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_PANEL, .w = 360, .h = 160, .title = "Template Panel", .close = stdp_closed,
+                    .move_key = "uikit-demo.stdpanel", .x = 1400, .y = 600, .band_h = 52, .title_size = 22 };
+    DSLWinParts pt; std_panel = dsl_window_std(U, &o, &pt); std_panel_x = pt.close_x;
+    if (std_panel) U->text(std_panel, 20, pt.body_y + 16, 320, 40, "Right-drag me.", 16, DSL_TXT_LEFT, 0);
+}
+static void bad_close(void *ud) { (void)ud; if (bad_win) U->destroy(bad_win); bad_win = NULL; }
+static void bad_open(int on) {                                        /* breaks every UI rule on purpose */
+    if (bad_win) U->destroy(bad_win); if (bad_panel) U->destroy(bad_panel); bad_win = bad_panel = NULL;
+    if (!on) return;
+    bad_win = U->panel(NULL, 600, 200, 420, 300, 0);                    /* no backdrop, no red X, no UI Scale */
+    U->text(bad_win, 20, 10, 300, 40, "Bad Window", 24, DSL_TXT_LEFT | DSL_TXT_TITLE, 0);
+    U->button(bad_win, 370, 10, 40, 40, "X", NULL, NULL);
+    DSLObj card = U->panel(bad_win, 20, 80, 380, 90, 0);               /* a check box card without the full-area click */
+    U->toggle(card, 300, 26, 60, "", 0, NULL, NULL);
+    DSLObj ft = U->text(bad_win, 20, 200, 380, 40, "A text in a font that is not the game's", 16, DSL_TXT_LEFT, 0);
+    static int (*ff)(DSLObj); if (!ff) *(void **)&ff = dlsym(RTLD_DEFAULT, "dsl_ui_test_set_foreign_font");
+    H->log(ME, "bad window: foreign font %s", ff && ff(ft) ? "set" : "NOT available (no font probe)");
+    dsl_esc_push(U, bad_win, (void (*)(void *))bad_close, NULL, 0);
+    bad_panel = U->panel(NULL, 40, 700, 300, 80, 0);                    /* an in-game panel: not movable, no UI Scale */
+    U->text(bad_panel, 20, 20, 260, 40, "Bad Panel", 18, DSL_TXT_LEFT, 0);
+    dsl_esc_push(U, bad_panel, NULL, NULL, DSL_ESC_HUD);
+}
 
 /* ------------------------------------------------------------------ test driver */
 static id game_window(void) {                                      /* the biggest window of the app */
@@ -177,7 +226,8 @@ static int capture(const char *name) {
 static DSLObj target(const char *t) {
     static const struct { const char *n; DSLObj *o; } map[] = { { "panel", &panel }, { "head", &t_head }, { "status", &t_status },
         { "press", &b_press }, { "disabled", &b_disabled }, { "toggle", &tg }, { "value", &vr }, { "field", &fd }, { "scroll", &sc },
-        { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close }, { "x", &b_x } };
+        { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close }, { "x", &b_x },
+        { "stdw", &std_win }, { "std_x", &std_x }, { "std_card", &std_card }, { "std_check", &std_check }, { "stdp", &std_panel }, { "stdp_x", &std_panel_x } };
     for (size_t i = 0; i < sizeof map / sizeof *map; i++) if (!strcmp(t, map[i].n)) return *map[i].o;
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
@@ -247,7 +297,7 @@ static void state(char *out, size_t cap) {
         o += (size_t)snprintf(out + o, cap - o, ",\"toggle\":%d,\"value\":%d,\"field\":\"%s\"", U->toggle_get(tg), U->value_get(vr), fe);
     }
     { DSLObj ut = target("update"); o += (size_t)snprintf(out + o, cap - o, ",\"update_on\":%d", ut ? U->toggle_get(ut) : -1); }
-    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title" };
+    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x" };
     o += (size_t)snprintf(out + o, cap - o, ",\"w\":{");
     for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
         DSLObj w = target(names[i]); float r[4] = { 0 }; int on = w ? t_rect(w, r) : -1; char l[200] = "", le[260];
@@ -280,6 +330,8 @@ static void state(char *out, size_t cap) {
     { static int (*tp)(const char *, float *, float *); if (!tp) *(void **)&tp = dlsym(RTLD_DEFAULT, "dsl_ui_test_place");
       float px = 0, py = 0; int kept = tp ? tp("uikit-demo.panel", &px, &py) : -1;
       static int (*sw)(const void *), (*sh)(const void *); if (!sw) { sw = H->find_method_address("UnityEngine", "Screen", "get_width", 0); sh = H->find_method_address("UnityEngine", "Screen", "get_height", 0); }
+      o += (size_t)snprintf(out + o, cap - o, ",\"std\":{\"open\":%d,\"sub\":%d,\"backs\":%d,\"check\":%d,\"clicks\":%d,\"panel\":%d}",
+                            std_win != NULL, std_sub, std_backs, std_check ? U->toggle_get(std_check) : -1, std_card_clicks, std_panel != NULL);
       o += (size_t)snprintf(out + o, cap - o, ",\"ui_scale\":%.3f,\"place\":[%d,%.1f,%.1f],\"screen\":[%d,%d]", dsl_ui_scale(U), kept, px, py, sw ? sw(NULL) : -1, sh ? sh(NULL) : -1); }
     char tt[200] = "", te[260]; int ts = t_tip(tt, sizeof tt); jesc(te, sizeof te, tt);
     o += (size_t)snprintf(out + o, cap - o, "},\"tip\":{\"shown\":%d,\"title\":\"%s\"}", ts, te);
@@ -324,6 +376,10 @@ static void handle(const char *j) {
         else if (!strcmp(op, "mouse_off")) fk_on = 0;
         else if (!strcmp(op, "notice1")) on_notice1(NULL, NULL);
         else if (!strcmp(op, "follow")) rc = dsl_scale_follow(U, panel);
+        else if (!strcmp(op, "stdwin")) { std_open((int)a); rc = std_win ? 0 : -5; }
+        else if (!strcmp(op, "stdpanel")) { stdp_open(); rc = std_panel ? 0 : -5; }
+        else if (!strcmp(op, "stdpanel_off")) { if (std_panel) stdp_closed(NULL); }
+        else if (!strcmp(op, "badwin")) bad_open((int)a);
         else if (!strcmp(op, "movable")) rc = dsl_movable(U, panel, "uikit-demo.panel");
         else if (!strcmp(op, "uiscale")) {                            /* what Settings > UI Scale does */
             static Obj (*inst)(const void *); static void (*set)(Obj, float, bool, const void *);
