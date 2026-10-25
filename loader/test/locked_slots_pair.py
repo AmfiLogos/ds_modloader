@@ -7,9 +7,10 @@ public base save under a new world guid, resource stacks in the bags). Nothing o
 
 Real breaks it catches (a desync or a lock that one player has and the other not):
  J  the host's locks of its world (file) reach the joining guest (join-point block): same table, same hash.
- G  the guest's lock (its own unit, through the stock menu row = the game's order) is applied on BOTH players at the
-    same step; a guest's lock order on a unit it does not own changes nothing anywhere.
- T  dungeon and back by the map-change vote: 0 desyncs, step fingerprints equal for 600+ ticks after the return,
+ G  the guest's lock (its own unit, through the stock menu row = the game's order, marked Index) passes the multiplayer
+    mod intact and is applied on BOTH players at the same tick (fingerprints with the lock table equal); a guest's lock order on a unit it does not own changes nothing anywhere.
+ T  dungeon and back by the map-change vote: no desync (but the known multiplayer one), step fingerprints equal for
+    600+ ticks after the return, both players' sims hold the same bags (read in each game),
     the host's save keeps the locked stacks (host's and guest's locks) and drops the unlocked resources; both kept 3."""
 import json, os, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -91,6 +92,25 @@ def fp(x, t_from):
     return d
 
 
+FULL = 100000          # the full-state check would resync the guest after its unit selection (the known multiplayer
+                       # difference below) and cut the fingerprint window around the lock; the bags are compared directly
+KNOWN_FULL = {'PlayerUnitsSaveData', 'PlayerUnitsSaveData/SkillLearnNotices'}
+def other_desyncs(x):
+    """desync lines of copy x that are NOT the multiplayer mod's known full-state difference: a guest that selects a unit
+    (the game's own selection) gets SkillLearnNotices the host does not have, the full check then forces a resync. Proved
+    WITHOUT this mod (multiplayer only, 2026-10-25 probe: guest select -> differs, no select -> equal)."""
+    bad, forced = [], 0
+    for l in T.rd(os.path.join(r.idir(x), 'rig.log')).splitlines():
+        if 'FULL-STATE CHECK DIFFERS' in l:
+            secs = set(s.strip() for s in l.split('difference(s):', 1)[-1].split(','))
+            if secs <= KNOWN_FULL: forced += 1
+            else: bad.append(l[:200])
+        elif 'DESYNC:' in l:
+            if forced: forced -= 1
+            else: bad.append(l[:200])
+    return bad
+
+
 def map_change(name, ev_fields, want, guest_votes=True):
     log(name, 'host proposes', inject(HX, 'ChangeMapRequested', **ev_fields))
     if guest_votes:
@@ -101,18 +121,19 @@ def map_change(name, ev_fields, want, guest_votes=True):
 
 def run(out, port):
     fx = os.path.join(r.idir(HX), 'save_in', 'lks_pair_fixture.json'); world = T.make_fixture(fx)
-    up(HX, out, {'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True, 'full_check_steps': 1800},
+    up(HX, out, {'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True, 'full_check_steps': FULL},
        seed_locks='%s 0 3\n' % U[0], world=world)
     if 'cannot listen' in T.rd(os.path.join(r.idir(HX), 'rig.log')):
         raise RuntimeError('the host cannot listen on port %d: no guest is started' % port)
     log('host load', c(HX, cmd='load_save', file=fx, det=1))
     wait('host locked', lambda: st(HX).get('det', {}).get('locked'), timeout=900, every=2)
-    up(GX, out, {'role': 'client', 'host': '127.0.0.1', 'port': port, 'name': 'Guest', 'full_check_steps': 1800})
+    up(GX, out, {'role': 'client', 'host': '127.0.0.1', 'port': port, 'name': 'Guest', 'full_check_steps': FULL})
     ok = wait('guest loaded the host world', lambda: (lambda s: s.get('det', {}).get('locked') and s.get('mp', {}).get('loads', 0) >= 1
                                                        and not s.get('mp', {}).get('needs_state'))(st(GX)), timeout=900, every=2)
     h, g = lk(HX), lk(GX)
     check('guest joined and loaded THIS host world', ok and g.get('world') == world, (st(GX).get('mp'), g.get('world')))
     if g.get('world') != world: raise RuntimeError('the guest is not in this test world: stop')
+    t_join = max(st(HX).get('tick', 0), st(GX).get('tick', 0))
     check('J: the host\'s locks reached the guest (same world, same table)', h.get('world') == g.get('world') == world and locked(GX, U[0]) == [0, 3]
           and h.get('hash') == g.get('hash') != '0000000000000000', (h, g))
 
@@ -125,6 +146,16 @@ def run(out, port):
     c(GX, cmd='lks_pick')
     ok = wait('the lock on both', lambda: locked(HX, U[1]) == [1] and locked(GX, U[1]) == [1], timeout=30)
     check('G: the guest\'s lock is applied on both players', ok and lk(HX).get('hash') == lk(GX).get('hash'), (lk(HX), lk(GX)))
+    th, tg = lk(HX).get('last_tick'), lk(GX).get('last_tick')
+    check('G: the marked order passed the multiplayer mod intact and ran at the same tick on both', th == tg and th is not None and th > t_join,
+          f'host tick {th}, guest tick {tg}, join tick {t_join}')
+    wait('300 ticks after the lock', lambda: min(st(HX).get('tick', 0), st(GX).get('tick', 0)) >= (th or 0) + 300, timeout=300, every=3)
+    a, b = fp(HX, t_join + 1), fp(GX, t_join + 1)
+    common = sorted(set(a) & set(b)); first = next((t for t in common if a[t] != b[t]), None)
+    check('G: step fingerprints (lock table included) equal before and after the lock tick, no other desync',
+          common and common[0] < th < common[-1] and first is None and not other_desyncs(GX) and not other_desyncs(HX),
+          f'common ticks {len(common)} ({common[0] if common else None}..{common[-1] if common else None}), lock tick {th}, first diff {first}, '
+          f'other desyncs {other_desyncs(GX)[:3]}')
     inject(GX, 'SelectPlayerUnitRequested', guid_20=U[0]); time.sleep(1); c(GX, cmd='lks_open'); time.sleep(2)
     c(GX, cmd='lks_menu', unit=U[0], slot=6); time.sleep(2); c(GX, cmd='lks_pick'); time.sleep(5)
     check('G: a guest\'s lock order on a unit it does not own changes nothing', locked(HX, U[0]) == locked(GX, U[0]) == [0, 3], (lk(HX), lk(GX)))
@@ -145,13 +176,17 @@ def run(out, port):
     a, b = fp(HX, t0 + 1), fp(GX, t0 + 1)
     common = sorted(set(a) & set(b)); first = next((t for t in common if a[t] != b[t]), None)
     d1 = {x: mp(x).get('desyncs', 0) for x in (HX, GX)}
-    check('T: 0 desyncs, step fingerprints equal after the return', len(common) >= 600 and first is None and d1 == d0,
-          f'common ticks {len(common)}, first diff {first}, desyncs {d0} -> {d1}')
+    check('T: step fingerprints equal after the return, no desync but the known full-state one', len(common) >= 600 and first is None
+          and not other_desyncs(GX) and not other_desyncs(HX), f'common ticks {len(common)}, first diff {first}, desyncs {d0} -> {d1}, other {other_desyncs(GX)[:3]}')
     sh = save(HX, out, 'lks_pair_host')            # a guest writes no save: its world = the host's by the fingerprints above
     bh = T.bags(sh)
     check('T: the host\'s save keeps the locked stacks (host lock + guest lock), unlocked resources left the bags',
           bh[U[0]][0] == ('ITEM_LumaLog', 3) and bh[U[0]][3] == ('ITEM_LumaLog', 2) and bh[U[1]][1] == ('ITEM_WildLongGrass', 4)
           and not any(x and x[0] in RES for i, x in enumerate(bh[U[0]]) if i not in (0, 3)), (bh[U[0]][:8], bh[U[1]][:4]))
+    bags = {x: {u: c(x, cmd='lks_bag', unit=u).get('slots') for u in U[:2]} for x in (HX, GX)}
+    check('T: both players\' sims have the same bags after the return (the guest\'s copy of each unit = the host\'s)',
+          bags[HX] == bags[GX] and bags[HX][U[0]] and bags[HX][U[0]][0] == ['ITEM_LumaLog', 3] and bags[HX][U[1]][1] == ['ITEM_WildLongGrass', 4],
+          {x: {u[:8]: (v or [])[:8] for u, v in bags[x].items()} for x in (HX, GX)})
     check('T: the module kept the same stacks on both', lk(HX).get('kept') == lk(GX).get('kept') == 3, (lk(HX), lk(GX)))
 
 
