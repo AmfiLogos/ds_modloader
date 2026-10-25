@@ -18,6 +18,7 @@
 //                          | stdwin {a: 1 = a sub-page is open} the template window (dsl_window_std, modal) with a card (dsl_card_toggle):
 //                          targets stdw, std_x, std_card, std_check | stdpanel: the template's in-game panel (targets stdp, stdp_x)
 //                          | badwin {a: 1/0}: a window and a panel that break the UI rules on purpose (the UI-RULE guard's probe)
+//                          | tree {target, s: tag}: the kit's object tree of a target (dsl_ui_test_tree) -> <dir>/tree_<tag>.txt
 // Escape (kit 0.1.28): the panel is pushed on the kit's Escape stack (Escape = Close).
 // Mouse: a fake mouse fed into Unity's Input (see fk_*), keys: real NSEvents given to the game window. The window stays
 // on the far-off test stage (DSL_SOFT_STAGE) and the app is never activated.
@@ -380,6 +381,12 @@ static void handle(const char *j) {
         else if (!strcmp(op, "stdpanel")) { stdp_open(); rc = std_panel ? 0 : -5; }
         else if (!strcmp(op, "stdpanel_off")) { if (std_panel) stdp_closed(NULL); }
         else if (!strcmp(op, "badwin")) bad_open((int)a);
+        else if (!strcmp(op, "tree")) {                               /* the kit's object tree of a target -> <dir>/tree_<s>.txt */
+            static int (*tt)(DSLObj, char *, size_t); if (!tt) *(void **)&tt = dlsym(RTLD_DEFAULT, "dsl_ui_test_tree");
+            static char tb[65536]; rc = tt && w ? tt(w, tb, sizeof tb) : -4;
+            char p[1300]; snprintf(p, sizeof p, "%s/tree_%s.txt", tdir, s[0] ? s : "x"); FILE *f = rc > 0 ? fopen(p, "w") : NULL;
+            if (f) { fputs(tb, f); fclose(f); }
+        }
         else if (!strcmp(op, "movable")) rc = dsl_movable(U, panel, "uikit-demo.panel");
         else if (!strcmp(op, "uiscale")) {                            /* what Settings > UI Scale does */
             static Obj (*inst)(const void *); static void (*set)(Obj, float, bool, const void *);

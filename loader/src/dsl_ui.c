@@ -2085,7 +2085,7 @@ static DSLObj k_window_std(const DSLWinStd *o, DSLWinParts *out) {
 }
 
 #define CARD_MAX 256
-static struct { uintptr_t h; DSLObj id, check; dsl_ui_cb click; void *ud; } cds[CARD_MAX]; static int ncds;
+static struct { uintptr_t h, hb; DSLObj id, check; dsl_ui_cb click; void *ud; V3 s_root, s_btn; int said; } cds[CARD_MAX]; static int ncds;
 static uintptr_t h_no_targets;                                       /* an empty Image[]: the card's click layer never tints */
 static void card_click(void *ud, DSLObj w) {
     (void)w; int i = (int)(intptr_t)ud; if (i < 0 || i >= ncds || !hget(cds[i].h)) return;
@@ -2101,6 +2101,7 @@ static void card_quiet(Obj t, Obj keep, int depth) {                 /* texts an
         card_quiet(c, keep, depth + 1);
     }
 }
+static void card_guard_add(int i, Obj root, Obj b);
 static int k_card_toggle(DSLObj card, DSLObj check, dsl_ui_cb click, void *ud) {
     W *cw = w_of(card); Obj root = cw ? w_root(cw) : (Obj)card;
     if (!alive(root) || !isa(tr_of(root), K.RectTransform) || (!check && !click) || !ready_basic()) return -1;
@@ -2113,14 +2114,19 @@ static int k_card_toggle(DSLObj card, DSLObj check, dsl_ui_cb click, void *ud) {
     stretch(b); set_sibling(b, 0);                                   /* the whole card, under its content */
     Obj l = btn_label(b); if (l) go_active(l, 0);
     Obj bg = first_image(tr_of(b), 0); if (bg) { img_set(bg, NULL, (Col){ 0, 0, 0, 0 }, 0); gr_raycast(bg, 1); }
-    if (!hget(h_no_targets) && K.Image) { Obj a = I.array_new(K.Image, 0); if (a) h_no_targets = hnew(a); }
-    if (f_das_targets >= 0 && hget(h_no_targets)) AT(b, f_das_targets, Obj) = hget(h_no_targets);   /* held by a strong handle */
+    /* the game's DASButton.DoStateTransition sets its _targets' colour to the state colour (hover 0.9 grey, selected white)
+       whatever the transition: an empty array, or the cleared frame turns into a white block. An array is no Unity object:
+       read its handle raw (hget's alive() check says "dead" for it, and the targets stayed full up to kit 0.1.28) */
+    Obj nt = h_no_targets ? I.gchandle_get_target(h_no_targets) : NULL;
+    if (!nt && K.Image && (nt = I.array_new(K.Image, 0))) h_no_targets = I.gchandle_new(nt, false);
+    if (f_das_targets >= 0 && nt) AT(b, f_das_targets, Obj) = nt;    /* held by a strong handle */
     if (f_sel_trans >= 0) AT(b, f_sel_trans, int32_t) = 0;          /* Selectable.Transition.None */
     Obj rg = comp_get(root, K.Graphic); if (rg) gr_raycast(rg, 0);
     card_quiet(tr_of(root), tr_of(b), 0);
     wd->cb = card_click; wd->ud = (void *)(intptr_t)i;
     hset(&wd->h_btn, b);
     w_done(wd, tr_of(b), NULL);
+    card_guard_add(i, root, b);
     return 0;
 }
 
@@ -2182,6 +2188,87 @@ __attribute__((visibility("default"))) DSLObj dsl_ui_test_foreign_font(void) {
     Obj a = K.FontAsset ? find_all(K.FontAsset) : NULL;
     for (int i = 0; i < arr_n(a); i++) if (!ui_rule_font_ok(arr_at(a, i))) return (DSLObj)arr_at(a, i);
     return NULL;
+}
+
+/* test only: the object tree under a widget, one line per object: name, active, local scale, its components (behaviours
+   on/off; graphics with colour, canvas colour and sprite; selectables with transition, the game's DASButton transition and
+   target count). Evidence for what a widget shows on hover / click. Returns the bytes written, -1 = no widget. */
+static void (*tree_cname)(void);
+static void *m_t_comps, *m_t_beh, *m_t_grcol, *m_t_crcol, *m_t_scale, *k_t_beh, *k_t_cr, *k_t_das;
+static void tree_dump(Obj t, int depth, char *out, size_t cap, size_t *o) {
+    if (!t || depth > 10 || *o + 200 >= cap) return;
+    char nm[64] = ""; obj_name(go_of(t), nm, sizeof nm);
+    V3 s = m_t_scale ? CALL(m_t_scale, V3, Obj)(tr_of(t), m_t_scale) : (V3){ 0 };
+    *o += (size_t)snprintf(out + *o, cap - *o, "%*s%s act=%d scale=%.3f,%.3f:", depth * 2, "", nm,
+                           CALL(m_go_self, bool, Obj)(go_of(t), m_go_self) != 0, s.x, s.y);
+    Obj a = CALL(m_t_comps, Obj, Obj, Obj)(tr_of(t), type_of(K.Component), m_t_comps);
+    for (int i = 0; i < arr_n(a) && *o + 160 < cap; i++) {
+        Obj c = arr_at(a, i); if (!alive(c)) continue;
+        const char *cn = ((const char *(*)(void *))tree_cname)(I.object_get_class(c));
+        *o += (size_t)snprintf(out + *o, cap - *o, " %s", cn ? cn : "?");
+        if (k_t_beh && m_t_beh && isa(c, k_t_beh)) *o += (size_t)snprintf(out + *o, cap - *o, "%s", CALL(m_t_beh, bool, Obj)(c, m_t_beh) ? "" : "(off)");
+        if (isa(c, K.Graphic) && m_t_grcol) { Col k = CALL(m_t_grcol, Col, Obj)(c, m_t_grcol); *o += (size_t)snprintf(out + *o, cap - *o, "[%.2f %.2f %.2f a%.2f]", k.r, k.g, k.b, k.a); }
+        if (isa(c, K.Image)) { char sn[48] = "-"; Obj sp = img_sprite(c); if (sp) obj_name(sp, sn, sizeof sn); *o += (size_t)snprintf(out + *o, cap - *o, "{%s}", sn); }
+        if (k_t_cr && m_t_crcol && isa(c, k_t_cr)) { Col k = CALL(m_t_crcol, Col, Obj)(c, m_t_crcol); *o += (size_t)snprintf(out + *o, cap - *o, "[cr %.2f %.2f %.2f a%.2f]", k.r, k.g, k.b, k.a); }
+        if (isa(c, K.Selectable) && f_sel_trans >= 0) {
+            int das = isa(c, k_t_das) && f_das_targets >= 0 && f_das_ttype >= 0; Obj tg = das ? AT(c, f_das_targets, Obj) : NULL;
+            *o += (size_t)snprintf(out + *o, cap - *o, "<trans %d das %d targets %d>", AT(c, f_sel_trans, int32_t), das ? AT(c, f_das_ttype, int32_t) : -1, tg ? arr_n(tg) : -1);
+        }
+    }
+    *o += (size_t)snprintf(out + *o, cap - *o, "\n");
+    for (int i = 0, n = child_count(t); i < n; i++) tree_dump(child_at(t, i), depth + 1, out, cap, o);
+}
+static void tree_init(void) {                                       /* test only (tree dump, card guard) */
+    if (tree_cname) return;
+    *(void **)&tree_cname = dsl_il2cpp_fn("il2cpp_class_get_name");
+    k_t_beh = dsl_find_class("UnityEngine", "Behaviour"); k_t_cr = dsl_find_class("UnityEngine", "CanvasRenderer");
+    k_t_das = dsl_find_class("Refactor.UI", "DASButton");
+    m_t_comps = OPTSIG(K.Component, "GetComponents", 1, "System.Type"); m_t_beh = OPT(k_t_beh, "get_enabled", 0);
+    m_t_grcol = OPT(K.Graphic, "get_color", 0); m_t_crcol = OPT(k_t_cr, "GetColor", 0); m_t_scale = OPT(K.Transform, "get_localScale", 0);
+}
+__attribute__((visibility("default"))) int dsl_ui_test_tree(DSLObj w, char *out, size_t cap) {
+    tree_init();
+    W *ww = w_of(w); Obj root = ww ? w_root(ww) : (Obj)w;
+    if (!out || cap < 256 || !alive(root) || !tree_cname || !m_t_comps) return -1;
+    size_t o = 0; out[0] = 0; tree_dump(tr_of(root), 0, out, cap, &o);
+    return (int)o;
+}
+
+/* The card look guard (owner 2026-10-25: a white block on the card under the mouse, a grey one on the card clicked last,
+   and a zoom when a unit is unticked): a card of the template (dsl_card_toggle) never changes its look by itself on hover or
+   click. Test copies only, every 5 frames: a graphic under the card's click layer that shows (alpha > 0), or a card or click
+   layer whose scale moved from what it was when the card was made, logs "UI-RULE card-look "<the card's first text>": ..."
+   once per card. The kit and esc tests fail on any UI-RULE line. */
+static V3 tr_scale_of(Obj o) { Obj t = tr_of(o); return t && m_t_scale ? CALL(m_t_scale, V3, Obj)(t, m_t_scale) : (V3){ 1, 1, 1 }; }
+static int sc_moved(V3 a, V3 b) { float d[3] = { a.x - b.x, a.y - b.y, a.z - b.z }; for (int i = 0; i < 3; i++) if (d[i] > 0.001f || d[i] < -0.001f) return 1; return 0; }
+static void card_guard_add(int i, Obj root, Obj b) {
+    if (guard_on < 0) guard_on = dsl_soft_test_copy() != NULL;
+    hfree(&cds[i].hb); cds[i].said = 0;
+    if (guard_on != 1) return;
+    tree_init();
+    cds[i].hb = x_weak ? x_weak(b, false) : hnew(b); cds[i].s_root = tr_scale_of(root); cds[i].s_btn = tr_scale_of(b);
+}
+static Obj card_shown(Obj t, int depth) {                            /* a graphic under t that draws (on, enabled, alpha > 0) */
+    if (!t || depth > 4 || !on_tree(t)) return NULL;
+    Obj g = comp_get(t, K.Graphic);
+    if (g && m_t_grcol && (!m_t_beh || CALL(m_t_beh, bool, Obj)(g, m_t_beh)) && CALL(m_t_grcol, Col, Obj)(g, m_t_grcol).a > 0.01f) return g;
+    for (int i = 0, n = child_count(t); i < n; i++) { Obj s = card_shown(child_at(t, i), depth + 1); if (s) return s; }
+    return NULL;
+}
+static void card_guard_frame(void) {
+    if (guard_on != 1 || frames % 5) return;
+    for (int i = 0; i < ncds; i++) {
+        if (cds[i].said || !cds[i].hb) continue;
+        Obj root = hget(cds[i].h), b = hget(cds[i].hb);
+        if (!root || !b || !on_tree(b)) continue;
+        Obj g = card_shown(tr_of(b), 0); V3 sr = tr_scale_of(root), sb = tr_scale_of(b);
+        if (!g && !sc_moved(sr, cds[i].s_root) && !sc_moved(sb, cds[i].s_btn)) continue;
+        char t[200] = "", w[200], nm[64] = ""; guard_text(root, t, sizeof t, 0); for (char *c = t; *c; c++) if (*c == '\n') *c = ' ';
+        if (g) { Col k = CALL(m_t_grcol, Col, Obj)(g, m_t_grcol); obj_name(go_of(g), nm, sizeof nm);
+                 snprintf(w, sizeof w, "its click layer shows (%s colour %.2f %.2f %.2f alpha %.2f): a card never lights up on hover or click", nm, k.r, k.g, k.b, k.a); }
+        else snprintf(w, sizeof w, "it zooms (card scale %.3f, click layer %.3f, made at %.3f / %.3f)", sr.x, sb.x, cds[i].s_root.x, cds[i].s_btn.x);
+        ui_rule("card-look", t, w); cds[i].said = 1;
+    }
 }
 
 /* test only: give a text a font that is not the game's (the guard's "font" probe); 1 = done */
@@ -2713,6 +2800,7 @@ static void tick(void) {
     fields_frame();
     esc_tick();
     esc_guard_frame();
+    card_guard_frame();
     sf_frame();
     mv_frame();
     sliders_frame();

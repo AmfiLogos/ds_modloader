@@ -11,6 +11,8 @@ multiplayer (test control socket) and the test module uikit-demo (fake mouse, ki
            mod Multi-unit view has no switch there.
  move:     movable panel: a right-drag moves it by the drag, a right-click alone does not, a drag past the edge leaves it
            on the screen, its place is kept (ui_places.tsv) and put back when the panel is built again.
+ card:     the template card (dsl_card_toggle) ticks on a click anywhere; hovered and clicked, its click layer never shows
+           and nothing zooms (the kit's UI-RULE card-look guard; up to kit 0.1.28 a white / grey block, owner 2026-10-25).
 Shots (local only, never commit): <out>/shots/<lang>_ui<scale>/*.png for en (this run) and --langs de,ru (one start each).
 Old loaders fail: no red X (text X), nothing follows UI Scale, the corner stays over the Options window, no move.
   kitlook_test.py [out] [--no-build] [--langs de,ru]     Exit 0 = PASS. <out>/summary.json."""
@@ -167,6 +169,8 @@ def template_cases():
     check('card: the box itself still works', std(s).get('check') == 1 and std(s).get('clicks') == 3, std(s))
     ui('hover', target='std_card'); time.sleep(1.2); s = st(); ui('api', op='mouse_off')
     check('card: its hover card still shows', s.get('tip', {}).get('title') == 'A selectable card', s.get('tip'))
+    cl = [l for l in rule_lines() if 'UI-RULE card-look' in l]          # hovered and clicked 3 times above
+    check('card: its click layer never shows on hover or click and nothing zooms (UI-RULE card-look; white block up to 0.1.28)', not cl, cl[:2])
     w1 = width(rect(st(), 'stdw')); set_scale(1.4); time.sleep(0.6); w2 = width(rect(st(), 'stdw')); set_scale(1.0)
     check('template: the window follows UI Scale (1.4x)', w1 > 0 and near(w2 / w1, 1.4, 0.03), (w1, w2))
     ui('click', target='std_x'); until(lambda s: std(s).get('open') == 0, 4); ui('api', op='mouse_off')

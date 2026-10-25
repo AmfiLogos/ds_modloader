@@ -7,6 +7,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 ### Unreleased (0.1.29)
 
 - Load Campaign: worlds that a mod hides as its own (old multiplayer hub and PvP worlds, Units Laboratory test worlds) no longer add the line "worlds are hidden by a filter under the list". There is no box that shows them.
+- Unit cards you tick by a click (Units Laboratory: My Units, Test Fights world units and teams) no longer show a white or grey block next to the card when you point at it or click it.
 
 ### 0.1.28 (2026-10-25)
 

@@ -1102,6 +1102,12 @@ Every owner rule for our windows lives in ONE template; new work starts from it,
 - `dsl_card_toggle(ui, card, check, click, ud)` (CARD RULE): a transparent full-card click layer under the card's content
   (its texts and images stop taking clicks; its own buttons, toggles and fields keep theirs) = a click on the kit toggle
   `check` (or click(ud, card)). Kit hover cards work by the pointer's place, so they still show. Call it after the content.
+  The click layer is a clone of the game's title button (SubUI_TitleMenuButton : DASButton). DASButton.DoStateTransition
+  sets the colour of every Image in its `_targets` to the state colour (hover 0.90 grey, pressed / selected white), whatever
+  Selectable.m_Transition says; DASButton.Init fills `_targets` with GetComponentsInChildren<Image>. The template gives it an
+  EMPTY Image[] (strong handle, read with `I.gchandle_get_target`: an array is no Unity object, `hget`'s alive() says
+  "dead" for it). Up to kit 0.1.28 it used hget, so the targets stayed full: the cleared frame turned into a white block on
+  hover and stayed white / grey after a click (owner 2026-10-25, Test Fights > World units, left of each card).
 - `dsl_rules_own(ui, win, DSL_RULE_SCALE | DSL_RULE_MOVE | DSL_RULE_X)`: the window applies that rule by its own code (Units
   Laboratory's own UI Scale until it moves onto the template). DSL_RULE_X only for a popup that is not a window.
 - The guard: in test copies, each root panel of ours with an Escape registration, 30 frames after it showed, logs
@@ -1110,6 +1116,10 @@ Every owner rule for our windows lives in ONE template; new work starts from it,
   no rules_own), move (an in-game panel that is not full screen and not movable), card (a bare check box, no label, in a
   card panel without card_toggle; a labelled toggle is a full-row click already), font (a text whose font is not the game's:
   LanguageSetting fonts, the title font, the kit's text template). Loading overlays (full-screen HUD) are skipped.
+  card-look (every 5 frames, each card of dsl_card_toggle, once per card): a graphic under its click layer shows (alpha >
+  0: the white / grey block), or the card or its click layer has another scale than when it was made (a zoom on hover or
+  click). Probe: `dsl_ui_test_tree(w, out, cap)` (test export: the object tree under a widget with components, colours,
+  DASButton targets; uikit-demo api op "tree").
   loader esc_test and kitlook_test fail on any UI-RULE line; other repos' esc tests should sweep it too (as ESC-MISSING).
 - Trap (dsuxcm, 2026-10-25): `dsl_ui_flat` / img_set turn a panel's clicks OFF ("never a click target"). The template
   turns them back on for its backdrop (d529f52 missed it: a click beside a modal reached the title page). A flat panel
