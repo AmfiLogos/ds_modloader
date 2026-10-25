@@ -907,6 +907,12 @@ difficulty. We don't HAVE to use it because it's a possibility." No restart anyw
     when the profile switches it on. "Get the host's mods" (`dsl_hostmods.c`, `dsl_mod_in_hello`) switches it on for a host
     on Hell and off for one that is not, so a guest joins either; a guest without Hell joins every host on a world not on
     Hell.
+  - a guest with Hell joins a host on a Hell world with no refusal and no restart (owner 2026-10-25, multiplayer 0.1.26):
+    `dsl_mp_optional_lines` (exported, Mac + Windows) gives multiplayer the lines of the difficulty mods that run but are
+    not in the set now (Hell at the title); the HELLO carries them and the host's server lets the guest in when its
+    lines plus those are exactly the host's (same version + sha256s). The world the guest then loads puts Hell in its set.
+    Tests: run_tests T1f (offered when not counted, not when counted, never when it does not run), pair
+    `test/hell_join_pair.py` (Hell guest joins a Hell host in the same process, 0 desyncs; a guest without Hell refused).
 - **New Game switch** (`ui/dsl_newgame.c`): a "Custom difficulty" panel right of the settings' combat difficulty row (same
   look and placing rules as the Load list's filter panel), one switch per difficulty mod. It only shows or hides level N
   in the combat and management selectors: saved at once in `<data>/Mods/newgame.json` `{"show": {"<id>": bool}}`, off by

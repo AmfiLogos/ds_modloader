@@ -600,17 +600,21 @@ int dsl_mod_in_hello(const char *id) {
     mods_scan(); int i = id ? mi_index(id) : -1;
     return i >= 0 && MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && hello_has(i);
 }
-static void set_lines(char *out, size_t cap, char ms[65]) {
 #define MAXL (MAXM * 4)
-    static char ln[MAXL][2048]; const char *lp[MAXL]; int nl = 0; char hs[1800], e1[2100];
-    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && strcmp(MI[i].id, "multiplayer") && hello_has(i)) {
-        extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
-        dsl_mod_hashes(MI[i].id, hs, sizeof hs);
-        snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;
-        /* its gameplay settings, one line each ("<id>/<setting>@<value>"): another value = another set (mod settings) */
-        static char sl[8192]; dsl_settings_lines(MI[i].id, sl, sizeof sl);
-        for (char *sv = NULL, *t = strtok_r(sl, "\n", &sv); t && nl < MAXL; t = strtok_r(NULL, "\n", &sv)) { snprintf(ln[nl], sizeof ln[nl], "%s", t); lp[nl] = ln[nl]; nl++; }
-    }
+/* the HELLO lines of running gameplay mod i: "<id>@<version>:<sha256s>", then its gameplay settings, one line each
+   ("<id>/<setting>@<value>": another value = another set, mod settings) */
+static int mod_lines(int i, char (*ln)[2048], const char **lp, int nl) {
+    extern int dsl_mod_hashes(const char *id, char *out, size_t cap);
+    char hs[1800]; dsl_mod_hashes(MI[i].id, hs, sizeof hs);
+    snprintf(ln[nl], sizeof ln[nl], "%s@%s%s%s", MI[i].id, MI[i].version ? MI[i].version : "", hs[0] ? ":" : "", hs); lp[nl] = ln[nl]; nl++;
+    static char sl[8192]; dsl_settings_lines(MI[i].id, sl, sizeof sl);
+    for (char *sv = NULL, *t = strtok_r(sl, "\n", &sv); t && nl < MAXL; t = strtok_r(NULL, "\n", &sv)) { snprintf(ln[nl], sizeof ln[nl], "%s", t); lp[nl] = ln[nl]; nl++; }
+    return nl;
+}
+static int hello_mod(int i) { return MI[i].active == 1 && !strcmp(MI[i].scope, "gameplay") && !MI[i].feature && strcmp(MI[i].id, "multiplayer"); }
+static void set_lines(char *out, size_t cap, char ms[65]) {
+    static char ln[MAXL][2048]; const char *lp[MAXL]; int nl = 0; char e1[2100];
+    for (int i = 0; i < nmi && nl < MAXL; i++) if (hello_mod(i) && hello_has(i)) nl = mod_lines(i, ln, lp, nl);
     qsort(lp, (size_t)nl, sizeof *lp, cmpstr);
     static char joined[MAXL * 2048]; joined[0] = 0; out[0] = 0;
     for (int i = 0; i < nl; i++) {
@@ -686,6 +690,26 @@ void dsl_world_hello(const char *guid) {
     if (!hello_own) return;                                            /* an old launcher's session file: kept as it is */
     static char lj[MAXM * 2100]; char ms[65]; set_lines(lj, sizeof lj, ms);
     if (strcmp(ms, hello_ms)) { worlds_save(NULL, NULL); dsl_log("reg: multiplayer set for %s: %s", hello_guid[0] ? hello_guid : "the title", ms[0] ? ms : "none"); }
+}
+/* multiplayer's HELLO (owner 2026-10-25: a guest with Hell joins a host on a Hell world with no refusal, no restart): the
+   lines of the custom difficulty mods that run here but are not in the multiplayer set now (Hell at the title, or on a
+   world not on Hell), as set_lines writes them, sorted, '\n'-joined. The host's server lets the guest join when its own
+   lines plus some of these are exactly the host's (the host's world is on that level); the world the guest then loads
+   puts them in its set (world_frame). An old launcher's session file (not ours): none. Returns how many lines. */
+#ifdef _WIN32
+__declspec(dllexport)
+#else
+__attribute__((visibility("default")))
+#endif
+int dsl_mp_optional_lines(char *out, size_t cap) {
+    if (!out || !cap) return -1;
+    out[0] = 0; mods_scan();
+    if (!hello_own) return 0;
+    static char ln[MAXL][2048]; const char *lp[MAXL]; int nl = 0;
+    for (int i = 0; i < nmi && nl < MAXL; i++) if (MI_diff[i] && hello_mod(i) && !hello_has(i)) nl = mod_lines(i, ln, lp, nl);
+    qsort(lp, (size_t)nl, sizeof *lp, cmpstr);
+    for (int i = 0; i < nl; i++) { if (i) strlcat(out, "\n", cap); strlcat(out, lp[i], cap); }
+    return nl;
 }
 void dsl_world_set_warned(const char *guid, const char *key) {
     worlds_load();
