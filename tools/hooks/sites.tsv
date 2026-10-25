@@ -20,6 +20,7 @@ loader	dsl_crash.c	my_quit	-	active: crash report on: started by the launcher (D
 loader	dsl_fastboot.c	my_load2	-	active: fast boot on (platform default; DSL_FB_CRC / DSL_FASTBOOT)
 loader	dsl_soft.c	my_mf_awake	-	active: always (soft restart support)
 loader	dsl_soft.c	my_fade_awake	-	active: always (soft restart support)
+loader	dsl_soft.c	my_set_volume	-	active: test copies only (background-only app, or DSRIG_CTL=1): AudioListener.volume held at 0
 loader	dsl_soft.c	my_start_mn	Refactor.Main.MainFlow.<Start>d__*$$MoveNext/0	active: second process of a soft restart (DSL_SOFT_HANDOFF) with DSL_SOFT_BOOTLOG=1
 loader	dsl_soft.c	it_fn[n]	Refactor.Addressable.AddressableInitializer.<*>d__?$$MoveNext/0	active: second process of a soft restart (DSL_SOFT_HANDOFF); every iterator class found at run time (up to 8) | note: the generic iterator <LoadTable>d__8<T> is hooked too, at the address il2cpp returns for its class definition (Mac 0x5bbe74 in build 25846389), which the dump does not name
 loader	dsl_ui.c	h_es_update	UnityEngine.EventSystems.EventSystem$$Update/0	active: always (Mods window and menu kit)

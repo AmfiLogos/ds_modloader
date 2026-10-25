@@ -87,6 +87,7 @@ void dsl_mods_rescan(void);                  /* read the mods folder again (a mo
 /* soft restart (dsl_soft.c) */
 void dsl_soft_snapshot(const char *logdir);  /* constructor, before the env is edited */
 void dsl_soft_install(void);                 /* after il2cpp_init */
+void dsl_soft_silent(const char *why);       /* this copy is a test copy: AudioListener held at 0 (why = the signal, a literal) */
 /* fast boot (dsl_fastboot.c): bundle CRC skip for files that passed the game's check before */
 void dsl_fastboot_install(const char *logdir); /* after il2cpp_init (from dsl_soft_install) */
 void dsl_fastboot_tick(void);                /* main thread, every soft tick */
@@ -107,7 +108,7 @@ void dsl_ui_install(void);
 int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud);
 int dsl_ui_title_icon(const char *owner_id, void (*click)(void *), void *ud, float size, void (*fill)(void *, void *, int));   /* fill(ud, box (DSLObj), fresh) */
 void dsl_frame_hook(void);                               /* dsl_reg.c: every frame, main thread */
-/* dsl_rows.c: load list service (stock Load list rows, its filter toggles, the New Campaign line). No hook on the
+/* dsl_rows.c: load list service (stock Load list rows, its filter toggles and panel). No hook on the
    row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
 struct DSLHost; void dsl_cloud_install(struct DSLHost *host);   /* dsl_cloud.c: after dsl_reg_ready */
 /* "mp_*" = a multiplayer temporary save (mp_sync join point, mp_fullcheck full-state check, test saves): the mod writes
@@ -130,10 +131,10 @@ void dsl_rows_late(void);                                /* dsl_ui.c, right befo
 int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
 int dsl_rows_filter(const char *owner_id, const struct DSLLoadFilter *f);
 void dsl_rows_refresh(void);
-/* dsl_reg.c: mods per world (the loader's own row line and the New Campaign line) */
+/* dsl_reg.c: mods per world (the loader's own row line and the New Game screen's "Mods of this world") */
 int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: Hell difficulty, Multiplayer" (or "Mods: none") */
 void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */
-void dsl_newworld_label(char *out, size_t cap);                      /* "Mods for this world: ..." */
+int dsl_newworld_names(char *out, size_t cap);                       /* one name per line ("none"); returns how many */
 void dsl_newworld_change(void);
 int dsl_worlds_bad(const char **kept);                     /* dsl_reg.c: worlds.json unreadable at start (kept path) */
 int dsl_key_same(const char *a, const char *b);            /* gameplay keys equal (old keys with "multiplayer" too) */

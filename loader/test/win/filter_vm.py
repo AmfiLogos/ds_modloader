@@ -95,8 +95,9 @@ def main():
         check('the panel is right of the Load window and inside the screen', p[0] >= wd[2] - 0.5 and p[0] >= 0 and p[1] >= -0.5 and p[2] <= sw + 0.5 and p[3] <= sh + 0.5, (p, wd, sw, sh))
         check('the panel does not cover the title corner', not st.get('corner_shown') or not overlap(p, c), (p, c, st.get('corner_shown')))
         b = st.get('boxes', {})
-        check('defaults: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves; Multiplayer box there',
-              (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box')) == (1, 1, 0, 0, 1), b)
+        check('defaults: all four boxes on (Vanilla & Vanilla+, Modded, Solo, Multiplayer), all saves; Solo + Multiplayer boxes there',
+              (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box'), b.get('solo_box')) == (1, 1, 1, 1, 0, 1, 1), b)
+        st = R.lf('lf', multiplayer=0)                                  # Multiplayer off (owner 2026-10-25: on by default since the Solo box)
         v, m, mp = world(st, G_V), world(st, G_M), world(st, G_P)
         check('kinds: vanilla (only the fix gcd-cdr) / modded (gcd-cdr + hell-difficulty) / multiplayer (tag)', (v.get('kind'), m.get('kind'), mp.get('kind')) == (0, 1, 2), (v, m, mp))
         check('Multiplayer off: the multiplayer world hidden, the others shown', (v.get('shown'), m.get('shown'), mp.get('shown')) == (1, 1, 0), (v, m, mp))

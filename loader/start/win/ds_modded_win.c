@@ -34,6 +34,7 @@
 #include "bie_win.h"
 #define DSI_IMPLEMENTATION   /* before dsl_internal.h (it includes ds_i18n.h): TR() tables of this exe */
 #include "dsl_internal.h"
+#include "dsl_deps.h"    /* dsl_dep_vcmp: the loader's version rule */
 #include "ds_i18n.h"   /* loader/src: TR() text in the game's language (lang/<code>.json) */
 #include "dsl_u8_win.h"
 #include "dsl_update_os.h"
@@ -194,6 +195,19 @@ static int read_mod_id(const wchar_t *dir, char *id, size_t n) {   /* 1 = dir\mo
     json_free(m);
     return ok;
 }
+/* 1 = new\mod.json and old\mod.json both have a "version" and new's is older (versions into vn / vo) */
+static int mod_older(const wchar_t *nw, const wchar_t *old, char *vn, char *vo, size_t n) {
+    const wchar_t *dirs[2] = { nw, old }; char *outs[2] = { vn, vo }; int got = 0;
+    for (int i = 0; i < 2; i++) {
+        wchar_t mp[MAX_PATH]; _snwprintf(mp, MAX_PATH, L"%ls\\mod.json", dirs[i]); outs[i][0] = 0;
+        FILE *f = _wfopen(mp, L"rb"); if (!f) continue;
+        static char txt[1 << 16]; size_t k = fread(txt, 1, sizeof txt - 1, f); fclose(f); txt[k] = 0;
+        JNode *m = json_parse(txt); const char *v = json_str(m, "version");
+        if (v) { snprintf(outs[i], n, "%s", v); got++; }
+        json_free(m);
+    }
+    return got == 2 && dsl_dep_vcmp(vn, vo) < 0;
+}
 static void stamp(wchar_t *out, size_t n) { SYSTEMTIME t; GetLocalTime(&t); _snwprintf(out, n, L"%04d%02d%02d-%02d%02d%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond); }
 /* the install's file lists (install.bat writes them; the uninstaller deletes exactly the listed files, then the empty
    listed folders): every file and folder this starter makes under ROOT is added, so the uninstall removes it too */
@@ -341,6 +355,14 @@ static void apply_pending(const wchar_t *md) {
         _snwprintf(src, MAX_PATH, L"%ls\\%ls", pd, fd.cFileName); _snwprintf(dst, MAX_PATH, L"%ls\\%ls", md, fd.cFileName);
         if (!read_mod_id(src, id, sizeof id)) continue;
         stamp(ts, 32);
+        char vn[32], vo[32];
+        if (exists(dst) && mod_older(src, dst, vn, vo, sizeof vn)) {   /* the app or auto-update brought a newer one */
+            wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
+            _snwprintf(old, MAX_PATH, L"%ls\\pending-%ls-%ls", rd, fd.cFileName, ts);
+            if (MoveFileW(src, old)) { log_line(L"install_dirs.log", rd); log_tree(old); }
+            logf_("mods: the waiting %s %s is older than the installed %s (app or auto-update): not installed", id, vn, vo);
+            continue;
+        }
         if (exists(dst)) {
             wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
             _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, fd.cFileName, ts);
@@ -380,20 +402,21 @@ static void install_packages(void) {
                 FindClose(h2);
             }
         }
-        int ok = 0;
+        int ok = 0, older = 0; char vn[32], vo[32];
         if (src[0]) {
             wchar_t wid[64]; MultiByteToWideChar(CP_UTF8, 0, id, -1, wid, 64);
             _snwprintf(dst, MAX_PATH, L"%ls\\%ls", md, wid);
-            if (exists(dst)) {
+            older = exists(dst) && mod_older(src, dst, vn, vo, sizeof vn);   /* the app or auto-update brought a newer one */
+            if (!older && exists(dst)) {
                 wchar_t rd[MAX_PATH], old[MAX_PATH]; _snwprintf(rd, MAX_PATH, L"%ls\\retired", root); mkdirs(rd);
                 _snwprintf(old, MAX_PATH, L"%ls\\mods-%ls-%ls", rd, wid, ts);
                 if (!MoveFileW(dst, old)) logf_("mods: cannot move the old %s folder (%lu)", id, GetLastError());
                 else { log_line(L"install_dirs.log", rd); log_tree(old); }
             }
-            ok = !exists(dst) && MoveFileW(src, dst);
+            if (!older) ok = !exists(dst) && MoveFileW(src, dst);
         }
         wchar_t keep[MAX_PATH], kz[MAX_PATH];
-        _snwprintf(keep, MAX_PATH, L"%ls\\%ls", md, ok ? L".installed" : L".failed"); mkdirs(keep);
+        _snwprintf(keep, MAX_PATH, L"%ls\\%ls", md, ok || older ? L".installed" : L".failed"); mkdirs(keep);
         _snwprintf(kz, MAX_PATH, L"%ls\\%ls-%ls", keep, ts, fd.cFileName);
         if (!MoveFileW(zp, kz)) logf_("mods: cannot move %ls (%lu)", zp, GetLastError());
         else { log_line(L"install_dirs.log", keep); log_tree(kz); }
@@ -405,6 +428,7 @@ static void install_packages(void) {
             else { log_line(L"install_dirs.log", rd); log_tree(lo); }
         }
         if (ok) logf_("mods: %ls installed as mods\\%s (%d files)", fd.cFileName, id, k);
+        else if (older) logf_("mods: %ls (%s %s) is older than the installed %s (app or auto-update): not installed", fd.cFileName, id, vn, vo);
         else if (src[0]) {                                 /* a mod, but its folder could not be put in place */
             logf_("mods: %ls (%s) could not be put in place (%lu): moved to mods\\.failed", fd.cFileName, id, GetLastError());
             char zn[MAX_PATH * 3]; if (!WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, zn, sizeof zn, NULL, NULL)) zn[0] = 0;

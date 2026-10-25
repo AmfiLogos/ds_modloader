@@ -836,11 +836,22 @@ void dsl_world_change(const char *guid, const char *save_name) {
     else dsl_log("reg: world [Change]: no Mods window in this build");
 }
 int dsl_newgame_levels(int *combat, int *management);
-/* the New Campaign line: the running set as the world made there will use it (Hell only when a level chosen is Hell) */
-void dsl_newworld_label(char *out, size_t cap) {
+/* the New Game screen's "Mods of this world" (ui/dsl_newgame.c): the running set as the world made there will use it (Hell
+   only when a level chosen is Hell), one name per line ("none" when empty); returns how many */
+int dsl_newworld_names(char *out, size_t cap) {
     int c = -1, m = -1; dsl_newgame_levels(&c, &m); dsl_world_note_level("new", c, m);
-    char k[512], nm[400]; key_diff("new", run_key, 1, k, sizeof k); key_names(k, nm, sizeof nm);
-    snprintf(out, cap, TR("Mods for this world: %s"), nm); dsi_utf8_fix_end(out);
+    char k[512]; key_diff("new", run_key, 1, k, sizeof k);
+    out[0] = 0;
+    if (!strcmp(k, "vanilla")) { snprintf(out, cap, "%s", TR("none")); return 0; }
+    int n = 0; char one[300];
+    for (char *sv = NULL, *t = strtok_r(k, "+", &sv); t; t = strtok_r(NULL, "+", &sv), n++) {
+        const DSLModInfo *mi = mod_by_id(t);
+        if (mi) snprintf(one, sizeof one, "%s", mi->name); else snprintf(one, sizeof one, TR("%s (not installed)"), t);
+        if (n) strlcat(out, "\n", cap);
+        strlcat(out, one, cap);
+    }
+    dsi_utf8_fix_end(out);
+    return n;
 }
 void dsl_newworld_change(void) { if (dsl_win_open) dsl_win_open(NULL); else dsl_log("reg: New Campaign [Change]: no Mods window in this build"); }
 

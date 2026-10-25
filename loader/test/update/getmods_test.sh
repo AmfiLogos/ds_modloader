@@ -95,5 +95,17 @@ check "settings: the host's lines taken, then Apply" '[[ "$r" == *"TAKE gcd-cdr@
 r=$(HM_MYSET='gcd-cdr/cdr@on' HM_APPLY_REFUSE=1 $OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
 check "settings: Apply refused = the taken values dropped" '[[ "$r" == *"TAKE "*"UNDO "* && "$r" == *"STATE -1"* ]]'
 
+# 8 a mod with the host's version, on in the profile, that does not run here (the crash guard turned it off): the
+# break = "Get the host's mods" soft-restarts for it (it is still off after the restart), the guest rejoins, is refused
+# again, and again. It must be not_running with its reason, no button, and get must refuse before any Apply.
+host $'gcd-cdr@0.1.4\nhell-difficulty@0.1.4\ncustom-modes@0.2.0'
+export HM_ON=",custom-modes,hell-difficulty,multiplayer,comfy," HM_EN=",custom-modes,gcd-cdr,hell-difficulty,multiplayer,comfy," HM_FAIL=",gcd-cdr,"
+p=$($OUT/t plan $OUT/host.txt 0 2>/dev/null)
+check "on but not running (crash guard): not_running with its reason, button off" '[[ $(act gcd-cdr) == "not_running 0" ]] && print -r -- "$p" | grep -q "\"why\":\"it stopped the game while starting last time"'
+r=$($OUT/t get $OUT/host.txt 'DSMP_REJOIN=ip|10.0.0.2|7777' 2>/dev/null)
+check "on but not running: get refused with the name and the reason, no Apply (no soft restart, no rejoin)" '[[ "$r" == "GET -1 Global cooldown fix is on but did not start on this computer: it stopped the game"* && "$r" != *APPLY* ]]'
+p=$(HM_DEP=",gcd-cdr," $OUT/t plan $OUT/host.txt 0 2>/dev/null)
+check "on, not running for a missing requirement: still turn_on (the host's mods may bring it)" '[[ $(act gcd-cdr) == "turn_on 1" ]]'
+
 print "== $pass passed, $fails failed (output $OUT)"
 exit $fails

@@ -71,10 +71,10 @@ def seed():
     json.dump(t, open(os.path.join(MSAVES, TPL_OLD + '.json'), 'w'))
     h.update(CampaignGuid=SLOT_GUID, ClanName='Slot', SaveName=SLOT, DisplayName='Slot', SaveTime='2026-10-20 08:00:00', IsAutoSave=True)   # the newest world (before the game save Elven); Template (2 saves) the last
     json.dump(t, open(os.path.join(MSAVES, SLOT + '.json'), 'w'))
-    open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
+    open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tAmfi\tFoctopus\tBartholomew\n')   # long: the tag's "with" part must give way
 
 
-WORLDS = {ELVEN_GUID: 'gcd-cdr+zetu-suite', TPL_GUID: 'gcd-cdr', SLOT_GUID: 'gcd-cdr+weapon-slot'}
+WORLDS = {ELVEN_GUID: 'gcd-cdr+zetu-suite', TPL_GUID: 'gcd-cdr', SLOT_GUID: 'gcd-cdr+weapon-slot', MOON_GUID: 'gcd-cdr+zetu-suite'}   # Moonlight: a Modded multiplayer world
 FAKEROOT = os.path.join(I, 'lf_root')
 
 
@@ -206,8 +206,55 @@ def tag_checks(tag, st, on):
               [(x.get('name'), x.get('name_text'), x.get('remove_tag')) for x in shown])
 
 
+def rm_checks(tag, st):
+    """owner (next version after v0.1.27): "Remove tag" sat under [Change], over the world's detail box. It must be on the
+    world's title line (the band 1..21 units under the row's top), overlap neither the "Mods:" line nor [Change]"""
+    w = world(st, MOON_GUID)
+    if not (w.get('shown') and w.get('remove_tag')): check(f'{tag}: Remove tag shows on the multiplayer world', False, w); return
+    r, rr, px = w['rm_rect'], w['row_rect'], w.get('px') or 1
+    top, bot = rr[3] - 0.5 * px, rr[3] - 22 * px
+    check(f'{tag}: Remove tag is on the title line (not over the detail box)', r[1] >= bot - 1 and r[3] <= top + 1, (r, round(bot, 1), round(top, 1)))
+    hit = [n for n, q in (('Mods line', w['line_rect'] if w.get('line_shown') and w.get('line_text') else None), ('Change', w.get('chg_rect'))) if q and q[2] > q[0] and overlap(r, q)]
+    check(f'{tag}: Remove tag overlaps neither the Mods line nor [Change]', not hit, (r, hit, w.get('line_rect'), w.get('chg_rect')))
+
+
+def untag_check():
+    """a world whose multiplayer tag the player removes is Solo at once (the multiplayer mod's Remove tag box answered
+    Remove; the list stays open): with Solo off it hides at once"""
+    lf('lf', solo=0, multiplayer=1); time.sleep(0.8)
+    rows = mp('mpm_tag').get('rows', []); i = next((x['i'] for x in rows if x.get('guid') == MOON_GUID and x.get('remove')), None)
+    if i is None: check('Remove tag: the multiplayer world has its link', False, rows); return
+    mp('mpm_tag', click=i); time.sleep(0.8); b = mp('mpm_box', action='confirm'); log('untag box', b)
+    time.sleep(0.6); st = lf(); mw = world(st, MOON_GUID)
+    check('Remove tag: the world is Solo at once (hidden with Solo off), no multiplayer tag', mw.get('play') == 0 and mw.get('shown') == 0 and MP_MARK not in mw.get('name_text', ''), mw)
+
+
+def group_checks():
+    """owner 2026-10-25: two groups, Mods (Vanilla & Vanilla+, Modded: every world, multiplayer ones too) and Play (Solo:
+    no multiplayer tag, Multiplayer); a world shows when the box of its mods AND the box of its play are on; a group with
+    every box off does not filter. Elven Modded Solo, Template + Slot Vanilla Solo, Moonlight Modded Multiplayer."""
+    G = (ELVEN_GUID, TPL_GUID, SLOT_GUID, MOON_GUID)
+    def shown(**kw):
+        st = lf('lf', **kw); time.sleep(0.5); st = lf()
+        return {g: world(st, g).get('shown') for g in G}, st
+    for name, kw, want in (
+            ('all four on: every world', dict(vanilla=1, modded=1, solo=1, multiplayer=1), (1, 1, 1, 1)),
+            ('Solo off: every world without the multiplayer tag hides, nothing else', dict(solo=0), (0, 0, 0, 1)),
+            ('Solo on, Multiplayer off: only the tagged world hides', dict(solo=1, multiplayer=0), (1, 1, 1, 0)),
+            ('Multiplayer on, Modded off: the Modded worlds hide, the Modded multiplayer world too', dict(multiplayer=1, modded=0), (0, 1, 1, 0)),
+            ('Vanilla & Vanilla+ and Modded off (Play on): the Mods group does not filter', dict(vanilla=0, modded=0), (1, 1, 1, 1)),
+            ('Solo and Multiplayer off (Mods on): the Play group does not filter', dict(vanilla=1, modded=1, solo=0, multiplayer=0), (1, 1, 1, 1)),
+            ('all four off: every world (not an empty list)', dict(vanilla=0, modded=0), (1, 1, 1, 1))):
+        got, st = shown(**kw)
+        line = (st.get('hid_lines') or [{}, {}])[1]
+        ok_ = tuple(got[g] for g in G) == want and (want != (1, 1, 1, 1) or (not line.get('shown') and st.get('hidden_line') == 0))
+        check(f'groups: {name}', ok_, (got, line.get('text', '')[:70], st.get('boxes')))
+
+
 def run_main():
-    seed(); start()
+    seed()
+    open(os.path.join(T.MODS, 'loadlist.json'), 'w').write('{"vanilla": true, "modded": true, "multiplayer": false, "latest_only": false}\n')   # an older file
+    start()
     T.request({'cmd': 'warn_cancel'}); time.sleep(1)
     m0 = open_list()
     open_checks(m0)
@@ -215,11 +262,13 @@ def run_main():
     log('state', json.dumps(st)[:600])
     place_checks('main 960x540', st)
     b = st.get('boxes', {})
-    check('defaults = the list as before: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves, Show tags on', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags'), b.get('mp_box')) == (1, 1, 0, 0, 1, 1), b)
+    check('an older loadlist.json carries over: its choices kept (Multiplayer off), Solo on, Show tags on; both Play boxes there',
+          (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags'), b.get('mp_box'), b.get('solo_box')) == (1, 1, 1, 0, 0, 1, 1, 1), b)
     e, t, m = world(st, ELVEN_GUID), world(st, TPL_GUID), world(st, MOON_GUID)
     check('kinds: Elven (gcd-cdr + zetu-suite) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
     sl = world(st, SLOT_GUID)
     check('kinds: Slot (gcd-cdr + weapon-slot, "vanilla_plus") is Vanilla & Vanilla+ and shows', (sl.get('kind'), sl.get('shown')) == (0, 1), sl)
+    check('kinds: Moonlight is Modded (its mods) and Multiplayer (its tag); the others Solo', (m.get('mods'), m.get('play'), e.get('play'), t.get('play'), sl.get('play')) == (1, 1, 0, 0, 0), (m, e.get('play')))
     check('Multiplayer off: Moonlight hidden, the others shown; the line counts 1', (e.get('shown'), t.get('shown'), m.get('shown'), st.get('hidden_line')) == (1, 1, 0, 1), st)
     ml = mp('mpm_list')
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,
@@ -229,16 +278,13 @@ def run_main():
     tag_checks('main, Show tags on (default)', st, True)
     shot('main_defaults')
     st = lf('lf', multiplayer=1); time.sleep(0.5); st = lf()
-    tag_checks('main, Multiplayer box on', st, True); shot('main_tags_on')
+    tag_checks('main, Multiplayer box on', st, True); rm_checks('main en', st); shot('main_tags_on')
     st = lf('lf', show_tags=0); time.sleep(0.5); st = lf()
     tag_checks('main, Show tags off', st, False); line_checks('main, Show tags off', st); shot('main_tags_off')
     st = lf('lf', show_tags=1); time.sleep(0.5); st = lf()
     tag_checks('main, Show tags on again', st, True)
-    st = lf('lf', vanilla=0, modded=0, multiplayer=0); time.sleep(0.5); st = lf()     # owner 2026-10-25: all off = every world
-    check('all three kind boxes off: every world shows (not an empty list), the line says nothing is hidden',
-          all(world(st, g).get('shown') for g in NEWEST) and not (st.get('hid_lines') or [{}, {}])[1].get('shown') and st.get('hidden_line') == 0,
-          ([(w['name'], w.get('shown')) for w in st.get('worlds', [])], (st.get('hid_lines') or [{}, {}])[1]))
-    lf('lf', vanilla=1, modded=1, multiplayer=0); time.sleep(0.5)
+    group_checks()
+    lf('lf', vanilla=1, modded=1, solo=1, multiplayer=0); time.sleep(0.5)
     # ---------------------------------------------------------------- the data guard: filter
     lf('lf_select', name=ELVEN); time.sleep(1); st = lf()            # the click reaches the game's presenter a frame later
     check('guard: the Elven save is selected, Remove File clickable', st.get('selected') == ELVEN and st.get('remove_clickable') == 1, st)
@@ -272,6 +318,7 @@ def run_main():
     st = lf('lf', latest_only=0); t = world(st, TPL_GUID)
     check('Latest save only off: both Template saves show again, the row counts 2', t.get('saves_shown') == 2 and t.get('button_count') == 2, t)
     lf('lf', latest_only=1)                                         # kept on for the restart run
+    untag_check()                                                   # last: it removes Moonlight's multiplayer tag
     S.stop_all()
 
 
@@ -293,6 +340,8 @@ def run_layout():
     Latest save only went off while a world with 2 saves was hidden)"""
     seed(); start(); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
     open_list()
+    b = lf().get('boxes', {})
+    check('defaults (no loadlist.json): all four boxes on, all saves, Show tags on', (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags')) == (1, 1, 1, 1, 0, 1), b)
     for tag, kw in (('defaults', {}), ('latest on', dict(latest_only=1)), ('Vanilla off', dict(vanilla=0)), ('latest off', dict(latest_only=0)),
                     ('Vanilla on', dict(vanilla=1)), ('Modded off', dict(modded=0)), ('Modded on', dict(modded=1))):
         st = lf('lf', **kw) if kw else lf(); time.sleep(0.8); st = lf()
@@ -303,11 +352,12 @@ def run_layout():
 
 
 def run_restart():
-    """the choices of run_main (Modded on, Multiplayer on, Latest save only on) come back after a restart"""
+    """the choices of run_main (Solo off, Multiplayer on, Latest save only on) come back after a restart"""
     start(); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
     open_list(); st = lf(); b = st.get('boxes', {})
-    check('restart: the choices came back (all kinds on, Latest save only on)', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only')) == (1, 1, 1, 1),
+    check('restart: the choices came back (Solo off, the others on, Latest save only on)', (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only')) == (1, 1, 0, 1, 1),
           (b, open(os.path.join(T.MODS, 'loadlist.json')).read() if os.path.exists(os.path.join(T.MODS, 'loadlist.json')) else 'no file'))
+    st = lf('lf', solo=1); time.sleep(0.5); st = lf()
     check('restart: Latest save only applied at the opening', world(st, TPL_GUID).get('shown_names') == [TPL_NEW], world(st, TPL_GUID))
     S.stop_all()
 
@@ -331,7 +381,7 @@ def run_look():
     for lang in ('de', 'ru', 'ja'):
         start((960, 600), 1.0, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
         open_list(); st = lf('lf', multiplayer=1); time.sleep(1); st = lf()
-        tag_checks(f'look {lang}', st, True); line_checks(f'look {lang}', st); row_checks(f'look {lang}', st)
+        tag_checks(f'look {lang}', st, True); line_checks(f'look {lang}', st); row_checks(f'look {lang}', st); rm_checks(f'look {lang}', st)
         shot(f'look_{lang}')
         S.stop_all()
 
@@ -346,7 +396,7 @@ def run_langs():
         S.stop_all()
 
 
-TIPS = ('vanilla', 'modded', 'multiplayer', 'latest_only')        # the panel's boxes in dsl_rows.c order (pn:<k>)
+TIPS = ('vanilla', 'modded', 'solo', 'multiplayer', 'latest_only')   # the panel's boxes in dsl_rows.c order (pn:<k>)
 
 
 def tip_rect(k):

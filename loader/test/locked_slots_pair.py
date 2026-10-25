@@ -2,6 +2,10 @@
 """locked-slots in multiplayer: one leased rig pair (port), two hidden loader copies (host LSP_HOST default Z, guest
 LSP_GUEST default R), both with multiplayer + locked-slots. World = the fixture of locked_slots_test.py (the wiki's
 public base save under a new world guid, resource stacks in the bags). Nothing of the owner is read or written.
+Both copies run with the session file as the app starts them (DSML_SESSION = data/Mods/worlds.json, written by the
+loader): the multiplayer HELLO carries the running gameplay set, so the join's mod-set check is active (without it the
+set is empty and nothing is compared). The full-state check runs every 600 steps; no desync of any kind is allowed
+(the guest's unit selection no longer makes it differ: ds_multiplayer d72bf03). The host listens on an OS-chosen port.
 
   locked_slots_pair.py [out]
 
@@ -9,7 +13,8 @@ Real breaks it catches (a desync or a lock that one player has and the other not
  J  the host's locks of its world (file) reach the joining guest (join-point block): same table, same hash.
  G  the guest's lock (its own unit, through the stock menu row = the game's order, marked Index) passes the multiplayer
     mod intact and is applied on BOTH players at the same tick (fingerprints with the lock table equal); a guest's lock order on a unit it does not own changes nothing anywhere.
- T  dungeon and back by the map-change vote: no desync (but the known multiplayer one), step fingerprints equal for
+ S  both players' multiplayer set (the HELLO) holds locked-slots.
+ T  dungeon and back by the map-change vote: no desync, step fingerprints equal for
     600+ ticks after the return, both players' sims hold the same bags (read in each game),
     the host's save keeps the locked stacks (host's and guest's locks) and drops the unlocked resources; both kept 3."""
 import json, os, shutil, subprocess, sys, time
@@ -64,8 +69,9 @@ def up(x, out, mpcfg, seed_locks=None, world=None):
         d = os.path.join(I, 'data', 'ModData', 'locked-slots'); os.makedirs(d, exist_ok=True)
         open(os.path.join(d, 'locks_%s.txt' % world), 'w').write(seed_locks)
     json.dump(mpcfg, open(os.path.join(I, 'mp.json'), 'w'))
-    for k in ('DSML_ROOT', 'DSML_APP', 'DSML_SESSION', 'DSML_GAME_SAVES', 'DSRIG_DIAG'): os.environ.pop(k, None)
+    for k in ('DSML_ROOT', 'DSML_APP', 'DSML_MODSET', 'DSML_GAME_SAVES', 'DSRIG_DIAG'): os.environ.pop(k, None)
     os.environ.update({'LRIG_DYLIB': os.path.join(LB, 'build', 'dsload.dylib'), 'DSL_MODS_DIR': md, 'DSL_PROFILE': prof,
+                       'DSML_SESSION': os.path.join(I, 'data', 'Mods', 'worlds.json'),   # as the app: the loader owns it
                        'DSML_DATA': os.path.join(I, 'data'), 'DSL_CLOUD': '0', 'DSL_SOFT_TEST': '1', 'DSL_NO_ALERT': '1',
                        'DSL_SOFT_STAGE': '-20000,-20000', 'DSL_CRASHREP': '0', 'DSL_UPDATE': '0', 'DSRIG_BG': '1'})
     os.environ.update(r.soft_test_env())
@@ -92,23 +98,13 @@ def fp(x, t_from):
     return d
 
 
-FULL = 100000          # the full-state check would resync the guest after its unit selection (the known multiplayer
-                       # difference below) and cut the fingerprint window around the lock; the bags are compared directly
-KNOWN_FULL = {'PlayerUnitsSaveData', 'PlayerUnitsSaveData/SkillLearnNotices'}
+FULL = 600             # full-state check every 600 steps: a lock (or anything else) one player lacks is a difference
 def other_desyncs(x):
-    """desync lines of copy x that are NOT the multiplayer mod's known full-state difference: a guest that selects a unit
-    (the game's own selection) gets SkillLearnNotices the host does not have, the full check then forces a resync. Proved
-    WITHOUT this mod (multiplayer only, 2026-10-25 probe: guest select -> differs, no select -> equal)."""
-    bad, forced = [], 0
-    for l in T.rd(os.path.join(r.idir(x), 'rig.log')).splitlines():
-        if 'FULL-STATE CHECK DIFFERS' in l:
-            secs = set(s.strip() for s in l.split('difference(s):', 1)[-1].split(','))
-            if secs <= KNOWN_FULL: forced += 1
-            else: bad.append(l[:200])
-        elif 'DESYNC:' in l:
-            if forced: forced -= 1
-            else: bad.append(l[:200])
-    return bad
+    """every desync and full-state difference line of copy x (none is allowed)"""
+    return [l[:200] for l in T.rd(os.path.join(r.idir(x), 'rig.log')).splitlines() if 'FULL-STATE CHECK DIFFERS' in l or 'DESYNC:' in l]
+def hello_lines(x):
+    try: return json.load(open(os.path.join(r.idir(x), 'data', 'Mods', 'worlds.json'))).get('modset_lines') or []
+    except Exception: return []
 
 
 def map_change(name, ev_fields, want, guest_votes=True):
@@ -132,6 +128,8 @@ def run(out, port):
                                                        and not s.get('mp', {}).get('needs_state'))(st(GX)), timeout=900, every=2)
     h, g = lk(HX), lk(GX)
     check('guest joined and loaded THIS host world', ok and g.get('world') == world, (st(GX).get('mp'), g.get('world')))
+    check('S: both players\' multiplayer set (the HELLO) holds locked-slots: the join\'s mod-set check saw it',
+          all(any(l.startswith('locked-slots@') for l in hello_lines(x)) for x in (HX, GX)), {x: hello_lines(x) for x in (HX, GX)})
     if g.get('world') != world: raise RuntimeError('the guest is not in this test world: stop')
     t_join = max(st(HX).get('tick', 0), st(GX).get('tick', 0))
     check('J: the host\'s locks reached the guest (same world, same table)', h.get('world') == g.get('world') == world and locked(GX, U[0]) == [0, 3]
@@ -176,7 +174,7 @@ def run(out, port):
     a, b = fp(HX, t0 + 1), fp(GX, t0 + 1)
     common = sorted(set(a) & set(b)); first = next((t for t in common if a[t] != b[t]), None)
     d1 = {x: mp(x).get('desyncs', 0) for x in (HX, GX)}
-    check('T: step fingerprints equal after the return, no desync but the known full-state one', len(common) >= 600 and first is None
+    check('T: step fingerprints equal after the return, no desync', len(common) >= 600 and first is None
           and not other_desyncs(GX) and not other_desyncs(HX), f'common ticks {len(common)}, first diff {first}, desyncs {d0} -> {d1}, other {other_desyncs(GX)[:3]}')
     sh = save(HX, out, 'lks_pair_host')            # a guest writes no save: its world = the host's by the fingerprints above
     bh = T.bags(sh)
@@ -200,10 +198,11 @@ def main():
         pair = p.stdout.strip() if p.returncode == 0 and p.stdout.strip() else None
         if not pair: time.sleep(20)
     if not pair: raise SystemExit('no rig lease in 30 min')
-    port = int(subprocess.run([sys.executable, f'{HOME}/ds_multiplayer/rig/rig.py', 'port', pair], capture_output=True, text=True).stdout.split()[-1])
-    log('pair', pair, 'port', port, 'host', HX, 'guest', GX)
-    r.pair_port = lambda x, _p=port: _p           # lrig gives every K..Z copy port 7891 (shared by all loader lanes): the
-                                                  # guest joined another lane's host there once. Use this lease's own port.
+    import socket
+    so = socket.socket(); so.bind(('127.0.0.1', 0)); port = so.getsockname()[1]; so.close()
+    log('pair', pair, 'port', port, '(OS-chosen)', 'host', HX, 'guest', GX)
+    r.pair_port = lambda x, _p=port: _p           # lrig gives every K..Z copy port 7891 and pairs have fixed ports: other
+                                                  # lanes' copies joined runs there. An OS-chosen port no copy points at.
     busy = subprocess.run(['lsof', '-nP', '-iTCP:%d' % port, '-sTCP:LISTEN'], capture_output=True, text=True).stdout.strip()
     if busy:
         subprocess.run([sys.executable, f'{HOME}/ds_multiplayer/rig/rig.py', 'release', pair, lane], capture_output=True)

@@ -23,8 +23,10 @@
 // step; in single player it goes through the same event queue. ItemEventHandler.OnEvent(BanAutoFixItemRequested) is
 // hooked: a marked Index sets / clears the lock and the stock handler does not run; any other Index is stock.
 // Lock icon: ItemSlotUI.SetItem (every refresh of a slot: unit window, sort, drag, building storage) shows a copy of
-// the slot's own auto-repair marker Image, with the game's research padlock sprite (ResourceLoader.LoadResearchIcon
-// "ProgressIcon_Locked"), on locked slots of a unit's inventory, and hides it everywhere else.
+// the slot's own auto-repair marker Image, with a small white pixel padlock with a thin dark edge (made at run time from
+// the 7 x 8 picture below: no file, no game asset; owner 2026-10-25: "smaller & white"), in the top-left corner of locked
+// slots of a unit's inventory (about a fifth of the slot: never over the item count or the picture's center), and hides
+// it everywhere else.
 // Data: never in the save. <ModData>/locked-slots/locks_<world guid>.txt, one line per unit: its guid and the locked
 // slot numbers. Removing the mod = items drop as in the stock game. Multiplayer: the host's locks of its world go to
 // every joiner in a join-point block ("LKSL"); a guest keeps them in memory only; the locks are in the world
@@ -85,6 +87,8 @@ static struct {
     void *(*object_get_class)(Obj);
     uint8_t (*class_is_assignable_from)(void *, void *);   /* C bool: low byte only (T2) */
     void *(*object_get_virtual_method)(Obj, void *);
+    Obj (*object_new)(void *);
+    Obj (*array_new)(void *, uintptr_t);
     Obj (*string_new)(const char *);
     uintptr_t (*gch_weak)(Obj, uint8_t);                  /* GC handles are pointer-sized in this il2cpp (T1) */
     Obj (*gch_target)(uintptr_t);
@@ -164,7 +168,7 @@ static int gzero(const WGuid *a) { return !a->lo && !a->hi; }
 /* ======================================================================================== game names */
 static struct {
     void *unit, *inv, *ih, *slotui, *mainflow, *ctrl, *optui, *option, *ia, *uiin, *image, *object, *comp, *go, *transform,
-         *rect, *graphic, *resloader, *lang, *ev_ban, *uistream, *ec, *complist;
+         *rect, *graphic, *lang, *ev_ban, *uistream, *ec, *complist, *tex, *texture, *sprite, *color32;
 } K;
 static struct {
     int32_t unit_guid, inv_slots, ih_guid, ih_key, ih_amount, ih_auto, slot_owner, slot_index, slot_inv, slot_autofix,
@@ -177,10 +181,11 @@ static struct {
     void *route, *sort, *ban, *reg, *show, *setitem,                                /* hooked */
          *inv_add, *inv_remove, *ih_empty, *ec_tryget, *cl_tryget, *list_add, *list_removeat, *list_count,
          *obj_find, *obj_inst, *obj_set_name, *op_implicit, *comp_tr, *comp_go, *go_active, *go_activeself, *tr_find,
-         *tr_last, *rt_amin, *rt_amax, *rt_pivot, *rt_pos, *rt_size, *rt_size_get, *img_sprite, *img_preserve, *g_color,
-         *g_raycast, *res_icon, *lang_get, *stream_add, *optui_select, *ec_inst, *resloader_inst;
+         *tr_last, *rt_amin, *rt_amax, *rt_pivot, *rt_pos, *rt_size, *img_sprite, *img_preserve, *g_color,
+         *g_raycast, *lang_get, *stream_add, *optui_select, *ec_inst, *tex_ctor, *tex_set, *tex_apply, *tex_filter,
+         *tex_wrap, *spr_create, *obj_hide;
 } M;
-static struct { int ia_ui, uit_ban, uit_skilltarget, uit_show_inv, ct_inv, find_incl; } E;
+static struct { int ia_ui, uit_ban, uit_skilltarget, uit_show_inv, ct_inv, find_incl, rgba32, point, clamp, keep; } E;
 
 /* ---- small Unity helpers (alive = UnityEngine.Object op_Implicit: m_CachedPtr != 0, T1) */
 static Obj str(const char *s) { return IL.string_new(s); }
@@ -367,14 +372,49 @@ static uint64_t fp_mix(void) { sync_world(); return lk_hash(); }
 #define MAXS 256
 static struct { uintptr_t h; WGuid u; int idx; } S[MAXS];    /* slots that showed a unit's inventory (weak handles) */
 static int nS, sS;
+/* the padlock: W white, '.' clear; every clear pixel next to a white one (8 neighbours) is the dark edge */
+#define LW 7
+#define LH 8
+static const char LOCK_ART[LH][LW + 1] = {
+    ".......",
+    "..WWW..",
+    ".W...W.",
+    ".WWWWW.",
+    ".WW.WW.",
+    ".WW.WW.",
+    ".WWWWW.",
+    "......." };
+typedef struct { float x, y, w, h; } Rect;
 static uintptr_t h_sprite;
 static Obj lock_sprite(void) {
     Obj s = h_sprite ? IL.gch_target(h_sprite) : NULL;
     if (alive(s)) return s;
     if (h_sprite) { IL.gch_free(h_sprite); h_sprite = 0; }
-    Obj rl = NULL; IL.field_static_get_value(M.resloader_inst, &rl);
-    s = rl ? MC(M.res_icon, Obj, Obj, Obj, void *)(rl, str("ProgressIcon_Locked"), M.res_icon) : NULL;
-    if (alive(s)) h_sprite = IL.gch_weak(s, 0);
+    Obj tex = IL.object_new(K.tex);
+    if (!tex) return NULL;
+    MC(M.tex_ctor, void, Obj, int32_t, int32_t, int32_t, uint8_t, void *)(tex, LW, LH, E.rgba32, 0, M.tex_ctor);   /* no mipmaps */
+    Obj px = IL.array_new(K.color32, LW * LH);               /* Color32[], rows from the bottom */
+    if (!px) return NULL;
+    for (int y = 0; y < LH; y++) for (int x = 0; x < LW; x++) {
+        uint8_t *c = (uint8_t *)px + AHDR + 4 * (size_t)((LH - 1 - y) * LW + x);
+        int w = LOCK_ART[y][x] == 'W', edge = 0;
+        for (int dy = -1; dy <= 1 && !w; dy++) for (int dx = -1; dx <= 1; dx++) {
+            int yy = y + dy, xx = x + dx;
+            if (yy >= 0 && yy < LH && xx >= 0 && xx < LW && LOCK_ART[yy][xx] == 'W') edge = 1;
+        }
+        if (w) { c[0] = c[1] = c[2] = c[3] = 255; }
+        else if (edge) { c[0] = 22; c[1] = 18; c[2] = 26; c[3] = 210; }     /* the game's dark panel tone, a little see-through */
+        else c[0] = c[1] = c[2] = c[3] = 0;
+    }
+    MC(M.tex_set, void, Obj, Obj, void *)(tex, px, M.tex_set);
+    MC(M.tex_filter, void, Obj, int32_t, void *)(tex, E.point, M.tex_filter);   /* crisp pixels, as the game's art */
+    MC(M.tex_wrap, void, Obj, int32_t, void *)(tex, E.clamp, M.tex_wrap);
+    MC(M.tex_apply, void, Obj, void *)(tex, M.tex_apply);
+    s = MC(M.spr_create, Obj, Obj, Rect, V2, void *)(tex, (Rect){0, 0, LW, LH}, (V2){0.5f, 0.5f}, M.spr_create);
+    if (!alive(s)) return NULL;
+    MC(M.obj_hide, void, Obj, int32_t, void *)(tex, E.keep, M.obj_hide);       /* not freed by an asset clean-up */
+    MC(M.obj_hide, void, Obj, int32_t, void *)(s, E.keep, M.obj_hide);
+    h_sprite = IL.gch_weak(s, 0);
     return s;
 }
 static Obj lock_img(Obj slot, int create) {                 /* the slot's lock Image (a child), NULL = none */
@@ -391,15 +431,15 @@ static Obj lock_img(Obj slot, int create) {                 /* the slot's lock I
     MC(M.img_preserve, void, Obj, uint8_t, void *)(img, 1, M.img_preserve);
     void *m = vm(img, M.g_color); if (m) MC(m, void, Obj, Color, void *)(img, (Color){1, 1, 1, 1}, m);
     m = vm(img, M.g_raycast); if (m) MC(m, void, Obj, uint8_t, void *)(img, 0, m);   /* right-click still reaches the slot */
-    Obj rt = tr(img), st = tr(slot);
-    V2 ss = st ? MC(M.rt_size_get, V2, Obj, void *)(st, M.rt_size_get) : (V2){0, 0};
-    float side = ss.y > 0 ? ss.y * 0.36f : 16.0f;          /* the 8 px padlock at about a third of the slot */
-    MC(M.rt_amin, void, Obj, V2, void *)(rt, (V2){0, 1}, M.rt_amin); MC(M.rt_amax, void, Obj, V2, void *)(rt, (V2){0, 1}, M.rt_amax);
+    Obj rt = tr(img);
+    /* anchors in the slot's own rect (it scales with the slot and the UI scale): a box 6..27 % from the left and
+       7..31 % from the top (24 % high = the 8-pixel picture at about a fifth of the slot); preserveAspect keeps it 7:8 */
+    MC(M.rt_amin, void, Obj, V2, void *)(rt, (V2){0.06f, 0.69f}, M.rt_amin); MC(M.rt_amax, void, Obj, V2, void *)(rt, (V2){0.27f, 0.93f}, M.rt_amax);
     MC(M.rt_pivot, void, Obj, V2, void *)(rt, (V2){0, 1}, M.rt_pivot);
-    MC(M.rt_pos, void, Obj, V2, void *)(rt, (V2){side * 0.15f, -side * 0.15f}, M.rt_pos);
-    MC(M.rt_size, void, Obj, V2, void *)(rt, (V2){side, side}, M.rt_size);
+    MC(M.rt_pos, void, Obj, V2, void *)(rt, (V2){0, 0}, M.rt_pos);
+    MC(M.rt_size, void, Obj, V2, void *)(rt, (V2){0, 0}, M.rt_size);
     MC(M.tr_last, void, Obj, void *)(rt, M.tr_last);        /* drawn over the item icon */
-    static int n_made; if (logn(&n_made, 3)) H->log(ME, "lock icon made (slot %.0f x %.0f, icon %.1f)", ss.x, ss.y, side);
+    static int n_made; if (logn(&n_made, 3)) H->log(ME, "lock icon made (white padlock %dx%d, top-left of the slot)", LW, LH);
     return img;
 }
 static void remember(Obj slot, const WGuid *u, int idx) {
@@ -729,7 +769,9 @@ static int resolve(void) {
     K.image = kls("UnityEngine.UI", "Image"); K.graphic = kls("UnityEngine.UI", "Graphic");
     K.object = kls("UnityEngine", "Object"); K.comp = kls("UnityEngine", "Component"); K.go = kls("UnityEngine", "GameObject");
     K.transform = kls("UnityEngine", "Transform"); K.rect = kls("UnityEngine", "RectTransform");
-    K.resloader = kls(R, "ResourceLoader"); K.lang = kls("Refactor.Setting", "LanguageSetting");
+    K.lang = kls("Refactor.Setting", "LanguageSetting");
+    K.tex = kls("UnityEngine", "Texture2D"); K.texture = kls("UnityEngine", "Texture"); K.sprite = kls("UnityEngine", "Sprite");
+    K.color32 = kls("UnityEngine", "Color32");
     K.ev_ban = kls("Refactor.Main.Event", "BanAutoFixItemRequested");
     K.ec = kls(RM, "EntityComponent"); K.complist = kls(RM, "ComponentList");
     void *k_proc = kls("Refactor.Main.Processor", "ItemControlProcessor"), *k_ieh = kls("Refactor.Main.Event", "ItemEventHandler");
@@ -779,13 +821,17 @@ static int resolve(void) {
     M.tr_find = msig(K.transform, "Find", 1, "String"); M.tr_last = msig(K.transform, "SetAsLastSibling", 0, NULL);
     M.rt_amin = msig(K.rect, "set_anchorMin", 1, NULL); M.rt_amax = msig(K.rect, "set_anchorMax", 1, NULL);
     M.rt_pivot = msig(K.rect, "set_pivot", 1, NULL); M.rt_pos = msig(K.rect, "set_anchoredPosition", 1, NULL);
-    M.rt_size = msig(K.rect, "set_sizeDelta", 1, NULL); M.rt_size_get = msig(K.rect, "get_sizeDelta", 0, NULL);
+    M.rt_size = msig(K.rect, "set_sizeDelta", 1, NULL);
     M.img_sprite = msig(K.image, "set_sprite", 1, NULL); M.img_preserve = msig(K.image, "set_preserveAspect", 1, NULL);
     M.g_color = msig(K.graphic, "set_color", 1, NULL); M.g_raycast = msig(K.graphic, "set_raycastTarget", 1, NULL);
-    M.res_icon = msig(K.resloader, "LoadResearchIcon", 1, NULL); M.lang_get = msig(K.lang, "GetCurrentLanguage", 0, NULL);
+    M.lang_get = msig(K.lang, "GetCurrentLanguage", 0, NULL);
+    M.tex_ctor = msig(K.tex, ".ctor", 4, "Int32,Int32,TextureFormat,Boolean"); M.tex_set = msig(K.tex, "SetPixels32", 1, NULL);
+    M.tex_apply = msig(K.tex, "Apply", 0, NULL); M.tex_filter = msig(K.texture, "set_filterMode", 1, NULL);
+    M.tex_wrap = msig(K.texture, "set_wrapMode", 1, NULL); M.spr_create = msig(K.sprite, "Create", 3, "Texture2D,Rect,Vector2");
+    M.obj_hide = msig(K.object, "set_hideFlags", 1, NULL);
+    E.rgba32 = enum_v(kls("UnityEngine", "TextureFormat"), "RGBA32", 4); E.point = enum_v(kls("UnityEngine", "FilterMode"), "Point", 0);
+    E.clamp = enum_v(kls("UnityEngine", "TextureWrapMode"), "Clamp", 1); E.keep = enum_v(kls("UnityEngine", "HideFlags"), "DontUnloadUnusedAsset", 32);
     M.stream_add = msig(K.uistream, "AddInput", 1, NULL);
-    void *k_single = IL.class_get_parent(K.resloader);       /* MonoSingleton<ResourceLoader> */
-    M.resloader_inst = k_single ? fld(k_single, "_instance") : NULL; if (!M.resloader_inst) miss("field", "MonoSingleton<ResourceLoader>", "_instance");
     if (n_missing) return 1;
     H->log(ME, "fields: unit guid %d, slots %d, holder %d/%d/%d/%d size %d, slot ui %d/%d/%d/%d, world %d/%d/%d, menu %d/%d, order %d/%d",
            O.unit_guid, O.inv_slots, O.ih_guid, O.ih_key, O.ih_amount, O.ih_auto, O.ih_size, O.slot_owner, O.slot_index, O.slot_inv,
@@ -818,7 +864,8 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     FN(field_get_type, "il2cpp_field_get_type"); FN(field_static_get_value, "il2cpp_field_static_get_value");
     FN(class_get_method_from_name, "il2cpp_class_get_method_from_name"); FN(class_value_size, "il2cpp_class_value_size");
     FN(object_get_class, "il2cpp_object_get_class"); FN(class_is_assignable_from, "il2cpp_class_is_assignable_from");
-    FN(object_get_virtual_method, "il2cpp_object_get_virtual_method"); FN(string_new, "il2cpp_string_new");
+    FN(object_get_virtual_method, "il2cpp_object_get_virtual_method");
+    FN(object_new, "il2cpp_object_new"); FN(array_new, "il2cpp_array_new"); FN(string_new, "il2cpp_string_new");
     FN(gch_weak, "il2cpp_gchandle_new_weakref"); FN(gch_target, "il2cpp_gchandle_get_target"); FN(gch_free, "il2cpp_gchandle_free");
 #undef FN
     for (void **p = (void **)&IL; p < (void **)(&IL + 1); p++) if (!*p) { H->log(ME, "il2cpp export missing (#%d)", (int)(p - (void **)&IL)); return 1; }
