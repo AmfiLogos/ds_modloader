@@ -64,6 +64,7 @@ void dsl_update_start(void);                 /* after the modules' init: check t
 void dsl_update_start_kit_only(void);       /* mods off (unknown / not pinned build): kit check + download only */
 int dsl_update_will_install(void);          /* 1 = a newer kit is fetched and installed at the next start */
 void dsl_update_frame(void);                 /* every frame (title corner, confirm, the starter's notice) */
+void dsl_whatsnew_frame(void);               /* dsl_whatsnew.c, every frame: the "What's new" window once per kit version */
 /* crash reports (dsl_crash.c) */
 void dsl_crash_boot(void);                   /* start part, after dsl_soft_snapshot: the previous session's end */
 void dsl_crash_start(void);                  /* after the modules' init: the quit mark */

@@ -40,8 +40,9 @@ def nsis_blob(d):
         return None
 
 
-def check(f):
-    n = os.path.basename(f); found = []
+def loaders(f):
+    """[(label, bytes)] of every loader inside one kit release file ([] = none); also used by ../changelog/changelog.py"""
+    n = os.path.basename(f); out = []
     if f.endswith('.dmg'):
         mnt = tempfile.mkdtemp(prefix='check_keys.')
         subprocess.run(['hdiutil', 'attach', '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', mnt, f],
@@ -49,7 +50,7 @@ def check(f):
         try:
             for dp, _, fs in os.walk(mnt):
                 if 'dsload.dylib' in fs and dp.endswith('Contents/Resources/dsml'):
-                    found.append(judge(f'{n}: {os.path.relpath(dp, mnt)}/dsload.dylib', open(os.path.join(dp, 'dsload.dylib'), 'rb').read()))
+                    out.append((f'{n}: {os.path.relpath(dp, mnt)}/dsload.dylib', open(os.path.join(dp, 'dsload.dylib'), 'rb').read()))
         finally:
             if subprocess.run(['hdiutil', 'detach', mnt, '-quiet']).returncode:
                 subprocess.run(['hdiutil', 'detach', mnt, '-force', '-quiet'])
@@ -57,13 +58,18 @@ def check(f):
         with zipfile.ZipFile(f) as z:
             for i in z.namelist():
                 if os.path.basename(i) in ('dsload.dylib', 'baselib.dll'):
-                    found.append(judge(f'{n}: {i}', z.read(i)))
+                    out.append((f'{n}: {i}', z.read(i)))
     elif f.endswith('.exe'):
         b = nsis_blob(open(f, 'rb').read())
         if b is not None:
-            found.append(judge(f'{n}: unpacked installer data', b))
+            out.append((f'{n}: unpacked installer data', b))
+    return out
+
+
+def check(f):
+    found = [judge(what, data) for what, data in loaders(f)]
     if not found:
-        print(f'FAIL {n}: no loader found in it')
+        print(f'FAIL {os.path.basename(f)}: no loader found in it')
     return bool(found) and all(found)
 
 

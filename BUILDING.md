@@ -87,6 +87,8 @@ Run each command from the repo root. Set the env vars of section 2 first.
    script reads it there. For a kit it first runs `python3 tools/release_sign/check_keys.py <kit files>`: every loader in
    the .dmg, the zips and the unpacked Setup.exe must hold both release keys and never the public dev key (a test build,
    `-DDSL_SIGN_DEV_KEY`, as `mac_gate.sh` makes). Any mismatch stops the signing; run it in the release gate too.
+   It also refuses a release without a final entry in its repo's `CHANGELOG.md` (`### <ver> (<date>)`, not
+   "Unreleased"), and a kit whose loaders do not hold that entry (the "What's new" window): `tools/changelog/changelog.py`.
 
 BepInEx and MelonLoader are not built here. `app/bepinex/install_bepinex.sh` and `app/melon/install_melon.sh` go into
 the app. At first use they download a release zip from ds_multiplayer GitHub Releases and check its sha256.

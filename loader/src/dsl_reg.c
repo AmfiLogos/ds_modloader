@@ -1359,6 +1359,7 @@ void dsl_frame_hook(void) {
     test_frame();
     dsl_rows_frame();
     dsl_update_frame();
+    dsl_whatsnew_frame();
     dsl_crash_frame();
     dsl_bugrep_frame();
     dsl_hostmods_frame();

@@ -1154,3 +1154,28 @@ UX L6: the reason line names the needed mod as the list does (dsl_reg.c dsl_mod_
 turned off adds "Turn it on." (key "%s. Turn it on.").
 UX L7: ru "Privacy" = "Конфиденциальность" (the game's word, Политика конфиденциальности), as the bug report's; that button
 220 wide; the group-name row's Save / Cancel 100 wide (field 216 shorter).
+
+## CHANGELOG.md + the "What's new" window (owner 2026-10-25, "All three"; kit 0.1.28, lane dschangelog) - `src/dsl_whatsnew.c`, `tools/changelog/changelog.py`
+Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repos) has an entry in its repo's
+`CHANGELOG.md`, and its GitHub notes are built from that entry. A merge that players notice adds its bullets under
+`### Unreleased (<next version>)` (plain English, no lane names or hashes). Format and commands: the docstring of
+`tools/changelog/changelog.py` (same file for all three repos; `lint` checks a file).
+- Template: `changelog.py fill --tag <tag> --head <notes head>`: the head's line `<!-- CHANGELOG -->` becomes the entry.
+- Guards: `tools/release_sign/sign_release.sh` refuses to sign a release without a final entry (`### <ver> (<date>)`;
+  ds_multiplayer / ds_custommodes: read from their public main) and a kit whose loaders lack it; the gate's
+  `changelog.py check --tag v<ver> --binary <dmg> --binary <Windows.zip> --binary <Setup.exe>` (gate0127 `g027_changelog`);
+  `--notes <file>` checks the notes hold the entry.
+- In the game: the loader holds the kit entry of its own release (`build.sh` / `build_win.sh` run `changelog.py cheader`
+  -> `build/gen/dsl_whatsnew_data.h`, git-ignored). Not a file next to it: the Windows auto-update copies no text files
+  (`dsl_update_win.c`: baselib.dll, the starter, RELEASE, mods). So the kit is built AFTER its entry is final; renaming
+  the heading (Unreleased -> dated) does not change the loader (only the text is in it).
+- Window: `dsl_whatsnew.c` on `dsl_window_std` (dim backdrop, title "What's new" in 10 languages, the game's red X,
+  Escape, UI Scale), "Dungeon Settlers Modded v<ver>" (not translated), the entry in English in a scroll list, OK. It
+  shows ONCE: at the idle title (menu column shown, nothing loading, no soft restart, no window of the game or of ours,
+  no notice box) for 30 frames in a row; `<data>/Mods/whatsnew.txt` = the last kit version shown, written when it
+  shows. A missing file shows it too (an update from 0.1.27 has no file; pick logged in PLAN_v013.md). A loader whose
+  release has no entry shows nothing. Never in a test copy (background-only or DSRIG_CTL=1); `DSL_WHATSNEW_TEST=1` = shown.
+- Test: `test/whatsnew_test.py` (own hidden copy WNW, three starts): shows after a version change with the entry's bytes,
+  on the Escape stack, one Escape closes it, title menu stays; same version again = no window; a test copy without
+  DSL_WHATSNEW_TEST = no window; no UI-RULE / ESC-MISSING line. 19/0 (0.1.26 entry, and the long 0.1.28 entry); the
+  main loader fails it (no window).
