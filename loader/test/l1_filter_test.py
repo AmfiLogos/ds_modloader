@@ -148,8 +148,8 @@ def place_checks(tag, st):
     check(f'{tag}: the panel shows', st.get('panel_on') == 1 and st.get('panel_shown') == 1, st)
     check(f'{tag}: the panel is right of the Load window', p[0] >= w[2] - 0.5, (p, w))
     check(f'{tag}: the panel is inside the screen', p[0] >= 0 and p[1] >= -0.5 and p[2] <= sw + 0.5 and p[3] <= sh + 0.5, (p, sw, sh))
-    if st.get('scene_title', 1):
-        check(f'{tag}: the title corner shows (Auto-update, version, a notice line)', st.get('corner_shown') == 1, c)
+    if st.get('scene_title', 1):   # kit 0.1.28 (UX L2, bdcb603): the title corner hides while a window of the game (the Load window) shows
+        check(f'{tag}: the title corner hides while the Load window shows', st.get('corner_shown') == 0, c)
     check(f'{tag}: the panel does not cover the title corner (Auto-update)', not st.get('corner_shown') or not overlap(p, c), (p, c))
     check(f'{tag}: the panel is not scaled below 0.6', st.get('scale', 0) >= 0.6, st.get('scale'))
 
