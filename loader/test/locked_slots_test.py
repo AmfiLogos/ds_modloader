@@ -77,6 +77,8 @@ def make_fixture(dst):
     w = str(uuid.uuid4())
     d['CampaignSaveHeader']['CampaignGuid'] = w; d['ClanSaveData']['CampaignGuid'] = w
     d['CampaignSaveHeader']['SaveName'] = 'LockedSlots__AutoSave_%s_0' % w.replace('-', '')
+    css = d['CampaignSettingSaveData']['CampaignStartSettingSaveData']   # the template predates Lock Consecration:
+    css.setdefault('LockConsecrationEnabled', False); css['LockConsecrationNoticeAcknowledged'] = True   # no Yes / No box at load
     B = d['EntityContainerSaveData']['ItemContainerSaveData']['Base']; E = d['EntityComponentSaveData']['EntityComponents']
     tmpl = {}
     for g, v in B['ItemSaveData'].items():
@@ -150,9 +152,11 @@ def save_now(name):
     return None
 
 
-def errors(mark):
-    t = rd(os.path.join(I, 'player.log')) + rd(os.path.join(I, 'data', 'ErrorLog.txt'))[mark:]
-    return [l for l in t.splitlines() if any(b in l for b in BAD)]
+STOCK_RETRY = 'DSDungeonPreDataGenerator'           # the game's dungeon generator logs an NRE and retries with seed + 1
+def errors(mark, text=None):
+    """exception lines in player.log / ErrorLog since the start of this run (not the stock generator retry)"""
+    t = (text if text is not None else rd(os.path.join(I, 'player.log')) + rd(os.path.join(I, 'data', 'ErrorLog.txt'))[mark:]).splitlines()
+    return [l for i, l in enumerate(t) if any(b in l for b in BAD) and not any(STOCK_RETRY in x for x in t[i + 1:i + 3])]
 
 
 def up(out, enabled):
@@ -222,7 +226,7 @@ def menu(u, slot):
 
 
 def on_map(m):                                    # on that map, no transition running
-    s = status(); return s.get('map') == m and not s.get('map_transition') and not s.get('busy') and not s.get('map_loading')
+    s = status(); return s.get('map') == m and not s.get('map_transition') and not s.get('busy') and not (s.get('map_loading') or {}).get('is_loading')
 
 
 # ------------------------------------------------------------------------------------------------ phase A: mod on
@@ -234,7 +238,7 @@ def run_a(out):
     st = lstate(); check('A: the world is known', st.get('world') == world, st)
 
     # ---- M: the bag window, the menu, the order, the icon
-    cmd({'cmd': 'ord_select', 'guids': U[0]}); time.sleep(1)
+    inject('SelectPlayerUnitRequested', guid_20=U[0]); time.sleep(1)   # the game's own selection (view updates)
     log('open', cmd({'cmd': 'lks_open'})); time.sleep(2)
     icons = wait('bag slots shown', lambda: [s for s in cmd({'cmd': 'lks_icons'}).get('slots', []) if s['unit'] == U[0]], timeout=10)
     check('M: the unit window shows its bag slots (36)', icons and len(icons) == 36, icons and len(icons))
@@ -254,6 +258,8 @@ def run_a(out):
     icons = {s['slot']: s['icon'] for s in cmd({'cmd': 'lks_icons'}).get('slots', []) if s['unit'] == U[0]}
     check('M: the lock icon shows on locked slots only', icons and all(icons.get(i) == (1 if i in LOCK else 0) for i in icons),
           sorted(i for i, v in icons.items() if v))
+    menu(U[0], 3); time.sleep(1)                  # one picture for the owner: lock icons + the open menu row
+    log('picture', cmd({'cmd': 'ui_capture', 'path': os.path.join(out, 'locked_slots_menu.png')}))
     lf = os.path.join(I, 'data', 'ModData', 'locked-slots', 'locks_%s.txt' % world)
     check('M: the locks are in the data file', ('%s 0 3 5' % U[0]) in rd(lf), rd(lf))
 

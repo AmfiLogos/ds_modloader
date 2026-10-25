@@ -103,26 +103,29 @@ def run(out, port):
     fx = os.path.join(r.idir(HX), 'save_in', 'lks_pair_fixture.json'); world = T.make_fixture(fx)
     up(HX, out, {'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True, 'full_check_steps': 1800},
        seed_locks='%s 0 3\n' % U[0], world=world)
+    if 'cannot listen' in T.rd(os.path.join(r.idir(HX), 'rig.log')):
+        raise RuntimeError('the host cannot listen on port %d: no guest is started' % port)
     log('host load', c(HX, cmd='load_save', file=fx, det=1))
     wait('host locked', lambda: st(HX).get('det', {}).get('locked'), timeout=900, every=2)
     up(GX, out, {'role': 'client', 'host': '127.0.0.1', 'port': port, 'name': 'Guest', 'full_check_steps': 1800})
     ok = wait('guest loaded the host world', lambda: (lambda s: s.get('det', {}).get('locked') and s.get('mp', {}).get('loads', 0) >= 1
                                                        and not s.get('mp', {}).get('needs_state'))(st(GX)), timeout=900, every=2)
-    check('guest joined and loaded the host world', ok, st(GX))
     h, g = lk(HX), lk(GX)
+    check('guest joined and loaded THIS host world', ok and g.get('world') == world, (st(GX).get('mp'), g.get('world')))
+    if g.get('world') != world: raise RuntimeError('the guest is not in this test world: stop')
     check('J: the host\'s locks reached the guest (same world, same table)', h.get('world') == g.get('world') == world and locked(GX, U[0]) == [0, 3]
           and h.get('hash') == g.get('hash') != '0000000000000000', (h, g))
 
     # ---- G: the guest locks its own unit through the stock menu row (the game's order)
     log('guest claims', U[1], c(GX, cmd='mp_claim', guid=U[1])); time.sleep(3)
-    c(GX, cmd='ord_select', guids=U[1]); time.sleep(1); log('guest open', c(GX, cmd='lks_open')); time.sleep(2)
+    inject(GX, 'SelectPlayerUnitRequested', guid_20=U[1]); time.sleep(1); log('guest open', c(GX, cmd='lks_open')); time.sleep(2)
     c(GX, cmd='lks_menu', unit=U[1], slot=1)
     rows = wait('guest menu rows', lambda: c(GX, cmd='lks_rows').get('rows'), timeout=10)
     check('G: the guest\'s menu shows "Keep on return"', any(x.get('ours') and x.get('lock') == 1 for x in rows or []), rows)
     c(GX, cmd='lks_pick')
     ok = wait('the lock on both', lambda: locked(HX, U[1]) == [1] and locked(GX, U[1]) == [1], timeout=30)
     check('G: the guest\'s lock is applied on both players', ok and lk(HX).get('hash') == lk(GX).get('hash'), (lk(HX), lk(GX)))
-    c(GX, cmd='ord_select', guids=U[0]); time.sleep(1); c(GX, cmd='lks_open'); time.sleep(2)
+    inject(GX, 'SelectPlayerUnitRequested', guid_20=U[0]); time.sleep(1); c(GX, cmd='lks_open'); time.sleep(2)
     c(GX, cmd='lks_menu', unit=U[0], slot=6); time.sleep(2); c(GX, cmd='lks_pick'); time.sleep(5)
     check('G: a guest\'s lock order on a unit it does not own changes nothing', locked(HX, U[0]) == locked(GX, U[0]) == [0, 3], (lk(HX), lk(GX)))
     check('G: the host wrote the guest\'s lock to its file; the guest wrote none',
@@ -166,6 +169,12 @@ def main():
     if not pair: raise SystemExit('no rig lease in 30 min')
     port = int(subprocess.run([sys.executable, f'{HOME}/ds_multiplayer/rig/rig.py', 'port', pair], capture_output=True, text=True).stdout.split()[-1])
     log('pair', pair, 'port', port, 'host', HX, 'guest', GX)
+    r.pair_port = lambda x, _p=port: _p           # lrig gives every K..Z copy port 7891 (shared by all loader lanes): the
+                                                  # guest joined another lane's host there once. Use this lease's own port.
+    busy = subprocess.run(['lsof', '-nP', '-iTCP:%d' % port, '-sTCP:LISTEN'], capture_output=True, text=True).stdout.strip()
+    if busy:
+        subprocess.run([sys.executable, f'{HOME}/ds_multiplayer/rig/rig.py', 'release', pair, lane], capture_output=True)
+        raise SystemExit('port %d of the lease is in use: %s' % (port, busy.splitlines()[-1]))
     try:
         run(out, port)
     except Exception as e:
