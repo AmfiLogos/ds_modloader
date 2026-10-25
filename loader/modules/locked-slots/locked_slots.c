@@ -169,7 +169,7 @@ static struct {
 static struct {
     int32_t unit_guid, inv_slots, ih_guid, ih_key, ih_amount, ih_auto, slot_owner, slot_index, slot_inv, slot_autofix,
             mf_campaign, cd_clan, clan_guid, ctrl_option, option_list, ev_guid, ev_index, ec_components, ui_stream,
-            optui_list, ih_size, list_items,
+            optui_list, ih_size, list_items, cd_time, time_tick,
             ia_type, ia_text, ia_possible, ia_index, ia_input, ia_uiinput,           /* inside Interaction */
             ui_type, ui_p2, ui_g1;                                                  /* inside UIInput */
 } O;
@@ -217,6 +217,7 @@ static struct { WGuid u; uint64_t m; } T[MAXU];
 static int nT;
 static WGuid cur_world; static int have_world, from_host;   /* from_host: the table came from the host (guest) */
 static int n_kept, n_sorted, n_toggles, n_rows;              /* counters for the log and the test command */
+static int64_t last_tick = -1;                               /* campaign tick of the last lock change (log, test) */
 static int lk_find(const WGuid *u) { for (int i = 0; i < nT; i++) if (geq(&T[i].u, u)) return i; return -1; }
 static uint64_t lk_mask(const WGuid *u) { int i = lk_find(u); return i < 0 ? 0 : T[i].m; }
 static void lk_put(const WGuid *u, uint64_t m) {
@@ -251,6 +252,11 @@ static int world_now(WGuid *out) {
     if (!clan) return 0;
     memcpy(out, (char *)clan + O.clan_guid, 16);
     return !gzero(out);
+}
+static int64_t tick_now(void) {                             /* CampaignDataContainer.TimeData.<Tick> (-1 = unknown) */
+    Obj mf = h_mainflow ? IL.gch_target(h_mainflow) : NULL, cd = mf ? AT(mf, O.mf_campaign, Obj) : NULL;
+    Obj t = cd && O.cd_time > 0 ? AT(cd, O.cd_time, Obj) : NULL;
+    return t && O.time_tick > 0 ? AT(t, O.time_tick, int64_t) : -1;
 }
 
 /* ---- files: <ModData>/locked-slots/locks_<world guid>.txt ("<unit guid> <slot> <slot> ...") */
@@ -436,10 +442,10 @@ static void apply(const WGuid *u, int slot, int on) {
     if (!have_world) { H->log(ME, "lock order with no world: ignored"); return; }
     uint64_t m = lk_mask(u), b = 1ULL << slot;
     lk_put(u, on ? (m | b) : (m & ~b));
-    n_toggles++;
+    n_toggles++; last_tick = tick_now();
     if (role() != ROLE_GUEST) file_save();                  /* a guest keeps the host's locks in memory only */
     char g[40]; guid_s(u, g);
-    H->log(ME, "unit %s slot %d %s (%d unit(s) with locks)", g, slot, on ? "locked: kept on return" : "unlocked", nT);
+    H->log(ME, "unit %s slot %d %s at tick %lld (%d unit(s) with locks)", g, slot, on ? "locked: kept on return" : "unlocked", (long long)last_tick, nT);
     refresh_unit(u);
 }
 static void (*o_ban)(Obj, Obj, const void *);
@@ -610,13 +616,42 @@ static char *t_exec(const char *cmd, const char *line) {
     if (!strcmp(cmd, "lks_state")) {
         sync_world();
         char w[40] = ""; if (have_world) guid_s(&cur_world, w);
-        PUT("{\"ok\":true,\"world\":\"%s\",\"role\":%d,\"kept\":%d,\"sorted\":%d,\"toggles\":%d,\"rows\":%d,\"units\":[", w, role(), n_kept, n_sorted, n_toggles, n_rows);
+        PUT("{\"ok\":true,\"world\":\"%s\",\"role\":%d,\"kept\":%d,\"sorted\":%d,\"toggles\":%d,\"rows\":%d,\"last_tick\":%lld,\"units\":[", w, role(), n_kept, n_sorted, n_toggles, n_rows, (long long)last_tick);
         for (int i = 0; i < nT; i++) {
             char g[40]; guid_s(&T[i].u, g); PUT("%s{\"unit\":\"%s\",\"slots\":[", i ? "," : "", g);
             int k = 0; for (int s = 0; s < NSLOT; s++) if (T[i].m >> s & 1) PUT("%s%d", k++ ? "," : "", s);
             PUT("]}");
         }
         PUT("],\"hash\":\"%016llx\"}", (unsigned long long)lk_hash());
+        return jdup(b);
+    }
+    if (!strcmp(cmd, "lks_bag")) {                          /* a unit's bag as this player's sim has it: key x amount per slot */
+        char us[64] = ""; WGuid u; jstr(line, "unit", us, sizeof us);
+        if (!guid_p(us, &u)) return jdup("{\"ok\":false,\"error\":\"need unit\"}");
+        Obj ec = NULL; IL.field_static_get_value(M.ec_inst, &ec);
+        Obj d = ec ? AT(ec, O.ec_components, Obj) : NULL, ent = NULL;
+        void *k = d ? IL.object_get_class(d) : NULL, *fe = k ? fld(k, "_entries") : NULL;
+        void *el = fe ? IL.class_get_element_class(class_of_type(IL.field_get_type(fe))) : NULL;
+        if (el) {
+            int32_t oe = fo(k, "_entries"), oc = fo(k, "_count"), oh = fov(el, "hashCode"), ok = fov(el, "key"), sz = IL.class_value_size(el, NULL);
+            Obj arr = AT(d, oe, Obj); int n = AT(d, oc, int32_t);
+            for (int i = 0; arr && !ent && i < n && (uintptr_t)i < AT(arr, 0x18, uintptr_t); i++) {
+                char *e = (char *)arr + AHDR + (size_t)i * (size_t)sz; Obj key = AT(e, oh, int32_t) >= 0 ? AT(e, ok, Obj) : NULL;
+                if (is_a(key, K.unit) && !memcmp((char *)key + O.unit_guid, &u, 16)) ent = key;
+            }
+        }
+        Obj inv = ent ? inv_of(ent) : NULL;
+        if (!inv) return jdup("{\"ok\":false,\"error\":\"unit or bag not found\"}");
+        PUT("{\"ok\":true,\"slots\":[");
+        Obj arr = AT(inv, O.inv_slots, Obj); int cap = arr ? (int)AT(arr, 0x18, uintptr_t) : 0;
+        for (int i = 0; i < cap; i++) {
+            Held h; char key[80] = "";
+            if (held_at(inv, i, &h)) { int32_t L = h.key ? AT(h.key, 0x10, int32_t) : 0; size_t q = 0;
+                for (int32_t c = 0; c < L && q + 1 < sizeof key; c++) { uint16_t ch = ((uint16_t *)((char *)h.key + 0x14))[c]; key[q++] = ch < 0x80 && ch != '"' && ch != '\\' ? (char)ch : '?'; }
+                key[q] = 0; PUT("%s[\"%s\",%d]", i ? "," : "", key, h.amount); }
+            else PUT("%snull", i ? "," : "");
+        }
+        PUT("]}");
         return jdup(b);
     }
     if (!strcmp(cmd, "lks_open")) {                         /* the inventory window of the selected unit(s): presenter Activate */
@@ -706,7 +741,9 @@ static int resolve(void) {
     O.ih_size = IL.class_value_size(K.ih, NULL);
     O.slot_owner = fo(K.slotui, "_owner"); O.slot_index = fo(K.slotui, "_slotIndex"); O.slot_inv = fo(K.slotui, "_inventory");
     O.slot_autofix = fo(K.slotui, "_imgAutoFix");
-    O.mf_campaign = fo(K.mainflow, "_campaignData"); O.cd_clan = fo(k_cd, "ClanDataContainer"); O.clan_guid = fo(k_clan, "<CampaignGuid>k__BackingField");
+    O.mf_campaign = fo(K.mainflow, "_campaignData");
+    { void *f = fld(k_cd, "TimeData"), *kt = ftype_class(k_cd, "TimeData"), *g = kt ? fld(kt, "<Tick>k__BackingField") : NULL;   /* log only */
+      O.cd_time = f ? (int32_t)IL.field_get_offset(f) : -1; O.time_tick = g ? (int32_t)IL.field_get_offset(g) : -1; } O.cd_clan = fo(k_cd, "ClanDataContainer"); O.clan_guid = fo(k_clan, "<CampaignGuid>k__BackingField");
     O.ctrl_option = fo(K.ctrl, "_registeredOption"); O.option_list = fo(K.option, "_interactions");
     O.ev_guid = fo(K.ev_ban, "TargetGuid"); O.ev_index = fo(K.ev_ban, "Index");
     O.ec_components = fo(K.ec, "_components"); O.ui_stream = fo(k_static, "_inputStream"); O.optui_list = fo(K.optui, "_interactions");
