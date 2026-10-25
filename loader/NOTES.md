@@ -622,12 +622,14 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   after the name text). When the name + tags + link would pass the "Mods:" line's minimum (64 units before [Change]),
   the tag's "with <names>" part is cut ("…"), then left out; with no room left the "Mods:" line goes (the [Change] card
   lists the mods). Test: l1_filter_test main (en) + look (de/ru/ja) `rm_checks`; the old placement fails it.
-- Solo tag (owner 2026-10-25, next version: "We have multiplayer - should add a solo tag as well"): with Show tags on,
-  every world without the multiplayer tag shows "Solo" where that tag would be, in its look (75 %, #8FC4FF; marked by
-  `<link="dsl.solo">`), after "Modded" when the world is Modded. Only with a multiplayer mod that tags worlds (its export
-  `dsl_loadlist_world_mp`): without it no world can be multiplayer and the tag would say nothing. A removed multiplayer
-  tag = Solo at once: `list_sig` takes the world names' text objects, so the multiplayer mod's rewrite of a name
-  rebuilds the rows. The single-player copies ("<name> (solo)": new guid, no tag) show Solo by the same rule.
+- Solo FILTER (owner 2026-10-25, next version: "i don't want a solo tag but a solo filter - which is the opposite of
+  multiplayer worlds"; the Solo row tag of that morning is gone). Two groups of boxes: Mods = Vanilla & Vanilla+ /
+  Modded (the world's mods, multiplayer worlds too) and Play = Solo / Multiplayer (the multiplayer mod's tag). A world
+  shows when the box of its mods AND the box of its play are on; a group with every box off does not filter. All four on
+  by default; an older loadlist.json keeps its values, Solo on (`solo` key). No multiplayer mod = no Play boxes. A thin
+  line between the groups; the ornament line stays above Latest save only / Show tags. A removed multiplayer tag makes
+  the world Solo at once (`list_sig` takes the world names' text objects: the multiplayer mod's rewrite rebuilds the
+  rows). lf_state: "kind" as before (2 = multiplayer), "mods" / "play" for each group.
 - 2026-10-25 (owner): the hidden-worlds line lay over the last save row. Cause: Latest save only set a world row's
   `_buttonCount` to 1 only for the SHOWN rows; a row hidden by a filter while Latest save only went off kept 1, and shown
   again its second save row hung out of its row (under the next row or the line). Now every row the loader shrank goes
