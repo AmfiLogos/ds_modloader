@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Bring Units CARD window of the multiplayer mod, in PvP and in Foreign Expedition (owner 2026-10-20), on one leased pair
+"""Bring Units CARD window of the multiplayer mod, in Foreign Expedition and in PvP (owner 2026-10-20), on one leased pair
 of hidden loader copies (BCH host, BCG guest; never the owner's game, saves or screen). Neither copy has Units Laboratory:
 each runs multiplayer + the test-only units-driver (fake mouse, ds_multiplayer ext/units13/driver).
- PvP: host page "PvP" (best of 1, 60 s) -> PvP world + lobby -> guest joins by address -> each player presses the lobby's
-      Bring Units: the card window opens (cards with game icons, the player's own saves) -> picks 2 units by clicking
-      their ticks -> Bring (the host first, ALONE, before the guest joins) -> the host has 4 units -> Start -> fight vote -> attack orders -> fight -> match end -> 0 desyncs -> Back to the Title.
- FE:  host page Foreign Expedition (Death Off) -> hub lobby -> guest joins -> both Bring through the card window (host 1,
+One multiplayer mode since 2026-10-21 (owner: "keep only the Hub: Co-op or PvP"; the separate PvP host choice HOST_C1 and
+its PvP world are gone): the hub is hosted, PvP is played from the hub (Esc > PvP Match).
+ FE:  host page "Hub: Co-op or PvP" (Death Off) -> hub lobby -> guest joins -> both Bring through the card window (host 1,
       ALONE before the guest joins; guest 2) -> Start -> hub with 3 units -> expedition (Teams) -> fight -> portal -> back on the base map -> 0 desyncs.
+ PvP: then, in the hub: Esc > PvP Match (Fight, best of 1, 60 s, this settlement) -> each player presses the window's
+      Bring Units: the card window opens (cards with game icons, the player's own saves) -> picks 2 units by clicking
+      their ticks -> Bring -> the host has 4 units -> Start Match -> fight vote -> attack orders -> fight -> match end -> 0 desyncs -> Back to the Hub.
 Breaks caught: no card window (the text list of the mpsplit build), picks that do not reach the host, a host alone in
 its lobby refused ("Not in a multiplayer session", v0.1.19), a desync from the brought units. Frames (game back buffer): <out>/*.png.
   bringcards_pair.py [--dive 420] [--only-open]       (--only-open: stop after the first card window check)
-  bringcards_pair.py --compact [LANGTYPE=3]          (one copy, the host alone in a PvP lobby: 8 compact cards on a page,
+  bringcards_pair.py --compact [LANGTYPE=3]          (one copy, the host alone in the hub lobby: 8 compact cards on a page,
                                                       a click on a card's body ticks / unticks it; LANGTYPE = the game's
                                                       language, 3 de, 4 ru; shots to look at. Fails on the 3-card window
                                                       and on cards that only the small tick selects, before 2026-10-20)
@@ -97,12 +99,14 @@ def bst(x):
     return c(x, cmd='mpm_bring_state')
 
 
-def open_cards(x, tag):
-    """the lobby's Bring Units button (the menu's own press) -> the card window"""
-    wait(f'{x} lobby', lambda: c(x, cmd='mpm_status').get('state') in ('lobby', 'guest_lobby'), timeout=120)
+def open_cards(x, tag, pvp=False):
+    """the lobby's Bring Units button (the menu's own press), or the PvP window's (pvp) -> the card window"""
+    if not pvp:
+        wait(f'{x} lobby', lambda: c(x, cmd='mpm_status').get('state') in ('lobby', 'guest_lobby'), timeout=120)
     s = {}
     for _ in range(6):
-        press(x, 'FE_BRINGWIN'); time.sleep(2)
+        if pvp: c(x, cmd='mpm_pvp', action='bring'); time.sleep(2)
+        else: press(x, 'FE_BRINGWIN'); time.sleep(2)
         s = bst(x)
         if s.get('open') == 1:
             break
@@ -158,43 +162,48 @@ def join(port):
     wait('guest loaded the host world + locked', lambda: (lambda s: s.get('det', {}).get('locked') and s.get('mp', {}).get('loads', 0) >= 1)(st(G)), timeout=900, every=2)
 
 
-# ------------------------------------------------------------------ PvP
-def pvp(port):
-    to_title(H)
-    press(H, 'MULTIPLAYER'); press(H, 'HOST_C1'); time.sleep(1)
-    c(H, cmd='mpm_pvp', action='page_arrow', row=1, dir=-1)                   # best of 1
-    c(H, cmd='mpm_pvp', action='page_arrow', row=2, dir=-1); c(H, cmd='mpm_pvp', action='page_arrow', row=2, dir=-1)   # 60 s
-    press(H, 'HOST_START')
-    wait('PvP world + lobby', lambda: (lambda s: s.get('scene') == 2 and s.get('tick', -1) > 0 and not s.get('busy') and s.get('det', {}).get('locked'))(st(H))
-         and c(H, cmd='mpm_status').get('state') == 'lobby', timeout=900, every=2)
-    port = c(H, cmd='mpm_status').get('port') or port
-    worlds = sorted(f for f in os.listdir(os.path.join(lrig.idir(H), 'data', 'Saves')) if WORLD.search(f))
-    info['world_saves_on_disk'] = worlds                             # earlier runs leave hub / PvP autosaves here: they must not show
-    s = open_cards(H, 'pvp_host')
-    check('PvP 1: the lobby Bring Units opens the CARD window (cards with game icons, real worlds only: no hub / PvP world saves)', cards_ok(s) and len(worlds) > 0, f'{s} | world saves on disk {len(worlds)}')
-    if ONLY_OPEN:
+# ------------------------------------------------------------------ PvP (from the hub)
+def hub_pvp():
+    """after fe(): both on the hub's base map, paused. Esc > PvP Match, each player's Bring Units (card window), Start Match"""
+    for x in (H, G):
+        c(x, cmd='mp_pause', on=0)
+    wait('both running', lambda: not st(H).get('mp', {}).get('paused') and not st(G).get('mp', {}).get('paused'), timeout=180)
+    time.sleep(3)
+    for x in (H, G):
+        c(x, cmd='mpm_esc'); time.sleep(2); c(x, cmd='mpm_pvp', action='press_esc'); time.sleep(2)
+    w = {x: c(x, cmd='mpm_pvp') for x in (H, G)}
+    check('PvP 0: the PvP window opens from the Esc menu in the hub (host and guest)', all(w[x].get('window') for x in (H, G)), {x: w[x].get('window') for x in (H, G)})
+    if not all(w[x].get('window') for x in (H, G)):
         return False
-    ok_h, sh = pick(H, 2, 'pvp_host')                               # the host alone in its lobby (no guest yet)
-    u0 = c(H, cmd='pvp_units_status')
-    check('PvP 1a: the host ALONE in the lobby brings 2 units (no "Not in a multiplayer session")', ok_h and u0.get('received') == 2, f"picks {sh.get('picked')}, received {u0.get('received')}")
-    to_title(G); join(port)
-    s = open_cards(G, 'pvp_guest')
-    ok_g, sg = pick(G, 2, 'pvp_guest')
-    check('PvP 1b: the guest\'s card window too', cards_ok(s), s)
+    if c(H, cmd='mpm_pvp').get('mode') != 1: c(H, cmd='mpm_pvp', action='arrow', row=0, dir=1); time.sleep(1.2)   # Fight
+    for _ in range(3):                                           # best of 1, 60 s rounds (whatever the copy's saved rules say)
+        if c(H, cmd='mpm_pvp').get('bo') == 1: break
+        c(H, cmd='mpm_pvp', action='arrow', row=1, dir=-1); time.sleep(1.2)
+    for _ in range(5):
+        if c(H, cmd='mpm_pvp').get('secs') == 60: break
+        c(H, cmd='mpm_pvp', action='arrow', row=2, dir=-1); time.sleep(1.2)
+    for _ in range(4):                                           # map: this settlement (English copies; the saved rules may say a dungeon)
+        if c(H, cmd='mpm_pvp')['rows'][4][1] == 'This settlement': break
+        c(H, cmd='mpm_pvp', action='arrow', row=4, dir=1); time.sleep(1.2)
+    q = c(H, cmd='mpm_pvp'); log('PvP rules', q.get('mode'), q.get('bo'), q.get('secs'), q['rows'][4])
+    worlds = sorted(f for f in os.listdir(os.path.join(lrig.idir(H), 'data', 'Saves')) if WORLD.search(f))
+    info['world_saves_on_disk'] = worlds                             # the hub's own saves are on disk now: they must not show
+    picks = {}
+    for x in (H, G):
+        s = open_cards(x, f'pvp_{x}', pvp=True)
+        check(f'PvP 1 ({x}): the PvP window\'s Bring Units opens the CARD window (cards with game icons, real worlds only: no hub world saves)',
+              cards_ok(s) and len(worlds) > 0, f'{s} | world saves on disk {len(worlds)}')
+        picks[x] = pick(x, 2, f'pvp_{x}')
     try:
         u = wait('host has 4 brought units', lambda: (lambda q: q if q.get('received') == 4 else None)(c(H, cmd='pvp_units_status')), timeout=90, every=1)
     except RuntimeError:
         u = c(H, cmd='pvp_units_status')
-    check('PvP 2: picking 2 units in the card window brings them (host and guest; host has 4)', ok_h and ok_g and u.get('received') == 4,
-          f"host picks {sh.get('picked')} guest {sg.get('picked')}, received {u.get('received')}")
-    HP.shot(G, 'pvp_lobby_guest.png')
-    c(H, cmd='pvp_mods', ask=1)
-    try:
-        wait('guest mod report', lambda: len(c(H, cmd='pvp_mods').get('reports', [])) >= 1, timeout=60)
-    except RuntimeError:
-        pass
+    check('PvP 2: picking 2 units in the card window brings them (host and guest; host has 4)', all(picks[x][0] for x in picks) and u.get('received') == 4,
+          f"host picks {picks[H][1].get('picked')} guest {picks[G][1].get('picked')}, received {u.get('received')}")
+    if u.get('received') != 4:
+        return False
     rp = {x: fsize(x, 'rig.log') for x in (H, G)}
-    press(H, 'START')
+    log('Start Match', c(H, cmd='mpm_pvp', action='start'))              # the brought units are built first, then the match
     wait('match on both', lambda: all(c(x, cmd='pvp_status').get('active') for x in (H, G)), timeout=600, every=2)
     t_match = st(H)['tick']
     ps = c(H, cmd='pvp_status'); names = {u['guid'] for u in ps.get('units', [])}
@@ -232,8 +241,8 @@ def pvp(port):
             for x in (H, G):
                 shutil.copy2(os.path.join(lrig.idir(x), 'fp.log'), os.path.join(OUT, f'fp_pvp_{x}.log'))
         time.sleep(2)
-    check('PvP 3: the brought units fight (both teams lose HP, a unit goes out)', bool(lost) and bool(down) and len(names) == 4, f'lost {bool(lost)} down {down}')
-    wait('match over + world back', lambda: all((lambda q: not q.get('active') and q.get('phase') == 0 and q.get('matches') == 1)(c(x, cmd='pvp_status')) for x in (H, G)), timeout=600, every=2)
+    check('PvP 3: the match plays with the brought units (both teams lose HP, a unit goes out)', bool(lost) and bool(down) and len(names) >= 4, f'lost {bool(lost)} down {down} units {len(names)}')
+    wait('match over + hub back', lambda: all((lambda q: not q.get('active') and q.get('phase') == 0 and q.get('matches', 0) >= 1)(c(x, cmd='pvp_status')) for x in (H, G)), timeout=600, every=2)
     wait('both loaded + running', lambda: all((lambda q: q.get('scene') == 2 and not q.get('busy') and q.get('det', {}).get('locked'))(st(x)) for x in (H, G)), timeout=600, every=2)
     for x in (H, G):
         c(x, cmd='mp_pause', on=1)
@@ -247,19 +256,21 @@ def pvp(port):
     for x in (H, G):
         c(x, cmd='mp_pause', on=0)
     wait('result window on both', lambda: all(c(x, cmd='mpm_pvp').get('result') for x in (H, G)), timeout=120, every=2)
-    c(H, cmd='mpm_pvp', action='press_ok')
-    wait('both at the title, session over', lambda: all((lambda q: q.get('scene') == 1 and not q.get('mp', {}).get('started'))(st(x)) for x in (H, G)), timeout=300, every=2)
+    for x in (H, G):
+        c(x, cmd='mpm_pvp', action='press_ok'); time.sleep(2)
+    time.sleep(3)
+    check('PvP 5: "Back to the Hub" keeps both in the hub', all(st(x).get('scene') == 2 and c(x, cmd='fe_status').get('hub_world') and not c(x, cmd='mpm_pvp').get('result') for x in (H, G)),
+          {x: (st(x).get('scene'), c(x, cmd='fe_status').get('hub_world')) for x in (H, G)})
     return True
 
 
 # ------------------------------------------------------------------ compact cards (one copy)
 def compact():
-    """the host alone in a PvP lobby: 8 cards on a page; a click on a card's body (its centre, not the tick) ticks it,
+    """the host alone in the hub lobby: 8 cards on a page; a click on a card's body (its centre, not the tick) ticks it,
        a second click unticks it"""
     to_title(H)
-    press(H, 'MULTIPLAYER'); press(H, 'HOST_C1'); time.sleep(1); press(H, 'HOST_START')
-    wait('PvP world + lobby', lambda: (lambda s: s.get('scene') == 2 and s.get('tick', -1) > 0 and not s.get('busy') and s.get('det', {}).get('locked'))(st(H))
-         and c(H, cmd='mpm_status').get('state') == 'lobby', timeout=900, every=2)
+    press(H, 'MULTIPLAYER'); press(H, 'HOST_FE'); time.sleep(1); press(H, 'HOST_START'); time.sleep(2)   # the one host choice: the hub
+    wait('hub lobby + host session', lambda: (lambda s: s.get('det', {}).get('locked') and s.get('mp', {}).get('started'))(st(H)), timeout=900, every=2)
     lg = LANGTYPE or 'en'
     s = open_cards(H, f'compact_{lg}')
     click(H, 'bring:left0', 1.5); time.sleep(2); s = bst(H)            # the Elven home save (newest = row 0)
@@ -301,6 +312,8 @@ def fe(port):
     wait('hub lobby + host session', lambda: (lambda s: s.get('det', {}).get('locked') and s.get('mp', {}).get('started'))(st(H)), timeout=900, every=2)
     port = c(H, cmd='mpm_status').get('port') or port
     s2 = open_cards(H, 'fe_host')                                   # the host alone in its lobby (no guest yet)
+    if ONLY_OPEN:
+        check('FE 1: the host ALONE in the hub lobby: the CARD window opens', cards_ok(s2), s2); return False
     ok_h, sh = pick(H, 1, 'fe_host')
     h_alone = c(H, cmd='fe_status')
     check('FE 1: the host ALONE in the hub lobby: the CARD window opens and its pick reaches its own list (no "Not in a multiplayer session")',
@@ -421,6 +434,7 @@ def fe(port):
     check('FE 5: 0 desyncs over the hub + expedition round (fingerprints equal, no desync line)',
           len(com) >= 300 and first is None and not mh.get('desyncs') and not mg.get('desyncs') and not dl,
           f'{len(com)} common ticks (from tick {t_hub}), first diff {first}, desyncs {mh.get("desyncs")}/{mg.get("desyncs")}, lines {dl}')
+    return True
 
 
 def prepare(pk):
@@ -471,8 +485,8 @@ def main():
                   [l for l in dl.splitlines() if ': loaded (' in l][:4])
         if COMPACT:
             compact()
-        elif pvp(port):
-            fe(port)
+        elif fe(port):
+            hub_pvp()
     except BaseException as e:
         import traceback; log(traceback.format_exc())
         check('run finished', False, repr(e))

@@ -79,7 +79,7 @@ static struct {
 static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy, *m_obj_find, *m_obj_finds, *m_res_findall,
     *m_comp_go, *m_comp_tr, *m_comp_get, *m_comp_inparent,
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
-    *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler,
+    *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler, *m_tr_wpos, *m_tr_setwpos,
     *m_rt_amin, *m_rt_amax, *m_rt_pivot, *m_rt_size, *m_rt_getsize, *m_rt_pos, *m_rt_getpos, *m_rt_corners, *m_rt_omin, *m_rt_setomin, *m_rt_getamin, *m_rt_omax, *m_rt_setomax, *m_rt_getamax, *m_tr_find, *m_spr_rect, *m_scr_h, *m_tr_setscale, *m_lg_setsp, *m_lg_getsp,
     *m_gr_color, *m_gr_raycast, *m_gr_material, *m_img_sprite, *m_img_getsprite, *m_img_type, *m_beh_enabled,
     *m_tmp_get, *m_tmp_set, *m_tmp_font, *m_tmp_getfont, *m_tmp_size, *m_tmp_auto, *m_tmp_getsize, *m_tmp_getauto, *m_grid_cell, *m_grid_getcell, *m_rt_rect, *m_tmp_prefw, *m_tmp_align, *m_tmp_wrap, *m_tmp_overflow,
@@ -100,7 +100,7 @@ static void *m_sl_setmin, *m_sl_setmax, *m_sl_whole, *m_sl_get, *m_sl_set;      
 static int32_t f_gov_general = -1, f_gs_cam = -1, f_ss_slider = -1, f_ss_value = -1, f_ss_toggle = -1, f_ss_toggletext = -1;                             /* LayoutRebuilder.ForceRebuildLayoutImmediate, CanvasUpdateRegistry.PerformUpdate */
 
 static int32_t f_tb_label = -1, f_tv_btn[7], f_tv_credit = -1, f_nv_text = -1, f_nv_tok = -1, f_nv_tcancel = -1,
-               f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1,
+               f_das_usekey = -1, f_etc_title = -1, f_etc_sublayout = -1, f_etc_desc = -1, f_etc_flavor = -1, f_tb_canhold = -1, f_tb_align = -1,
                f_ctx_hidehold = -1, f_uif_prefabs = -1, f_slv_field = -1, f_cs_field = -1, f_asset_mat = -1,
                f_das_style = -1, f_das_fmat = -1;
 static int32_t ctx_size;
@@ -771,7 +771,7 @@ static void w_sweep(void) {                                          /* destroye
 }
 
 /* tooltips: target -> title / body (any RectTransform, kit widget or not) */
-typedef struct { Obj target; uintptr_t h; char title[160], body[2048]; } TipE;
+typedef struct { Obj target; uintptr_t h; char title[160], body[2048]; int below; } TipE;   /* below: dsl_ui_tip_below */
 #define TMAX 256
 static TipE tips[TMAX]; static int ntips;
 
@@ -1184,20 +1184,64 @@ static void tip_blocks(Obj etc, int on) {
     Obj cg = comp_get(etc, K.CanvasGroup); if (!cg && !on) cg = comp_add(etc, K.CanvasGroup);
     if (cg) CALL(m_cg_blocks, void, Obj, bool)(cg, on != 0, m_cg_blocks);
 }
-/* placement (owner 2026-10-16 #3): the card goes OUTSIDE the panel the element sits in, at the panel's right edge, its
-   top level with the element's top; no room on the right -> outside the panel's left edge. Never over the panel. */
-static float tip_panel[4], tip_el_top; static int tip_side, tip_check;            /* side 0 right, 1 left; frames left to check */
+/* placement (owner 2026-10-16 #3, 2026-10-25): the card goes OUTSIDE the panel the element sits in: at the panel's right
+   edge, its top level with the element's top; else outside the panel's left edge; else right below the panel, at the
+   element's left edge; else above it. A side counts only when the card is inside the screen there and covers neither the
+   panel nor a window around it (every ancestor narrower than 3/4 of the screen: the Load window around the filter panel);
+   no free side -> the side that covers least. Targets marked with dsl_ui_tip_below (the Load list's filter boxes: a card
+   over the panel hid the other boxes, "barely usable", owner 2026-10-25): right below the panel at the panel's left edge
+   first, then the free side nearest the element. */
+#define TIP_KEEP 8
+#define TIP_GAP 8.f
+static float tip_panel[4], tip_el[4], tip_keep[TIP_KEEP][4]; static int tip_nkeep, tip_below;
 static float screen_w(void) { return m_scr_w ? (float)CALL0(m_scr_w, int)(m_scr_w) : 1920.f; }
-/* the panel of an element: the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list) */
+/* the panel of an element: the widest ancestor narrower than 3/4 of the screen (title column, Mods window, Load list);
+   every such ancestor (and the panel) is a rect the card keeps off */
 static void tip_panel_of(Obj target, const float el[4], float out[4]) {
-    memcpy(out, el, 4 * sizeof *out);
+    memcpy(out, el, 4 * sizeof *out); tip_nkeep = 0;
     float sw = screen_w(); Obj t = tr_of(target);
     for (int d = 0; d < 16 && t; d++) {
         t = tr_parent(t); float r[4];
         if (!t || !rect_screen(t, r)) break;
         if (r[2] - r[0] >= sw * 0.75f) break;
+        if (r[2] - r[0] >= 1 && r[3] - r[1] >= 1 && tip_nkeep < TIP_KEEP) memcpy(tip_keep[tip_nkeep++], r, sizeof r);
         if (r[0] <= el[0] + 1 && r[2] >= el[2] - 1 && r[2] - r[0] >= out[2] - out[0]) memcpy(out, r, sizeof r);
     }
+    if (!tip_nkeep) memcpy(tip_keep[tip_nkeep++], out, 4 * sizeof *out);
+}
+static float tip_cover(const float c[4]) {                          /* area of the keep-off rects the card covers */
+    float a = 0;
+    for (int k = 0; k < tip_nkeep; k++) {
+        const float *q = tip_keep[k];
+        float w = (c[2] < q[2] ? c[2] : q[2]) - (c[0] > q[0] ? c[0] : q[0]), h = (c[3] < q[3] ? c[3] : q[3]) - (c[1] > q[1] ? c[1] : q[1]);
+        if (w > 0.5f && h > 0.5f) a += w * h;
+    }
+    return a;
+}
+/* the card's top-left corner (x, top; pixels, y up) for a card of w x h */
+static void tip_choose(float w, float h, float *ox, float *otop) {
+    float sw = screen_w(), sh = m_scr_h ? (float)CALL0(m_scr_h, int)(m_scr_h) : 1080.f;
+    const float *P = tip_panel, *E = tip_el;
+    float bx = tip_below ? P[0] : E[0];                                 /* below / above: the panel's left edge, else the element's */
+    const float X[4] = { P[2] + TIP_GAP, P[0] - TIP_GAP - w, bx, bx }, TOP[4] = { E[3], E[3], P[1] - TIP_GAP, P[3] + TIP_GAP + h };   /* right, left, below, above */
+    int pick = -1; float best = 0, cx[4], ct[4], cov[4]; int room[4];
+    for (int i = 0; i < 4; i++) {
+        float x = X[i], top = TOP[i];
+        room[i] = i < 2 ? x >= 0 && x + w <= sw : top <= sh && top - h >= 0;   /* off the screen on its own side: no room */
+        if (x + w > sw) x = sw - w;
+        if (x < 0) x = 0;
+        if (top > sh) top = sh;
+        if (top - h < 0) top = h;                                       /* inside the screen (a long card slides up) */
+        float c[4] = { x, top - h, x + w, top }; cx[i] = x; ct[i] = top; cov[i] = tip_cover(c);
+        if (!room[i] || cov[i] > 0) continue;
+        if (!tip_below) { if (pick < 0) pick = i; continue; }          /* the first free side in order */
+        float dx = c[0] > E[2] ? c[0] - E[2] : E[0] > c[2] ? E[0] - c[2] : 0, dy = c[1] > E[3] ? c[1] - E[3] : E[1] > c[3] ? E[1] - c[3] : 0;
+        float d = i == 2 ? -1 : dx * dx + dy * dy;                      /* below first, then the nearest free side */
+        if (pick < 0 || d < best) { pick = i; best = d; }
+    }
+    if (pick < 0)                                                       /* no free side: the one that covers least */
+        for (int i = 0; i < 4; i++) if (pick < 0 || cov[i] < cov[pick] - 0.5f || (room[i] && !room[pick] && cov[i] <= cov[pick] + 0.5f)) pick = i;
+    *ox = cx[pick]; *otop = ct[pick];
 }
 static void tip_card_rect(float r[4]) { Obj etc = hget(h_tip_etc); if (!etc || !rect_screen(etc, r)) r[0] = r[1] = r[2] = r[3] = 0; }
 static void tip_show_at(TipE *e, V2 pos) {
@@ -1220,36 +1264,49 @@ static void tip_show_at(TipE *e, V2 pos) {
     if (m_tb_disablehold) CALL(m_tb_disablehold, void, Obj)(etc, m_tb_disablehold);
     tip_blocks(etc, 0);
 }
+/* the stock card places itself two frames after the show (Tooltip_Base.DelayedAlignment: parked, layout, two frames,
+   SetTooltipAlignment, _alignmentRoutine = null; no room on the right -> it flips over the element's panel), and a second
+   show with the same id is ignored (TooltipUI keeps the session): so the card is MOVED once the stock alignment is done,
+   right before the UI is drawn (h_cur_perform: the stock place never shows) */
+static int tip_moves, tip_wait; static int64_t tip_frame0;
 static void tip_hide(void) {
     if (!tip_shown) return;
     tip_blocks(hget(h_tip_etc), 1);
-    tip_shown = 0; tip_check = 0; hfree(&h_tip_shown_target); tip_cur_title[0] = 0;
+    tip_shown = 0; tip_moves = 0; hfree(&h_tip_shown_target); tip_cur_title[0] = 0;
     Obj v = tooltip_view(); if (v) CALL(m_tt_hide, void, Obj, Guid)(v, TIP_ID, m_tt_hide);
 }
-#define TIP_GAP 8.f
 static void tip_show(TipE *e) {
     Obj v = tooltip_view(); if (!v || !tip_ok()) return;
     if (tip_shown) tip_hide();
     raise_view(v, 32050);
     float r[4]; if (!rect_screen(e->target, r)) return;
-    tip_panel_of(e->target, r, tip_panel); tip_el_top = r[3]; tip_side = 0;
-    tip_show_at(e, (V2){ tip_panel[2] + TIP_GAP, r[3] });             /* pos = the card's top-left corner */
-    tip_check = 4;                                                    /* the card gets its size in the next frames */
+    memcpy(tip_el, r, sizeof r); tip_panel_of(e->target, r, tip_panel); tip_below = e->below;
+    tip_show_at(e, (V2){ tip_panel[2] + TIP_GAP, r[3] });             /* pos = the card's top-left corner (stock first) */
+    tip_moves = 3; tip_wait = 60; tip_frame0 = frames;                  /* a move is checked the next frame (up to 3) */
 }
-/* the card's real size is known after layout: off the screen on the right, or pushed back over the panel by the stock
-   screen clamp -> the left side, outside the panel */
+/* move a RectTransform by (dx, dy) screen pixels, through world space (its world corners against its screen rect) */
+static int rt_move_screen(Obj o, float dx, float dy) {
+    Obj rt = tr_of(o); float s[4]; static uintptr_t h_wc;
+    if (!m_tr_wpos || !m_tr_setwpos || !isa(rt, K.RectTransform) || !rect_screen(rt, s) || s[2] - s[0] < 1 || s[3] - s[1] < 1) return 0;
+    Obj arr = h_wc ? I.gchandle_get_target(h_wc) : NULL;
+    if (!arr) { arr = I.array_new(K.Vector3, 4); if (!arr) return 0; h_wc = I.gchandle_new(arr, false); }
+    CALL(m_rt_corners, void, Obj, Obj)(rt, arr, m_rt_corners);
+    V3 *c = (V3 *)((char *)arr + 0x20), p = CALL(m_tr_wpos, V3, Obj)(rt, m_tr_wpos);
+    p.x += dx * (c[2].x - c[0].x) / (s[2] - s[0]); p.y += dy * (c[2].y - c[0].y) / (s[3] - s[1]);
+    CALL(m_tr_setwpos, void, Obj, V3)(rt, p, m_tr_setwpos);
+    return 1;
+}
 static void tip_place_frame(void) {
-    if (!tip_shown || tip_check <= 0) return;
-    tip_check--;
-    float c[4]; tip_card_rect(c); float w = c[2] - c[0];
-    if (w <= 1 || tip_side) return;
-    if (c[0] < tip_panel[2] - 1 || c[2] > screen_w() + 1) {
-        Obj t = hget(h_tip_shown_target); TipE *e = NULL;
-        for (int i = 0; i < ntips; i++) if (tips[i].target == t) e = &tips[i];
-        if (!e) return;
-        float x = tip_panel[0] - TIP_GAP - w; if (x < 0) x = 0;
-        tip_side = 1; tip_show_at(e, (V2){ x, tip_el_top }); tip_check = 0;
-    }
+    if (!tip_shown || tip_moves <= 0) return;
+    Obj etc = hget(h_tip_etc); if (!etc) { tip_moves = 0; return; }
+    int busy = f_tb_align >= 0 ? AT(etc, f_tb_align, Obj) != NULL : frames - tip_frame0 < 3;   /* the stock alignment still to run */
+    if (busy && --tip_wait > 0) return;
+    float c[4]; tip_card_rect(c); float w = c[2] - c[0], h = c[3] - c[1];
+    if (w <= 1 || h <= 1) { if (--tip_wait <= 0) tip_moves = 0; return; }
+    float x, top; tip_choose(w, h, &x, &top);
+    float dx = x - c[0], dy = top - c[3];
+    if (dx > -0.75f && dx < 0.75f && dy > -0.75f && dy < 0.75f) { tip_moves = 0; return; }
+    if (--tip_moves == 0 || !rt_move_screen(etc, dx, dy)) { tip_moves = 0; dsl_log("ui: hover card '%s' could not be moved (%.0f, %.0f px off)", tip_cur_title, dx, dy); }
 }
 static void tips_frame(void) {
     if (!ntips && !tip_shown) return;
@@ -1282,6 +1339,8 @@ static void k_tooltip(DSLObj target, const char *title, const char *body) {
     snprintf(e->title, sizeof e->title, "%s", title ? title : ""); snprintf(e->body, sizeof e->body, "%s", body);
     dsi_utf8_fix_end(e->title); dsi_utf8_fix_end(e->body);
 }
+/* that target's hover card goes right below its panel first (the Load list's filter boxes, owner 2026-10-25) */
+void dsl_ui_tip_below(DSLObj target) { for (int i = 0; i < ntips; i++) if (tips[i].target == target) tips[i].below = 1; }
 /* a kit panel as a flat colour (no frame sprite), no click target: bars, lines */
 void dsl_ui_flat(DSLObj o, uint32_t rgba) { W *w = w_of(o); Obj r = w ? w_root(w) : (Obj)o; Obj im = r ? comp_get(r, K.Image) : NULL; if (im) img_set(im, NULL, rgba_col(rgba, C_WHITE), 0); }
 /* a kit widget as a square of side `size` centred at (cx, cy) of its parent (top-left units), turned by deg degrees
@@ -1303,6 +1362,18 @@ __attribute__((visibility("default"))) void dsl_ui_test_tip_body(char *out, size
 /* test only: the shown card's screen rect and the panel it was placed against (x0, y0, x1, y1) */
 __attribute__((visibility("default"))) int dsl_ui_test_tip_rects(float card[4], float panel[4]) {
     tip_card_rect(card); memcpy(panel, tip_panel, sizeof tip_panel); return tip_shown;
+}
+/* test only: the shown tooltip targets (on the tree), for a sweep over every hover card of the views open now */
+__attribute__((visibility("default"))) int dsl_ui_test_tip_targets(DSLObj *out, int max) {
+    int n = 0;
+    for (int i = 0; i < ntips && n < max; i++) if (hget(tips[i].h) && on_tree(tips[i].target)) out[n++] = tips[i].target;
+    return n;
+}
+/* test only: the hovered element's rect and the rects the card keeps off (its panel, the windows around it) */
+__attribute__((visibility("default"))) int dsl_ui_test_tip_keep(float el[4], float keep[][4], int max) {
+    memcpy(el, tip_el, sizeof tip_el); int n = tip_nkeep < max ? tip_nkeep : max;
+    for (int i = 0; i < n; i++) memcpy(keep[i], tip_keep[i], sizeof tip_keep[i]);
+    return n;
 }
 __attribute__((visibility("default"))) int dsl_ui_test_tip(char *title, size_t cap) {   /* 1 = our tooltip shows; its title as drawn */
     Obj etc = hget(h_tip_etc);
@@ -1981,7 +2052,7 @@ static void tick(void) {
     fields_frame();
     sliders_frame();
     tips_frame();
-    tip_place_frame();
+    if (!o_cur_perform) tip_place_frame();                          /* else right before the UI is drawn (h_cur_perform) */
 }
 /* right before the UI is laid out and drawn, after every Update and the modules' frame: the title menu as it will be
    drawn (our buttons follow the stock ones a module showed or hid this frame; the menu placed for the rows shown) */
@@ -1992,6 +2063,7 @@ static void h_cur_perform(Obj self, const void *mi) {
         if (!hget(h_tpl_btn)) templates_ready();                   /* the title's first frame: the word image needs them */
         if (ntbs) title_frame();
         brand_frame();
+        tip_place_frame();
         in_late = 0;
     }
     o_cur_perform(self, mi);
@@ -2114,6 +2186,7 @@ void dsl_ui_install(void) {
     m_tr_parent = MTH(K.Transform, "get_parent", 0); m_tr_setparent = MSIG(K.Transform, "SetParent", 2, "UnityEngine.Transform,System.Boolean");
     m_tr_sib = MTH(K.Transform, "GetSiblingIndex", 0); m_tr_setsib = MTH(K.Transform, "SetSiblingIndex", 1);
     m_tr_euler = OPT(K.Transform, "set_localEulerAngles", 1);
+    m_tr_wpos = OPT(K.Transform, "get_position", 0); m_tr_setwpos = OPT(K.Transform, "set_position", 1);   /* hover card moves */
     m_tr_count = MTH(K.Transform, "get_childCount", 0); m_tr_child = MTH(K.Transform, "GetChild", 1);
     m_rt_amin = MTH(K.RectTransform, "set_anchorMin", 1); m_rt_amax = MTH(K.RectTransform, "set_anchorMax", 1);
     m_rt_pivot = MTH(K.RectTransform, "set_pivot", 1); m_rt_size = MTH(K.RectTransform, "set_sizeDelta", 1);
@@ -2187,7 +2260,7 @@ void dsl_ui_install(void) {
     f_nv_text = fld(K.Notice, "_noticeText"); f_nv_tok = fld(K.Notice, "_txtConfirm"); f_nv_tcancel = fld(K.Notice, "_txtCancle");
     f_das_usekey = fld(K.DASText, "_useTextKey"); f_das_style = fld(K.DASText, "_fontStyle"); f_das_fmat = fld(K.DASText, "_fontMaterial");
     f_etc_title = fld(K.TooltipETC, "_titleText"); f_etc_sublayout = fld(K.TooltipETC, "_subtitleLayout");
-    f_etc_desc = fld(K.TooltipETC, "_desText"); f_etc_flavor = fld(K.TooltipETC, "_flavorText"); f_tb_canhold = fld(kTB, "_canShowHoldLayout");
+    f_etc_desc = fld(K.TooltipETC, "_desText"); f_etc_flavor = fld(K.TooltipETC, "_flavorText"); f_tb_canhold = fld(kTB, "_canShowHoldLayout"); f_tb_align = fld(kTB, "_alignmentRoutine");
     { int32_t o = fld(K.TipCtx, "<HideHoldLayout>k__BackingField"); f_ctx_hidehold = o >= 0x10 ? o - 0x10 : -1;   /* value type: minus the object header */
       ctx_size = K.TipCtx && I.class_value_size ? I.class_value_size(K.TipCtx, NULL) : 0; }
     if (K.OptionView && K.GeneralSetting && K.SubSlider && K.Slider) {

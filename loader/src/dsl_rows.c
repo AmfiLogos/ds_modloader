@@ -384,7 +384,7 @@ static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);   /*
    modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show multiple saves or only the latest one."
    Each world is of ONE kind: Multiplayer (the multiplayer mod's tag, its export dsl_loadlist_world_mp), else Modded (a mod
    that changes the gameplay, or one not installed: dsl_world_is_modded), else Vanilla & Vanilla+ (no mod, or only fixes
-   (mod.json "category": "fix") and mods of scope "client"). A world shows when the box of its kind is ticked; the world being played always shows. Defaults = the
+   (mod.json "category": "fix"), mods of scope "client" and mods with "vanilla_plus", 2026-10-25). A world shows when the box of its kind is ticked; the world being played always shows. Defaults = the
    list as it was: Vanilla & Vanilla+ and Modded on, Multiplayer off (the multiplayer mod's own box under the list was off
    at every opening: no saved value to carry over).
    Latest save only: each world shows its first save row (the game lists a world's saves newest first); the world row's
@@ -542,8 +542,8 @@ static const char *pn_label(int k) {
     return k == LK_VAN ? TR("Vanilla & Vanilla+") : k == LK_MOD ? TR("Modded") : k == LK_MP ? TR("Multiplayer") : TR("Latest save only");
 }
 static const char *pn_tip(int k) {
-    return k == LK_VAN ? TR("Worlds with no mods, or only fixes and mods that do not change the gameplay.")
-         : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay. Fixes do not count.")
+    return k == LK_VAN ? TR("Worlds with no mods, or only fixes, mods that do not change the gameplay and small Vanilla+ mods such as Weapon skill slot.")
+         : k == LK_MOD ? TR("Worlds with at least one mod that changes the gameplay. Fixes and Vanilla+ mods do not count.")
          : k == LK_MP ? TR("Worlds you played with friends.")
          : TR("Each world shows only its newest save. Off: every save.");
 }
@@ -584,7 +584,7 @@ static DSLObj pn_build(Obj slv) {
         if (k == LK_MP && !lf_is_mp) continue;                          /* no multiplayer mod: its worlds are sorted by their mods */
         if (k == LK_N) y += 12;                                         /* the saves toggle apart from the world kinds */
         DSLObj tg = u->toggle(pn, PN_PAD, y, PN_W - 2 * PN_PAD, pn_label(k), k < LK_N ? lf_on[k] : lf_latest, pn_change, (void *)(intptr_t)k);
-        if (tg) u->tooltip(tg, pn_label(k), pn_tip(k));
+        if (tg) { u->tooltip(tg, pn_label(k), pn_tip(k)); dsl_ui_tip_below(tg); }   /* never over the panel or the Load window */
         hold(&pn_tog_h[k], tg); y += PN_ROW;
     }
     pn_ht = y + PN_PAD - (PN_ROW - 36);
@@ -857,6 +857,9 @@ static void new_campaign_frame(void) {
 
 /* test only (dsl_reg.c test requests): the "Mods: ..." line of world row i */
 DSLObj dsl_rows_test_line(int i) { return i >= 0 && i < nw ? W[i].line : NULL; }
+
+/* test only: the filter panel's box k (0 Vanilla & Vanilla+, 1 Modded, 2 Multiplayer, 3 Latest save only), for a hover */
+DSLObj dsl_rows_test_pn(int k) { return k >= 0 && k <= LK_N && pn_tog_h[k] ? held(&pn_tog_h[k]) : NULL; }
 
 /* test only: the "Change" of world row i, as a click */
 void dsl_rows_test_change(int i) { change_click((void *)(intptr_t)i, NULL); }

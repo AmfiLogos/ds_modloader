@@ -11,10 +11,11 @@ kind; the multiplayer mod's box under the list is gone; Latest save only shows t
 come back after a restart.
 Worlds: Elven (game save, gcd-cdr + zetu-suite, installed and off = Modded; Hell would not count: Elven is not on Hell), Template (the wiki's public base save, only the fix gcd-cdr =
 Vanilla & Vanilla+: a fix never counts as Modded, owner 2026-10-24; two saves),
-Moonlight (tagged Multiplayer).
+Moonlight (tagged Multiplayer), Slot (the base save as another world: gcd-cdr + weapon-slot, installed and off =
+Vanilla & Vanilla+: weapon-slot's mod.json says "vanilla_plus", owner 2026-10-25).
 Usage: l1_filter_test.py <out dir>   (env DSL_TEST_MODS = built mods, default this tree's loader/build/mods;
 LF_RUNS = comma list of runs, default main,restart,sizes; langs = every language's rows, one shot each)"""
-import json, os, sys, time, shutil, glob, threading, subprocess
+import json, os, re, sys, time, shutil, glob, threading, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 os.environ.setdefault('DSL_TEST_COPY', 'V')
 os.environ.setdefault('DSL_TEST_MODS', os.path.join(os.path.dirname(HERE), 'build', 'mods'))
@@ -29,6 +30,8 @@ ELVEN_GUID, MOON_GUID = S.GUID, '41e9c1bb-8790-492c-bdc1-0f4dcad22179'
 TPL_SRC = os.path.expanduser('~/dungeonsettlersdb/site/assets/saves/base_25846389.json')   # public (the wiki's base save)
 TPL_GUID = '491bc260-98aa-4cd1-b63f-82da78369aaf'
 TPL_NEW, TPL_OLD = 'Template__AutoSave_491bc26098aa4cd1b63f82da78369aaf_0', 'Template older'
+SLOT_GUID = '5107aa11-0000-4c1e-9a7e-000000000001'                   # the base save as another world: gcd-cdr + weapon-slot
+SLOT = 'Slot__AutoSave_5107aa1100004c1e9a7e000000000001_0'
 LANG = {'en': 0, 'ko': 1, 'fr': 2, 'de': 3, 'ru': 4, 'zh-Hans': 5, 'zh-Hant': 6, 'ja': 7, 'es': 8, 'pt-BR': 9}
 STATE = os.path.join(T.SDIR, 'lf_state.json')
 GFILE = os.path.join(GSAVES, ELVEN + '.json')
@@ -40,6 +43,10 @@ def install():
     copy whose Info.plist changed after its last signature is killed at start: Code Signature Invalid)"""
     app = os.path.join(I, 'DungeonSettlers.app'); lang = os.path.join(app, 'Contents', 'Frameworks', 'lang'); aside = os.path.join(app, 'Contents', 'lang_aside')
     if os.path.isdir(lang): os.replace(lang, aside)
+    md = os.path.join(app, 'Contents', 'Resources', 'mods', 'weapon-slot')   # installed, not on (as hell-difficulty): its mod.json flag
+    for f in glob.glob(os.path.join(os.environ['DSL_TEST_MODS'], 'weapon-slot', '*')):
+        if os.path.isfile(f): os.makedirs(md, exist_ok=True); shutil.copy2(f, md)
+    shutil.copy2(os.path.join(os.path.dirname(HERE), 'modules', 'weapon-slot', 'mod.json'), os.path.join(md, 'mod.json'))   # this tree's
     try:
         S.install()
     finally:
@@ -62,10 +69,12 @@ def seed():
     json.dump(t, open(os.path.join(MSAVES, TPL_NEW + '.json'), 'w'))
     h = t['CampaignSaveHeader']; h.update(SaveName=TPL_OLD, DisplayName=TPL_OLD, SaveTime='2026-09-01 08:00:00', IsAutoSave=False)
     json.dump(t, open(os.path.join(MSAVES, TPL_OLD + '.json'), 'w'))
+    h.update(CampaignGuid=SLOT_GUID, ClanName='Slot', SaveName=SLOT, DisplayName='Slot', SaveTime='2026-09-02 08:00:00', IsAutoSave=True)
+    json.dump(t, open(os.path.join(MSAVES, SLOT + '.json'), 'w'))
     open(os.path.join(I, 'mp_tags.txt'), 'w').write(f'{MOON_GUID}\tHost\tGuest\n')
 
 
-WORLDS = {ELVEN_GUID: 'gcd-cdr+zetu-suite', TPL_GUID: 'gcd-cdr'}
+WORLDS = {ELVEN_GUID: 'gcd-cdr+zetu-suite', TPL_GUID: 'gcd-cdr', SLOT_GUID: 'gcd-cdr+weapon-slot'}
 FAKEROOT = os.path.join(I, 'lf_root')
 
 
@@ -75,7 +84,8 @@ def fake_root():
     os.makedirs(os.path.join(FAKEROOT, 'loader'), exist_ok=True); os.makedirs(os.path.join(FAKEROOT, 'update'), exist_ok=True)
     open(os.path.join(FAKEROOT, 'loader', 'RELEASE'), 'w').write('0.1.23\n')
     open(os.path.join(FAKEROOT, 'update', 'notice.txt'), 'w').write('The last update could not be installed. The game stays on 0.1.22.\n')
-    return {'DSML_ROOT': FAKEROOT, 'DSL_UPDATE': '0'}
+    cr = os.path.join(I, 'crashrep_test'); os.makedirs(cr, exist_ok=True); open(os.path.join(cr, 'answer'), 'w').write('no')   # a fresh copy's consent box: No
+    return {'DSML_ROOT': FAKEROOT, 'DSL_UPDATE': '0', 'DSL_CRASHREP_TEST': cr}
 
 
 def start(size=(960, 540), scale=None, lang='en'):
@@ -168,6 +178,8 @@ def run_main():
     check('defaults = the list as before: Vanilla & Vanilla+ on, Modded on, Multiplayer off, all saves', (b.get('vanilla'), b.get('modded'), b.get('multiplayer'), b.get('latest_only'), b.get('mp_box')) == (1, 1, 0, 0, 1), b)
     e, t, m = world(st, ELVEN_GUID), world(st, TPL_GUID), world(st, MOON_GUID)
     check('kinds: Elven (gcd-cdr + zetu-suite) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
+    sl = world(st, SLOT_GUID)
+    check('kinds: Slot (gcd-cdr + weapon-slot, "vanilla_plus") is Vanilla & Vanilla+ and shows', (sl.get('kind'), sl.get('shown')) == (0, 1), sl)
     check('Multiplayer off: Moonlight hidden, the others shown; the line counts 1', (e.get('shown'), t.get('shown'), m.get('shown'), st.get('hidden_line')) == (1, 1, 0, 1), st)
     ml = mp('mpm_list')
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,
@@ -243,6 +255,61 @@ def run_langs():
         S.stop_all()
 
 
+TIPS = ('vanilla', 'modded', 'multiplayer', 'latest_only')        # the panel's boxes in dsl_rows.c order (pn:<k>)
+
+
+def tip_rect(k):
+    """hover the panel's box k (no mouse, dsl_reg.c hover pn:<k>): (shown, title, card rect) 20 frames later; the card stays
+    about 2 s more (for a shot)"""
+    mark = len(T.dlog()); T.request({'cmd': 'hover', 'what': f'pn:{k}'}); t0 = time.time()
+    rx = re.compile(r"reg test: tip pn:%d shown (\d) title '([^']*)' card ([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)" % k)
+    while time.time() - t0 < 15:
+        m = rx.search(T.dlog()[mark:])
+        if m: return int(m.group(1)), m.group(2), [float(m.group(i)) for i in range(3, 7)]
+        time.sleep(0.2)
+    return 0, '', [0] * 4
+
+
+def tip_checks(tag, st, shot_k=None):
+    """owner 2026-10-25: a box's hover card never covers the filter panel or the Load window (it hid the other boxes:
+    "barely usable"); right below the panel with its left edge when there is room; inside the screen"""
+    p, w, (sw, sh) = st.get('panel', [0] * 4), st.get('window', [0] * 4), st.get('screen', [0, 0])
+    for k, key in enumerate(TIPS):
+        on, title, c = tip_rect(k)
+        log(tag, key, 'card', c, 'panel', p, 'window', w)
+        check(f'{tag}: {key}: the hover card shows', on == 1 and title, (on, title))
+        check(f'{tag}: {key}: the card does not cover the filter panel', not overlap(c, p), (c, p))
+        check(f'{tag}: {key}: the card does not cover the Load window', not overlap(c, w), (c, w))
+        check(f'{tag}: {key}: the card is inside the screen', c[0] >= -0.5 and c[1] >= -0.5 and c[2] <= sw + 0.5 and c[3] <= sh + 0.5, (c, sw, sh))
+        if p[1] - 24 - (c[3] - c[1]) >= 0:                            # room below the panel: there, with its left edge
+            check(f'{tag}: {key}: room below the panel: the card is right below it, same left edge', abs(c[0] - p[0]) <= 1.5 and p[1] - 24 <= c[3] <= p[1] + 0.5,
+                  (c, p))
+        if k == shot_k: shot(f'tip_{tag.replace(" ", "_")}')
+        time.sleep(3)                                               # the hover ends (2 s), the card goes
+
+
+def run_tips():
+    """the boxes' hover cards at 16:9 and 16:10, UI scale 0.75 / 1.0 / 1.4, en / de / ru / ja (owner 2026-10-25)"""
+    seed()
+    for size, scale, lang in (((960, 540), 1.0, 'en'), ((960, 540), 0.75, 'en'), ((960, 540), 1.4, 'de'), ((960, 600), 1.0, 'ru'), ((960, 600), 1.4, 'ja')):
+        tag = f'tips {size[0]}x{size[1]} UI {scale} {lang}'
+        start(size, scale, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+        open_list(); st = lf()
+        log(tag, 'screen', st.get('screen'), 'window', st.get('window'), 'panel', st.get('panel'), 'scale', st.get('scale'))
+        tip_checks(tag, st, shot_k=0)
+        S.stop_all()
+
+
+def run_tiplangs():
+    """every language at 960x540, UI 1.0: the four boxes' cards (one shot each language, the Vanilla card: the longest text)"""
+    seed()
+    for lang in [l for l in LANG if l in os.environ.get('LF_LANGS', ','.join(LANG)).split(',')]:
+        start((960, 540), 1.0, lang); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+        open_list(); st = lf()
+        tip_checks(f'tips {lang}', st, shot_k=0)
+        S.stop_all()
+
+
 def main():
     for p in T.game_pids(): raise SystemExit(f'copy {X} already running: {p}')
     real0 = S.tree_sum(r.REAL_DATA); plist0 = r.file_sha(r.REAL_PLIST)
@@ -252,7 +319,7 @@ def main():
     which = os.environ.get('LF_RUNS', 'main,restart,sizes').split(',')
     try:
         for w in which:
-            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs}[w]()
+            {'main': run_main, 'restart': run_restart, 'sizes': run_sizes, 'langs': run_langs, 'tips': run_tips, 'tiplangs': run_tiplangs}[w]()
             for f in ('dsload.log',):
                 if os.path.exists(os.path.join(I, f)): shutil.copy2(os.path.join(I, f), os.path.join(OUT, f'{w}_{f}'))
     except Exception as e:
