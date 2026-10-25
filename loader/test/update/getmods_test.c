@@ -87,6 +87,7 @@ static void scan(void) {
 }
 int dsl_mods_count(void) { scan(); return nmi; }
 const DSLModInfo *dsl_mods_at(int i) { scan(); return i >= 0 && i < nmi ? &MI[i] : NULL; }
+int dsl_mod_in_hello(const char *id) { scan(); for (int i = 0; i < nmi; i++) if (!strcmp(MI[i].id, id)) return MI[i].active == 1; return 0; }
 void dsl_mods_rescan(void) { scanned = 0; scan(); }
 
 static char *slurp(const char *p) {
