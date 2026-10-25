@@ -6594,6 +6594,25 @@
    "key": "locked-slots|locked_slots.c|my_setitem|"
   },
   {
+   "owner": "locked-slots",
+   "kind": "detour",
+   "method": "Refactor.UI.Tooltip_Item$$Show",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xf3df74"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xc4b8c0"
+    }
+   },
+   "active": "always (mod enabled)",
+   "label": "locked-slots",
+   "source": "ds_modloader:loader/modules/locked-slots/locked_slots.c",
+   "key": "locked-slots|locked_slots.c|my_tip|"
+  },
+  {
    "owner": "multi-bar",
    "kind": "detour",
    "method": "Refactor.UI.QuickSlotUI.<>c__DisplayClass8_0$$<Init>b__0",

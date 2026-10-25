@@ -2,7 +2,7 @@
  "id": "locked-slots",
  "name": "Locked Slots",
  "short_name": "Locked Slots",
- "version": "0.1.1",
+ "version": "0.1.2",
  "author": "AmfiLogos",
  "kind": "code",
  "api": 6,
@@ -26,7 +26,7 @@
   "loader>=3.2.0"
  ],
  "conflicts": [],
- "description": "Right-click a slot in a unit's inventory and choose Keep on return. A small lock shows on the slot, and what is in it stays with the unit when it comes back to the settlement. The unit can still use, move and drop those items. Sort leaves locked slots alone. Right-click again and choose Do not keep on return to unlock it.",
+ "description": "Right-click a slot in a unit's inventory and choose Keep On Return. A small lock shows on the slot, and what is in it stays with the unit when it comes back to the settlement. The unit can still use, move and drop those items. Sort leaves locked slots alone. Right-click again and choose Do Not Keep On Return to unlock it.",
  "i18n": {
   "fr": {
    "name": "Emplacements verrouillés",

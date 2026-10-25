@@ -52,3 +52,4 @@ locked-slots	locked_slots.c	my_ban	Refactor.Main.Event.ItemEventHandler$$OnEvent
 locked-slots	locked_slots.c	my_reg	Refactor.Control.InteractionOptionControl$$RegisterInteraction_Inventory/3	active: always (mod enabled)
 locked-slots	locked_slots.c	my_show	Refactor.UI.InteractionOptionUI$$Show/1(InteractionOption)	active: always (mod enabled)
 locked-slots	locked_slots.c	my_setitem	Refactor.UI.ItemSlotUI$$SetItem/2	active: always (mod enabled)
+locked-slots	locked_slots.c	my_tip	Refactor.UI.Tooltip_Item$$Show/1	active: always (mod enabled)
