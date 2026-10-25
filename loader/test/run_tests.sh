@@ -109,6 +109,12 @@ cp "$M/profile.json" "$OUT/profile.json.keep"; print '{"enabled":["fixmod"],"pro
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_fix.json" DSML_MODSET=aaa+fixmod DSL_MODSET_OWN=1)
 check "a fix asked for that failed to start: the old world still loads (no loop)" '[[ "$r" == *"WORLD save1_state=0 save2_state=-2 cancels=1"* ]]'
 mv "$OUT/profile.json.keep" "$M/profile.json"; mv "$M/fixmod" "$OUT/fixmod.off"
+# a world's single-player copy (multiplayer 0.1.26, owner 2026-10-25): the copy plays with the world's own mods. Break
+# caught: the copy registered with the running set (a save-dependent mod missing, or "Load it with them?" at its first load).
+print "== T1e a world's single-player copy keeps the world's mods"
+print -r -- '{"world":null,"modset":"aaa","rule":"mods","worlds":{"22222222-2222-2222-2222-222222222222":"aaa+bbb"},"fix_off":{"22222222-2222-2222-2222-222222222222":"fixmod"}}' > "$OUT/session_copy.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_copy.json" DSML_MODSET=aaa HOST_COPY_MODS="22222222-2222-2222-2222-222222222222 33333333-3333-3333-3333-333333333333")
+check "the copy gets the world's stored set and its fixes off (not the running set); the world keeps its own" '[[ "$r" == *"COPYMODS rc=0"* ]] && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); w=d[\"worlds\"]; f=d.get(\"fix_off\",{}); n=\"33333333-3333-3333-3333-333333333333\"; o=\"22222222-2222-2222-2222-222222222222\"; sys.exit(0 if w.get(n)==\"aaa+bbb\" and f.get(n)==\"fixmod\" and w.get(o)==\"aaa+bbb\" and f.get(o)==\"fixmod\" else 1)" "$OUT/session_copy.json"'
 
 print "== T2 foreign loader FIRST in the list"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/foreign.dylib:$FW/dsload.dylib")
