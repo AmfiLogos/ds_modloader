@@ -41,10 +41,18 @@ nice -n 19 $TC -shared -Wl,--no-insert-timestamp -o $O/baselib.dll.tmp $OBJ/*.o 
 mv -f $O/baselib.dll.tmp $O/baselib.dll
 echo "built $O/baselib.dll"
 
+# the kit's files\lang, staged once: the loader's texts (lang/<code>.json) + install.bat / uninstall.bat texts in the game's
+# languages (setup_<code>.bat, Windows line ends). The kit gets this folder; the starter carries the same bytes and puts back
+# what ROOT\game\lang lacks at its start (ds_modded_win.c lang_heal: auto-updates up to 0.1.28 never copied them)
+LS=$O/gen/lang; [[ -d $LS ]] && mv $LS $O/old/lang-$(date +%Y%m%d-%H%M%S); mkdir -p $LS
+LJ=($L/lang/*.json(N)); (( ${#LJ} )) && cp $LJ $LS/
+python3 setup_lang/gen_setup_lang.py bat $LS
+for f in $LS/*.bat(N); do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
+python3 gen_lang_embed.py $LS $O/gen/dsl_lang_embed.h
 $B/x86_64-w64-mingw32-windres ds_modded_win.rc -O coff -o $OBJ/ds_modded_res.res.o
 ZL=$D/win/third_party/zlib; ZO=(); mkdir -p $OBJ/zl
 for f in $ZL/{adler32,crc32,inffast,inflate,inftrees,zutil}.c; do nice -n 19 $TC $PM -O2 -w -c $f -o $OBJ/zl/${f:t:r}.o; ZO+=($OBJ/zl/${f:t:r}.o); done
-nice -n 19 $TC $PM $NS -Wl,--no-insert-timestamp -O2 -Wall -municode -mwindows -I$L/src -Icompat -I$ZL $MLGF ds_modded_win.c bie_win.c compat/dsl_u8_win.c ../dsl_update_start.c dsl_update_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
+nice -n 19 $TC $PM $NS -Wl,--no-insert-timestamp -O2 -Wall -municode -mwindows -I$L/src -Icompat -I$ZL -I$O/gen $MLGF ds_modded_win.c bie_win.c compat/dsl_u8_win.c ../dsl_update_start.c dsl_update_win.c $L/src/dsl_json.c $ZO $OBJ/ds_modded_res.res.o -o "$O/Dungeon Settlers Modded.exe.tmp" -lshell32 -lole32 -ladvapi32 -luuid -lurlmon -lbcrypt
 mv -f "$O/Dungeon Settlers Modded.exe.tmp" "$O/Dungeon Settlers Modded.exe"
 echo "built $O/Dungeon Settlers Modded.exe"
 
@@ -55,10 +63,8 @@ cp kit/install.bat kit/uninstall.bat kit/README.txt $K/
 cp kit/find_game.bat kit/copy_exclude.txt $K/files/
 mkdir -p $K/licenses; cp $L/../licenses/LICENSE.txt $L/../licenses/THIRD_PARTY_NOTICES.txt $K/licenses/   # kit\licenses (in the kit zip too), copied to the install folder
 cp $O/baselib.dll "$O/Dungeon Settlers Modded.exe" $K/files/
-# the loader's texts (lang/<code>.json): install.bat puts them next to the loader, ROOT\game\lang (the starter reads them too)
-LJ=($L/lang/*.json(N)); if (( ${#LJ} )); then mkdir -p $K/files/lang; cp $LJ $K/files/lang/; fi
-# install.bat / uninstall.bat texts in the game's languages (files\lang\setup_<code>.bat, copied to ROOT\game\lang too)
-python3 setup_lang/gen_setup_lang.py bat $K/files/lang
+# the texts staged above (files\lang): install.bat puts them next to the loader, ROOT\game\lang (the starter reads them too)
+mkdir -p $K/files/lang; cp $LS/* $K/files/lang/
 print 25846389 > $K/files/BUILD.txt      # first line only: install.bat and the 0.1.13 starters read it
 print 25846389 > $K/files/BUILDS.txt     # every game build this kit runs on, one a line (the update install, dsl_update_win.c)
 print ${DSM_RELEASE:-$(head -1 $L/../RELEASE)} > $K/files/RELEASE     # the kit release (auto-update compares it)
@@ -66,6 +72,7 @@ stat -f %z $GAME/GameAssembly.dll > $K/files/GASIZE.txt
 for m in ${=MODS}; do cp -R $m $K/files/mods/; done
 ~/tools/llvm-mingw/bin/llvm-strip --strip-debug $K/files/baselib.dll "$K/files/Dungeon Settlers Modded.exe"   # no build paths
 for f in $K/*.bat $K/*.txt $K/files/*.bat $K/files/*.txt $K/files/RELEASE $K/files/lang/*.bat; do perl -pi -e 's/\r?\n/\r\n/' "$f"; done
+for f in $LS/*; do cmp -s $f $K/files/lang/${f:t} || { echo "build_win: kit files/lang/${f:t} is not the starter's built-in copy (lang_heal would undo it)" >&2; exit 1; }; done
 echo "kit $K: $(ls $K/files/mods | tr '\n' ' ')"
 python3 $L/modules/scan_saves.py $K || { echo "build_win: player data inside the kit (a save or a player file in MODS?)" >&2; exit 1; }   # owner 2026-10-16: no saves in what ships
 if (( ! ${#NS} )); then python3 $W/steam_gate.py $K || { echo "build_win: a release binary can turn the game's Steam check off" >&2; exit 1; }; fi

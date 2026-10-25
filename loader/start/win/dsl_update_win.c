@@ -1,6 +1,6 @@
 // Windows OS part of the auto-update (src/dsl_update_os.h). ROOT = $DSML_ROOT (set by the starter exe), else the
 // folder above DSL_MODS_DIR (ROOT\mods). Layout: ROOT\Dungeon Settlers Modded.exe, ROOT\RELEASE, ROOT\game (the game
-// copy, our baselib.dll), ROOT\mods\<id>\, ROOT\profiles\ (saves: never touched).
+// copy, our baselib.dll, our texts in game\lang), ROOT\mods\<id>\, ROOT\profiles\ (saves: never touched).
 // Kit: the release's "Dungeon-Settlers-Modded-Windows.zip" (folder "Dungeon Settlers Modded\files\..."). Files are
 // swapped one by one: a running game maps baselib.dll and the mod DLLs, and a loaded DLL can be renamed but not
 // overwritten (a folder with a loaded DLL cannot be renamed at all). Old file -> backup\<same relative path>, new file in.
@@ -220,6 +220,23 @@ static int unpack(const char *zip, const char *dst) {
     return k > 0 ? 0 : -1;
 }
 int dsl_uos_unpack(const char *zip, const char *dst) { return unpack(zip, dst); }
+/* the kit's files\ folder in the unpacked zip u: at the top or one folder down ("Dungeon Settlers Modded\files"), the one
+   that holds marker; fdir "" = none */
+static void kit_files(const char *u, const char *marker, char *fdir, size_t n) {
+    char t[1500]; fdir[0] = 0;
+    snprintf(t, sizeof t, "%s\\files\\%s", u, marker);
+    if (dsl_uos_exists(t)) { snprintf(fdir, n, "%s\\files", u); return; }
+    char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", u); wchar_t wp[1300]; wide(pat, wp, 1300);
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(wp, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+        char nm[600]; if (!WideCharToMultiByte(CP_ACP, 0, fd.cFileName, -1, nm, sizeof nm, NULL, NULL)) continue;
+        snprintf(t, sizeof t, "%s\\%s\\files\\%s", u, nm, marker);
+        if (dsl_uos_exists(t)) { snprintf(fdir, n, "%s\\%s\\files", u, nm); break; }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
 static void first_line(const char *p, char *out, size_t n) {
     out[0] = 0; FILE *f = fopen(p, "r"); if (!f) return;
     if (!fgets(out, (int)n, f)) out[0] = 0;
@@ -232,23 +249,8 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     prog(mv, 10);
     if (unpack(file, u)) { snprintf(why, wn, TR("the download could not be unpacked")); return -1; }
     prog(mv, 50);
-    /* files\ : at the top or one folder down ("Dungeon Settlers Modded\files") */
-    char fdir[1400] = "", t[1500];
-    snprintf(t, sizeof t, "%s\\files\\baselib.dll", u);
-    if (dsl_uos_exists(t)) snprintf(fdir, sizeof fdir, "%s\\files", u);
-    else {
-        char pat[1300]; snprintf(pat, sizeof pat, "%s\\*", u); wchar_t wp[1300]; wide(pat, wp, 1300);
-        WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(wp, &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
-                char nm[600]; if (!WideCharToMultiByte(CP_ACP, 0, fd.cFileName, -1, nm, sizeof nm, NULL, NULL)) continue;
-                snprintf(t, sizeof t, "%s\\%s\\files\\baselib.dll", u, nm);
-                if (dsl_uos_exists(t)) { snprintf(fdir, sizeof fdir, "%s\\%s\\files", u, nm); break; }
-            } while (FindNextFileW(h, &fd));
-            FindClose(h);
-        }
-    }
+    char fdir[1400];
+    kit_files(u, "baselib.dll", fdir, sizeof fdir);
     char exe[1500]; snprintf(exe, sizeof exe, "%s\\Dungeon Settlers Modded.exe", fdir);
     if (!fdir[0] || !dsl_uos_exists(exe)) { snprintf(why, wn, TR("the download holds no Dungeon Settlers Modded kit")); return -1; }
     /* the kit is made for the game builds in files\BUILDS.txt (one a line; a kit without it: the first line of BUILD.txt,
@@ -290,6 +292,12 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
         if (!dsl_uos_exists(s)) { snprintf(why, wn, TR("the kit has no %s"), ONE[i].from); return -1; }
         if (swap_in(s, d, b, mv)) { snprintf(why, wn, TR("%s could not be replaced"), ONE[i].to); return -1; }
     }
+    /* the loader's texts (files\lang: <code>.json + uninstall.bat's setup_<code>.bat) into ROOT\game\lang, where install.bat
+       puts them; file by file. Before 0.1.29 this step was missing: every new text showed in English after an auto-update.
+       An older starter installs the new kit without it: the new starter puts the texts back at its start (lang_heal) */
+    char sl[1500], dl[1300], bl[1300]; int nl = 0;
+    snprintf(sl, sizeof sl, "%s\\lang", fdir); snprintf(dl, sizeof dl, "%s\\game\\lang", root); snprintf(bl, sizeof bl, "%s\\game\\lang", backup);
+    if (is_dir(sl) && swap_tree(sl, dl, bl, "", mv, &nl)) { snprintf(why, wn, TR("%s could not be replaced"), "game\\lang"); return -1; }
     /* the kit's mods, file by file; each mod folder the kit brings is replaced whole: its files the new kit lacks go to the
        backup first (a file only the old version had could still be read or loaded). The player's other mods stay. */
     char sm[1500], dm[1300], bm[1300]; int nf = 0, nx = mv->n;
@@ -312,10 +320,13 @@ int dsl_uos_kit_install(const char *file, const char *ver, const char *backup, D
     nx = mv->n - nx;
     prog(mv, 75);
     if (is_dir(sm) && swap_tree(sm, dm, bm, "", mv, &nf)) { snprintf(why, wn, TR("the mods could not be replaced")); return -1; }
-    dsl_log("update: Windows kit installed: baselib.dll, the starter, RELEASE and %d mod file(s), %d old mod file(s) the kit "
-            "no longer has moved out (old ones in %s)", nf, nx, backup);
+    dsl_log("update: Windows kit installed: baselib.dll, the starter, RELEASE, %d text file(s) and %d mod file(s), %d old mod "
+            "file(s) the kit no longer has moved out (old ones in %s)", nl, nf, nx, backup);
     return 0;
 }
+
+/* the starter's lang_heal (ds_modded_win.c): a text file it put back that the install had not listed */
+void dsl_uos_log_installed(const char *path) { log_installed(path); }
 
 int dsl_uos_mod_install(const char *zip, const char *id, const char *ver, const char *backup, DslMoves *mv, char *why, size_t wn) {
     char u[1200]; snprintf(u, sizeof u, "%s.new", backup); bs(u);
