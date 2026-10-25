@@ -474,12 +474,13 @@ static void mods_open(DSLObj root, float w, float h) {
     /* game mods, fixes, then launcher mods (owner 2026-10-20: Multiplayer, Units Laboratory start from the title, never
        from a world; 2026-10-24: fixes for bugs of the game apart); each has its own tab, all in one list so a change on
        one tab stays when another opens. A world's Mods tab shows its fixes and game mods (no tabs): launcher mods are not
-       per world, and a fix of scope client is on or off for all worlds together (its switch in the Fixes tab). */
+       per world, and a mod or fix of scope client is on or off for all worlds together (its switch in the title's window;
+       UX L3: a world's switch for it said "Saved" but a world's set only holds gameplay mods). */
     for (int pass = 0; pass < 3; pass++)
         for (int i = 0; i < dsl_mods_count() && nmods < NM; i++) {
             const DSLModInfo *m = dsl_mods_at(i);
             if (!m || m->hidden || tab_of(m) != pass) continue;
-            if (world_mode && (pass == 2 || (pass == 1 && m->scope && !strcmp(m->scope, "client")))) continue;
+            if (world_mode && (pass == 2 || (m->scope && !strcmp(m->scope, "client")))) continue;
             if (world_mode && dsl_mod_is_difficulty(m->id)) continue;   /* a world uses Hell by its level, never by a switch */
             /* a custom difficulty runs always (owner 2026-10-25): its row has no switch of its own, so it is never in an
                Apply's set (the profile keeps it off: the title's multiplayer set leaves it out, dsl_reg.c hello_has) */
@@ -545,9 +546,9 @@ static void mods_open(DSLObj root, float w, float h) {
     /* groups */
     U->text(root, m_rx, 0, m_rw, 32, TR("Groups"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
     m_save = named(U->button(root, m_rx, 40, m_rw, 40, TR("Save these mods as a group"), save_click, NULL), 0, "group-new", save_click, NULL, TR("Save these mods as a group"));
-    m_field = named(U->field(root, m_rx, 40, m_rw - 184, 40, TR("Group name"), "", fsave_click, NULL), 2, "group-name", fsave_click, NULL, "");
-    m_fsave = named(U->button(root, m_rx + m_rw - 176, 40, 84, 40, TR("Save"), fsave_click, NULL), 0, "group-save", fsave_click, NULL, TR("Save"));
-    m_fcancel = named(U->button(root, m_rx + m_rw - 84, 40, 84, 40, TR("Cancel"), fcancel_click, NULL), 0, "group-cancel", fcancel_click, NULL, TR("Cancel"));
+    m_field = named(U->field(root, m_rx, 40, m_rw - 216, 40, TR("Group name"), "", fsave_click, NULL), 2, "group-name", fsave_click, NULL, "");
+    m_fsave = named(U->button(root, m_rx + m_rw - 208, 40, 100, 40, TR("Save"), fsave_click, NULL), 0, "group-save", fsave_click, NULL, TR("Save"));
+    m_fcancel = named(U->button(root, m_rx + m_rw - 100, 40, 100, 40, TR("Cancel"), fcancel_click, NULL), 0, "group-cancel", fcancel_click, NULL, TR("Cancel"));
     naming_show(0);
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: the switch the column's width, Privacy under it
@@ -558,7 +559,7 @@ static void mods_open(DSLObj root, float w, float h) {
         DSLObj ct = named(U->toggle(root, m_rx, h - 162, m_rw, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
                           "crash-reports", crash_change, NULL, dsl_crash_consent() == 1 ? "on" : "off");
         U->tooltip(ct, TR("Send crash reports"), TR("After a crash, a freeze, a desync or a failed join, the next start sends the logs and versions, without names or IP addresses. At most 3 a day."));
-        DSLObj pb = named(U->button(root, m_rx + m_rw - 160, h - 120, 160, 36, TR("Privacy"), privacy_click, NULL), 0, "crash-privacy", privacy_click, NULL, TR("Privacy"));
+        DSLObj pb = named(U->button(root, m_rx + m_rw - 220, h - 120, 220, 36, TR("Privacy"), privacy_click, NULL), 0, "crash-privacy", privacy_click, NULL, TR("Privacy"));   /* ru: the game's long word */
         U->tooltip(pb, TR("Privacy"), TR("Open the privacy note in your browser."));
     }
     bottom_bar(root, w, h);
@@ -761,8 +762,8 @@ static void settings_open(DSLObj root, float w, float h) {
     char note[600] = "";
     if (ng && read_only) snprintf(note, sizeof note, "%s", TR("Gameplay settings change only at the title screen."));
     else if (ng) snprintf(note, sizeof note, "%s", TR("Gameplay settings change when you click Apply. In multiplayer, every player needs the same values."));
-    if (nl && note[0]) { char t[600]; snprintf(t, sizeof t, TR("%s %s"), note, TR("Display settings change at once.")); snprintf(note, sizeof note, "%s", t); }
-    else if (nl) snprintf(note, sizeof note, "%s", TR("Display settings change at once."));
+    if (nl && note[0]) { char t[600]; snprintf(t, sizeof t, TR("%s %s"), note, TR("Settings for this computer change at once.")); snprintf(note, sizeof note, "%s", t); }
+    else if (nl) snprintf(note, sizeof note, "%s", TR("Settings for this computer change at once."));
     dsi_utf8_fix_end(note);
     st_note = named(U->text(root, 0, 38, w, 22, note, 14, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB), 3, "set-note", NULL, NULL, note);
     float nh = 22; { float ph = st_note && U->text_height ? U->text_height(st_note, w) : 0; if (ph > nh + 2) { nh = ph; U->place(st_note, 0, 38, w, nh); } }
@@ -803,7 +804,7 @@ static void settings_open(DSLObj root, float w, float h) {
         named(c, kind, nm, kind == 6 ? num_submit : set_change, (void *)(intptr_t)i, vt);
         y += in->type == DSL_SET_TOGGLE ? 40 : 48;
         /* help under the control, and which kind of setting it is (gold, right) */
-        const char *kd = in->gameplay ? TR("Gameplay") : TR("Display");
+        const char *kd = in->gameplay ? TR("Gameplay") : TR("This computer");   /* UX L5: a port is not a display setting */
         snprintf(nm, sizeof nm, "set-kind:%s", in->id);
         named(U->text(list, rw - 140, y - 4, 140, 18, kd, 13, DSL_TXT_RIGHT, GOLD), 3, nm, NULL, NULL, kd);
         if (in->help && in->help[0]) {

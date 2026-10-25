@@ -1110,3 +1110,14 @@ give NULL / 1 / -1 with an older kit):
   Options window's red X at UI Scale 1.4.
 Test: `test/kitlook_test.py` (hidden copy KIT, uikit-demo driver: rdrag / rclick fake right mouse, api follow / movable /
 uiscale): 19/19 on this kit; main 5e213f1: 13 FAIL (no red X, nothing follows UI Scale, the corner over Options, no move).
+The close rule's guard (owner rule "templates + guards", 2026-10-25): in test copies a kit button labelled "X" / "x" / "×"
+put straight on a root panel of ours (a window's close, not a list's delete "x") logs `CLOSE-TEXT-X "<window text>"`;
+kitlook_test fails on it (en, de, ru runs). Other repos' tests can sweep their dsload.log for the same line.
+UX L3 (2026-10-25): a world's Mods window leaves out every mod of scope client (Multi-unit view, the test uikit-demo), as it
+did for client fixes: a world's set holds gameplay mods only (dsl_reg.c key_of), so their switch said "Saved" and was
+lost. kitlook_test world_l3: every switch the window shows is kept by "Save for this world" (main 185b860: 2 FAIL).
+UX L5: a mod's local settings are tagged "This computer" ("Settings for this computer change at once."), not "Display".
+UX L6: the reason line names the needed mod as the list does (dsl_reg.c dsl_mod_name_of, current language) and a mod that is
+turned off adds "Turn it on." (key "%s. Turn it on.").
+UX L7: ru "Privacy" = "Конфиденциальность" (the game's word, Политика конфиденциальности), as the bug report's; that button
+220 wide; the group-name row's Save / Cancel 100 wide (field 216 shorter).
