@@ -102,7 +102,10 @@ def main():
         st = mp('mpm_list'); time.sleep(1)
         if st.get('mode') == 1 and not st.get('other'): mp('mpm_list', flip=1); time.sleep(2)   # show single-player worlds
         st = mp('mpm_list')
-        check('H: Host a world open (multiplayer list, single-player worlds shown)', st.get('open') and st.get('mode') == 1 and st.get('other'), st)
+        # Multiplayer 0.1.27 (UX M4): a host with no multiplayer world gets every world (mode -1 = MPM_LIST_ALL, no toggle);
+        # with one, the multiplayer list (mode 1) and the toggle that shows the single-player worlds
+        check('H: Host a world open (single-player worlds shown: all worlds, or the multiplayer list + its toggle)',
+              st.get('open') and ((st.get('mode') == -1 and st.get('shown', 0) >= 2) or (st.get('mode') == 1 and st.get('other'))), st)
         T.shot('H0_host_list')
         one_list('H')
     except Exception as e:
