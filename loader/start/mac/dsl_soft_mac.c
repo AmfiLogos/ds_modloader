@@ -426,3 +426,24 @@ void dsl_sos_timer(void (*fn)(void)) {
     CFRunLoopTimerRef tm = CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + 0.1, 1.0 / 60, 0, 0, tick, NULL);
     CFRunLoopAddTimer(CFRunLoopGetMain(), tm, kCFRunLoopCommonModes);
 }
+
+/* test copy: CoreAudio's per-process switch kAudioHardwarePropertyProcessIsAudible ('pmut', settable only by the process
+   itself) = 0: nothing this process plays is heard, whatever Unity's own volumes say. CoreAudio by dlsym (Unity loaded
+   it; no link of the loader to it). */
+typedef struct { uint32_t sel, scope, elem; } CAAddr;
+int dsl_sos_process_mute(void) {
+    static int (*set)(uint32_t, const CAAddr *, uint32_t, const void *, uint32_t, const void *);
+    static int (*get)(uint32_t, const CAAddr *, uint32_t, const void *, uint32_t *, void *);
+    if (!set || !get) {
+        void *h = dlopen("/System/Library/Frameworks/CoreAudio.framework/CoreAudio", RTLD_LAZY | RTLD_LOCAL);
+        if (h) { *(void **)&set = dlsym(h, "AudioObjectSetPropertyData"); *(void **)&get = dlsym(h, "AudioObjectGetPropertyData"); }
+        if (!set || !get) return -1;
+    }
+    const CAAddr a = { 0x706d7574 /* 'pmut' */, 0x676c6f62 /* 'glob' */, 0 };
+    uint32_t v = 1, n = sizeof v;
+    if (get(1 /* kAudioObjectSystemObject */, &a, 0, NULL, &n, &v) == 0 && v == 0) return 1;
+    uint32_t z = 0;
+    if (set(1, &a, 0, NULL, sizeof z, &z)) return -1;
+    v = 1; n = sizeof v;
+    return get(1, &a, 0, NULL, &n, &v) == 0 && v == 0 ? 1 : -1;
+}

@@ -294,6 +294,7 @@ static void test_copy_window(void) {
         _exit(3);
     }
     if (!bg) { dsl_log("screen: a player's copy (not background-only): quiet mode off"); return; }
+    dsl_soft_silent("background-only app");                     /* AudioListener held at 0 (dsl_soft.c) */
     if (!getenv("DSRIG_LIVE")) test_copy_cap();
     test_copy_noactivate();
     if (!getenv("DSRIG_LIVE")) { extern void dsl_quiet_install(void); dsl_quiet_install(); }   /* dsl_quiet_mac.c */
