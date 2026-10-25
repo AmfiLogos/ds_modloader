@@ -6,6 +6,7 @@ the owner is read or written.
 
   locked_slots_test.py run [out]       every step below; exit 1 on a failed check
   locked_slots_test.py cmd '<json>'    rig socket command to the running copy
+  locked_slots_test.py shots [out]     pictures of the lock icons at UI scale 1.0 and 1.4 (visual, no check)
   env LS_COPY=<letter> (default Z), LS_MODS=<dir> (take locked-slots from <dir>/locked-slots, the unzipped package)
 
 Real breaks it catches:
@@ -336,6 +337,28 @@ def run_v(out, a_save):
     down()
 
 
+def run_shots(out):
+    """visual only (the owner judges): the lock icons at UI scale 1.0 and 1.4, one picture each, no check"""
+    orig = r.prepare_data
+    for scale in (1.0, 1.4):
+        def prep(x, _s=scale):
+            orig(x)
+            p = os.path.join(r.idir(x), 'data', 'UserSetting.json'); d = json.load(open(p))
+            d['GraphicSettingData']['UIScale'] = _s; json.dump(d, open(p, 'w'), indent=1)
+        r.prepare_data = prep; os.environ['LRIG_SIZE'] = '1600x900'
+        try:
+            up(out, ['multiplayer', 'locked-slots'])
+            fx = os.path.join(out, 'save_in', 'lks_fixture.json'); make_fixture(fx); load(fx, out)
+            inject('SelectPlayerUnitRequested', guid_20=U[0]); time.sleep(1); cmd({'cmd': 'lks_open'}); time.sleep(2)
+            for slot in LOCK:
+                menu(U[0], slot); cmd({'cmd': 'lks_pick'}); wait('lock %d' % slot, lambda: slot in locked(U[0]), timeout=10)
+            time.sleep(2)
+            p = os.path.join(out, 'locked_slots_ui%s.png' % ('%.1f' % scale).replace('.', '_'))
+            log('picture', scale, cmd({'cmd': 'ui_capture', 'path': p}), p)
+        finally:
+            down(); r.prepare_data = orig; os.environ.pop('LRIG_SIZE', None)
+
+
 def lease():
     lane = 'dslock-%d' % os.getpid(); t0 = time.time()
     while time.time() - t0 < 1800:
@@ -354,6 +377,8 @@ def main():
     if r.owner_game_running(): log('note: the owner\'s game runs (one hidden copy, nice, background)')
     lane, pair = lease()
     try:
+        if len(sys.argv) > 1 and sys.argv[1] == 'shots':
+            run_shots(OUT); return 0
         a, _ = run_a(OUT)
         if a: run_v(OUT, a)
     finally:
