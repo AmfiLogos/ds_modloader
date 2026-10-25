@@ -60,7 +60,7 @@
  "%s installs the next time you start the game.": "%s se instala la próxima vez que inicies el juego.",
  "%s is not a mod for Dungeon Settlers Modded. It was moved to the folder mods/.failed.": "%s no es un mod para Dungeon Settlers Modded. Se movió a la carpeta mods/.failed.",
  "%s is not a mod for Dungeon Settlers Modded. It was moved to the mods\\.failed folder. The game starts without it.": "%s no es un mod para Dungeon Settlers Modded. Se movió a la carpeta mods\\.failed. El juego se inicia sin él.",
- "%s is on but did not start on this computer: %s": "%s está activado, pero no se inició en este equipo: %s",
+ "%s is on but did not start on this computer: %s": "El mod «%s» está activado, pero no se inició en este equipo: %s",
  "%s is ready. The new version installs the next time the game starts.": "%s está listo. La nueva versión se instala la próxima vez que se inicie el juego.",
  "%s mods need the Dungeon Settlers Modded app": "Los mods de %s necesitan la app Dungeon Settlers Modded",
  "%s off": "%s desactivado",

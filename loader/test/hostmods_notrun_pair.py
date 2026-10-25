@@ -13,7 +13,9 @@ Checks: host runs X; guest: X off by the crash guard and not in its set; refused
 but did not start on this computer: <reason>" with no button; for --wait seconds (default 45): no "hostmods: get:", the
 same guest process, one box, one join (no rejoin), the guest stays on the title.
 
-  hostmods_notrun_pair.py [--wait 45]
+  hostmods_notrun_pair.py [--wait 45] [--lang N]
+--lang N: the guest's game language (LanguageType: 3 de, 4 ru, 7 ja ...): the box line in that language (the multiplayer
+module's table + the loader's reason), picture notrun_box_<code>.png.
 Inputs: HM_BUILD = loader build folder (dsload.dylib + mods/multiplayer + mods/gcd-cdr; default ../build), HM_SRC_APP =
 a ready hidden test copy to clone (default ~/ds_launcher/loader/test_env/instances/Z). Copies NRH (host) and NRG (guest) in
 ../test_env/instances. Lease: ~/ds_multiplayer/rig/rig.py (refused while rig/release.lock exists).
@@ -34,6 +36,8 @@ STAGE = '-20000,-20000'
 SAVE = os.path.join(lrig.SEED_DATA, 'Saves', 'MoonlightBrigade__AutoSave_41e9c1bb8790492cbdc10f4dcad22179_0.json')
 B = dict(MULTIPLAYER=1, JOIN_ADDR=14, CONNECT=15)                  # src/mpmenu.h enum mpm_button
 WAIT = int(sys.argv[sys.argv.index('--wait') + 1]) if '--wait' in sys.argv else 45
+LANG = int(sys.argv[sys.argv.index('--lang') + 1]) if '--lang' in sys.argv else 0
+CODE = {0: 'en', 1: 'ko', 2: 'fr', 3: 'de', 4: 'ru', 5: 'zh-Hans', 6: 'zh-Hant', 7: 'ja', 8: 'es', 9: 'pt-BR'}[LANG]
 BUILD = os.environ.get('HM_BUILD', os.path.join(L, 'build'))
 OUT = os.path.join(L, 'test_env', 'notrun', time.strftime('%Y%m%d-%H%M%S')); os.makedirs(OUT, exist_ok=True)
 LANE = 'dsmpfix-notrun'
@@ -115,6 +119,7 @@ def kit(x, crashed):
     md = os.path.join(k, 'loader', 'mods'); os.makedirs(md); os.makedirs(os.path.join(k, 'mods')); os.makedirs(os.path.join(k, 'update'))
     shutil.copy2(os.path.join(BUILD, 'dsload.dylib'), os.path.join(k, 'loader', 'dsload.dylib'))
     shutil.copy2(os.path.join(os.path.dirname(L), 'RELEASE'), os.path.join(k, 'loader', 'RELEASE'))
+    shutil.copytree(os.path.join(L, 'lang'), os.path.join(k, 'loader', 'lang'))   # the loader's texts (the kit has them next to it)
     for i in ('multiplayer', X_ID): shutil.copytree(os.path.join(BUILD, 'mods', i), os.path.join(md, i))
     mods = os.path.join(I, 'data', 'Mods')
     for f in os.listdir(mods):
@@ -130,6 +135,10 @@ def kit(x, crashed):
 def start(x, extra=None):
     I = lrig.idir(x); k = os.path.join(I, 'kit')
     lrig.require_background_only(x); lrig.prepare_data(x); lrig.require_windowed(x)
+    if x == G and LANG:                                           # the guest's own UserSetting.json (a test copy)
+        us = os.path.join(I, 'data', 'UserSetting.json'); u = json.load(open(us))
+        u['GeneralSettingData']['SaveCurrentLanguageType'] = LANG; u['GeneralSettingData']['IsLanguageInitialized'] = True
+        json.dump(u, open(us, 'w'), indent=1)
     if os.path.exists(lrig.sockpath(x)): os.unlink(lrig.sockpath(x))   # our copy's own socket file
     env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'home'), 'USER': os.environ.get('USER', ''),
            'LOGNAME': os.environ.get('LOGNAME', ''), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': os.environ.get('TMPDIR', '/tmp'),
@@ -157,7 +166,8 @@ def stop(x):
 
 
 def run(port):
-    x_name = json.load(open(os.path.join(BUILD, 'mods', X_ID, 'mod.json'), encoding='utf-8'))['name']
+    xm = json.load(open(os.path.join(BUILD, 'mods', X_ID, 'mod.json'), encoding='utf-8'))
+    x_name = ((xm.get('i18n') or {}).get(CODE) or {}).get('name') or xm['name']   # the name in the guest's language
     kit(H, False); kit(G, True)
     json.dump({'role': 'host', 'port': port, 'name': 'Host', 'allow_speedup': True, 'allow_pause': True},
               open(os.path.join(lrig.idir(H), 'mp.json'), 'w'))   # the guest has none: it joins through the menu
@@ -185,12 +195,16 @@ def run(port):
     log('guest: join by address sent')
     box = wait('hostmods box', lambda: next((l for l in flog(G, 'rig.log', rpos).splitlines() if 'mp: hostmods box:' in l), None), timeout=180, every=0.2)
     info['box_line'] = box
-    try: info['box_shot'] = c(G, cmd='mpm_shot', path=os.path.join(OUT, 'notrun_box.png'), how='backbuffer')
+    time.sleep(1.0)
+    try: info['box_shot'] = c(G, cmd='mpm_shot', path=os.path.join(OUT, f'notrun_box_{CODE}.png'), how='backbuffer')
     except Exception as e: info['box_shot'] = repr(e)
     gtxt = flog(G, 'rig.log', rpos)
     refusal = [l for l in gtxt.splitlines() if 'modset refusal' in l or 'REJ_MODSET' in l]
     check('guest refused (MODSET), the box shows', bool(refusal) and bool(box), f'refusal {refusal[-1:]}; box {box}')
-    want = f'{x_name} is on but did not start on this computer: it stopped the game while starting last time'
+    k1, k2 = '%s is on but did not start on this computer: %s', 'it stopped the game while starting last time, so it stays off until it is updated'
+    t1 = json.load(open(os.path.join(BUILD, 'mods', 'multiplayer', 'lang', CODE + '.json'), encoding='utf-8')).get(k1, k1) if LANG else k1
+    t2 = json.load(open(os.path.join(L, 'lang', CODE + '.json'), encoding='utf-8')).get(k2, k2) if LANG else k2
+    want = t1.replace('%s', x_name, 1).replace('%s', t2, 1)
     check('the box says the mod is on but did not start here, with the reason; no "Get the host\'s mods" button',
           want in box and '[button none]' in box and 'turned off' not in box, box)
 
