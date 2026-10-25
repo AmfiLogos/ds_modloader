@@ -5,8 +5,8 @@
   python3 locked_slots_vm.py [--out DIR]
 World = the wiki's public base save under a NEW world guid with resource stacks in the bags (the Mac test's fixture);
 nothing of a player is read or written. Real breaks it catches on Windows:
- M  the stock right-click of a bag slot shows the row "Keep on return" (an EMPTY slot too); its click locks the slot
-    through the game's order; right-click again shows "Do not keep on return"; the lock icon shows on the locked slots
+ M  the stock right-click of a bag slot shows the row "Keep On Return" (Title Case since locked-slots 0.1.2) (an EMPTY slot too); its click locks the slot
+    through the game's order; right-click again shows "Do Not Keep On Return"; the lock icon shows on the locked slots
     only; the locks are in the mod's data file.
  R  return to base (the game's own map change, dungeon -> base): resource stacks in locked slots stay in the bag,
     resources in unlocked slots leave it as in the stock game (a unit with no lock too), food stays, world totals of
@@ -75,7 +75,7 @@ def inject(w, ev, **k):
 
 def run(w, out):
     L = w.text(W.PROF + r'\dsload.log') or ''
-    check('A: module on (6 hooks)', 'locked slots on (6 hooks' in L, [l for l in L.splitlines() if 'locked-slots' in l][-6:])
+    check('A: module on (7 hooks)', 'locked slots on (7 hooks' in L, [l for l in L.splitlines() if 'locked-slots' in l][-6:])
     fx = os.path.join(out, 'save_in', 'lks_fixture.json'); world = T.make_fixture(fx)
     load(w, fx, 'lks_fixture')
     lstate = lambda: w.cmd(cmd='lks_state')
@@ -94,12 +94,12 @@ def run(w, out):
     check('M: the unit window shows its bag slots (36)', icons and len(icons) == 36, icons and len(icons))
     for slot in LOCK:
         row, rows = menu(U[0], slot)
-        check('M: right-click slot %d shows "Keep on return"%s' % (slot, ' (empty slot)' if slot == 5 else ''),
-              row and row['text'] == 'Keep on return' and row['lock'] == 1, rows)
+        check('M: right-click slot %d shows "Keep On Return"%s' % (slot, ' (empty slot)' if slot == 5 else ''),
+              row and row['text'] == 'Keep On Return' and row['lock'] == 1, rows)
         w.cmd(cmd='lks_pick')
         check('M: its click locks slot %d (game order)' % slot, wait(w, 'lock %d' % slot, lambda: slot in locked(U[0]), 10), lstate())
     row, rows = menu(U[0], 0)
-    check('M: right-click a locked slot shows "Do not keep on return"', row and row['text'] == 'Do not keep on return' and row['lock'] == 0, rows)
+    check('M: right-click a locked slot shows "Do Not Keep On Return"', row and row['text'] == 'Do Not Keep On Return' and row['lock'] == 0, rows)
     w.cmd(cmd='lks_pick'); wait(w, 'unlock 0', lambda: 0 not in locked(U[0]), 10)
     check('M: its click unlocks the slot', locked(U[0]) == [3, 5], lstate())
     menu(U[0], 0); w.cmd(cmd='lks_pick'); wait(w, 'lock 0 again', lambda: 0 in locked(U[0]), 10)
