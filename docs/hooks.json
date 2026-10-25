@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "d35e7c1dfb25d977702900b90f5749f3dbf7a062",
- "cm_pin": "196b3d4b5663e469a1dabfaf82634dcdfdf7e762",
+ "mp_pin": "57634ba74c3d0c9f660a23bae8c1f0520a9f70f7",
+ "cm_pin": "7894c9a6a391b935bb08385f441fee9ef9379b0f",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -4840,6 +4840,57 @@
    "label": "custom-modes InputDispatcher.Update",
    "source": "ds_custommodes:fights/cm_win.c",
    "key": "custom-modes|cm_win.c|h_disp_update|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.Combat.ExecutionProcess.DamageSimulator$$Simulate",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x94ae24"
+    },
+    "win-x64": {
+     "rva": "0x6b62b0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes DamageSimulator.Simulate",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_sim|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.UI.EntitySummaryUIView$$UpdateBuildingEntityUI",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xed4464"
+    },
+    "win-x64": {
+     "rva": "0xbd84c0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes EntitySummaryUIView.UpdateBuildingEntityUI",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_upd|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "UnityEngine.Input$$get_mouseScrollDelta",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x51ad584"
+    },
+    "win-x64": {
+     "rva": "0x3a0ea20"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes Input.get_mouseScrollDelta",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_wheel|"
   },
   {
    "owner": "custom-modes",
