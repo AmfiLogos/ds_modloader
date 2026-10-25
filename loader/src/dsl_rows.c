@@ -875,13 +875,18 @@ static void lf_state_write(Obj slv) {
         float RR[4] = { 0 }; if (on) dsl_ui_screen_rect((DSLObj)comp_tr(cs, NULL), RR);
         char ntx[700] = "", nte[1400] = ""; Obj nt = on && o_title_name >= 0 ? AT(cs, o_title_name, Obj) : NULL;
         if (live(nt)) { dsl_ui_text_get((DSLObj)nt, ntx, sizeof ntx); jesc_(nte, sizeof nte, ntx); }
-        int rm_on = 0; { DSLObj ch[64]; int k = on ? dsl_ui_children((DSLObj)comp_tr(cs, NULL), ch, 64) : 0; char t4[16];   /* the multiplayer mod's "Remove tag" */
-          for (int q = 0; q < k; q++) if (dsl_ui_shown(ch[q]) && dsl_ui_text_get(ch[q], t4, sizeof t4) && !strncmp(t4, "<u>", 3)) rm_on = 1; }
+        int rm_on = 0; float RM[4] = { 0 }, CH[4] = { 0 }, px = 0;          /* the multiplayer mod's "Remove tag", [Change], px per row unit */
+        { DSLObj ch[64]; int k = on ? dsl_ui_children((DSLObj)comp_tr(cs, NULL), ch, 64) : 0; char t4[16];
+          for (int q = 0; q < k; q++) if (dsl_ui_shown(ch[q]) && dsl_ui_text_get(ch[q], t4, sizeof t4) && !strncmp(t4, "<u>", 3)) { rm_on = 1; dsl_ui_screen_rect(ch[q], RM); } }
+        if (on && W[i].chg && dsl_ui_shown(W[i].chg)) dsl_ui_screen_rect(W[i].chg, CH);
+        { float w_ = on ? row_w(cs) : 0; if (w_ > 0) px = (RR[2] - RR[0]) / w_; }
         fprintf(f, "%s{\"guid\": \"%s\", \"name\": \"%s\", \"kind\": %d, \"shown\": %d, \"saves_shown\": %d, \"saves\": %d, \"button_count\": %d, \"shown_names\": [%s], "
                    "\"line_shown\": %d, \"line_rect\": [%.1f, %.1f, %.1f, %.1f], \"left_end\": %.1f, \"rendered\": [%.1f, %.1f], \"line_text\": \"%s\", "
-                   "\"row_rect\": [%.1f, %.1f, %.1f, %.1f], \"save_rects\": [%s], \"name_text\": \"%s\", \"remove_tag\": %d}",
+                   "\"row_rect\": [%.1f, %.1f, %.1f, %.1f], \"save_rects\": [%s], \"name_text\": \"%s\", \"remove_tag\": %d, "
+                   "\"rm_rect\": [%.1f, %.1f, %.1f, %.1f], \"chg_rect\": [%.1f, %.1f, %.1f, %.1f], \"px\": %.4f}",
                 i ? ", " : "", g, names, W[i].kind, on, sh_, sn, live(cs) && o_bcount >= 0 ? AT(cs, o_bcount, int32_t) : -1, list,
-                lon, LR[0], LR[1], LR[2], LR[3], le, rw, rh, lte, RR[0], RR[1], RR[2], RR[3], srs, nte, rm_on);
+                lon, LR[0], LR[1], LR[2], LR[3], le, rw, rh, lte, RR[0], RR[1], RR[2], RR[3], srs, nte, rm_on,
+                RM[0], RM[1], RM[2], RM[3], CH[0], CH[1], CH[2], CH[3], px);
     }
     fprintf(f, "], \"hid_lines\": [");
     for (int k = 0; k < 2; k++) {                                         /* top / bottom hidden-worlds line */
@@ -927,6 +932,36 @@ static Obj tag_link(Obj cs) {                             /* the multiplayer mod
     for (int q = 0; q < k; q++) if (dsl_ui_text_get(ch[q], t4, sizeof t4) && !strncmp(t4, "<u>", 3)) return (Obj)ch[q];
     return NULL;
 }
+/* "Remove tag" on the title line (owner, next version after v0.1.27: it sat under [Change], over the world's detail box):
+   right after the multiplayer tag, its centre on the line's band (1..21 units under the row's top, as the "Mods:" line);
+   no room before the "Mods:" line's minimum and [Change] = the tag's "with <names>" part cut ("..."), then left out. */
+#define RM_GAP 10.f
+#define MODS_MIN 64.f                                       /* room the "Mods:" line keeps at least ("Mods: +N") */
+static int cols_of(const char *s) { int c = 0; for (; *s; s++) if (((unsigned char)*s & 0xC0) != 0x80) c += (unsigned char)*s >= 0xE0 ? 2 : 1; return c; }
+static float row_line_left_max(Obj cs) { float w = row_w(cs); return (dsl_reg_scene() != 2 ? w - CHG_W - 4 : w - 4) - 8 - MODS_MIN; }
+/* the name text set to name + modtag + the multiplayer part, its "with" part shortened until the text and the link end by
+   lim (row units); returns the text's right end in row units (-1: not measured) */
+static float tag_fit(Obj cs, Obj nt, const char *head, const char *mp, float lnk, float lim, char *out, size_t cap) {
+    const DSLUi *u = dsl_ui_kit(); float C[4], N[4], w = row_w(cs), nwd = dsl_ui_width((DSLObj)nt);
+    if (w <= 0 || nwd <= 1 || dsl_ui_screen_rect((DSLObj)comp_tr(cs, NULL), C) != 1 || dsl_ui_screen_rect((DSLObj)comp_tr(nt, NULL), N) != 1) { snprintf(out, cap, "%s%s", head, mp); return -1; }
+    float s = (C[2] - C[0]) / w, sn = (N[2] - N[0]) / nwd, nl = (N[0] - C[0]) / s, right = -1;
+    const char *wc = strstr(mp, "<color=#A69085>"), *we = wc ? strstr(wc, "</color>") : NULL;   /* the "  with <names>" part */
+    char inner[600] = ""; if (wc && we) snprintf(inner, sizeof inner, "%.*s", (int)(we - wc - 15), wc + 15);
+    const char *in = inner; while (*in == ' ') in++;
+    int full = cols_of(in);
+    for (int cols = full + 1; ; cols = cols > 10 ? cols - 3 : cols - 1) {   /* the whole text, then shorter, then none */
+        char v[700], cut[600];
+        if (cols > full) snprintf(v, sizeof v, "%s", mp);
+        else if (cols >= 4) { snprintf(cut, sizeof cut, "%s", in); cut_cols(cut, sizeof cut, cols); snprintf(v, sizeof v, "%.*s  %s%s", (int)(wc - mp + 15), mp, cut, we); }
+        else if (wc && we) snprintf(v, sizeof v, "%.*s%s", (int)(wc - mp), mp, we + 8);
+        else snprintf(v, sizeof v, "%s", mp);
+        snprintf(out, cap, "%s%s", head, v); dsi_utf8_fix_end(out);
+        u->set_text((DSLObj)nt, out);
+        right = nl + dsl_ui_text_line_w((DSLObj)nt) * sn / s;
+        if (right + RM_GAP + lnk <= lim || cols < 4 || !wc || !we) break;
+    }
+    return right;
+}
 static void tags_apply(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u || o_title_name < 0) return;
     char mt[200]; snprintf(mt, sizeof mt, "%s%s</color></size>", TAG_MARK, TR("Modded"));
@@ -949,14 +984,21 @@ static void tags_apply(void) {
         int mod = dsl_world_is_modded(w->guid);
         snprintf(want, sizeof want, "%s%s%s", name, show && mod ? mt : "", show ? mp : "");
         nmod += show && mod; nmp += show && mp[0];
-        if (strcmp(want, cur)) u->set_text((DSLObj)nt, want);
-        Obj rm = tag_link(cs); if (!rm) continue;
-        int on = show && mp[0]; set_on(rm, on);
-        float N[4], R[4], nwd = dsl_ui_width((DSLObj)nt);                  /* the link after the name text, as the mod places it */
-        if (!on || nwd <= 1 || dsl_ui_screen_rect((DSLObj)comp_tr(nt, NULL), N) != 1 || dsl_ui_screen_rect((DSLObj)rm, R) != 1) continue;
-        float sn = (N[2] - N[0]) / nwd, pw = dsl_ui_text_line_w((DSLObj)nt); if (pw > nwd) pw = nwd;
-        float dx = N[0] + (pw + 14) * sn - R[0];
-        if (dx > 0.5f || dx < -0.5f) dsl_ui_move_screen((DSLObj)rm, dx, 0);
+        Obj rm = tag_link(cs); int on = rm && show && mp[0];
+        if (rm) set_on(rm, on);
+        float R[4], C[4], wr = row_w(cs);
+        if (!on || wr <= 0 || dsl_ui_screen_rect((DSLObj)rm, R) != 1 || dsl_ui_screen_rect((DSLObj)comp_tr(cs, NULL), C) != 1) {
+            if (strcmp(want, cur)) u->set_text((DSLObj)nt, want);
+            continue;
+        }
+        char head[1300], fit[1800]; snprintf(head, sizeof head, "%s%s", name, mod ? mt : "");
+        float s = (C[2] - C[0]) / wr, lnk = (R[2] - R[0]) / s;
+        float right = tag_fit(cs, nt, head, mp, lnk, row_line_left_max(cs), fit, sizeof fit);
+        if (strcmp(fit, want)) dsl_log("rows: tag of %s shortened to fit the title line before \"Mods:\" and [Change]", w->guid);
+        if (right < 0) continue;
+        float x = C[0] + (right + RM_GAP) * s, yc = C[3] - 11 * s;    /* on the title line, right after the tag */
+        float dx = x - R[0], dy = yc - (R[1] + R[3]) / 2;
+        if (dx > 0.5f || dx < -0.5f || dy > 0.5f || dy < -0.5f) dsl_ui_move_screen((DSLObj)rm, dx, dy);
     }
     static int last = -1; int sig = show * 10000 + nmod * 100 + nmp;
     if (sig != last) { last = sig; dsl_log("rows: tags %s: %d Modded, %d Multiplayer", show ? "on" : "off", nmod, nmp); }

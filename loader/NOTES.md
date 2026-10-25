@@ -617,6 +617,11 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   "Modded" (`dsl_world_is_modded`, the Modded box's rule) and the multiplayer mod's tag with its "Remove tag" (that mod
   writes both at the row's Init; kept per world while off; the link moved after the new name width); off: the name alone,
   no link. All three kind boxes off = every world shows (not an empty list), no hidden-worlds line.
+- Remove tag (owner, next version after v0.1.27: it sat under [Change], over the world's detail box): moved onto the
+  title line, right after the multiplayer tag (`tags_apply` / `tag_fit`: centre 11 units under the row's top, 10 units
+  after the name text). When the name + tags + link would pass the "Mods:" line's minimum (64 units before [Change]),
+  the tag's "with <names>" part is cut ("…"), then left out; with no room left the "Mods:" line goes (the [Change] card
+  lists the mods). Test: l1_filter_test main (en) + look (de/ru/ja) `rm_checks`; the old placement fails it.
 - 2026-10-25 (owner): the hidden-worlds line lay over the last save row. Cause: Latest save only set a world row's
   `_buttonCount` to 1 only for the SHOWN rows; a row hidden by a filter while Latest save only went off kept 1, and shown
   again its second save row hung out of its row (under the next row or the line). Now every row the loader shrank goes

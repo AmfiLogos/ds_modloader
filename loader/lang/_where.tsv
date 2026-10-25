@@ -119,7 +119,7 @@
 "MelonLoader mod: not running in this start"	dsl_reg.c:190
 "Mod updates are available."	dsl_update.c:532
 "Mod updates install the next time you start the game."	dsl_update.c:529
-"Modded"	dsl_rows.c:552 dsl_rows.c:932
+"Modded"	dsl_rows.c:552 dsl_rows.c:967
 "Mods"	dsl_reg.c:1368 dsl_reg.c:1396 dsl_win.c:541 dsl_win.c:923
 "Mods cannot be downloaded in this start."	dsl_hostmods.c:374
 "Mods cannot change now: %s"	dsl_win.c:233
