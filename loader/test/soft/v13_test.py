@@ -12,7 +12,7 @@ Lease: rig.py lease loaderui --pid <this pid>; released at the end (not when the
 B's multiplayer control socket: env DSRIG_DIR=<V>/rigB or rigC (data/ links to <V>/data), so A keeps its own;
 DSL_LOG_DIR=<V> for every process (logs + softrestart/ stay in one place).
 """
-import json, os, re, shutil, signal, subprocess, sys, threading, time, glob
+import json, os, shutil, signal, subprocess, sys, threading, time, glob
 sys.path.insert(0, os.path.expanduser('~/ds_launcher/loader/test'))
 import lrig as r
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -277,7 +277,7 @@ def b_checks(pid, tag):
     L = blog()
     check(f'{tag}: B muted while hidden', 'B: audio paused while hidden' in L and 'mute while hidden: volume ok, pause ok' in L,
           [l for l in L.splitlines() if 'audio' in l or 'mute' in l][-4:])
-    check(f'{tag}: B idle frame cap while waiting', re.search(r'frame cap (-?\d+ vsync \d+ )?-> 10 while hidden', L), [l for l in L.splitlines() if 'frame cap' in l][-3:])   # a prewarm B boots at 10 too (0.1.29)
+    check(f'{tag}: B idle frame cap while waiting', 'frame cap -> 10 while hidden' in L, [l for l in L.splitlines() if 'frame cap' in l][-3:])
     ws = r.windows([pid])
     check(f'{tag}: B windows alpha 0 (window server)', ws and all(w['alpha'] == 0 for w in ws), ws)
     cpu = subprocess.run(['ps', '-o', '%cpu=,rss=', '-p', str(pid)], capture_output=True, text=True).stdout.split()

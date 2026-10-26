@@ -1240,7 +1240,7 @@ Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repo
   DSL_WHATSNEW_TEST = no window; no UI-RULE / ESC-MISSING line. 19/0 (0.1.26 entry, and the long 0.1.28 entry); the
   main loader fails it (no window).
 
-## The loader never changes the player's VSync or frame cap (FPS audit 2026-10-26 rows 1, 8, 10; kit 0.1.29, lane fpsvsync) - `src/dsl_soft.c` force_fps / fast_end
+## The loader never changes the player's VSync or frame cap (FPS audit 2026-10-26 rows 1, 10; kit 0.1.29, lane fpsvsync) - `src/dsl_soft.c` force_fps / fast_end
 Rule (lead brief 2026-10-26): "Fix the mod loader so it never changes the player's VSync / frame cap." Every frame cap or
 vsync the loader forces (A's boot speed-up, a soft-restart B, a prewarm B) goes through `force_fps` and comes back through
 `fast_end`: new code that needs another frame cap uses those two, never its own `set_targetFrameRate` / `set_vSyncCount`.
@@ -1259,11 +1259,10 @@ vsync the loader forces (A's boot speed-up, a soft-restart B, a prewarm B) goes 
   and DSL_FB_MAX s after the process start (default 120); MainFlow.Awake not hooked = no speed-up at all. Log line
   "A: boot done (<why>, scene <n>): frame cap, vsync and loading priority restored" + "A: frame cap 60 vsync 0 restored
   (vsync: the player's VSync setting)".
-- Row 8 (Mac; prewarm is off on Windows): a prewarm B boots at DSL_SOFT_IDLE_FPS (10) instead of uncapped. When A applies
-  that set while B still boots (handoff.json gets A's apply time; B reads it twice a second while it boots), B boots
-  uncapped from then on, like a B started by the Apply. Not changed: the ~90 ms main-thread wait of the spawn
-  (`ls_launch` waits for LaunchServices' pid): without it, a stop or a second prewarm inside that time could leave a hidden
-  B that A cannot kill and that later reacts to "go"; the pid is what the whole handover checks.
+- Row 8 (Mac: a prewarm B boots uncapped beside the player's title for ~3 s): NOT changed (owner 2026-10-26: "i personally
+  didn't have any issue on the title"). A 10 fps prewarm boot was tried (merge d5c8710) and undone: it made a prewarm
+  ready after ~28 s instead of ~3 s, and an Apply 3 s after the prewarm started showed the new game 2.5 s after the click
+  instead of ~1 s. The ~90 ms LaunchServices wait at spawn stays too (the handover checks B's pid).
 - Guard: `test/vsync_test.py` (copy Y, batchmode, no multiplayer: its rig mode sets fps + vsync itself; probe
   `test/vsync_probe.c`): base run (speed-up off) = the game's own values; VSync OFF and ON with the speed-up on: vSyncCount
   = the setting and the game's frame cap, at the title and in a world.
