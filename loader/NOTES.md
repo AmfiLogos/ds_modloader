@@ -1249,7 +1249,11 @@ Known limits: a search tail-called straight from a hook body, or made by the gam
 calls FindObjectsOfType), counts as the game's.
 Test: `test/scan_rate_test.py <out> [--mods none|default]` (one hidden copy, default FSC; title idle 60 s, Load list 30 s,
 world idle 60 s with the wiki's base save, world with a key a second 30 s): FAILS on any SCAN-RULE line or without the
-guard. Results: see "Results (fpsscan)" below.
+guard. Results (hidden copy FSC, 60 fps): main behaviour (69dfbde, guard only) FAIL, 3 lines (title PopUpUI_Base 1019 loader
+searches in 63.6 s, list StartLanguageSelectView 454 in 32.5 s, world SaveLoadView; 15651 searches in the 3.6 s boot);
+with the helper (e9b8842) PASS: loader 0 searches at the title, in the list and in 150 s of world, 1 at boot. With the
+default mods it still fails on custom-modes (FindAnyObjectByType(TitleMenuView) ~240/min) and multiplayer
+(FindObjectOfType(QuickSlotUI / SystemMenuView) 30-56/min): their repos' lanes. Details: ds_multiplayer ext/fpsaudit/fpsscan.md.
 
 ## CHANGELOG.md + the "What's new" window (owner 2026-10-25, "All three"; kit 0.1.28, lane dschangelog) - `src/dsl_whatsnew.c`, `tools/changelog/changelog.py`
 Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repos) has an entry in its repo's
