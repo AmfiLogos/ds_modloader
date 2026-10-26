@@ -60,7 +60,6 @@ static void *k_slv, *k_case, *k_btn, *k_str;
 typedef struct { float x, y, w, h; } URect;
 static URect (*rt_rect)(Obj t, const void *mi);
 static int32_t o_cases = -1, o_dict = -1, o_slots = -1, o_title_name = -1, o_cur = -1, o_lowload = -1;
-static Obj (*find_obj)(Obj type, int inactive, const void *mi);
 static uint8_t (*alive)(Obj o, const void *mi);
 static Obj (*comp_go)(Obj c, const void *mi), (*comp_tr)(Obj c, const void *mi), (*go_trf)(Obj g, const void *mi);
 static uint8_t (*go_tree)(Obj g, const void *mi), (*go_self)(Obj g, const void *mi);
@@ -69,10 +68,10 @@ static void (*refresh_size)(Obj slv, const void *mi);
 static uint8_t (*try_header)(Obj self, Obj name, void *hdr, Obj *set, const void *mi);
 static Obj (*str_new)(const char *);
 static void *(*obj_class)(Obj);
-static Obj t_slv;
 static uintptr_t (*gc_new)(Obj, int); static Obj (*gc_get)(uintptr_t); static void (*gc_free)(uintptr_t);
 static int32_t mf_handler = -1;
 static int32_t o_parent = -1;                            /* SaveLoadView._saveSlotParent (the hidden-worlds lines) */
+static int32_t o_pview = -1;                             /* SaveLoadPresenter.<View>k__BackingField (its SaveLoadView) */
 static int32_t o_issel = -1;                             /* SubUI_SaveFileButton._isSelected (the selected save) */
 static void (*unselect_all)(Obj slv, const void *mi), (*lock_buttons)(Obj slv, const void *mi);
 static int32_t o_bcount = -1;                            /* SubUI_SettlerNameCase._buttonCount (the save rows its height counts) */
@@ -95,7 +94,7 @@ void dsl_rows_install(void) {
     o_cases = fo(k_slv, "_campaignCases"); o_dict = fo(k_slv, "_saveNameSlotDictionary"); o_lowload = fo(k_slv, "_lowLoadPanel");
     o_slots = fo(k_case, "_saveSlots"); o_title_name = fo(k_case, "_nameText"); o_cur = fo(k_case, "_isCurrentCampaign");
     void *kObj = cls("UnityEngine", "Object"), *kComp = cls("UnityEngine", "Component"), *kGo = cls("UnityEngine", "GameObject");
-    find_obj = ma(kObj, "FindObjectOfType", 2); alive = ma(kObj, "op_Implicit", 1);
+    alive = ma(kObj, "op_Implicit", 1);
     comp_go = ma(kComp, "get_gameObject", 0); comp_tr = ma(kComp, "get_transform", 0);
     go_trf = ma(kGo, "get_transform", 0);
     go_tree = ma(kGo, "get_activeInHierarchy", 0); go_self = ma(kGo, "get_activeSelf", 0); go_set = ma(kGo, "SetActive", 1);
@@ -110,10 +109,8 @@ void dsl_rows_install(void) {
     void *kmf = cls("Refactor.Main", "MainFlow"); mf_handler = fo(kmf, "_eventHandler");
     str_new = dsl_ga_sym("il2cpp_string_new"); obj_class = dsl_ga_sym("il2cpp_object_get_class");
     gc_new = dsl_ga_sym("il2cpp_gchandle_new"); gc_get = dsl_ga_sym("il2cpp_gchandle_get_target"); gc_free = dsl_ga_sym("il2cpp_gchandle_free");
-    void *(*ctype)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*tobj)(void *) = dsl_ga_sym("il2cpp_type_get_object");
-    if (ctype && tobj && k_slv) t_slv = tobj(ctype(k_slv));
-    ok = find_obj && alive && comp_go && comp_tr && go_tree && go_self && go_set && refresh_size && try_header && str_new && obj_class
-         && gc_new && gc_get && gc_free && t_slv && o_cases >= 0 && o_dict >= 0 && o_slots >= 0 && o_title_name >= 0 && mf_handler >= 0;
+    ok = k_slv && alive && comp_go && comp_tr && go_tree && go_self && go_set && refresh_size && try_header && str_new && obj_class
+         && gc_new && gc_get && gc_free && o_cases >= 0 && o_dict >= 0 && o_slots >= 0 && o_title_name >= 0 && mf_handler >= 0;
     dsl_log("rows: load list service %s", ok ? "on (polling the open Load list)" : "OFF (names missing)");
     if (ok) guard_install();
 }
@@ -567,7 +564,7 @@ static void h_click_load(Obj self, Obj data, const void *mi) { if (!act_refused(
 static void (*o_open_load)(Obj self, Obj data, const void *mi), (*o_refresh)(Obj self, Obj data, const void *mi);
 static void h_open_load(Obj self, Obj data, const void *mi), h_refresh(Obj self, Obj data, const void *mi);
 static void guard_install(void) {
-    void *kp = cls("Refactor.UI", "SaveLoadPresenter"); o_selname = fo(kp, "_selectedSaveName");
+    void *kp = cls("Refactor.UI", "SaveLoadPresenter"); o_selname = fo(kp, "_selectedSaveName"); o_pview = fo(kp, "<View>k__BackingField");
     void *a_rm = dsl_find_method_address("Refactor.UI", "SaveLoadPresenter", "ClickRemoveButton", 1);
     void *a_ld = dsl_find_method_address("Refactor.UI", "SaveLoadPresenter", "ClickLoadButton", 1);
     int r1 = o_selname < 0 || !a_rm ? -1 : dsl_hook(DSL_OWNER_LOADER, a_rm, (void *)h_click_remove, (void **)&o_click_remove, "loader rows SaveLoadPresenter.ClickRemoveButton");
@@ -1082,19 +1079,20 @@ static void list_poll(Obj slv) {
     if (s != sig_last || dirty) rows_rebuild(slv, sig_last ? "list changed" : "list opened");
     else sel_guard(slv, "poll");
 }
-static Obj slv_find(void) {                               /* the shown SaveLoadView first (the title's and the multiplayer page's) */
+static Obj slv_find(Obj presenter) {                     /* the Load list's view: its presenter's (the title's, Esc > Load, the
+                                                            multiplayer page's), else the game's records (dsl_view.c) */
+    Obj a = presenter && o_pview >= 0 ? AT(presenter, o_pview, Obj) : NULL;
+    if (!live(a)) a = dsl_view_get(k_slv, DSL_VIEW_INACTIVE | DSL_VIEW_NOW);
     Obj slv = h_slv ? gc_get(h_slv) : NULL;
-    if (live(slv) && shown(slv)) return slv;
-    Obj a = find_obj(t_slv, 0, NULL); if (!a) a = find_obj(t_slv, 1, NULL);
-    if (a && a != slv) { if (h_slv) gc_free(h_slv); h_slv = gc_new(a, 0); }
-    return a ? a : (live(slv) ? slv : NULL);
+    if (live(a) && a != slv) { if (h_slv) gc_free(h_slv); h_slv = gc_new(a, 0); }
+    return live(a) ? a : (live(slv) ? slv : NULL);
 }
 /* owner 2026-10-25: on the first open after a start the whole list showed for a moment, then the filters hid worlds (the
    new SaveLoadView was found by the 30-frame search, then the 6-frame poll). Now the panel and the rows are made right after
    the game filled the list (SaveLoadPresenter.OpenLoad / Refresh, called through its update table: never inlined), and
    every frame right before the UI is drawn (dsl_rows_late): the first frame the player sees is filtered. */
-static void h_open_load(Obj self, Obj data, const void *mi) { o_open_load(self, data, mi); Obj s = slv_find(); if (s) list_poll(s); }
-static void h_refresh(Obj self, Obj data, const void *mi) { o_refresh(self, data, mi); Obj s = slv_find(); if (s) list_poll(s); }
+static void h_open_load(Obj self, Obj data, const void *mi) { o_open_load(self, data, mi); Obj s = slv_find(self); if (s) list_poll(s); }
+static void h_refresh(Obj self, Obj data, const void *mi) { o_refresh(self, data, mi); Obj s = slv_find(self); if (s) list_poll(s); }
 static void open_monitor(void);
 void dsl_rows_late(void) {
     if (!ok) return;
@@ -1112,7 +1110,7 @@ static void open_monitor(void) {
     if (on < 0) on = getenv("DSL_SOFT_TEST") && *getenv("DSL_SOFT_TEST") == '1' && getenv("DSL_ROWS_OPEN_TEST") && *getenv("DSL_ROWS_OPEN_TEST") == '1';
     if (!on) return;
     Obj slv = hv ? gc_get(hv) : NULL;
-    if (!live(slv) || !shown(slv)) { Obj a = find_obj(t_slv, 0, NULL); if (a) { if (hv) gc_free(hv); hv = gc_new(a, 0); slv = a; } }
+    if (!live(slv) || !shown(slv)) { Obj a = dsl_view_get(k_slv, DSL_VIEW_INACTIVE); if (a) { if (hv) gc_free(hv); hv = gc_new(a, 0); slv = a; } }
     int open = live(slv) && shown(slv) && o_lowload >= 0 && shown(AT(slv, o_lowload, Obj));
     if (open && !was) k = 0;
     was = open;
@@ -1152,7 +1150,11 @@ void dsl_rows_frame(void) {
     }
     if (fr % 6) return;                                                     /* 10 times a second at 60 fps */
     Obj slv = h_slv ? gc_get(h_slv) : NULL;
-    if (!live(slv)) { if (h_slv) gc_free(h_slv); h_slv = 0; slv = (fr % 30 == 0) ? find_obj(t_slv, 1, NULL) : NULL; if (slv) h_slv = gc_new(slv, 0); }
+    /* no view held (none made yet in this scene: the Load window is made on its first open): the game's records only, no
+       scene search (dsl_view.c: a popup). The FindObjectOfType poll that was here searched every 30 frames in every world
+       until Esc > Load was opened once: 238 slow frames a minute (FPS audit 2026-10-26). OpenLoad / Refresh above give
+       the view the moment the list opens. */
+    if (!live(slv)) { if (h_slv) gc_free(h_slv); h_slv = 0; slv = dsl_view_get(k_slv, DSL_VIEW_INACTIVE); if (slv) h_slv = gc_new(slv, 0); }
     if (slv) list_poll(slv);
     else if (list_open) list_poll(NULL);
 }

@@ -141,6 +141,7 @@ int dsl_rows_list_shown(void);                           /* the Load list is ope
 void dsl_view_install(void);                             /* dsl_ui_install */
 void dsl_view_frame(void);                               /* the kit tick, first */
 void dsl_view_new_scene(void);                           /* a new EventSystem: the misses of the last scene are forgotten */
+unsigned dsl_view_scene(void);                           /* changes with each scene (a new EventSystem or MainFlow scene) */
 void *dsl_view_get(void *klass, int flags);              /* the kit's view_find */
 void *dsl_view_all(void *klass, int flags);              /* FindObjectsOfType: at most one search a frame, never while loading */
 void *dsl_view_assets(void *klass, int flags);           /* Resources.FindObjectsOfTypeAll: the same + one a second per class */

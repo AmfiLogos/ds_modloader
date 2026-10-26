@@ -454,11 +454,12 @@ static void ask(void) {
 }
 
 /* ------------------------------------------------------------------ test driver (DSL_CRASHREP_TEST) */
-static void test_frame(int notice) {
+static void test_frame(void) {
     static const char *dir; static int checked; static double last;
     if (!checked) { checked = 1; dir = getenv("DSL_CRASHREP_TEST"); if (dir && !*dir) dir = NULL; }
     if (!dir) return;
     double t = mono(); if (t - last < 0.5) return; last = t;
+    int notice = dsl_ui_notice_shown();
     char p[1300], b[64] = ""; snprintf(p, sizeof p, "%s/answer", dir);
     FILE *f = fopen(p, "rb");
     if (f) { if (!fgets(b, sizeof b, f)) b[0] = 0; fclose(f);
@@ -485,9 +486,8 @@ void dsl_crash_frame(void) {
     if (!on) return;
     if (role_b && !live_marked && dsl_soft_b_live()) { live_marked = 1; sess_line("LIVE"); }
     static double idle_since; static int scanned;
-    int notice = dsl_ui_notice_shown();
     int idle = dsl_reg_scene() == 1 && dsl_soft_title_idle() && dsl_ui_title_shown();
-    test_frame(notice);
+    test_frame();
     if (dsl_reg_scene() != 1) scanned = 0;
     if (!idle) { idle_since = 0; return; }
     if (!title_marked) { title_marked = 1; sess_line("TITLE"); }
@@ -497,7 +497,7 @@ void dsl_crash_frame(void) {
     static double next_try;
     if (!scanned) { scanned = 1; scan_mp(); next_try = 0; }
     int win = dsl_win_is_open && dsl_win_is_open();
-    if (consent < 0 && !asked && !win && !notice && !dsl_os_batchmode()) ask();
+    if (consent < 0 && !asked && !win && !dsl_ui_notice_shown() && !dsl_os_batchmode()) ask();   /* the notice box: asked only here, not every frame (FPS audit 2026-10-26) */
     pthread_mutex_lock(&mu); int go = consent == 1 && !sending && t >= next_try; pthread_mutex_unlock(&mu);
     if (go) {
         char q[8][128]; next_try = t + 60;

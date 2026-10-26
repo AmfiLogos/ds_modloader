@@ -52,6 +52,7 @@ static struct {
     void *(*obj_class)(Obj); bool (*assignable)(void *, void *); void *(*class_type)(void *); Obj (*type_obj)(void *);
     void *(*methods)(void *, void **); const char *(*mname)(void *); uint32_t (*pcount)(void *); void *(*param)(void *, uint32_t);
     char *(*tname)(void *); bool (*is_generic)(void *); void (*il_free)(void *); const char *(*cname)(void *); int (*elem_size)(void *);
+    void *(*elem_class)(void *);
 } I;
 static void *m_alive, *m_find, *m_finds, *m_findall, *m_comp_go, *m_go_tree;   /* MethodInfo */
 static void *k_popup, *k_factory, *k_comp;
@@ -84,12 +85,16 @@ static int dict_n(Obj d, Obj *ents) {
     }
     Obj e = AT(d, o_d_entries, Obj); int n = AT(d, o_d_count, int32_t);
     if (!e || n <= 0 || n > (int)AT(e, 0x18, uintptr_t)) return 0;
-    static int sz_ok = -1;
-    if (sz_ok < 0) {
-        int s = I.elem_size ? I.elem_size(I.obj_class(e)) : 24; sz_ok = s == 24;
-        if (!sz_ok) dsl_log("view: Dictionary entry size %d (not 24): the game's records are off", s);
+    static struct { void *k; int ok; } sz[16]; static int nsz;            /* the entry size per Dictionary type, checked once */
+    void *ak = I.obj_class(e); int i = 0; while (i < nsz && sz[i].k != ak) i++;
+    if (i == nsz) {
+        void *ek = I.elem_class ? I.elem_class(ak) : NULL;               /* the Entry struct (the array class itself gives 8) */
+        int s = ek && I.elem_size ? I.elem_size(ek) : -1;
+        if (s != 24) dsl_log("view: Dictionary entry size %d (not 24) of %s: that record is not read", s, ek ? kname(ek) : "?");
+        if (nsz == 16) return 0;
+        sz[nsz].k = ak; sz[nsz].ok = s == 24; nsz++;
     }
-    if (!sz_ok) return 0;
+    if (!sz[i].ok) return 0;
     *ents = e; return n;
 }
 /* for each value v of the dictionary d */
@@ -146,6 +151,7 @@ int dsl_view_popup_shown(void) {
 /* ------------------------------------------------------------------ frames, scenes, the search budget (step 3) */
 static uint32_t gen = 1; static int64_t vframe, searched_at = -1; static int scene_now = -1;
 void dsl_view_new_scene(void) { gen++; }
+unsigned dsl_view_scene(void) { return gen; }
 typedef struct { void *k; int inactive; uintptr_t h; uint32_t miss_gen, said_gen; int misses; double miss_t, wait; } Slot;
 static Slot slots[96]; static int nslots;
 static Slot *slot_of(void *k, int inactive) {
@@ -238,7 +244,7 @@ typedef Obj (*SgFn)(Obj, void *, void *, void *);
 static SgFn sg_orig[NSG];
 typedef struct { char name[48]; int rule, n, nw, flagged, ri; double ring[SG_LIMIT + 1]; } Mod;
 static Mod mods[NMOD]; static int nmods, sg_on, sg_state = -1;
-static double sg_t0;
+static double sg_t0, sg_tw;                                                 /* the state's start, this count window's start */
 static struct { uintptr_t ra; int m; } racache[1024];
 static uintptr_t self_base;
 static int mod_index(const char *nm, int rule) {
@@ -290,18 +296,23 @@ static void sg_count(int site, uintptr_t ra, Obj type) {
 SG_FN(0) SG_FN(1) SG_FN(2) SG_FN(3) SG_FN(4) SG_FN(5) SG_FN(6) SG_FN(7) SG_FN(8) SG_FN(9) SG_FN(10) SG_FN(11) SG_FN(12) SG_FN(13)
 static const SgFn sg_fn[NSG] = { sg_h0, sg_h1, sg_h2, sg_h3, sg_h4, sg_h5, sg_h6, sg_h7, sg_h8, sg_h9, sg_h10, sg_h11, sg_h12, sg_h13 };
 int dsl_rows_list_shown(void);                                              /* dsl_rows.c */
+/* "scan: <state> <secs> s: <module> <n>, ...": the searches of each module since the last such line (at the state's end,
+   and every 30 s in a long state: a test stops the game in its last state) */
+static void sg_counts(double t) {
+    char b[700] = ""; size_t o = 0;
+    for (int i = 0; i < nmods; i++) if (mods[i].n) o += (size_t)snprintf(b + o, o < sizeof b ? sizeof b - o : 0, "%s%s %d", o ? ", " : "", mods[i].name, mods[i].n);
+    dsl_log("scan: %s %.1f s: %s", st_name[sg_state], t - sg_tw, o ? b : "none");
+    for (int i = 0; i < nmods; i++) mods[i].n = 0;
+    sg_tw = t;
+}
 static void sg_frame(void) {
     int st = scene_now == 2 ? ST_WORLD : scene_now == 1 && dsl_soft_title_idle() ? ST_TITLE : ST_LOADING;
     if (st != ST_LOADING && dsl_rows_list_shown()) st = ST_LIST;
-    if (st == sg_state) return;
     double t = now_s();
-    if (sg_state >= 0) {
-        char b[700] = ""; size_t o = 0;
-        for (int i = 0; i < nmods; i++) if (mods[i].n) o += (size_t)snprintf(b + o, o < sizeof b ? sizeof b - o : 0, "%s%s %d", o ? ", " : "", mods[i].name, mods[i].n);
-        dsl_log("scan: %s %.1f s: %s", st_name[sg_state], t - sg_t0, o ? b : "none");
-    }
+    if (st == sg_state) { if (t - sg_tw >= 30) sg_counts(t); return; }
+    if (sg_state >= 0) sg_counts(t);
     for (int i = 0; i < nmods; i++) { mods[i].n = mods[i].nw = mods[i].flagged = mods[i].ri = 0; memset(mods[i].ring, 0, sizeof mods[i].ring); }
-    sg_state = st; sg_t0 = t;
+    sg_state = st; sg_t0 = sg_tw = t;
 }
 static void *msig(void *k, const char *name, int argc, const char *sig) {   /* overloads: parameter type names; no generics */
     void *it = NULL, *m;
@@ -353,7 +364,7 @@ void dsl_view_install(void) {
     X(type_obj, "il2cpp_type_get_object"); X(methods, "il2cpp_class_get_methods"); X(mname, "il2cpp_method_get_name");
     X(pcount, "il2cpp_method_get_param_count"); X(param, "il2cpp_method_get_param"); X(tname, "il2cpp_type_get_name");
     X(is_generic, "il2cpp_method_is_generic"); X(il_free, "il2cpp_free"); X(cname, "il2cpp_class_get_name");
-    X(elem_size, "il2cpp_class_array_element_size");
+    X(elem_size, "il2cpp_class_array_element_size"); X(elem_class, "il2cpp_class_get_element_class");
 #undef X
     void *kObj = dsl_find_class("UnityEngine", "Object"), *kRes = dsl_find_class("UnityEngine", "Resources");
     void *kGo = dsl_find_class("UnityEngine", "GameObject"); k_comp = dsl_find_class("UnityEngine", "Component");

@@ -480,11 +480,12 @@ static void restart_frame(void) {
 }
 static void corner_frame(void) {
     const DSLUi *u = dsl_ui_kit(); if (!u) return;
-    int show = dsl_ui_title_shown() && dsl_reg_scene() == 1 && dsl_soft_title_idle();   /* the idle title only: never under a loading screen */
+    int show = dsl_reg_scene() == 1 && dsl_soft_title_idle() && dsl_ui_title_shown();   /* the idle title only: never under a loading screen */
     /* UX L2: never over a window of the game (Options, New Game, Load Campaign, Credits, a notice): at UI Scale 1.4 its line
-       crossed the window's red X. Checked every 5 frames (FindObjectsOfType) */
-    static int c_frames, c_stock;
-    if (show && c_frames++ % 5 == 0) { int st = dsl_ui_game_window_shown(); if (st != c_stock) dsl_log("update: title corner %s", st ? "hidden: a window of the game shows" : "shown again"); c_stock = st; }
+       crossed the window's red X. Every frame from the game's popup container (no scene search: the FindObjectsOfType every
+       5 frames that was here cost 8.6 % of the idle title's main thread, FPS audit 2026-10-26) */
+    static int c_stock;
+    if (show) { int st = dsl_ui_game_window_shown(); if (st != c_stock) dsl_log("update: title corner %s", st ? "hidden: a window of the game shows" : "shown again"); c_stock = st; }
     if (c_stock) show = 0;
     DSLObj tog = (DSLObj)c_tog, txt = (DSLObj)c_txt, btn = (DSLObj)c_btn, ver = (DSLObj)c_ver, rbtn = (DSLObj)c_rbtn, grp = (DSLObj)c_grp;
     if (tog && c_gen != dsi_generation()) {                 /* a language change: made again (label, the new language's font) */

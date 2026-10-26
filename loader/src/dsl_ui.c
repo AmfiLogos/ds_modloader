@@ -77,7 +77,7 @@ static struct {
          *SaveLoadView, *CampaignSetting, *TMP_Asset, *CanvasGroup, *HVLayout, *OptionView, *GeneralSetting, *SubSlider, *Slider;
 } K;
 
-static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy, *m_obj_find, *m_obj_finds, *m_res_findall,
+static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_dontdestroy,
     *m_comp_go, *m_comp_tr, *m_comp_get, *m_comp_inparent,
     *m_go_ctor, *m_go_active, *m_go_self, *m_go_tree, *m_go_add, *m_go_tr, *m_go_layer,
     *m_tr_parent, *m_tr_setparent, *m_tr_sib, *m_tr_setsib, *m_tr_count, *m_tr_child, *m_tr_euler, *m_tr_wpos, *m_tr_setwpos,
@@ -212,8 +212,6 @@ static Obj child_at(Obj t, int i) { t = tr_of(t); return t ? CALL(m_tr_child, Ob
 static int sibling(Obj t) { t = tr_of(t); return t ? CALL(m_tr_sib, int, Obj)(t, m_tr_sib) : -1; }
 static void set_sibling(Obj t, int i) { t = tr_of(t); if (t) CALL(m_tr_setsib, void, Obj, int)(t, i, m_tr_setsib); }
 static void obj_name(Obj o, char *out, size_t cap) { utf8_of(alive(o) ? CALL(m_obj_name, Obj, Obj)(o, m_obj_name) : NULL, out, cap); }
-static Obj find_obj(void *k, int inactive) { return k ? CALL(m_obj_find, Obj, Obj, bool)(type_of(k), inactive != 0, m_obj_find) : NULL; }
-static Obj find_all(void *k) { return k && m_res_findall ? CALL(m_res_findall, Obj, Obj)(type_of(k), m_res_findall) : NULL; }
 static int arr_n(Obj a) { return a ? (int)AT(a, 0x18, uintptr_t) : 0; }
 static Obj arr_at(Obj a, int i) { return AT((char *)a + 0x20, (size_t)i * 8, Obj); }
 static Col rgba_col(uint32_t c, Col dflt) { return c ? (Col){ (c >> 24) / 255.f, (c >> 16 & 255) / 255.f, (c >> 8 & 255) / 255.f, (c & 255) / 255.f } : dflt; }
@@ -302,18 +300,22 @@ static Obj title_font(void) {                                        /* h_cinzel
 static double clock_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
 static void assets_scan(int force) {
     /* at most once a second as well: a hidden soft-restart game runs uncapped (thousands of frames a second) and
-       300 frames went by in 0.2 s, so it scanned every sprite 30 times during its boot */
-    static double scan_t;
+       300 frames went by in 0.2 s, so it scanned every sprite 30 times during its boot. And at most 3 a scene, never
+       while loading (dsl_view_assets; FPS audit 2026-10-26: 4.7 ms a scan, re-armed when a held sprite dies) */
+    static double scan_t; static unsigned scan_scene; static int scene_scans;
     if (scan_done || (!force && (!kit_used || frames - scan_last < 300 || scans >= 30 || clock_s() - scan_t < 1.0))) return;
-    scan_last = frames; scans++; scan_t = clock_s();
+    if (scan_scene != dsl_view_scene()) { scan_scene = dsl_view_scene(); scene_scans = 0; }
+    if (!force && scene_scans >= 3) return;
     prefab_touch(8); prefab_touch(2); prefab_touch(13); prefab_touch(5);   /* load popup prefabs: their sprites too (as mpmenu) */
-    Obj arr = find_all(K.Sprite); int n = arr_n(arr), found = 0;
+    Obj arr = dsl_view_assets(K.Sprite, force ? DSL_VIEW_NOW : 0); int n = arr_n(arr), found = 0;
+    if (!arr) return;                                                  /* loading, or a search ran this frame: later */
+    scan_last = frames; scans++; scene_scans++; scan_t = clock_s();
     for (int i = 0; i < n; i++) {
         Obj sp = arr_at(arr, i); char nm[64]; obj_name(sp, nm, sizeof nm);
         for (int k = 0; k < S_N; k++) if (!hget(h_spr[k]) && !strcmp(nm, spr_names[k]) && spr_ok(k, sp)) { hset(&h_spr[k], sp); found++; }
     }
     if (!title_font() && !m_ls_font) {                                 /* no LanguageSetting.GetFont: Cinzel by name, as before */
-        Obj fa = find_all(K.FontAsset); int nf = arr_n(fa);
+        Obj fa = dsl_view_assets(K.FontAsset, DSL_VIEW_NOW); int nf = arr_n(fa);
         for (int i = 0; i < nf; i++) { Obj f = arr_at(fa, i); char nm[64]; obj_name(f, nm, sizeof nm); if (!strcmp(nm, "Cinzel-Bold SDF")) { hset(&h_cinzel, f); break; } }
     }
     int miss = 0; char ms[160] = ""; size_t o = 0;
@@ -536,22 +538,21 @@ static Obj first_image(Obj tr, int depth) {                          /* the butt
 static Obj btn_label(Obj b) { return f_tb_label >= 0 && isa(b, K.TitleButton) ? AT(b, f_tb_label, Obj) : NULL; }
 static Obj ui_prefab(int type) {                                     /* UIFactory._prefabs.GetUIPrefab(PopUpType) */
     if (!m_ui_prefab || f_uif_prefabs < 0) return NULL;
-    static uintptr_t h; Obj f = hget(h); if (!f) { f = find_obj(K.UIFactory, 1); hset(&h, f); }
-    Obj so = f ? AT(f, f_uif_prefabs, Obj) : NULL;
+    Obj f = dsl_view_get(K.UIFactory, DSL_VIEW_INACTIVE), so = f ? AT(f, f_uif_prefabs, Obj) : NULL;   /* the popup container's */
     return so ? CALL(m_ui_prefab, Obj, Obj, int)(so, type, m_ui_prefab) : NULL;
 }
 static Obj field_source(const char **from) {
     Obj p = ui_prefab(5), f = p && f_slv_field >= 0 && isa(p, K.SaveLoadView) ? AT(p, f_slv_field, Obj) : NULL;
     *from = "the load list's save-name field (popup prefab 5)";
     if (!isa(f, K.TMP_Input)) {
-        Obj a = find_all(K.SaveLoadView); for (int i = 0; i < arr_n(a) && !isa(f, K.TMP_Input); i++) f = f_slv_field >= 0 ? AT(arr_at(a, i), f_slv_field, Obj) : NULL;
+        Obj a = dsl_view_assets(K.SaveLoadView, DSL_VIEW_NOW); for (int i = 0; i < arr_n(a) && !isa(f, K.TMP_Input); i++) f = f_slv_field >= 0 ? AT(arr_at(a, i), f_slv_field, Obj) : NULL;
         *from = "a SaveLoadView's save-name field";
     }
     if (!isa(f, K.TMP_Input)) {
-        Obj a = find_all(K.CampaignSetting); for (int i = 0; i < arr_n(a) && !isa(f, K.TMP_Input); i++) f = f_cs_field >= 0 ? AT(arr_at(a, i), f_cs_field, Obj) : NULL;
+        Obj a = dsl_view_assets(K.CampaignSetting, DSL_VIEW_NOW); for (int i = 0; i < arr_n(a) && !isa(f, K.TMP_Input); i++) f = f_cs_field >= 0 ? AT(arr_at(a, i), f_cs_field, Obj) : NULL;
         *from = "the new-campaign name field";
     }
-    if (!isa(f, K.TMP_Input)) { Obj a = find_all(K.TMP_Input); f = arr_n(a) ? arr_at(a, 0) : NULL; *from = "a loaded TMP_InputField"; }
+    if (!isa(f, K.TMP_Input)) { Obj a = dsl_view_assets(K.TMP_Input, DSL_VIEW_NOW); f = arr_n(a) ? arr_at(a, 0) : NULL; *from = "a loaded TMP_InputField"; }
     return isa(f, K.TMP_Input) ? f : NULL;
 }
 static Obj title_view(void);
@@ -680,7 +681,7 @@ static uintptr_t h_lg_spr[2], h_lg_root, h_lg_img; static int lg_cur = -1;
 int dsl_ui_logos_grab(void) {
     static const char *const want[2] = { "CanOpeners", "WhisperGames" };
     if (!kit_ok || !K.Sprite || !K.Image || !K.Canvas) return -1;
-    Obj a = find_all(K.Sprite); int n = arr_n(a), got = 0;
+    Obj a = dsl_view_assets(K.Sprite, DSL_VIEW_NOW); int n = arr_n(a), got = 0;
     for (int i = 0; i < n; i++) {
         Obj sp = arr_at(a, i); char nm[80]; obj_name(sp, nm, sizeof nm);
         for (int k = 0; k < 2; k++) if (!h_lg_spr[k] && !strcmp(nm, want[k])) { h_lg_spr[k] = hnew(sp); got++; }
@@ -1227,9 +1228,9 @@ static Obj png_sprite(const unsigned char *data, size_t n, uintptr_t *h_tex, int
 /* ------------------------------------------------------------------ game tooltip (TooltipUI / Tooltip_ETC, no hook) */
 #define BASE_KEY "Shared_Gold"                                       /* any stock ETC key: every stock layout step runs */
 static const Guid TIP_ID = { 0x64736c7569746970ull, 0x0000000000000003ull };   /* the kit's one tooltip session */
-static uintptr_t h_tipview, h_tip_shown_target, h_tip_etc;
+static uintptr_t h_tip_shown_target, h_tip_etc;
 static int tip_shown; static Obj tip_test_target; static char tip_cur_title[160];
-static Obj tooltip_view(void) { Obj v = hget(h_tipview); if (!v) { v = find_obj(K.TooltipUI, 1); hset(&h_tipview, v); } return v; }
+static Obj tooltip_view(void) { return dsl_view_get(K.TooltipUI, DSL_VIEW_INACTIVE | DSL_VIEW_NOW); }   /* asked on a hover */
 static int tip_ok(void) { return m_tt_show && m_tt_hide && m_tb_id && f_etc_title >= 0 && f_etc_desc >= 0 && ctx_size > 0 && ctx_size <= 0xC0 && f_ctx_hidehold >= 0 && f_ctx_hidehold < ctx_size; }
 /* the tooltip window never takes a click while it shows our text (the stock screen clamp can push it over the element,
    e.g. a title button low on the screen); the window is pooled, so stock tooltips get their raycasts back on hide */
@@ -1304,8 +1305,10 @@ static void tip_show_at(TipE *e, V2 pos) {
     CALL(m_tt_show, void, Obj, Guid, int, Obj, V2, int, __typeof__(ctx))(v, TIP_ID, 0, str(BASE_KEY), pos, 0, ctx, m_tt_show);
     tip_shown = 1; hset(&h_tip_shown_target, e->target);
     snprintf(tip_cur_title, sizeof tip_cur_title, "%s", e->title);
-    /* the shown Tooltip_ETC: the one with our id */
-    Obj arr = m_obj_finds ? CALL(m_obj_finds, Obj, Obj)(type_of(K.TooltipETC), m_obj_finds) : NULL, etc = NULL;
+    /* the shown Tooltip_ETC: the one with our id (the last one while it still has it, else one search: a hover) */
+    Obj etc = hget(h_tip_etc);
+    if (etc) { Guid g = CALL(m_tb_id, Guid, Obj)(etc, m_tb_id); if (g.lo != TIP_ID.lo || g.hi != TIP_ID.hi || !on_tree(etc)) etc = NULL; }
+    Obj arr = etc ? NULL : dsl_view_all(K.TooltipETC, DSL_VIEW_NOW);
     for (int i = 0; i < arr_n(arr) && !etc; i++) { Obj t = arr_at(arr, i); Guid g = CALL(m_tb_id, Guid, Obj)(t, m_tb_id); if (g.lo == TIP_ID.lo && g.hi == TIP_ID.hi) etc = t; }
     if (!etc) { dsl_log("ui: tooltip shown but its Tooltip_ETC was not found"); return; }
     hset(&h_tip_etc, etc);
@@ -1437,12 +1440,7 @@ __attribute__((visibility("default"))) int dsl_ui_test_tip(char *title, size_t c
 }
 
 /* ------------------------------------------------------------------ notice box (CommonNoticeView) */
-static uintptr_t h_nview; static int64_t nview_last = -1000;
-static Obj notice_view(void) {
-    Obj v = hget(h_nview); if (v) return v;
-    if (frames - nview_last < 30 && nview_last >= 0) return NULL;
-    nview_last = frames; v = find_obj(K.Notice, 1); hset(&h_nview, v); return v;
-}
+static Obj notice_view(void) { return dsl_view_get(K.Notice, DSL_VIEW_INACTIVE); }   /* CommonNoticePresenter's view */
 static struct { int serial; dsl_ui_cb ok, cancel; void *ud; uintptr_t h_ok, h_cancel; char text[1024]; } NB;
 /* a notice button label longer than the stock button: the buttons grow to the text + side padding; the stock size
    comes back before the next notice and when this one is answered or closed */
@@ -1578,7 +1576,7 @@ static void path_breaks(const char *s, char *out, size_t cap) {
 static void esc_notice_push(Obj v, int two);
 static int nb_esc_off;
 static void k_notice(const char *text, const char *ok_label, const char *cancel_label, dsl_ui_cb ok, dsl_ui_cb cancel, void *ud) {
-    notice_unfit(); nview_last = -1000; Obj v = notice_view(); nb_esc_off = 0;
+    notice_unfit(); Obj v = dsl_view_get(K.Notice, DSL_VIEW_INACTIVE | DSL_VIEW_NOW); nb_esc_off = 0;
     if (!v || !m_nv_select || !m_nv_confirm || f_nv_text < 0) { dsl_log("ui: notice: no CommonNoticeView in this scene: \"%s\" not shown", text ? text : ""); return; }
     NB.serial = (NB.serial + 1) & 0x0FFFFFFF; NB.ok = ok; NB.cancel = cancel; NB.ud = ud;
     path_breaks(text ? text : "", NB.text, sizeof NB.text); dsi_utf8_fix_end(NB.text);   /* the box shows (and k_notice_close compares) this copy */
@@ -1819,7 +1817,6 @@ static void tr_scale(Obj o, float s);
 static int32_t f_slv_close = -1, f_das_targets = -1, f_das_ttype = -1, f_sel_trans = -1, f_sel_colors = -1;
 static int32_t colors_n;                                             /* sizeof(ColorBlock) */
 static void *m_usm_inst, *m_usm_scale, *m_input_mb, *m_input_mbd;
-static void *K_PopUp;                                                /* Refactor.UI.PopUpUI_Base: the game's windows */
 static uintptr_t h_tpl_x;
 /* the Load Campaign window's own close button (popup prefab 5, SaveLoadView._closeButton), cloned once into the template
    holder with its Button turned off: a clone only draws; the click goes to the kit button it sits in */
@@ -2294,7 +2291,7 @@ __attribute__((visibility("default"))) int dsl_ui_test_size_labels(DSLObj panel,
 }
 /* test only: a loaded font asset that is not one of the game's fonts above (the guard's probe), NULL = none loaded */
 __attribute__((visibility("default"))) DSLObj dsl_ui_test_foreign_font(void) {
-    Obj a = K.FontAsset ? find_all(K.FontAsset) : NULL;
+    Obj a = K.FontAsset ? dsl_view_assets(K.FontAsset, DSL_VIEW_NOW) : NULL;
     for (int i = 0; i < arr_n(a); i++) if (!ui_rule_font_ok(arr_at(a, i))) return (DSLObj)arr_at(a, i);
     return NULL;
 }
@@ -2388,12 +2385,7 @@ __attribute__((visibility("default"))) int dsl_ui_test_set_foreign_font(DSLObj t
 }
 
 /* the loader's own: a stock window of the game shows (Options, Load Campaign, New Game, Credits, a notice ...) */
-int dsl_ui_game_window_shown(void) {
-    if (!K_PopUp || !m_obj_finds) return 0;
-    Obj a = CALL(m_obj_finds, Obj, Obj)(type_of(K_PopUp), m_obj_finds); int n = arr_n(a);
-    for (int i = 0; i < n; i++) if (on_tree(arr_at(a, i))) return 1;
-    return 0;
-}
+int dsl_ui_game_window_shown(void) { return dsl_view_popup_shown(); }   /* the game's popup container: no scene search */
 /* the loader's own (dsl_update.c title corner): an empty group on the screen layer that takes no clicks; its widgets are
    placed in it, and it is scaled as one */
 DSLObj dsl_ui_group(DSLObj parent, float x, float y, float w, float h) {
@@ -2488,7 +2480,7 @@ static DSLUi KIT = {
     .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
     .esc_push = k_esc_push, .esc_drop = k_esc_drop, .close_x = k_close_x, .ui_scale = k_ui_scale, .scale_follow = k_scale_follow,
     .movable = k_movable, .window_std = k_window_std, .window_close = k_window_close, .card_toggle = k_card_toggle, .rules_own = k_rules_own,
-    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get
+    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get, .view_find = dsl_view_get
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -2496,23 +2488,10 @@ static DSLUi KIT = {
 typedef struct { char owner[64], label[96], tip[600]; int order, seq; void (*click)(void *); void *ud; uintptr_t h_btn, h_view, h_act;
                  float icon; void (*fill)(void *, DSLObj, int); uintptr_t h_box; int shown; } TBE;
 static TBE tbs[TBMAX]; static int ntbs, tb_seq;
-static uintptr_t h_tview, h_tview_off; static int64_t tview_last = -1000, tview_fast_until;
-int dsl_reg_scene(void);                                              /* dsl_reg.c: MainFlow scene, 1 title, 2 world, -1 none */
-static Obj title_view(void) {
-    Obj v = hget(h_tview); if (v) return v;
-    /* in a world there is no title menu: no search. FindObjectOfType walks every object of the scene; after a world load
-       (a new EventSystem) the fast window below searched up to 4 times a frame for 300 frames: ~22 fps for ~13 s after
-       every save load on the Windows VM (player report ZET-U, 2026-10-20) */
-    if (dsl_reg_scene() == 2) return NULL;
-    Obj off = hget(h_tview_off);                                      /* seen while hidden: taken on the frame it shows */
-    if (off && on_tree(off)) { hset(&h_tview, off); hfree(&h_tview_off); return off; }
-    /* every frame before the first title and for a while after a scene change (a new EventSystem): the title found
-       on the frame it shows; else every 30 frames */
-    if (frames - tview_last < 30 && tview_last >= 0 && hget(h_tpl_btn) && frames > tview_fast_until) return NULL;
-    tview_last = frames; v = find_obj(K.TitleMenuView, 0); hset(&h_tview, v);
-    if (!v) hset(&h_tview_off, find_obj(K.TitleMenuView, 1));
-    return v;
-}
+/* the title menu (TitleMenuPresenter's view, may be hidden: callers check on_tree). Never searched in a world or while
+   loading (dsl_view.c; the old poll searched up to 4 times a frame for 300 frames after a world load: ~22 fps for ~13 s
+   on the Windows VM, player report ZET-U 2026-10-20; and every 30 frames on the loading screen, FPS audit 2026-10-26) */
+static Obj title_view(void) { return dsl_view_get(K.TitleMenuView, DSL_VIEW_TITLE | DSL_VIEW_INACTIVE); }
 __attribute__((visibility("default")))
 int dsl_ui_title_add(const char *owner_id, const char *label, int order, const char *tip, void (*click)(void *), void *ud) {
     if (!label || !click) return -1;
@@ -2652,11 +2631,8 @@ static void title_frame(void) {
 }
 
 /* the title menu is on screen (its stock button column shows; the multiplayer pages hide it) */
-static uintptr_t h_lang; static int64_t lang_last = -1000;
 static int lang_open(void) {                              /* the game's first-start Language picker (StartLanguageSelectView) */
-    Obj l = hget(h_lang);
-    if (!l && frames - lang_last >= 30) { lang_last = frames; l = find_obj(K.LangView, 0); hset(&h_lang, l); }
-    return l && on_tree(l);
+    Obj l = dsl_view_get(K.LangView, DSL_VIEW_TITLE); return l && on_tree(l);
 }
 int dsl_ui_title_shown(void) {
     Obj v = title_view(); if (!v || !on_tree(v) || lang_open()) return 0;
@@ -2762,7 +2738,7 @@ float dsl_ui_width(DSLObj o) {
 #define BR_SCMIN 0.75f                                                /* smallest menu scale */
 static uintptr_t h_br_view, h_br_logo, h_br_col, h_br_ver, h_br_img, h_br_spr, h_br_tex, h_br_lg;
 static V2 br_logo0, br_col0, br_ver0, br_logo_set, br_col_set, br_ver_set;
-static float br_drop, br_shift, br_sc = 1, br_sp0 = -1, br_sp = -1; static int br_tw, br_th, br_off; static int64_t br_last = -1000;
+static float br_drop, br_shift, br_sc = 1, br_sp0 = -1, br_sp = -1; static int br_tw, br_th, br_off; static double br_last = -1e9;
 static uint32_t br_sig;
 static V2 rt_pos(Obj o) { Obj rt = tr_of(o); return isa(rt, K.RectTransform) && m_rt_getpos ? CALL(m_rt_getpos, V2, Obj)(rt, m_rt_getpos) : (V2){ 0, 0 }; }
 static void rt_setpos(Obj o, V2 p) { Obj rt = tr_of(o); if (isa(rt, K.RectTransform)) CALL(m_rt_pos, void, Obj, V2)(rt, p, m_rt_pos); }
@@ -2805,7 +2781,7 @@ static void brand_frame(void) {
            drawn letters); the version line goes below the word: anchored at the logo's bottom edge, pivot bottom */
         float top = ver ? br_ver0.y + rt_size(ver).y : -BR_GAP;
         rt_set(im, (V2){ 0.5f, 0 }, (V2){ 0.5f, 0 }, (V2){ 0.5f, 1 }, (V2){ ww, wh }, (V2){ 0, top });
-        br_drop = ver ? wh : wh + BR_GAP; br_shift = 0; br_sc = 1; br_last = -1000;
+        br_drop = ver ? wh : wh + BR_GAP; br_shift = 0; br_sc = 1; br_last = -1e9;
         br_apply();
         dsl_log("ui: title brand: \"ModLoader\" under the logo (%dx%d texels, %.1fx%.1f units, top %.1f; logo %.0fx%.0f units, sprite %.0fx%.0f), version line%s and column %.1f lower; button gap %.0f",
                 br_tw, br_th, ww, wh, top, lsz.x, lsz.y, sr.w, sr.h, ver ? "" : " (none)", br_drop, br_sp0);
@@ -2826,8 +2802,10 @@ static void brand_frame(void) {
     BR_MIX(sw); BR_MIX(shh); BR_MIX((float)n);
     for (int i = 0; i < n; i++) { Obj c = child_at(col, i); int on = c && on_tree(c); BR_MIX(on ? rt_size(c).y : -1.f); }
     #undef BR_MIX
-    if (sig == br_sig && frames - br_last < 10) return;
-    br_sig = sig; br_last = frames;
+    /* a layout rebuild of the column: when what it depends on changed, else every 2 s (it was every 10 frames: 6 a second
+       at the idle title, FPS audit 2026-10-26) */
+    if (sig == br_sig && clock_s() - br_last < 2.0) return;
+    br_sig = sig; br_last = clock_s();
     if (m_lr_force) CALL(m_lr_force, void, Obj)(tr_of(col), m_lr_force);   /* the rows' places in this frame, not the last one */
     /* measured: the menu's height now (screen pixels) = sc x (fixed part + gaps x spacing), in the parent's units */
     float rl[4], r[4], bottom = 1e9f; int nact = 0;
@@ -2938,7 +2916,7 @@ static void h_es_update(Obj self, const void *mi) {
     int32_t fc = m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : last_frame + 1;
     if (fc == last_frame || in_tick) return;                        /* several EventSystems: once per frame */
     last_frame = fc; in_tick = 1;
-    static uintptr_t h_es; if (!hget(h_es)) { hset(&h_es, self); tview_fast_until = frames + 300; dsl_view_new_scene(); }   /* a new scene (the last EventSystem is gone) */
+    static uintptr_t h_es; if (!hget(h_es)) { hset(&h_es, self); dsl_view_new_scene(); }   /* a new scene (the last EventSystem is gone) */
     dsl_view_frame();
     if (dsl_lang_poll()) { if (kit_ok) kit_lang_changed(); dsl_reg_lang_changed(); }
     if (kit_ok) tick();
@@ -2966,7 +2944,7 @@ __attribute__((visibility("default"))) size_t dsl_ui_test_label(DSLObj o, char *
    first child whose label is `find` (NULL = none) */
 __attribute__((visibility("default"))) DSLObj dsl_ui_test_title(const char *find, char *out, size_t cap) {
     if (out && cap) out[0] = 0;
-    tview_last = -1000; Obj v = title_view(); if (!v || f_tv_credit < 0) return NULL;
+    Obj v = title_view(); if (!v || f_tv_credit < 0) return NULL;
     Obj col = tr_parent(AT(v, f_tv_credit, Obj)); DSLObj hit = NULL; size_t o = 0;
     for (int i = 0, n = child_count(col); i < n; i++) {
         Obj c = child_at(col, i), b = comp_get(c, K.TitleButton); if (!b) continue;
@@ -3033,16 +3011,13 @@ void dsl_ui_install(void) {
     K.SaveLoadView = klass("Refactor", "SaveLoadView"); K.CanvasGroup = klass(UE, "CanvasGroup"); K.CampaignSetting = klass(RU, "SubUI_CampaignSetting");
     K.OptionView = dsl_find_class(RU, "GameOptionView"); K.GeneralSetting = dsl_find_class(RU, "SubUI_GeneralSetting");   /* slider template (optional) */
     K.SubSlider = dsl_find_class(RU, "SubUI_Slider"); K.Slider = dsl_find_class(UI, "Slider");
-    void *kInput = klass(UE, "Input"), *kTime = klass(UE, "Time"), *kGUI = klass(UE, "GUIUtility"), *kRes = klass(UE, "Resources"),
+    void *kInput = klass(UE, "Input"), *kTime = klass(UE, "Time"), *kGUI = klass(UE, "GUIUtility"),
          *kConv = klass(UE, "ImageConversion"), *kTex = klass(UE, "Texture"), *kRTU = klass(UE, "RectTransformUtility"),
          *kES = klass("UnityEngine.EventSystems", "EventSystem"), *kTB = klass(RU, "Tooltip_Base"), *kSO = klass("Refactor.Main.UI", "UIPrefabSO"),
          *kBeh = klass(UE, "Behaviour");
     m_obj_implicit = MTH(K.Object, "op_Implicit", 1); m_obj_name = MTH(K.Object, "get_name", 0);
     m_obj_inst = MSIG(K.Object, "Instantiate", 2, "UnityEngine.Object,UnityEngine.Transform");
     m_obj_destroy = MTH(K.Object, "Destroy", 1); m_obj_dontdestroy = MTH(K.Object, "DontDestroyOnLoad", 1);
-    m_obj_find = MSIG(K.Object, "FindObjectOfType", 2, "System.Type,System.Boolean");
-    m_obj_finds = OPTSIG(K.Object, "FindObjectsOfType", 1, "System.Type");
-    m_res_findall = MSIG(kRes, "FindObjectsOfTypeAll", 1, "System.Type");
     m_comp_go = MTH(K.Component, "get_gameObject", 0); m_comp_tr = MTH(K.Component, "get_transform", 0);
     m_comp_get = MSIG(K.Component, "GetComponent", 1, "System.Type");
     m_comp_inparent = MSIG(K.Component, "GetComponentInParent", 1, "System.Type");
@@ -3143,8 +3118,7 @@ void dsl_ui_install(void) {
       m_fa_has = OPTSIG(K.FontAsset, "HasCharacter", 3, "System.Char,System.Boolean,System.Boolean");   /* panel_size: the minus sign */
       f_slv_close = fld(K.SaveLoadView, "_closeButton"); f_das_targets = fld(kDAS, "_targets"); f_das_ttype = fld(kDAS, "_transitionType");   /* close_x */
       f_sel_trans = fld(K.Selectable, "m_Transition"); f_sel_colors = fld(K.Selectable, "m_Colors");
-      colors_n = kCB && I.class_value_size ? I.class_value_size(kCB, NULL) : 0;
-      K_PopUp = dsl_find_class(RU, "PopUpUI_Base"); }
+      colors_n = kCB && I.class_value_size ? I.class_value_size(kCB, NULL) : 0; }
     f_uif_prefabs = fld(K.UIFactory, "_prefabs"); f_slv_field = fld(K.SaveLoadView, "_saveNameInputField"); f_cs_field = fld(K.CampaignSetting, "_campaignNameInputField");
     if (miss_core) { dsl_log("ui: %d core game names missing (%s): kit off", miss_core, miss_list); return; }
     if (miss_opt) dsl_log("ui: %d optional names missing (%s): those parts are off", miss_opt, miss_list);

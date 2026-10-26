@@ -6,6 +6,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ### Unreleased (0.1.29)
 
+- Smoother game on the title screen, on the loading screen and in your worlds: the mod loader no longer searches all the objects of the game many times a second to find the Load list, the game's windows and its notice box. Before, this made a slow frame about every half second in a world and every fifth frame on the title screen.
 - Load Campaign: worlds that a mod hides as its own (old multiplayer hub and PvP worlds, Units Laboratory test worlds) no longer add the line "worlds are hidden by a filter under the list". There is no box that shows them.
 - Unit cards you tick by a click (Units Laboratory: My Units, Test Fights world units and teams) no longer show a white or grey block next to the card when you point at it or click it.
 - Steam Cloud backup: worlds that a mod makes for itself (Units Laboratory Test Fights and DPS Check worlds, old multiplayer hub and PvP worlds) are no longer uploaded, and copies of them already in the cloud are not downloaded to your computer. Those copies stay in the cloud; nothing is deleted.
