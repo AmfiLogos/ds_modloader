@@ -107,7 +107,8 @@ def start():
            'DSL_CLOUD': '0', 'DSL_PREWARM': '0', 'DSL_CRASHREP_TEST': crd, 'DSL_BUGREP_DRY': '1',
            'DSL_UIKIT_TEST': UDRV, 'DSL_UI_TEST': WDRV, 'DSL_BUGREP_TEST': BDRV}
     env.update(r.soft_test_env()); env.update(EXTRA_ENV)
-    a = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
+    ww, wh = r.win_size()                                              # LRIG_SIZE (default 960x540; panelsize_test: 800x600)
+    a = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', str(ww), '-screen-height', str(wh)]
     p = subprocess.Popen(a, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
                          stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
     open(r.pidfile(X), 'w').write(f'{p.pid}\n'); log('started', p.pid)

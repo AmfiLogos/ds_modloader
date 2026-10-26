@@ -204,9 +204,28 @@ typedef struct DSLUi {
        UI-RULE guard does not flag them. DSL_RULE_X only for a small popup that is not a window (a list closed by a click
        outside): every window has the red X. */
     int (*rules_own)(DSLObj win, int rules);
+    /* appended (check size, or use the wrappers below; kit 0.1.29): the SIZE RULE template (owner 2026-10-25: "allow to
+       both make the chat and the DPS check window smaller or bigger with a plus or minus"). panel_size: two small buttons
+       "-" and "+" (the kit's game-style buttons in the game's font, 22 x 22 units each, 46 wide in all) in `panel`'s
+       top-right corner, x / y units in from that corner (they keep that place when the panel's width changes). A click =
+       the panel 10 % smaller / bigger, 60 % .. 150 %, on top of UI Scale, kept under `key` (the panel's move key
+       "<mod id>.<panel>", at most 58 bytes) in the file of the kept places, and put back at the next call (the next game
+       start). Who draws the size:
+         - a panel that follows UI Scale through the kit (scale_follow, window_std): the kit draws it at UI Scale x size,
+           smaller when that would not fit its parent; nothing to do;
+         - flags DSL_SIZE_OWN: the panel sets its scale itself: it multiplies it by panel_size_get(panel) each time it
+           lays out (read it every frame: it changes on a click) and keeps itself on the screen;
+         - any other panel: the kit sets its scale (localScale) to the size.
+       A movable panel (movable) is kept on the screen after a change. Call it once the panel is built (after movable).
+       Returns the buttons' holder (a child of panel: set_active hides both); NULL = not built (an older kit: no size
+       control). */
+    DSLObj (*panel_size)(DSLObj panel, const char *key, float x, float y, int flags);
+    float (*panel_size_get)(DSLObj panel);   /* the panel's size, 1 = 100 % (also 1 for a panel without panel_size) */
 } DSLUi;
+enum { DSL_SIZE_OWN = 1 };                                    /* panel_size flags: the panel applies the size itself */
 enum { DSL_WIN_MODAL = 0, DSL_WIN_PANEL = 1 };                /* DSLWinStd.kind */
-enum { DSL_WIN_OWN_SCALE = 1 };                               /* DSLWinStd.flags: the caller applies UI Scale itself */
+enum { DSL_WIN_OWN_SCALE = 1, DSL_WIN_SIZE = 2 };            /* DSLWinStd.flags: the caller applies UI Scale itself; DSL_WIN_PANEL:
+                                                                "-" / "+" size left of its red X (panel_size, key move_key; kit 0.1.29) */
 enum { DSL_RULE_SCALE = 1, DSL_RULE_MOVE = 2, DSL_RULE_X = 4 };   /* rules_own */
 typedef struct DSLWinStd {
     uint32_t size;                           /* sizeof(DSLWinStd) of the caller: set it (fields only get appended) */
@@ -216,7 +235,7 @@ typedef struct DSLWinStd {
     void (*close)(void *ud);                 /* the window's Close (red X; Escape after Back); NULL = window_close */
     int (*back)(void *ud);                   /* Escape first: a sub-page is open -> go Back one level, return 1; 0 = none */
     void *ud;
-    int flags;                               /* DSL_WIN_OWN_SCALE */
+    int flags;                               /* DSL_WIN_OWN_SCALE, DSL_WIN_SIZE */
     const char *move_key;                    /* DSL_WIN_PANEL: the kept place's key "<mod id>.<panel>" (required) */
     float x, y;                              /* DSL_WIN_PANEL: its first place, top-left on the screen layer */
     float band_h, title_x, title_size;       /* header band height (0 = 72), title left at title_x (0 = centred), size (0 = 30) */
@@ -409,6 +428,10 @@ static inline void dsl_window_close(const DSLUi *ui, DSLObj win) { if (DSL_UI_HA
 static inline int dsl_card_toggle(const DSLUi *ui, DSLObj card, DSLObj check, dsl_ui_cb click, void *ud) {
     return DSL_UI_HAS(ui, card_toggle) ? ui->card_toggle(card, check, click, ud) : -1; }
 static inline int dsl_rules_own(const DSLUi *ui, DSLObj win, int rules) { return DSL_UI_HAS(ui, rules_own) ? ui->rules_own(win, rules) : -1; }
+/* the size template (kit 0.1.29): NULL / 1 with an older kit (then: no "-" / "+", the panel keeps its size) */
+static inline DSLObj dsl_panel_size(const DSLUi *ui, DSLObj panel, const char *key, float x, float y, int flags) {
+    return DSL_UI_HAS(ui, panel_size) ? ui->panel_size(panel, key, x, y, flags) : NULL; }
+static inline float dsl_panel_size_get(const DSLUi *ui, DSLObj panel) { return DSL_UI_HAS(ui, panel_size_get) ? ui->panel_size_get(panel) : 1.0f; }
 
 #ifdef __cplusplus
 }

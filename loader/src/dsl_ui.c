@@ -1891,8 +1891,9 @@ static float k_ui_scale(void) {
 }
 #define SF_MAX 32
 static struct { uintptr_t h; DSLObj id; } sfs[SF_MAX]; static int nsf; static float sf_u = -1;
-static void sf_apply(Obj o, float u) {                               /* UI Scale, less when the window would not fit in its parent */
-    Obj p = tr_parent(o); float s = u;
+static float sz_of(Obj o);                                           /* its "-" / "+" size (panel_size, below), 1 = none */
+static void sf_apply(Obj o, float u) {                               /* UI Scale x its size, less when the window would not fit in its parent */
+    Obj p = tr_parent(o); float s = u * sz_of(o);
     if (p && m_rt_rect && isa(tr_of(p), K.RectTransform) && isa(tr_of(o), K.RectTransform)) {
         R4 r = CALL(m_rt_rect, R4, Obj)(tr_of(p), m_rt_rect), me = CALL(m_rt_rect, R4, Obj)(tr_of(o), m_rt_rect);
         if (r.w >= 100 && r.h >= 100 && me.w > 1 && me.h > 1) { float f = r.w / me.w, g = r.h / me.h; if (g < f) f = g; if (f < s) s = f; }
@@ -2005,6 +2006,97 @@ static void mv_frame(void) {
     if (frames % 30 == 0)                                            /* the game window was resized: back on the screen */
         for (int k = 0; k < nmv; k++) { Obj q = hget(mvs[k].h); if (q && on_tree(q) && mvs[k].id != mv_id) mv_clamp(q); }
 }
+/* SIZE RULE (kit 0.1.29; owner 2026-10-25: "allow to both make the chat and the DPS check window smaller or bigger with a
+   plus or minus"): panel_size puts "-" and "+" in a panel's top-right corner; a click = 10 % smaller / bigger, 60 % ..
+   150 % on top of UI Scale, kept as the row "<key>@size" of ui_places.tsv (a key no older kit asks for). The kit draws the
+   size of a panel that follows UI Scale (sf_apply) or of a plain panel; a DSL_SIZE_OWN panel reads panel_size_get. */
+#define SZ_MAX 16
+#define SZ_LO 6                                                      /* tenths: 60 % .. 150 % */
+#define SZ_HI 15
+static struct { uintptr_t h, h_hold; DSLObj id, hold, minus, plus; const char *mtxt; char key[64]; int step, flags, settle, shown; } szs[SZ_MAX]; static int nsz;
+static void k_set_enabled(DSLObj o, int on);
+static void *m_fa_has;                                               /* TMP_FontAsset.HasCharacter(char, fallbacks, add) */
+static int sz_find(DSLObj id) { for (int i = 0; id && i < nsz; i++) if (szs[i].id == id && hget(szs[i].h)) return i; return -1; }
+static float sz_of(Obj o) { for (int i = 0; o && i < nsz; i++) if (hget(szs[i].h) == o) return szs[i].step / 10.f; return 1.f; }
+static float k_panel_size_get(DSLObj panel) { int i = sz_find(panel); return i >= 0 ? szs[i].step / 10.f : 1.f; }
+static void sz_look(int i) { k_set_enabled(szs[i].minus, szs[i].step > SZ_LO); k_set_enabled(szs[i].plus, szs[i].step < SZ_HI); }   /* grey at the ends */
+static void sz_labels(int i) {                                       /* "-" / "+" in the body font, 20 */
+    for (int n = 0; n < 2; n++) {
+        W *b = w_of(n ? szs[i].plus : szs[i].minus); Obj l = b ? hget(b->h_label) : NULL; if (!l) continue;
+        txt_body(l); txt_style(l, 0, 20, 514, 0); gr_color(l, C_MAIN); tmp_set(l, n ? "+" : szs[i].mtxt);
+    }
+}
+static void sz_apply(int i) {
+    Obj o = hget(szs[i].h); if (!o) return;
+    int k = 0; while (k < nsf && hget(sfs[k].h) != o) k++;
+    if (k < nsf) sf_apply(o, k_ui_scale());                          /* it follows UI Scale: UI Scale x size, fitted to its parent */
+    else if (!(szs[i].flags & DSL_SIZE_OWN)) tr_scale(o, szs[i].step / 10.f);
+    szs[i].settle = 10;                                              /* sz_frame: back on the screen (an own scale lands at its next layout) */
+}
+static void sz_keep(int i) {
+    char k[64]; snprintf(k, sizeof k, "%s@size", szs[i].key);
+    int n = 0; while (n < nmvp && strcmp(mvp[n].key, k)) n++;
+    if (n == nmvp) { if (nmvp == MVP_MAX) { dsl_log("ui: size: %d places kept: %s not kept", MVP_MAX, k); return; } nmvp++; }
+    snprintf(mvp[n].key, sizeof mvp[n].key, "%s", k); mvp[n].x = szs[i].step / 10.f; mvp[n].y = 0;
+    mvp_save();
+}
+static void sz_click(void *ud, DSLObj w) {
+    int i = sz_find((DSLObj)ud); if (i < 0) return;
+    W *b = w_of(w); Obj bo = b ? hget(b->h_btn) : NULL; if (bo) esc_deselect(bo);   /* never left selected: Space / Enter stay the game's */
+    int s = szs[i].step + (w == szs[i].plus ? 1 : -1);
+    if (s < SZ_LO || s > SZ_HI) return;
+    szs[i].step = s; sz_apply(i); sz_keep(i); sz_look(i);
+    dsl_log("ui: size: %s %d %%", szs[i].key, s * 10);
+}
+static const char *sz_minus(void) {                                  /* the minus sign, else the en dash, else '-' (what the game's font has) */
+    Obj f = hget(h_body_font);
+    if (f && m_fa_has && CALL(m_fa_has, bool, Obj, uint16_t, bool, bool)(f, 0x2212, true, true, m_fa_has)) return "\xE2\x88\x92";
+    if (f && m_fa_has && CALL(m_fa_has, bool, Obj, uint16_t, bool, bool)(f, 0x2013, true, true, m_fa_has)) return "\xE2\x80\x93";
+    return "-";
+}
+static DSLObj k_panel_size(DSLObj panel, const char *key, float x, float y, int flags) {
+    W *w = w_of(panel); Obj o = w ? w_root(w) : (Obj)panel;
+    if (!alive(o) || !isa(tr_of(o), K.RectTransform) || !key || !*key || strlen(key) > 58 || strchr(key, '\t') || strchr(key, '\n') || !ready_basic()) return NULL;
+    int i = sz_find(panel);
+    if (i >= 0 && hget(szs[i].h_hold)) return szs[i].hold;           /* already there */
+    if (i < 0) {
+        for (int k = nsz - 1; k >= 0; k--) if (!hget(szs[k].h)) { hfree(&szs[k].h); hfree(&szs[k].h_hold); szs[k] = szs[--nsz]; }
+        if (nsz == SZ_MAX) { dsl_log("ui: size: more than %d panels: refused", SZ_MAX); return NULL; }
+        i = nsz++; memset(&szs[i], 0, sizeof szs[i]); szs[i].id = panel;
+    }
+    hfree(&szs[i].h); szs[i].h = x_weak ? x_weak(o, false) : hnew(o);
+    snprintf(szs[i].key, sizeof szs[i].key, "%s", key); szs[i].flags = flags; szs[i].step = 10;
+    char k[64]; snprintf(k, sizeof k, "%s@size", key);
+    mvp_load();
+    for (int n = 0; n < nmvp; n++) if (!strcmp(mvp[n].key, k)) { int s = (int)(mvp[n].x * 10 + 0.5f); szs[i].step = s < SZ_LO ? SZ_LO : s > SZ_HI ? SZ_HI : s; break; }
+    Obj hd = new_rect("dsl_ui_size", o); W *hw = hd ? w_new(W_PANEL) : NULL;
+    if (!hw) { if (hd) destroy_obj(go_of(hd)); return NULL; }
+    rt_set(hd, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 1, 1 }, (V2){ 46, 22 }, (V2){ -x, -y });   /* stays in the top-right corner */
+    szs[i].hold = w_done(hw, hd, NULL); hfree(&szs[i].h_hold); szs[i].h_hold = x_weak ? x_weak(hd, false) : hnew(hd);
+    szs[i].mtxt = sz_minus(); szs[i].shown = 0;
+    szs[i].minus = k_button(szs[i].hold, 0, 0, 22, 22, szs[i].mtxt, sz_click, panel);
+    szs[i].plus = k_button(szs[i].hold, 24, 0, 22, 22, "+", sz_click, panel);
+    sz_labels(i); sz_look(i);
+    if (szs[i].step != 10) sz_apply(i);
+    dsl_log("ui: size: %s \"-\" / \"+\" at %d %% (%s)", key, szs[i].step * 10, flags & DSL_SIZE_OWN ? "the panel applies it" : "the kit applies it");
+    return szs[i].hold;
+}
+static void sz_frame(void) {
+    for (int i = nsz - 1; i >= 0; i--) {
+        Obj o = hget(szs[i].h); if (!o) { hfree(&szs[i].h); hfree(&szs[i].h_hold); szs[i] = szs[--nsz]; continue; }
+        /* made in a hidden panel (the chat's closed box), the buttons showed no label once shown (panelsize_test hidden
+           case): the labels are written again each time the buttons show */
+        Obj hd = hget(szs[i].h_hold); int sh = hd && on_tree(hd);
+        if (sh && szs[i].shown != 1) {
+            if (szs[i].shown == 0) { W *b = w_of(szs[i].plus); char t[16] = ""; Obj l = b ? hget(b->h_label) : NULL; if (l) utf8_of(tmp_get(l), t, sizeof t);
+                                     dsl_log("ui: size: %s shows (\"+\" label was \"%s\"): labels written again", szs[i].key, t); }
+            sz_labels(i);
+        }
+        szs[i].shown = sh ? 1 : szs[i].shown ? -1 : szs[i].shown;      /* 0 never shown, 1 shown, -1 hidden again */
+        if (szs[i].settle <= 0 || --szs[i].settle > 8 || !on_tree(o)) continue;   /* 2 frames for an own scale to land, then 8 checks */
+        for (int k = 0; k < nmv; k++) if (hget(mvs[k].h) == o && mvs[k].id != mv_id) { mv_clamp(o); break; }
+    }
+}
 /* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
    rules / pattern to keep applying everywhere"). window_std: a window or an in-game panel with every owner rule on by
    default. card_toggle: the CARD RULE. rules_own: a window that applies a rule by its own code. The UI-RULE guard (test
@@ -2064,7 +2156,8 @@ static DSLObj k_window_std(const DSLWinStd *o, DSLWinParts *out) {
     if (o->title) {                                                  /* the header: band, title in the game's title font, copper line */
         dsl_ui_flat(k_panel(win, 4, 4, o->w - 8, bh - 4, 0), 0x2D2A31FF);
         dsl_ui_flat(k_panel(win, 4, bh, o->w - 8, 1, 0), 0xB6835AFF);
-        p.title = k_text(win, tx > 0 ? tx : 70, 4, tx > 0 ? o->w - tx - 70 : o->w - 140, bh - 4, o->title, ts, (tx > 0 ? DSL_TXT_LEFT : DSL_TXT_CENTER) | DSL_TXT_TITLE, 0);
+        float rs = panel && (o->flags & DSL_WIN_SIZE) ? (o->close ? 120 : 76) : 70;   /* room on the right: the red X (and "-" / "+") */
+        p.title = k_text(win, tx > 0 ? tx : rs, 4, tx > 0 ? o->w - tx - rs : o->w - 2 * rs, bh - 4, o->title, ts, (tx > 0 ? DSL_TXT_LEFT : DSL_TXT_CENTER) | DSL_TXT_TITLE, 0);
         p.body_y = bh + 1;
     }
     StdE *s = &stds[nstd++]; memset(s, 0, sizeof *s);
@@ -2079,6 +2172,10 @@ static DSLObj k_window_std(const DSLWinStd *o, DSLWinParts *out) {
     else k_esc_push(win, std_esc, win, 0);
     if (o->flags & DSL_WIN_OWN_SCALE) k_rules_own(win, DSL_RULE_SCALE); else k_scale_follow(win);
     if (panel) k_movable(win, o->move_key);
+    if (panel && (o->flags & DSL_WIN_SIZE)) {                        /* SIZE RULE: "-" / "+" in the header, left of the red X */
+        float xs = 38, hy = o->title ? bh : 44;
+        k_panel_size(win, o->move_key, 24 + (o->close ? xs + 6 : 0), (hy - 22) / 2, (o->flags & DSL_WIN_OWN_SCALE) ? DSL_SIZE_OWN : 0);
+    }
     p.win = win; p.backdrop = back;
     if (out) *out = p;
     return win;
@@ -2182,6 +2279,18 @@ static void ui_guard_check(Obj root) {
         char fn[96] = "(none)", w[160]; Obj f = CALL(m_tmp_getfont, Obj, Obj)(bad, m_tmp_getfont); if (alive(f)) obj_name(f, fn, sizeof fn);
         snprintf(w, sizeof w, "a text uses the font \"%s\", not the game's (kit texts: ui->text)", fn); ui_rule("font", t, w);
     }
+}
+/* test only: 1 = every text under w is in the game's fonts (the guard's font check), 0 = one is not, -1 = no such object */
+__attribute__((visibility("default"))) int dsl_ui_test_font_ok(DSLObj w) {
+    W *x = w_of(w); Obj o = x ? w_root(x) : (Obj)w; return alive(o) ? ui_bad_font(tr_of(o), 0) == NULL : -1;
+}
+/* test only: the "-" / "+" labels of a panel_size panel ("<minus>|<plus>"): 1 = they show, 0 = hidden, -1 = no such panel */
+__attribute__((visibility("default"))) int dsl_ui_test_size_labels(DSLObj panel, char *out, size_t cap) {
+    int i = sz_find(panel); if (cap) out[0] = 0; if (i < 0) return -1;
+    char t[2][32] = { "", "" };
+    for (int n = 0; n < 2; n++) { W *b = w_of(n ? szs[i].plus : szs[i].minus); Obj l = b ? hget(b->h_label) : NULL; if (l) utf8_of(tmp_get(l), t[n], sizeof t[n]); }
+    snprintf(out, cap, "%s|%s", t[0], t[1]);
+    Obj hd = hget(szs[i].h_hold); return hd && on_tree(hd);
 }
 /* test only: a loaded font asset that is not one of the game's fonts above (the guard's probe), NULL = none loaded */
 __attribute__((visibility("default"))) DSLObj dsl_ui_test_foreign_font(void) {
@@ -2378,7 +2487,8 @@ static DSLUi KIT = {
     .set_enabled = k_set_enabled, .destroy = k_destroy, .clipboard_get = k_clipboard_get, .clipboard_set = k_clipboard_set,
     .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
     .esc_push = k_esc_push, .esc_drop = k_esc_drop, .close_x = k_close_x, .ui_scale = k_ui_scale, .scale_follow = k_scale_follow,
-    .movable = k_movable, .window_std = k_window_std, .window_close = k_window_close, .card_toggle = k_card_toggle, .rules_own = k_rules_own
+    .movable = k_movable, .window_std = k_window_std, .window_close = k_window_close, .card_toggle = k_card_toggle, .rules_own = k_rules_own,
+    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -2803,6 +2913,7 @@ static void tick(void) {
     card_guard_frame();
     sf_frame();
     mv_frame();
+    sz_frame();
     sliders_frame();
     tips_frame();
     if (!o_cur_perform) tip_place_frame();                          /* else right before the UI is drawn (h_cur_perform) */
@@ -3027,6 +3138,7 @@ void dsl_ui_install(void) {
     { void *kUSM = dsl_find_class("Refactor", "UIScaleManager"), *kDAS = dsl_find_class(RU, "DASButton"), *kCB = dsl_find_class(UI, "ColorBlock");
       m_usm_inst = OPT(kUSM, "get_Instance", 0); m_usm_scale = OPT(kUSM, "get_Scale", 0);           /* scale_follow, ui_scale */
       m_input_mb = OPTSIG(kInput, "GetMouseButton", 1, "System.Int32"); m_input_mbd = OPTSIG(kInput, "GetMouseButtonDown", 1, "System.Int32");   /* movable */
+      m_fa_has = OPTSIG(K.FontAsset, "HasCharacter", 3, "System.Char,System.Boolean,System.Boolean");   /* panel_size: the minus sign */
       f_slv_close = fld(K.SaveLoadView, "_closeButton"); f_das_targets = fld(kDAS, "_targets"); f_das_ttype = fld(kDAS, "_transitionType");   /* close_x */
       f_sel_trans = fld(K.Selectable, "m_Transition"); f_sel_colors = fld(K.Selectable, "m_Colors");
       colors_n = kCB && I.class_value_size ? I.class_value_size(kCB, NULL) : 0;

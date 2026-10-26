@@ -19,6 +19,8 @@
 //                          targets stdw, std_x, std_card, std_check | stdpanel: the template's in-game panel (targets stdp, stdp_x)
 //                          | badwin {a: 1/0}: a window and a panel that break the UI rules on purpose (the UI-RULE guard's probe)
 //                          | tree {target, s: tag}: the kit's object tree of a target (dsl_ui_test_tree) -> <dir>/tree_<tag>.txt
+//       kit 0.1.29 (loader/test/panelsize_test.py): stdpanel {a: 1} = the template panel with "-" / "+" (DSL_WIN_SIZE):
+//                          targets stdp_size (both), stdp_size.minus, stdp_size.plus; the state's "size" {f, kept, font}
 // Escape (kit 0.1.28): the panel is pushed on the kit's Escape stack (Escape = Close).
 // Mouse: a fake mouse fed into Unity's Input (see fk_*), keys: real NSEvents given to the game window. The window stays
 // on the far-off test stage (DSL_SOFT_STAGE) and the app is never activated.
@@ -101,7 +103,7 @@ static void build(void) {
 static void on_title(void *ud) { (void)ud; n_title++; H->log(ME, "title button clicked"); build(); }
 
 /* ------------------------------------------------------------------ the templates (kit 0.1.28) and the UI-RULE probe */
-static DSLObj std_win, std_x, std_card, std_check, std_panel, std_panel_x, bad_win, bad_panel;
+static DSLObj std_win, std_x, std_card, std_check, std_panel, std_panel_x, std_size, bad_win, bad_panel;
 static int std_sub, std_backs, std_card_clicks;
 static int std_back(void *ud) { (void)ud; if (!std_sub) return 0; std_sub = 0; std_backs++; H->log(ME, "template window: Back (sub-page closed)"); return 1; }
 static void std_closed(void *ud) { (void)ud; H->log(ME, "template window closed"); dsl_window_close(U, std_win); std_win = std_x = std_card = std_check = NULL; }
@@ -119,13 +121,14 @@ static void std_open(int sub) {
     U->tooltip(std_card, "A selectable card", "Its hover card still shows.");
     dsl_card_toggle(U, std_card, std_check, NULL, NULL);
 }
-static void stdp_closed(void *ud) { (void)ud; dsl_window_close(U, std_panel); std_panel = std_panel_x = NULL; }
-static void stdp_open(void) {
+static void stdp_closed(void *ud) { (void)ud; dsl_window_close(U, std_panel); std_panel = std_panel_x = std_size = NULL; }
+static void stdp_open(int sized) {
     if (std_panel) return;
     DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_PANEL, .w = 360, .h = 160, .title = "Template Panel", .close = stdp_closed,
-                    .move_key = "uikit-demo.stdpanel", .x = 1400, .y = 600, .band_h = 52, .title_size = 22 };
+                    .move_key = "uikit-demo.stdpanel", .x = 1400, .y = 600, .band_h = 52, .title_size = 22, .flags = sized ? DSL_WIN_SIZE : 0 };
     DSLWinParts pt; std_panel = dsl_window_std(U, &o, &pt); std_panel_x = pt.close_x;
     if (std_panel) U->text(std_panel, 20, pt.body_y + 16, 320, 40, "Right-drag me.", 16, DSL_TXT_LEFT, 0);
+    if (std_panel && sized) std_size = dsl_panel_size(U, std_panel, "uikit-demo.stdpanel", 0, 0, 0);   /* the holder window_std made */
 }
 static void bad_close(void *ud) { (void)ud; if (bad_win) U->destroy(bad_win); bad_win = NULL; }
 static void bad_open(int on) {                                        /* breaks every UI rule on purpose */
@@ -228,7 +231,7 @@ static DSLObj target(const char *t) {
     static const struct { const char *n; DSLObj *o; } map[] = { { "panel", &panel }, { "head", &t_head }, { "status", &t_status },
         { "press", &b_press }, { "disabled", &b_disabled }, { "toggle", &tg }, { "value", &vr }, { "field", &fd }, { "scroll", &sc },
         { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close }, { "x", &b_x },
-        { "stdw", &std_win }, { "std_x", &std_x }, { "std_card", &std_card }, { "std_check", &std_check }, { "stdp", &std_panel }, { "stdp_x", &std_panel_x } };
+        { "stdw", &std_win }, { "std_x", &std_x }, { "std_card", &std_card }, { "std_check", &std_check }, { "stdp", &std_panel }, { "stdp_x", &std_panel_x }, { "stdp_size", &std_size } };
     for (size_t i = 0; i < sizeof map / sizeof *map; i++) if (!strcmp(t, map[i].n)) return *map[i].o;
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
@@ -250,6 +253,8 @@ static int target_rect(const char *t, float r[4]) {
     int on = t_rect(o, r); if (on < 0) return -1;
     if (dot && !strcmp(dot + 1, "prev")) { float x0 = r[0] + (r[2] - r[0]) * 0.36f; r[0] = x0; r[2] = x0 + (r[3] - r[1]) * 28 / 44.f; }
     if (dot && !strcmp(dot + 1, "next")) { float s = (r[3] - r[1]) / 44.f; r[2] -= 12 * s; r[0] = r[2] - 28 * s; }
+    if (dot && !strcmp(dot + 1, "minus")) r[2] = r[0] + (r[2] - r[0]) * 22 / 46.f;     /* panel_size: "-" left, "+" right (22 + 2 + 22) */
+    if (dot && !strcmp(dot + 1, "plus")) r[0] = r[2] - (r[2] - r[0]) * 22 / 46.f;
     return on;
 }
 static char *jstr(const char *j, const char *k, char *out, size_t cap) {   /* "k":"v" (no escapes needed by the test) */
@@ -298,7 +303,7 @@ static void state(char *out, size_t cap) {
         o += (size_t)snprintf(out + o, cap - o, ",\"toggle\":%d,\"value\":%d,\"field\":\"%s\"", U->toggle_get(tg), U->value_get(vr), fe);
     }
     { DSLObj ut = target("update"); o += (size_t)snprintf(out + o, cap - o, ",\"update_on\":%d", ut ? U->toggle_get(ut) : -1); }
-    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x" };
+    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x", "stdp_size" };
     o += (size_t)snprintf(out + o, cap - o, ",\"w\":{");
     for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
         DSLObj w = target(names[i]); float r[4] = { 0 }; int on = w ? t_rect(w, r) : -1; char l[200] = "", le[260];
@@ -333,7 +338,13 @@ static void state(char *out, size_t cap) {
       static int (*sw)(const void *), (*sh)(const void *); if (!sw) { sw = H->find_method_address("UnityEngine", "Screen", "get_width", 0); sh = H->find_method_address("UnityEngine", "Screen", "get_height", 0); }
       o += (size_t)snprintf(out + o, cap - o, ",\"std\":{\"open\":%d,\"sub\":%d,\"backs\":%d,\"check\":%d,\"clicks\":%d,\"panel\":%d}",
                             std_win != NULL, std_sub, std_backs, std_check ? U->toggle_get(std_check) : -1, std_card_clicks, std_panel != NULL);
-      o += (size_t)snprintf(out + o, cap - o, ",\"ui_scale\":%.3f,\"place\":[%d,%.1f,%.1f],\"screen\":[%d,%d]", dsl_ui_scale(U), kept, px, py, sw ? sw(NULL) : -1, sh ? sh(NULL) : -1); }
+      o += (size_t)snprintf(out + o, cap - o, ",\"ui_scale\":%.3f,\"place\":[%d,%.1f,%.1f],\"screen\":[%d,%d]", dsl_ui_scale(U), kept, px, py, sw ? sw(NULL) : -1, sh ? sh(NULL) : -1);
+      static int (*tf)(DSLObj); if (!tf) *(void **)&tf = dlsym(RTLD_DEFAULT, "dsl_ui_test_font_ok");
+      float sf = 0, sy = 0; int sk = tp ? tp("uikit-demo.stdpanel@size", &sf, &sy) : -1;
+      static int (*tl)(DSLObj, char *, size_t); if (!tl) *(void **)&tl = dlsym(RTLD_DEFAULT, "dsl_ui_test_size_labels");
+      char lb[80] = "", le[100]; int lon = tl && std_panel ? tl(std_panel, lb, sizeof lb) : -2; jesc(le, sizeof le, lb);
+      o += (size_t)snprintf(out + o, cap - o, ",\"size\":{\"f\":%.3f,\"kept\":[%d,%.2f],\"font\":%d,\"labels\":\"%s\",\"labels_on\":%d}",
+                            std_panel ? dsl_panel_size_get(U, std_panel) : -1.f, sk, sf, std_size && tf ? tf(std_size) : -2, le, lon); }
     char tt[200] = "", te[260]; int ts = t_tip(tt, sizeof tt); jesc(te, sizeof te, tt);
     o += (size_t)snprintf(out + o, cap - o, "},\"tip\":{\"shown\":%d,\"title\":\"%s\"}", ts, te);
 }
@@ -378,8 +389,11 @@ static void handle(const char *j) {
         else if (!strcmp(op, "notice1")) on_notice1(NULL, NULL);
         else if (!strcmp(op, "follow")) rc = dsl_scale_follow(U, panel);
         else if (!strcmp(op, "stdwin")) { std_open((int)a); rc = std_win ? 0 : -5; }
-        else if (!strcmp(op, "stdpanel")) { stdp_open(); rc = std_panel ? 0 : -5; }
+        else if (!strcmp(op, "stdpanel")) { stdp_open((int)a); rc = std_panel ? (a && !std_size ? -6 : 0) : -5; }
         else if (!strcmp(op, "stdpanel_off")) { if (std_panel) stdp_closed(NULL); }
+        else if (!strcmp(op, "stdpanel_hidden")) {                    /* "-" / "+" made while the panel is hidden (the chat's closed box) */
+            stdp_open(0); if (std_panel) { U->set_active(std_panel, 0); std_size = dsl_panel_size(U, std_panel, "uikit-demo.stdpanel", 68, 15, 0); U->set_active(std_panel, 1); }
+            rc = std_size ? 0 : -6; }
         else if (!strcmp(op, "badwin")) bad_open((int)a);
         else if (!strcmp(op, "tree")) {                               /* the kit's object tree of a target -> <dir>/tree_<s>.txt */
             static int (*tt)(DSLObj, char *, size_t); if (!tt) *(void **)&tt = dlsym(RTLD_DEFAULT, "dsl_ui_test_tree");
