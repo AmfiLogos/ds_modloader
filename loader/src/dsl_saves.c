@@ -689,15 +689,12 @@ static void test_frame(void) {
     FILE *fp = fopen(p, "rb"); if (!fp) return;
     char t[2048]; size_t n = fread(t, 1, sizeof t - 1, fp); t[n] = 0; fclose(fp); remove(p);
     JNode *j = json_parse(t); const char *c = j ? json_str(j, "cmd") : NULL;
-    static Obj (*find)(Obj, uint8_t, const void *); static Obj t_view; static int32_t o_pend = -1, o_ver = -1;
-    if (!t_view) {
-        void *kv = dsl_find_class("Refactor", "SaveLoadView"), *ko = dsl_find_class("UnityEngine", "Object");
-        void *mf = ko ? dsl_find_method(ko, "FindObjectOfType", 2) : NULL; find = mf ? dsl_method_address(mf) : NULL;
-        void *(*ct)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*to)(void *) = dsl_ga_sym("il2cpp_type_get_object");
-        if (ct && to && kv) t_view = to(ct(kv));
+    static void *kv; static int32_t o_pend = -1, o_ver = -1;
+    if (!kv) {
+        kv = dsl_find_class("Refactor", "SaveLoadView");
         o_pend = kv ? dsl_field_offset(kv, "_pendingDeleteCampaign") : -1; o_ver = kv ? dsl_field_offset(kv, "_deleteConfirmationVersion") : -1;
     }
-    Obj v = find && t_view ? find(t_view, 0, NULL) : NULL;
+    Obj v = kv ? dsl_view_get(kv, DSL_VIEW_NOW) : NULL;
     dsl_log("saves test: request %s (view %s)", c ? c : "?", v ? "open" : "MISSING");
     if (v && c && !strcmp(c, "del_world") && a_complete && o_pend >= 0 && o_ver >= 0) {
         DGuid g; if (!json_str(j, "guid") || !guid_parse(json_str(j, "guid"), &g)) { dsl_log("saves test: bad guid"); json_free(j); return; }

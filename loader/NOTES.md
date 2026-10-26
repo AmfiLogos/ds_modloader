@@ -1215,6 +1215,46 @@ each size kept; start 2 at 800x600 UI 1.4: back at the kept 130 %, "+" "+" 150 %
 first place runs past the window), no UI-RULE line: 14/0; main 7f901f5: 2 FAIL (no buttons, nothing kept).
 Units Laboratory's dps_test checks the meter and the chat in a DPS Check world (size_checks).
 
+## Game-view lookups: dsl_view_find, never a FindObjectOfType poll (the template + the SCAN-RULE guard; owner rule 2026-10-25 "TEMPLATES + GUARDS"; FPS audit 2026-10-26, lane fpsscan) - `src/dsl_view.c`
+RULE: a game object of a class (a view, a MonoBehaviour) is got ONLY through the lookup helper: loader code
+`dsl_view_get(klass, flags)` (arrays: `dsl_view_all`, loaded assets: `dsl_view_assets`, "a game window shows":
+`dsl_view_popup_shown`), modules `dsl_view_find(ui, klass, flags)` (DSLUi.view_find, kit 0.1.29; NULL on an older kit).
+Never call Object.FindObjectOfType / FindObjectsOfType / FindAnyObjectByType / Resources.FindObjectsOfTypeAll from a
+frame, a tick or a timer. WHY: each walks every object of the scene (2-10 ms on a Mac, more on Windows and in a big
+world). The 2026-10-26 audit (ds_multiplayer ext/fpsaudit core.md rows 2, 5, 6, 7, 13) found the loader's FPS loss in
+such polls: the Load list's SaveLoadView every 30 frames in every world, the title corner's window check every 5 frames
+(8.6 % of the idle title's main thread), the notice box, the language picker, the title menu during loading.
+The helper, in this order: (1) the object found before while it lives (weak GC handle + op_Implicit, traps T1); (2) the
+game's records: the View of every presenter (MainFlow._viewPresenters: title menu, notice box, tooltip, Load window,
+language picker ...), the popup container (Active / InactiveUIs, its UIFactory) and the static view container; a game
+window (PopUpUI_Base) is never searched in the scene while these can be read (only a DSL_VIEW_NOW call searches);
+(3) a real search: at most one a frame for all callers, never while loading (MainFlow scene not 1 / 2), a TITLE class
+only at the title, a WORLD class only in a world, a miss kept for the scene (next search after 2, 4 ... 60 s; a new
+EventSystem or scene clears it). DSL_VIEW_NOW = an event or a player action says it exists now: no frame limit, no wait.
+The object may be hidden: check it. Do not keep the pointer past the frame: ask again (a handle read).
+Callers moved onto it: title_view, lang_open, notice_view, tooltip_view + the tooltip card (the last one while it has our
+id, else one search on a hover), ui_prefab's UIFactory, field_source, the splash logos, the assets scan (also at most 3 a
+scene), the title corner (`dsl_ui_game_window_shown` = the popup container, every frame), the Load list (dsl_rows: the
+SaveLoadPresenter's view in OpenLoad / Refresh; the 30-frame poll is gone: the records every 6 frames, no search), the
+new-game fallback (dsl_newgame side_set), the test-only Load list and saves probes. The crash report asks for the notice
+box only when it is about to ask its question. The title column's layout rebuild (brand_frame) runs when what it depends
+on changed, else every 2 s (was every 10 frames).
+GUARD (test copies only, the same gate as UI-RULE: background-only app or DSRIG_CTL=1, never a player's start, traps T7):
+the 14 non-generic UnityEngine.Object.Find*Object* / Resources.FindObjectsOfTypeAll methods are hooked and count each call
+by its caller's image (return address: "loader", "game" = GameAssembly / UnityPlayer, else the module's file name). In the
+steady states title (idle), list (the Load list open), world, after the state's first 5 s, more than 6 calls of one module
+within 60 s logs `SCAN-RULE <module> <n>/min <state> (... last <method> <class>)` once per state; `scan: <state> <secs> s:
+<module> <n>, ...` every 30 s and at each state's end. Start line `scan guard: on (test copy, <why>): 14 of 14 ...`.
+Known limits: a search tail-called straight from a hook body, or made by the game inside one of these (FindObjectOfType
+calls FindObjectsOfType), counts as the game's.
+Test: `test/scan_rate_test.py <out> [--mods none|default]` (one hidden copy, default FSC; title idle 60 s, Load list 30 s,
+world idle 60 s with the wiki's base save, world with a key a second 30 s): FAILS on any SCAN-RULE line or without the
+guard. Results (hidden copy FSC, 60 fps): main behaviour (69dfbde, guard only) FAIL, 3 lines (title PopUpUI_Base 1019 loader
+searches in 63.6 s, list StartLanguageSelectView 454 in 32.5 s, world SaveLoadView; 15651 searches in the 3.6 s boot);
+with the helper (e9b8842) PASS: loader 0 searches at the title, in the list and in 150 s of world, 1 at boot. With the
+default mods it still fails on custom-modes (FindAnyObjectByType(TitleMenuView) ~240/min) and multiplayer
+(FindObjectOfType(QuickSlotUI / SystemMenuView) 30-56/min): their repos' lanes. Details: ds_multiplayer ext/fpsaudit/fpsscan.md.
+
 ## CHANGELOG.md + the "What's new" window (owner 2026-10-25, "All three"; kit 0.1.28, lane dschangelog) - `src/dsl_whatsnew.c`, `tools/changelog/changelog.py`
 Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repos) has an entry in its repo's
 `CHANGELOG.md`, and its GitHub notes are built from that entry. A merge that players notice adds its bullets under

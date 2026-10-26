@@ -54,3 +54,4 @@ locked-slots	locked_slots.c	my_reg	Refactor.Control.InteractionOptionControl$$Re
 locked-slots	locked_slots.c	my_show	Refactor.UI.InteractionOptionUI$$Show/1(InteractionOption)	active: always (mod enabled)
 locked-slots	locked_slots.c	my_setitem	Refactor.UI.ItemSlotUI$$SetItem/2	active: always (mod enabled)
 locked-slots	locked_slots.c	my_tip	Refactor.UI.Tooltip_Item$$Show/1	active: always (mod enabled)
+loader	dsl_view.c	sg_fn[i]	UnityEngine.*[ts]$$Find[!G]*bject*[esl]	active: test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller

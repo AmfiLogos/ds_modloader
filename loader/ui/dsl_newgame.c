@@ -32,16 +32,14 @@ int dsl_mod_difficulty(const char *id);                 /* dsl_reg.c: mod.json "
 
 static const DSLUi *U;
 static int ok;
-static void *k_pres, *k_view, *k_set, *k_in;
+static void *k_pres, *k_view, *k_set, *k_in, *k_title;
 static int32_t o_view = -1, o_vt = -1, o_name = -1, o_cd = -1, o_md = -1, o_iron = -1, o_before = -1, o_magic = -1,
                o_lock = -1, o_seed = -1, o_unlocked = -1;
 static int32_t o_setpanel = -1, o_inc = -1, o_inctip = -1, o_minc = -1, o_minctip = -1, o_nameinput = -1, o_seedinput = -1,
                o_cdtitle = -1, o_mdtitle = -1;
 static void *m_next, *m_refresh, *m_forced, *m_ironinter, *m_lockset, *m_namechg, *m_seedchg, *m_cdtext, *m_mdtext, *m_irontext,
-            *m_magictext, *m_setname, *m_setseed, *m_newgame, *m_intext, *m_alive, *m_find, *m_comp_go, *m_comp_tr,
+            *m_magictext, *m_setname, *m_setseed, *m_newgame, *m_intext, *m_alive, *m_comp_go, *m_comp_tr,
             *m_go_tree, *m_parent, *m_lockinc, *m_inter;
-static Obj t_title;                                      /* System.Type of TitleMenuView (FindObjectOfType, test "open") */
-static Obj t_set;                                        /* System.Type of SubUI_CampaignSetting (the mods' panel without the switches) */
 static int side_ok;                                      /* the side column can be drawn (the mods panel; the switches need ok too) */
 static Obj t_sr; static void *m_getcomp, *m_sr_vpos;      /* test "scroll": the settings list's ScrollRect */
 static Obj (*str_new)(const char *);
@@ -368,11 +366,11 @@ static void col_place(Obj set, DSLObj pn, DSLObj mp) {
             sw, sh, F[2], s, x0, top - H * s * k, x0 + W * s * k, top, W, k, k < 0.5f ? " (small: little room right of the window)" : "");
 }
 /* the settings step's panel (SubUI_CampaignSetting) while it shows: the live presenter's; without the switches (a name
-   missing) the one FindObjectOfType finds, looked for every 30 frames, so the mods still show */
+   missing) the one the game-view lookup finds (dsl_view.c: cached, a search at most every 2 .. 60 s), so the mods still show */
 static Obj side_set(unsigned f) {
     if (ok) { Obj p = presenter(), set = setpanel_of(view_of(p)); return set && shown(set) && AT(p, o_vt, int32_t) == 2 ? set : NULL; }
     Obj s = (Obj)held(&h_found);
-    if (!s && f % 30 == 0 && m_find && t_set) { s = CALL(m_find, Obj, Obj, uint8_t)(t_set, 0, m_find); if (live(s)) hold(&h_found, (DSLObj)s); else s = NULL; }
+    if (!s && f % 30 == 0 && k_set) { s = dsl_view_get(k_set, DSL_VIEW_TITLE); if (live(s)) hold(&h_found, (DSLObj)s); else s = NULL; }
     return s && shown(s) ? s : NULL;
 }
 static void side_frame(void) {
@@ -400,7 +398,7 @@ void dsl_newgame_install(void) {
     U = dsl_ui_kit();
     k_pres = cls("Refactor.UI", "CreateCampaignPresenter"); k_view = cls("Refactor.UI", "CreateCampaignView");
     k_set = cls("Refactor.UI", "SubUI_CampaignSetting"); k_in = cls("TMPro", "TMP_InputField");
-    void *k_title = cls("Refactor.UI", "TitleMenuView");
+    k_title = cls("Refactor.UI", "TitleMenuView");
     o_view = fo(k_pres, "<View>k__BackingField"); o_vt = fo(k_pres, "_currentViewType");
     o_name = fo(k_pres, "_campaignName"); o_cd = fo(k_pres, "_combatDifficulty"); o_md = fo(k_pres, "_managementDifficulty");
     o_iron = fo(k_pres, "_isIronModeEnabled"); o_before = fo(k_pres, "_ironModeEnabledBeforeForcedDifficulty");
@@ -420,18 +418,16 @@ void dsl_newgame_install(void) {
     m_newgame = mt(k_title, "OnNewGamePressed", 0); m_intext = mt(k_in, "get_text", 0);
     m_inter = mt(cls("UnityEngine.UI", "Selectable"), "IsInteractable", 0);
     void *kObj = cls("UnityEngine", "Object"), *kComp = cls("UnityEngine", "Component"), *kGo = cls("UnityEngine", "GameObject");
-    m_alive = mt(kObj, "op_Implicit", 1); m_find = mt(kObj, "FindObjectOfType", 2);
+    m_alive = mt(kObj, "op_Implicit", 1);
     m_comp_go = mt(kComp, "get_gameObject", 0); m_comp_tr = mt(kComp, "get_transform", 0); m_go_tree = mt(kGo, "get_activeInHierarchy", 0);
     m_parent = mt(cls("UnityEngine", "Transform"), "get_parent", 0);
     str_new = dsl_ga_sym("il2cpp_string_new");
     gc_weak = dsl_ga_sym("il2cpp_gchandle_new_weakref"); gc_new = dsl_ga_sym("il2cpp_gchandle_new");
     gc_get = dsl_ga_sym("il2cpp_gchandle_get_target"); gc_free = dsl_ga_sym("il2cpp_gchandle_free");
-    void *(*ctype)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*tobj)(void *) = dsl_ga_sym("il2cpp_type_get_object");
-    if (ctype && tobj && k_title) t_title = tobj(ctype(k_title));
-    if (ctype && tobj && k_set) t_set = tobj(ctype(k_set));
     side_ok = U && m_alive && m_comp_go && m_comp_tr && m_go_tree && m_parent && gc_new && gc_get && gc_free;
     if (!side_ok) dsl_log("newgame: side panels OFF (names missing)");
     void *k_sr = dsl_find_class("UnityEngine.UI", "ScrollRect");       /* test only */
+    void *(*ctype)(void *) = dsl_ga_sym("il2cpp_class_get_type"); Obj (*tobj)(void *) = dsl_ga_sym("il2cpp_type_get_object");
     if (ctype && tobj && k_sr) t_sr = tobj(ctype(k_sr));
     m_getcomp = kComp ? dsl_find_method(kComp, "GetComponentInChildren", 1) : NULL; m_sr_vpos = k_sr ? dsl_find_method(k_sr, "set_verticalNormalizedPosition", 1) : NULL;
     ok = U && o_view >= 0 && o_vt >= 0 && o_name >= 0 && o_cd >= 0 && o_md >= 0 && o_iron >= 0 && o_before >= 0 && o_magic >= 0
@@ -520,7 +516,7 @@ void dsl_newgame_test_cmd(const JNode *j) {
     const char *op = json_str(j, "op"); Obj p = presenter(), v = view_of(p);
     if (!ok || !op) { dsl_log("newgame test: %s refused (switches off or no op)", op ? op : "?"); return; }
     if (!strcmp(op, "open")) {
-        Obj tv = m_find && t_title ? CALL(m_find, Obj, Obj, uint8_t)(t_title, 0, m_find) : NULL;
+        Obj tv = k_title ? dsl_view_get(k_title, DSL_VIEW_TITLE | DSL_VIEW_NOW) : NULL;
         if (live(tv) && m_newgame) CALL(m_newgame, void, Obj)(tv, m_newgame);
         dsl_log("newgame test: open (title view %s)", live(tv) ? "found" : "MISSING");
     } else if (!strcmp(op, "next") && v && AT(p, o_vt, int32_t) != 2) {
