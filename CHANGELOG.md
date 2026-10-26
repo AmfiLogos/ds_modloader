@@ -10,6 +10,8 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - Unit cards you tick by a click (Units Laboratory: My Units, Test Fights world units and teams) no longer show a white or grey block next to the card when you point at it or click it.
 - Steam Cloud backup: worlds that a mod makes for itself (Units Laboratory Test Fights and DPS Check worlds, old multiplayer hub and PvP worlds) are no longer uploaded, and copies of them already in the cloud are not downloaded to your computer. Those copies stay in the cloud; nothing is deleted.
 - Mods can give a panel small "-" and "+" buttons: each click makes the panel and its text 10 % smaller or bigger, from 60 % to 150 %. The size is kept for your next game. The multiplayer chat and the DPS Check panels of Units Laboratory use them.
+- VSync: when VSync is off in the game's Settings, it now stays off. Before, the fast start of the modded game turned VSync on again for the whole game. The frame rate limit after the start is always the game's own.
+- Mac: the hidden game that gets ready while you change mods in the Mods window now runs at a low frame rate until you click Apply, so it takes less from the game you play.
 
 ### 0.1.28 (2026-10-25)
 
