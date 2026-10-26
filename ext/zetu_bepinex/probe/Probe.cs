@@ -25,6 +25,21 @@
 //   party                SystemVar.Campaign.PlayerPartyMax as the game reads it now
 //   notice               the game's notice box: shown or not, its text and button labels
 //   notice_ok | notice_cancel   OnClick_Confirm / OnClick_Cancle of the shown notice box
+// (lane zetusave, save test) the expedition window and the result screen through the game's own presenter / buttons:
+//   exped_open           ShowPopUpRequested(ExpeditionPlan) (the base's "Go to dungeon")
+//   exped_region <n>     ExpeditionPlanPresenter.OnSelectRegion(n)
+//   exped_select g1,g2   OnUnitUnselected for every selected unit, then OnUnitSelected per guid (the unit list clicks)
+//   exped_next | exped_start | exped_close   OnClickNext / TryStartExpedition / the view's Close
+//   exped_state          step, region, selected units
+//   ret                  the result screen's Return button (DungeonResultView._btnReturn)
+//   save                 AutoSaveRequested;  learn <map> <guid> <skill>  LearnSkillRequested
+//   qslot <map> <guid> <skill> <i>  SetQuickSlotRequested;  select <guid>  SelectPlayerUnitRequested
+//   pos <map>            each live player unit: guid and logical position
+//   portal               every live player unit in the dungeon walks to its own tile of the portal room
+//                        (RuntimeDungeonData.GetPortalRoomArea): the party gathered before the result screen's Return, which
+//                        else asks "Some expedition members are located outside the portal area!" and leaves them
+//   dur                DurabilityCondition's iterator (MoveNext, seen BEFORE the plugin's postfix): yields with a target,
+//                        yields with Target null (an empty slot: the plugin should skip them), other / false
 // ZETU_TEST_DATA (env, Windows VM tests): Application.persistentDataPath answers that folder, so the game's saves and
 // settings stay in a test folder (never LocalLow, which syncs to Steam Cloud).
 // Each answer is one BepInEx log line "zetu-probe: <cmd>: ...". Also counts every SkillReader.HasEquipBypass answer.
@@ -60,6 +75,9 @@ namespace ZetuProbe
             AddComponent<Ticker>();
             var h = new Harmony("amfi.zetu-probe");
             h.Patch(AccessTools.Method(typeof(SkillReader), nameof(SkillReader.HasEquipBypass)), postfix: new HarmonyMethod(typeof(Probe), nameof(BypassPost)));
+            h.Patch(AccessTools.Method(typeof(ExpeditionPlanPresenter), nameof(ExpeditionPlanPresenter.OnActivateView)), postfix: new HarmonyMethod(typeof(Probe), nameof(ExpedPost)));
+            h.Patch(AccessTools.Method(typeof(Refactor.Combat.DurabilityCondition._OnSuccessCondition_d__2), "MoveNext"),
+                    postfix: new HarmonyMethod(typeof(Probe), nameof(DurPost)) { priority = Priority.First });   // test only, this build
             data = Environment.GetEnvironmentVariable("ZETU_TEST_DATA");
             if (!string.IsNullOrEmpty(data))
             {
@@ -71,6 +89,23 @@ namespace ZetuProbe
         static string data;
         static void DataPost(ref string __result) { __result = data; }
         static void BypassPost(string key, bool __result) { if (__result) bypassTrue++; else bypassFalse++; }
+        static int durItem, durNull, durOther, durFalse;
+        static void DurPost(Refactor.Combat.DurabilityCondition._OnSuccessCondition_d__2 __instance, bool __result)
+        {
+            if (!__result) { durFalse++; return; }
+            var st = __instance.__2__current?.TryCast<Refactor.Combat.StatusExecutionData>();
+            if (st == null) durOther++; else if (st._Target_k__BackingField == null) durNull++; else durItem++;
+            if (durItem + durNull + durOther <= 5) L.LogInfo($"zetu-probe: durability yield: target {(st == null ? "not a status" : st._Target_k__BackingField == null ? "null" : "an item")}");
+        }
+        static ExpeditionPlanPresenter exped;
+        static void ExpedPost(ExpeditionPlanPresenter __instance) { exped = __instance; L.LogInfo("zetu-probe: expedition window opened"); }
+        static string ExpedState()
+        {
+            if (exped == null) return "no expedition window seen";
+            var v = exped.View; var s = exped._selectedUnits; string g = "";
+            if (s != null) for (int i = 0; i < s.Count; i++) g += " " + s[i].ToString();
+            return $"step {(int)exped._popUpState} region {(int)exped._selectedRegion} view {(v != null && (bool)v && v.gameObject.activeInHierarchy)} selected {(s != null ? s.Count : -1)}:{g}";
+        }
 
         public class Ticker : MonoBehaviour
         {
@@ -130,6 +165,7 @@ namespace ZetuProbe
                 return;
             }
             if (cmd == "bypass") { L.LogInfo($"zetu-probe: bypass: yes {bypassTrue} no {bypassFalse}"); return; }
+            if (cmd == "dur") { L.LogInfo($"zetu-probe: dur: item {durItem} null {durNull} other {durOther} false {durFalse}"); return; }
             if (cmd.StartsWith("notice"))
             {
                 var o = UObject.FindObjectOfType(Il2CppType.Of<CommonNoticeView>(), true);
@@ -144,6 +180,34 @@ namespace ZetuProbe
                 if (!shown) { L.LogInfo($"zetu-probe: {cmd}: no notice shown"); return; }
                 if (cmd == "notice_ok") v.OnClick_Confirm(); else v.OnClick_Cancle();
                 L.LogInfo($"zetu-probe: {cmd}: clicked");
+                return;
+            }
+            if (cmd.StartsWith("exped_") && cmd != "exped_open")
+            {
+                if (exped == null) { L.LogInfo($"zetu-probe: {cmd}: no expedition window seen"); return; }
+                switch (cmd)
+                {
+                    case "exped_region": exped.OnSelectRegion((DungeonRegion)int.Parse(a[1])); break;
+                    case "exped_select":
+                        {
+                            for (int guard = 0; guard < 16 && exped._selectedUnits.Count > 0; guard++) exped.OnUnitUnselected(exped._selectedUnits[0]);
+                            foreach (var t in a[1].Split(',', StringSplitOptions.RemoveEmptyEntries)) exped.OnUnitSelected(Il2CppSystem.Guid.Parse(t));
+                            break;
+                        }
+                    case "exped_next": exped.OnClickNext(); break;
+                    case "exped_start": exped.TryStartExpedition(); break;
+                    case "exped_close": { var v = exped.View; if (v != null && (bool)v) v.Close(); break; }
+                }
+                L.LogInfo($"zetu-probe: {cmd}: {ExpedState()}");
+                return;
+            }
+            if (cmd == "ret")
+            {
+                var o = UObject.FindObjectOfType(Il2CppType.Of<DungeonResultView>(), true);
+                var v = o != null ? o.TryCast<DungeonResultView>() : null;
+                if (v == null || !v.gameObject.activeInHierarchy) { L.LogInfo("zetu-probe: ret: no result screen shown"); return; }
+                v._btnReturn.onClick.Invoke();
+                L.LogInfo($"zetu-probe: ret: clicked (count text [{v._unitCountText?.text}])");
                 return;
             }
             if (cmd == "risks")
@@ -251,6 +315,44 @@ namespace ZetuProbe
                 case "set_speed": Send(q, new SetGameSpeedRequested((GameSpeed)int.Parse(a[1])), line); return;
                 case "speed_unlock": Send(q, new GameSpeedLockRequested(GameSpeedLock.Unlock), line); return;
                 case "load": Send(q, new LoadCampaignRequested(line.Substring(5).Trim()), line); return;
+                case "exped_open": Send(q, new ShowPopUpRequested(PopUpType.ExpeditionPlan), line); return;
+                case "save": Send(q, new AutoSaveRequested(), line); return;
+                case "learn": Send(q, new LearnSkillRequested((MapType)int.Parse(a[1]), Il2CppSystem.Guid.Parse(a[2]), a[3]), line); return;
+                case "qslot": Send(q, new SetQuickSlotRequested((MapType)int.Parse(a[1]), Il2CppSystem.Guid.Parse(a[2]), a[3], int.Parse(a[4])), line); return;
+                case "select": Send(q, new SelectPlayerUnitRequested(Il2CppSystem.Guid.Parse(a[1])), line); return;
+                case "move":                                    // move <map> <guid8 prefix> <dx> <dy>: a direct move order, as approach
+                    {
+                        var m = (MapType)int.Parse(a[1]); var d = mf._inMapDatas[m]; var us = d.GetAllPlayerUnits(false); UnitEntity u = null;
+                        for (int i = 0; i < us.Count; i++) if (us[i]._Guid_k__BackingField.ToString().StartsWith(a[2])) u = us[i];
+                        if (u == null) { L.LogInfo($"zetu-probe: {line}: no such unit"); return; }
+                        var p = d.GetLogicalPosition(u._Guid_k__BackingField); var to = new Vector2Int(p.x + int.Parse(a[3]), p.y + int.Parse(a[4]));
+                        mf._tickFlowHandlers[m].EnqueueEvent(new DirectOrderRequested(u.Cast<IEntity>(), new Refactor.Task.MoveTask(to, 0, 0)).Cast<IEventData>(), false);
+                        L.LogInfo($"zetu-probe: {line}: from {p.x},{p.y} to {to.x},{to.y}");
+                        return;
+                    }
+                case "pos":
+                    {
+                        var d = mf._inMapDatas[(MapType)int.Parse(a[1])]; var us = d.GetAllPlayerUnits(false); string t = "";
+                        for (int i = 0; i < us.Count; i++)
+                        {
+                            var g = us[i]._Guid_k__BackingField; var p = d.GetLogicalPosition(g);
+                            t += $" {g.ToString().Substring(0, 8)}@{p.x},{p.y}";
+                        }
+                        L.LogInfo($"zetu-probe: pos {a[1]}:{t}");
+                        return;
+                    }
+                case "portal":
+                    {
+                        var d = mf._inMapDatas[MapType.Dungeon]; var tfh = mf._tickFlowHandlers[MapType.Dungeon];
+                        var rd = d.TryCast<InMapDataInterface>()?._runtimeData?.TryCast<Refactor.Runtime.RuntimeDungeonData>();
+                        var area = rd != null ? rd.GetPortalRoomArea() : null; int n = area != null ? area.Count : 0;
+                        if (n == 0) { L.LogInfo($"zetu-probe: {line}: no portal room ({(rd == null ? "no dungeon runtime data" : "empty area")})"); return; }
+                        var ps = d.GetAllPlayerUnits(false);
+                        for (int i = 0; i < ps.Count; i++)                 // spread over the room: one tile each
+                            tfh.EnqueueEvent(new DirectOrderRequested(ps[i].Cast<IEntity>(), new Refactor.Task.MoveTask(area[(n / 2 + i * (n / Math.Max(ps.Count, 1) + 1)) % n], 0, 0)).Cast<IEventData>(), false);
+                        L.LogInfo($"zetu-probe: {line}: {ps.Count} units to the portal room ({n} tiles, first {area[0].x},{area[0].y})");
+                        return;
+                    }
                 case "recruit":
                     {
                         var clan = mf._campaignData?.ClanDataContainer; var rh = mf._campaignHelperSet?._recruitHelper;

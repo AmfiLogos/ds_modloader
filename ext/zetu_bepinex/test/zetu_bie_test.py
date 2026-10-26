@@ -6,10 +6,11 @@ One rig lease (~/ds_multiplayer/rig), the test copy cap first. Never the owner's
   zetu_bie_test.py run [out]      max_units 8: the whole proof below; exit 1 on a failed check
   zetu_bie_test.py fresh [out]    no config file: BepInEx writes it with the defaults, the plugin changes no party size;
                                   BepInEx.cfg console on before: the plugin turns it off, the log file stays on
-  zetu_bie_test.py backup [out]   the save backup never blocks a load: a world with 2 save files, the game's save path
-                                  spelled unlike the folder listing (persistentDataPath ending in '//', as Unity's '/' on
-                                  Windows), and backup folders of this minute (+ '_2') already there with the same file
   zetu_bie_test.py disable [out]  the mod loader with its own zetu-suite module in the same game: this plugin stays off
+  zetu_bie_test.py fix [out]      0.1.2: the part that uses the game's compiler-made iterator (found by method name, never
+                                  by number): a world loads with the plugin, skills without weapon (durability)
+  zetu_bie_test.py nocheck [out]  0.1.2 without the save warning: both parts on, a world loads with no question and no
+                                  backup folder, the 8-unit expedition window, no exception
   zetu_bie_test.py cmd '<json>' | probe '<line>'   to the running copy
 
 Env: ZETU_RIG_DYLIB = the rig control dylib (default ~/ds_zetubie/rigbuild/dsrig.dylib), ZETU_BIE = BepInEx install (default ~/ds_zetubie/bie, unzipped bepinex-mac-arm64 0.1.3 = the launcher's), ZETU_BUILD =
@@ -17,8 +18,7 @@ the plugin build folder (default ../build). The plugin and the test probe are co
 release layout); the config is written before the start.
 
 Real breaks the run catches:
- W  the save warning: a save loads only after Load; Cancel loads nothing and copies nothing; Load first copies the
-    world's save files (same bytes) to BepInEx/ZetuSuite/save_backups/<date>_<clan>/; asked once per world
+ L  the seed world loads with the plugin (no question, no backup: 0.1.2 has no save warning)
  1  the game's party cap follows the setting (8 units selected in the expedition window, not 4)
  2  the supplies step has a panel per selected unit (8), in one row, none overlapping
  3  the region step: 8 portraits in one row, none overlapping; the count text says "/8"
@@ -29,7 +29,7 @@ Real breaks the run catches:
     (its durability cost skipped), no exception
  7  the risk "Insufficient units selected" uses the setting: shown for 4 of 8, not for 8
  6  the result screen lists the 8 units"""
-import hashlib, json, os, re, shutil, subprocess, sys, time
+import json, os, re, shutil, subprocess, sys, time
 H = os.path.expanduser('~')
 sys.path.insert(0, f'{H}/ds_multiplayer/rig')
 import rig as r
@@ -57,12 +57,6 @@ def plog():
 def zl(L): return [l for l in L.splitlines() if 'ZET-U' in l or 'zetu' in l.lower()]
 def cmd(o, timeout=60): return r.send(X, o, timeout=timeout, connect_wait=5)
 def status(): return cmd({'cmd': 'status'}, 10)
-def wait_log(s, mark=0, limit=60):
-    t0 = time.time()
-    while time.time() - t0 < limit:
-        if s in blog()[mark:]: return True
-        time.sleep(0.3)
-    return False
 def probe(line, limit=20):
     mark = len(blog())
     p = os.path.join(I, 'zetu_probe_req.txt'); open(p + '.tmp', 'w').write(line + '\n'); os.replace(p + '.tmp', p)
@@ -85,7 +79,6 @@ LOW = 'Insufficient units selected'
 def units(m):
     u = cmd({'cmd': 'list_units', 'map': m}).get('units') or []
     return [x for x in u if x.get('faction') == 1 and not x.get('dead')]
-def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
 def aside(p, out):
     """never delete: a file / folder of the copy goes to <out>/aside/"""
     if os.path.lexists(p):
@@ -205,17 +198,6 @@ def down():
     except Exception as e: log('stop:', e)
 
 
-def fresh_world(out, name_tag):
-    """a throwaway copy of the seed save with a new world guid (file name + every place in the file)"""
-    import uuid
-    g = str(uuid.uuid4()); s = open(SEED, encoding='utf-8').read()
-    s = s.replace(SEED_GUID, g).replace(SEED_GUID.replace('-', ''), g.replace('-', ''))
-    s = re.sub(r'("SaveName"\s*:\s*")[^"]*(")', lambda m: m.group(1) + f'Zetu{name_tag}__AutoSave_{g.replace("-", "")}_0' + m.group(2), s, count=1)
-    p = os.path.join(out, 'save_in', f'Zetu{name_tag}__AutoSave_{g.replace("-", "")}_0.json'); os.makedirs(os.path.dirname(p), exist_ok=True)
-    open(p, 'w', encoding='utf-8').write(s)
-    return p, g
-
-
 # ------------------------------------------------------------------------------------------------------------ run
 def run(out):
     S = {}
@@ -230,43 +212,14 @@ def run(out):
     S['start'] = zl(L)[:12]
     check('plugin on: settings read (skills on, max 8)', 'skills without weapon requirement on, max units in the dungeon 8' in L, S['start'])
     check('plugin on: every part patched', all(x in L for x in ('skills without weapon requirement: on', 'units in the dungeon: 8',
-          'expedition UI: 8 unit panels', 'save warning: on')) and 'OFF' not in '\n'.join(zl(L)), S['start'])
+          'expedition UI: 8 unit panels')) and 'OFF' not in '\n'.join(zl(L)), S['start'])
     check('probe ready', 'zetu-probe: ready' in L)
-    # ---- W: Cancel on a fresh world: not loaded, nothing copied
-    pc, gc = fresh_world(out, 'Cancel')
-    mark = len(blog())
-    log('load (cancel)', cmd({'cmd': 'load_save', 'file': pc}))
-    check('W: the warning shows before the load', wait_log('save warning: shown for', mark, 60), zl(blog()[mark:])[-4:])
-    time.sleep(1.5)
-    nt = probe('notice'); S['notice'] = nt
-    check('W: the game\'s notice box shows the warning with Load / Cancel and the backup folder',
-          nt and 'shown True' in nt[0] and 'ZET-U Mod Suite' in nt[0] and 'save_backups' in nt[0] and 'ok [Load]' in nt[0] and 'cancel [Cancel]' in nt[0], nt)
-    shot(out, 'save_warning')
-    probe('notice_cancel'); time.sleep(4)
-    st = status()
-    check('W: Cancel: the world is not loaded (still at the title)', st.get('scene') == 1, st)
-    bk = os.path.join(BIE, 'BepInEx', 'ZetuSuite', 'save_backups')
-    check('W: Cancel: nothing copied', not os.path.exists(bk) or not os.listdir(bk), os.listdir(bk) if os.path.exists(bk) else '')
-    # ---- W: Load: backup first, then the world loads
-    src = os.path.join(out, 'save_in', os.path.basename(SEED)); shutil.copy2(SEED, src)
-    mark = len(blog())
+    # ---- L: the seed world loads with the plugin
+    src = os.path.join(out, 'save_in', os.path.basename(SEED)); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(SEED, src)
     log('load', cmd({'cmd': 'load_save', 'file': src}))
-    check('W: asked again for the seed world', wait_log('save warning: shown for', mark, 60))
-    time.sleep(1.5); probe('notice_ok')
-    wait_log('save warning: answered', mark, 30)
-    L = blog()[mark:]
-    m = re.search(r'save warning: backup of \S+ \(world ([0-9a-f-]+)\): (\d+) file\(s\) copied to (.+)', L)
-    S['backup'] = m.groups() if m else zl(L)[-5:]
-    ok = False
-    if m:
-        d = m.group(3).strip(); fs = sorted(os.listdir(d)) if os.path.isdir(d) else []
-        live = os.path.join(I, 'data', 'Saves', os.path.basename(SEED))
-        ok = (m.group(1) == SEED_GUID and os.path.basename(SEED) in fs and sha(os.path.join(d, os.path.basename(SEED))) == sha(SEED)
-              and os.path.dirname(d) == bk and re.match(r'\d{4}-\d\d-\d\d_\d{4}_', os.path.basename(d)))
-        S['backup_files'] = fs; S['live_same_before_load'] = os.path.exists(live) and sha(live) == sha(SEED)
-    check('W: Load: the world\'s save copied first (same bytes) to BepInEx/ZetuSuite/save_backups/<date>_<clan>', ok, S['backup'])
-    r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
-    check('W: then the world loads', status().get('scene') == 2)
+    try: r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
+    except Exception as e: log('world:', e)
+    check('L: the seed world loads with the plugin ("Load campaign complete")', status().get('scene') == 2 and 'Load campaign complete' in plog())
     cmd({'cmd': 'set_speed', 'speed': 1})
     S['speed_loaded'] = probe('speed')
     # ---- the seed save: 4 units in the dungeon, 3 at the base. Back to the base through the game's result screen.
@@ -360,11 +313,6 @@ def run(out):
     m = re.findall(r'result: (\d+) units \+ (\d+) dead, (\d+) portraits shown', L)   # unarmed units may die in step S
     check('6: result screen: 8 portraits, no overlap, the 8 units shown', re.search(r'result: 8 portraits \(4 stock \+ 4 copies\).*, no overlap', L)
           and m and int(m[-1][0]) + int(m[-1][1]) == 8 and m[-1][2] == '8', S['result'])
-    # ---- W: asked once per world: the seed world again loads with no question
-    mark = len(blog())
-    cmd({'cmd': 'load_save', 'name': os.path.basename(SEED)[:-5]})
-    time.sleep(20)
-    check('W: the same world again: no second question', 'save warning: shown' not in blog()[mark:], zl(blog()[mark:])[-3:])
     S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
     check('no exception in player.log during the run', not S['exceptions'], S['exceptions'][:4])
     return S, g0
@@ -388,53 +336,122 @@ def fresh(out):
     S['cfg'] = [l for l in txt.splitlines() if '=' in l and not l.startswith('#')]
     check('fresh: config written with the defaults', 'skills_without_weapon = true' in txt and 'max_units = 4' in txt, S['cfg'])
     check('fresh: max 4 = the game\'s value: no party / screen patch', 'max units in the dungeon 4' in L and 'units in the dungeon:' not in L and 'expedition UI' not in L, S['start'])
-    check('fresh: skills and save warning on', 'skills without weapon requirement: on' in L and 'save warning: on' in L, S['start'])
+    check('fresh: skills part on', 'skills without weapon requirement: on' in L, S['start'])
     return S, g0
 
 
-def backup(out):
-    """player report 2026-10-20 (Windows): 'save files could not be copied first ... TenevoyClan_1.json already exists':
-    the loaded save was listed twice (its path spelled with '/' by the game, '\\' by Directory.GetFiles), so the
-    second copy was refused and no world loaded. Here: a manual save + an autosave of one world, the save path with
-    '//' (GetDirectoryName / GetFiles answer it with '/'), and this minute's backup folders already taken."""
+def fix(out):
+    """0.1.2 (2026-10-26): 0.1.1 named the game's iterator type _LoadCampaign_d__73; on any other game build the number
+    differs and no world loaded (TypeLoadException). The iterator is now found by method name. Only the part that uses
+    it runs here (max_units 4: the party parts are not in play). Real breaks caught:
+     F  the part silently off (the durability iterator not found by its name), an iterator error line, a world that does
+        not load with the plugin
+     S  skills without weapon: a weapon skill cast with an empty hand, its durability cost skipped, no exception"""
+    S = {}
+    install(out, {'skills_without_weapon': 'true', 'max_units': 4})
+    for p in (os.path.join(I, 'data', 'Saves'), os.path.join(I, 'data', 'SaveHeaderCache.json'), os.path.join(I, 'player.log')): aside(p, out)
+    mp = os.path.join(I, 'mp.json')
+    if os.path.exists(mp): shutil.move(mp, os.path.join(out, 'mp.json.of_copy')); RESTORE.append((os.path.join(out, 'mp.json.of_copy'), mp))
+    os.makedirs(os.path.join(I, 'data', 'Saves'))
+    g0 = start(window=True)
+    title()
+    L = blog(); S['start'] = zl(L)[:10]
+    check('F: plugin 0.1.2 on: skills part patched (durability iterator found by its name)',
+          'ZET-U Mod Suite 0.1.2' in L and 'skills without weapon requirement: on' in L and 'OFF' not in '\n'.join(zl(L)), S['start'])
+    src = os.path.join(out, 'save_in', os.path.basename(SEED)); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(SEED, src)
+    log('load', cmd({'cmd': 'load_save', 'file': src}))
+    try: r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
+    except Exception as e: log('world:', e)
+    check('F: the seed world loads with the plugin ("Load campaign complete")', status().get('scene') == 2 and 'Load campaign complete' in plog())
+    fix_s(out, S)
+    # ---- the whole run
+    B = blog()
+    S['iter_errors'] = [l for l in B.splitlines() if 'iterator of ' in l or 'TypeLoadException' in l or 'durability check:' in l or 'not held' in l][:6]
+    check('no iterator error, TypeLoadException or "not held" line in LogOutput.log', not S['iter_errors'], S['iter_errors'])
+    S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
+    check('no exception in player.log during the run', not S['exceptions'], S['exceptions'][:4])
+    return S, g0
+def fix_s(out, S):
+    # ---- S: back to the base, 4 units with weapon skills (full HP) into the dungeon, weapons off, their skills cast
+    cmd({'cmd': 'set_speed', 'speed': 1})
+    if units(1):
+        probe('result'); time.sleep(4)
+        d = units(1)
+        log('back to base', cmd({'cmd': 'trn_changemap', 'from': 1, 'to': 0, 'guids': ','.join(u['guid'] for u in d)}))
+        wait_map(0, 120); time.sleep(3)
+    sk = seed_skills(); base = [u['guid'] for u in units(0)]
+    g4 = (sorted([g for g in base if g in sk], key=lambda g: -len(sk[g])) + [g for g in base if g not in sk])[:4]   # the most skills first: both FireStaff casters (their casts pay durability)
+    S['s_units'] = {g: sk.get(g) for g in g4}
+    # weapons off at the BASE (the item goes to the storage, which has room): in the dungeon the unequip left the main
+    # hand full (Mac r3: 12 durability yields, all on an item, 0 on an empty slot), so nothing reached the skip
+    S['unequip_base'] = [(probe(f'unequip 0 {g}') or [''])[0][-60:] for g in g4]; time.sleep(3)
+    teams(action='go'); time.sleep(3)
+    teams(action='stock_select', units=','.join(g4)); time.sleep(2)
+    teams(action='stock_next'); time.sleep(3)
+    log('accept', teams(action='stock_accept'))
+    wait_map(1, 180); time.sleep(8)
+    S['dungeon_units'] = len(units(1))
+    mark = len(blog()); p0 = len(plog())
+    uq = probe('unequip_all 1'); time.sleep(3)
+    if 'lock 1' in ''.join(probe('speed')): probe('speed_unlock')
+    if 'PopupTimeLock=1' in ''.join(probe('speed')): probe('speed_clear')
+    cmd({'cmd': 'set_speed', 'speed': 1}); time.sleep(2)
+    S['casts'] = casts(lambda: 'durability cost with an empty slot skipped' in blog()[mark:] and 'weapon requirement skipped' in blog()[mark:])
+    S['dur'] = probe('dur'); S['bypass'] = probe('bypass'); log('durability yields seen by the probe', S['dur'], S['bypass'])
+    L = blog()[mark:]
+    S['weapon_lines'] = [l for l in L.splitlines() if 'weapon requirement skipped' in l or 'durability' in l][:8]
+    check('S: weapons taken off in the dungeon (the game\'s unequip)', uq and re.search(r'unequip_all 1: [1-9]\d* units', uq[0]), [S['dungeon_units'], uq])
+    check('S: the weapon skill is cast with an empty hand (its durability cost skipped)', 'durability cost with an empty slot skipped' in L, S['weapon_lines'] + S['dur'] + S['bypass'])
+    exc = [l for l in plog()[p0:].splitlines() if 'Exception' in l]
+    check('S: no exception while they cast without weapons', not exc, exc[:4])
+
+
+def nocheck(out):
+    """0.1.2 without the save warning (2026-10-26: saves made with the plugin load and play in the normal game, so the
+    question + backup are gone). Real breaks caught:
+     N  a part silently off; a world load that still waits for a question or still writes a backup folder; the load
+        never completing; an exception; the 8-unit expedition window broken (8 selected, 8 portraits, "(8/8)")"""
+    S = {}
     install(out, {'skills_without_weapon': 'true', 'max_units': 8})
     for p in (os.path.join(I, 'data', 'Saves'), os.path.join(I, 'data', 'SaveHeaderCache.json'), os.path.join(I, 'player.log')): aside(p, out)
     mp = os.path.join(I, 'mp.json')
     if os.path.exists(mp): shutil.move(mp, os.path.join(out, 'mp.json.of_copy')); RESTORE.append((os.path.join(out, 'mp.json.of_copy'), mp))
-    sv = os.path.join(I, 'data', 'Saves'); os.makedirs(sv)
-    auto = os.path.join(sv, os.path.basename(SEED)); shutil.copy2(SEED, auto)
-    man = os.path.join(sv, 'ElvenExpedition_1.json')
-    t = open(SEED, encoding='utf-8').read()
-    open(man, 'w', encoding='utf-8').write(re.sub(r'("SaveName"\s*:\s*")[^"]*(")', lambda m: m.group(1) + 'ElvenExpedition_1' + m.group(2), t, count=1))
-    bk = os.path.join(BIE, 'BepInEx', 'ZetuSuite', 'save_backups'); taken = []
-    for dt in (0, 60, 120, 180):                       # this minute and the next ones (the start takes a while): <ts>_Elven_Expedition + _2
-        ts = time.strftime('%Y-%m-%d_%H%M', time.localtime(time.time() + dt))
-        for suf in ('', '_2'):
-            d = os.path.join(bk, f'{ts}_Elven_Expedition'); d += suf
-            os.makedirs(d, exist_ok=True); open(os.path.join(d, 'ElvenExpedition_1.json'), 'w').write('older copy'); taken.append(d)
-    S = {}
-    g0 = start(window=True, extra_env={'ZETU_TEST_DATA': os.path.join(I, 'data') + '//'})
+    os.makedirs(os.path.join(I, 'data', 'Saves'))
+    g0 = start(window=True)
     title()
-    L = blog(); S['probe'] = [l for l in L.splitlines() if 'persistentDataPath' in l][:2]
-    mark = len(blog())
-    probe('load ElvenExpedition_1')
-    check('B: the warning shows before the load', wait_log('save warning: shown for ElvenExpedition_1', mark, 60), zl(blog()[mark:])[-4:])
-    time.sleep(1.5); probe('notice_ok')
-    t0 = time.time()
-    while time.time() - t0 < 30 and 'save warning: answered Load' not in blog()[mark:] and 'FAILED' not in blog()[mark:]: time.sleep(1)
-    L = blog()[mark:]
-    S['log'] = [l for l in zl(L) if 'save warning' in l][-4:]
-    m = re.search(r'save warning: backup of ElvenExpedition_1 \(world ([0-9a-f-]+)\): (\d+) file\(s\) copied to (.+)', L)
-    ok = False
-    if m:
-        d = m.group(3).strip(); fs = sorted(os.listdir(d)) if os.path.isdir(d) else []; S['backup'] = [d, fs]
-        ok = (m.group(2) == '2' and d not in taken and os.path.dirname(d) == bk and fs == sorted([os.path.basename(SEED), 'ElvenExpedition_1.json'])
-              and sha(os.path.join(d, 'ElvenExpedition_1.json')) == sha(man) and sha(os.path.join(d, os.path.basename(SEED))) == sha(auto))
-    check('B: Load: both save files of the world copied once (same bytes) into a new folder, not refused', ok, S['log'])
-    check('B: the folders already there are untouched', all(open(os.path.join(d, 'ElvenExpedition_1.json')).read() == 'older copy' and os.listdir(d) == ['ElvenExpedition_1.json'] for d in taken))
+    L = blog(); S['start'] = zl(L)[:12]
+    check('N: plugin 0.1.2 on, both features patched (skills, max 8 + its screens), no save warning part',
+          'ZET-U Mod Suite 0.1.2' in L and all(x in L for x in ('skills without weapon requirement: on', 'units in the dungeon: 8', 'expedition UI: 8 unit panels'))
+          and 'save warning' not in L and 'OFF' not in '\n'.join(zl(L)), S['start'])
+    src = os.path.join(out, 'save_in', os.path.basename(SEED)); os.makedirs(os.path.dirname(src), exist_ok=True); shutil.copy2(SEED, src)
+    mark = len(blog()); t0 = time.time()
+    log('load', cmd({'cmd': 'load_save', 'file': src}))
     try: r.wait_for(X, lambda s: s.get('scene') == 2 and not s.get('busy') and s.get('tick', -1) > 0, 'world', timeout=400, every=2)
     except Exception as e: log('world:', e)
-    check('B: then the world loads', status().get('scene') == 2)
+    S['load_s'] = round(time.time() - t0); nt = probe('notice'); S['notice'] = nt
+    bk = os.path.join(BIE, 'BepInEx', 'ZetuSuite')
+    check('N: the world loads with no question ("Load campaign complete", no notice box, no "save warning" line)',
+          status().get('scene') == 2 and 'Load campaign complete' in plog() and 'save warning' not in blog()[mark:] and nt and 'shown False' in nt[0], [S['load_s'], nt])
+    check('N: no backup folder written (BepInEx/ZetuSuite)', not os.path.exists(bk), os.listdir(bk) if os.path.exists(bk) else '')
+    cmd({'cmd': 'set_speed', 'speed': 1})
+    if units(1):                                       # the seed's 4 dungeon units back through the game's map change
+        probe('result'); time.sleep(4)
+        log('back to base', cmd({'cmd': 'trn_changemap', 'from': 1, 'to': 0, 'guids': ','.join(u['guid'] for u in units(1))}))
+        wait_map(0, 120); time.sleep(3)
+    base = units(0)
+    for _ in range(4):
+        if len(base) >= 8: break
+        log('probe', probe('recruit')); time.sleep(4); base = units(0)
+    g8 = [u['guid'] for u in base[:8]]
+    teams(action='go'); time.sleep(3)
+    teams(action='stock_select', units=','.join(g8)); time.sleep(2)
+    L = blog(); m = re.findall(r'expedition: (\d+) selected', L); shot(out, 'nocheck_expedition_8')
+    S['select'] = [l for l in L.splitlines() if 'portraits:' in l or 'count text' in l][-3:]
+    check('N: the expedition window takes 8 units: 8 selected, 8 portraits in one row, "(8/8)"', len(base) >= 8 and m and m[-1] == '8'
+          and re.search(r'portraits: 8 \(4 stock \+ 4 copies\).*, no overlap', L) and re.search(r"count text now '[^']*\(8/8\)'", L), [len(base), m[-3:], S['select']])
+    teams(action='stock_close'); time.sleep(2)
+    S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
+    check('N: no exception in player.log', not S['exceptions'], S['exceptions'][:4])
     return S, g0
 
 
@@ -457,14 +474,14 @@ def disable(out):
     S = {'plugin': zl(L)[:6], 'loader': [l for l in D.splitlines() if 'zetu' in l][:6]}
     check('disable: the loader\'s zetu-suite module runs (max units 6)', 'max units in the dungeon 6' in D, S['loader'])
     check('disable: the plugin logs one OFF line and patches nothing',
-          "OFF, the mod loader's ZET-U Mod Suite module runs" in L and 'save warning: on' not in L and 'skills without weapon requirement: on' not in L, S['plugin'])
+          "OFF, the mod loader's ZET-U Mod Suite module runs" in L and 'skills without weapon requirement: on' not in L, S['plugin'])
     return S, g0
 
 
 def main():
     global X, I
     a = sys.argv[1:] or ['run']
-    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'fresh', 'disable', 'backup') else f'~/ds_zetubie/out/{a[0]}')
+    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'fresh', 'disable', 'fix', 'nocheck') else f'~/ds_zetubie/out/{a[0]}')
     if a[0] in ('cmd', 'probe'):
         X = os.environ['ZETU_X']; I = r.idir(X)
         print(json.dumps(cmd(json.loads(a[1]), 120)) if a[0] == 'cmd' else probe(a[1])); return
@@ -472,7 +489,7 @@ def main():
     lane, pair = lease(); X = pair[0]; I = r.idir(X); log('lease', pair, 'copy', X)
     S = {}; g0 = 0
     try:
-        S, g0 = {'run': run, 'fresh': fresh, 'disable': disable, 'backup': backup}[a[0]](out)
+        S, g0 = {'run': run, 'fresh': fresh, 'disable': disable, 'fix': fix, 'nocheck': nocheck}[a[0]](out)
     except Exception as e:
         import traceback; traceback.print_exc()
         check('run finished', False, repr(e))

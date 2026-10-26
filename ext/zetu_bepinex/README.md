@@ -10,6 +10,9 @@ The ZET-U Mod Suite of Dungeon Settlers Modded, as a plugin for plain BepInEx 6 
 Game version: Dungeon Settlers build 25846389 (DS_B.0.4.29). After a game update, a part whose game code changed
 switches itself off and says so in `BepInEx/LogOutput.log`.
 
+Version 0.1.2. Fix: a world did not load on game builds other than 25846389. The save warning and backup are removed:
+tests showed saves made with the mod load and play in the normal game.
+
 ## Install (Windows)
 
 1. Install BepInEx 6 IL2CPP **be.788** for Windows x64:
@@ -60,12 +63,8 @@ BepInEx's log file `BepInEx/LogOutput.log` stays on.
 
 ## Your saves
 
-This mod changes what a world saves (for example 8 units in a dungeon). Such a world may break later in the game
-without this mod. So before a save loads with the mod on, the game asks you once per world: **Load** or **Cancel**.
-Load first copies that world's save files to `BepInEx/ZetuSuite/save_backups/<date>_<clan name>/` (a new folder each
-time; `_2`, `_3` ... is added when the folder of that minute is there already).
-To go back: quit the game, then copy the files from that folder into the game's `Saves` folder
-(Windows: `%USERPROFILE%\AppData\LocalLow\CanOpener\Dungeon Settlers\Saves`).
+Saves made with this mod load and play in the normal game (without this plugin). There the game's own limits apply
+again: its windows show 4 units, and a new expedition takes at most 4 units; the other units stay at the base.
 The plugin never deletes or moves a save file.
 
 ## With Dungeon Settlers Modded

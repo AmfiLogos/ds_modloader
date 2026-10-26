@@ -3,11 +3,13 @@
 // (DS_B.0.4.29).
 //   skills_without_weapon (default true): skills of a skill tree work without that tree's weapon (Weapon.cs).
 //   max_units (4..8, default 4): units on one expedition, and the screens that show them (Party.cs, Screens.cs).
-// Settings: BepInEx/config/amfi.zetu-suite.cfg, read at game start. A save loaded with the plugin on asks first and keeps
-// a dated copy of the world's save files (SaveWarning.cs). When the mod loader's own zetu-suite module is in the process,
-// this plugin does nothing (one log line): the loader's module has the same patches.
+// Settings: BepInEx/config/amfi.zetu-suite.cfg, read at game start. 0.1.2: no save warning / backup any more (tests: saves
+// made with the plugin load and play in the normal game; the old code is in old/SaveWarning.cs, not built). When the mod
+// loader's own zetu-suite module is in the process, this plugin does nothing (one log line): the loader's module has the
+// same patches.
 // BepInEx's console window is turned off at every start (ConsoleOff); its log file BepInEx/LogOutput.log stays on.
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -17,6 +19,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
+using Il2CppInterop.Runtime;
 
 namespace ZetuSuite
 {
@@ -24,7 +27,7 @@ namespace ZetuSuite
     public class Plugin : BasePlugin
     {
         public const string Guid = "amfi.zetu-suite";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
         internal static ManualLogSource L;
         internal static bool SkillsWithoutWeapon;
         internal static int MaxUnits;
@@ -51,7 +54,6 @@ namespace ZetuSuite
                       $"max units in the dungeon {MaxUnits} (config {Path.GetFileName(Config.ConfigFilePath)})");
             if (SkillsWithoutWeapon) Weapon.Install();
             if (MaxUnits != 4) Party.Install();               // 4 = the stock table value: nothing to change
-            SaveWarning.Install(Path.Combine(Paths.BepInExRootPath, "ZetuSuite"));
         }
 
         // ---------------------------------------------------------------- no BepInEx console window (owner rule)
@@ -100,6 +102,54 @@ namespace ZetuSuite
         [DllImport("kernel32", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
         [DllImport("libSystem.dylib")] static extern uint _dyld_image_count();
         [DllImport("libSystem.dylib")] static extern IntPtr _dyld_get_image_name(uint i);
+
+        // ---------------------------------------------------------------- compiler-made iterators: by METHOD name, never by number
+        // The C# compiler names the iterator of method M "<M>d__N" (interop type "_M_d__N"); N changes with almost every
+        // game build (CampaignLoadingEventHandler.LoadCampaign: d__67, d__70, d__72, d__73). A method that names such a type
+        // fails to JIT on any other build (TypeLoadException) before its own try/catch runs: 0.1.1 stopped every world load
+        // on other builds (player report 2026-10-26). So no iterator type is named in this DLL (build.sh refuses one):
+        // patch time finds the interop type by its name prefix, run time checks the il2cpp class name and reaches the
+        // compiler's fields ("<>1__state", "<>2__current") through the il2cpp API.
+        internal static Type IterType(Type owner, string method)
+        {
+            string pre = "_" + method + "_d__"; Type t = null; int n = 0;
+            foreach (var c in owner.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+                if (c.Name.StartsWith(pre, StringComparison.Ordinal)) { t = c; n++; }
+            if (n != 1) { L.LogError($"{owner.FullName}: {n} iterators of {method} found, not patched"); return null; }
+            return t;
+        }
+        /* the il2cpp field of an iterator object whose class is "<method>d__N"; IntPtr.Zero when it is not (one error line
+           per method and field: the caller then leaves the iterator as the game runs it) */
+        internal static IntPtr IterField(IntPtr obj, string method, string field)
+        {
+            IntPtr k = obj == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_object_get_class(obj);
+            string name = k == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(IL2CPP.il2cpp_class_get_name(k));
+            IntPtr f = name != null && name.StartsWith("<" + method + ">d__", StringComparison.Ordinal) ? IL2CPP.il2cpp_class_get_field_from_name(k, field) : IntPtr.Zero;
+            if (f == IntPtr.Zero) lock (iterMissed) if (iterMissed.Add(method + " " + field))
+                L.LogError($"iterator of {method}: no field {field} (class {name ?? "none"}): left as the game runs it");
+            return f;
+        }
+        static readonly HashSet<string> iterMissed = new HashSet<string>();
+        internal static unsafe bool IterSetInt(IntPtr obj, string method, string field, int v)
+        {
+            IntPtr f = IterField(obj, method, field);
+            if (f == IntPtr.Zero) return false;
+            IL2CPP.il2cpp_field_set_value(obj, f, &v);                 // a value type: a pointer to the value
+            return true;
+        }
+        internal static unsafe IntPtr IterGetRef(IntPtr obj, string method, string field)
+        {
+            IntPtr f = IterField(obj, method, field), v = IntPtr.Zero;
+            if (f != IntPtr.Zero) IL2CPP.il2cpp_field_get_value(obj, f, &v);   // the object pointer is copied into v
+            return v;
+        }
+        internal static bool IterClearRef(IntPtr obj, string method, string field)
+        {
+            IntPtr f = IterField(obj, method, field);
+            if (f == IntPtr.Zero) return false;
+            unsafe { IL2CPP.il2cpp_field_set_value(obj, f, null); }    // a reference: the object pointer itself (null here)
+            return true;
+        }
 
         // ---------------------------------------------------------------- one patch; false = not installed (logged).
         // The game method by class, name and parameter count (as the loader's hook_method). Each part has its own Harmony
