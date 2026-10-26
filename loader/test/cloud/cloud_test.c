@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/wait.h>
+#include <pthread.h>
 #define DSI_IMPLEMENTATION                   /* dsl_cloud.c's TR() (no language file here: English) */
 #include "ds_i18n.h"
 void dsl_log(const char *fmt, ...) { va_list ap; va_start(ap, fmt); printf("    log: "); vprintf(fmt, ap); va_end(ap); putchar('\n'); }
@@ -19,8 +20,21 @@ const void *dsl_ui_kit(void) { return NULL; }
 void *dsl_os_dlopen(const char *p) { return dlopen(p, RTLD_NOW); }
 void *dsl_os_dlsym(void *h, const char *n) { return dlsym(h, n); }
 struct DSLHost; void dsl_cloud_install(struct DSLHost *h); int dsl_cloud_pass(void); int dsl_cloud_test_bind(void);
-void dsl_cloud_status(char *o, size_t n);
-extern int dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space;
+void dsl_cloud_status(char *o, size_t n); void dsl_cloud_frame(void);
+extern int dsl_cloud_up, dsl_cloud_down, dsl_cloud_del, dsl_cloud_conflicts, dsl_cloud_skipped_space, dsl_cloud_mod_here, dsl_cloud_mod_there;
+/* the game's frames: a thread that runs dsl_cloud_frame like dsl_frame_hook (the main thread; the passes run on another) */
+int dsl_reg_scene(void) { return 1; }                      /* at the title */
+static pthread_t frame_th; static volatile int frames_run = 1, filter_off_thread;
+static void *frames(void *a) { (void)a; while (frames_run) { dsl_cloud_frame(); usleep(1000); } return NULL; }
+/* the Load list's filters with no label (dsl_rows_mod_world), as the two mods register them: multiplayer hides its hub /
+   PvP temp worlds by name (mp_worldsave.h), Units Laboratory every save whose name has a test world's GUID */
+#define TG1 "1f2e3d4c5b6a79881f2e3d4c5b6a7988"
+#define TG2 "a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5"
+int dsl_rows_mod_world(const char *guid, const char *save, int list) {
+    (void)guid; (void)list;
+    if (!pthread_equal(pthread_self(), frame_th)) filter_off_thread++;   /* module code: the main thread only */
+    return !strncmp(save, "MPHub_", 6) || !strncmp(save, "MPPvP_", 6) || strstr(save, TG1) || strstr(save, TG2);
+}
 static char T[600]; static int fails, oks;
 static void check(const char *what, int ok) { printf("%s %s\n", ok ? "ok  " : "FAIL", what); ok ? oks++ : fails++; }
 static void put(const char *p, const char *s, time_t mt) { FILE *f = fopen(p, "w"); fputs(s, f); fclose(f); if (mt) { struct utimbuf u = { mt, mt }; utime(p, &u); } }
@@ -41,8 +55,11 @@ int main(int argc, char **argv) {
     loc("A", "Elf__AutoSave_1_0.json", p); put(p, "elf v1", now - 600);
     loc("A", "Moon.json", p); put(p, "moon v1", now - 600);
     loc("A", "Old.json", p); put(p, "old v1", now - 600);
-    machine("A");
+    setenv("DSL_CLOUD_ASK_WAIT", "1", 1); machine("A");
     check("fake steam_api bound", dsl_cloud_test_bind() == 0);
+    puts("== 0 no game frame yet (the mods have not said which saves are theirs): nothing synced");
+    pc("dsmodded_Moon.json", q); check("A: pass skipped, nothing uploaded", dsl_cloud_pass() == 1 && dsl_cloud_up == 0 && !has(q));
+    pthread_create(&frame_th, NULL, frames, NULL);
     puts("== 1 first pass on A: every modded save goes up, with the prefix");
     dsl_cloud_pass();
     pc("dsmodded_Elf__AutoSave_1_0.json", p); pc("dsmodded_Moon.json", q);
@@ -127,6 +144,24 @@ int main(int argc, char **argv) {
           && (loc("M", "mp_fullcheck.json", s2), !has(s2)) && (loc("M", "MP_Test.json", s2), !has(s2)));
     pc("mp_other.json", q); pc("dsmodded_Mpire.json", p); check("M: other cloud files kept (no prefix; Mpire is not mp_)", has(q) && has(p));
     pc("Game__AutoSave_00000000000000000000000000000000_0.json", q); check("M: the game's own cloud file untouched", has(q));
+    puts("== 15 mod worlds (a Load-list filter with no label hides them): never uploaded; their cloud copies never downloaded or deleted");
+    sprintf(p, "%s/N", T); mkdir(p, 0755); sprintf(p, "%s/N/Saves", T); mkdir(p, 0755);
+    pc("dsmodded_Arena-Slime_Hard__AutoSave_" TG2 "_0.json", q); put(q, "a test world an earlier loader uploaded", now - 400);
+    pc("dsmodded_MPPvP_Old.json", q); put(q, "a PvP temp world an earlier loader uploaded", now - 400);
+    machine("N");
+    loc("N", "Normal.json", p); put(p, "a player's world", now - 300);
+    loc("N", "Elven-Expedition_DPS Check_Very-Hard__AutoSave_" TG1 "_0.json", p); put(p, "Test Fights world", now - 300);
+    loc("N", "MPHub_x.json", p); put(p, "hub temp world", now - 300);
+    int u15 = dsl_cloud_up; dsl_cloud_pass();
+    pc("dsmodded_Normal.json", q); check("N: the player's world uploaded", has(q));
+    pc("dsmodded_Elven-Expedition_DPS Check_Very-Hard__AutoSave_" TG1 "_0.json", p); pc("dsmodded_MPHub_x.json", q);
+    check("N: the Test Fights world and the hub world not uploaded", !has(p) && !has(q) && dsl_cloud_up == u15 + 1);
+    loc("N", "Arena-Slime_Hard__AutoSave_" TG2 "_0.json", p); loc("N", "MPPvP_Old.json", q);
+    check("N: mod worlds in the cloud not downloaded", !has(p) && !has(q));
+    pc("dsmodded_Arena-Slime_Hard__AutoSave_" TG2 "_0.json", p); pc("dsmodded_MPPvP_Old.json", q);
+    check("N: their cloud copies kept, counted (log line)", has(p) && has(q) && dsl_cloud_mod_there == 2 && dsl_cloud_mod_here == 2);
+    check("the mods' filters only asked on the frame thread", !filter_off_thread);
+    frames_run = 0; pthread_join(frame_th, NULL);
     printf("== %d ok, %d failed\n", oks, fails);
     return fails != 0;
 }

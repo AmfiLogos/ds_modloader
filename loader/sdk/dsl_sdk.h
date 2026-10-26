@@ -301,7 +301,8 @@ typedef struct DSLHost {
        filter above the list with label(ud) (e.g. "Show multiplayer worlds"); toggle_on = its state (starts 0).
        mode(ud) is asked each time the list opens; DSL_LIST_OFF = this filter does nothing for this opening.
        label NULL / "" = no toggle: the worlds it hides are the module's own (not the player's), so the hidden-worlds
-       line under the list does not count them (loader 0.1.29). */
+       line under the list does not count them and the Steam Cloud backup never uploads or downloads them (loader
+       0.1.29; it asks show() on the main thread with guid "" and the file name without .json). */
     int (*loadlist_filter)(DSLPlugin *self, const struct DSLLoadFilter *f);
     void (*loadlist_refresh)(void);           /* re-run texts + filters on the open list (after a tag removal, ...) */
 

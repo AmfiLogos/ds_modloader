@@ -1358,6 +1358,7 @@ void dsl_frame_hook(void) {
     dsl_saves_frame();
     test_frame();
     dsl_rows_frame();
+    dsl_cloud_frame();
     dsl_update_frame();
     dsl_whatsnew_frame();
     dsl_crash_frame();
