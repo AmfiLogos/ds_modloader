@@ -2,7 +2,7 @@
  "id": "multi-bar",
  "name": "Multi-unit view",
  "short_name": "Multi-unit view",
- "version": "0.1.0",
+ "version": "0.1.1",
  "author": "AmfiLogos",
  "kind": "code",
  "api": 3,

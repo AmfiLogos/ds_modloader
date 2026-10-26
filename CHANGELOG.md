@@ -367,6 +367,10 @@ Fixes:
 
 ## Multi-unit view (multi-bar)
 
+### Unreleased (0.1.1)
+
+- The unit cards keep one size when you select or unselect units. Before, they grew or shrank each time the number of selected units changed (2, 3 or 4). They now always have the size that lets 4 cards fit across your screen, and they change only when you change the window size or the UI Scale.
+
 ### 0.1.0 (2026-10-24)
 
 - First release: select 2 to 4 of your units and each one gets its own card at the bottom of the screen, with its portrait, name, mood and status bars, behaviour buttons (F/G/H), status effects, item slot and its full skill bar.

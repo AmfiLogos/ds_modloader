@@ -6,7 +6,8 @@
 //   click <k> <s>  the Button.onClick of slot s of the multi-unit view's card k ("QuickSlotUI_Multi<k>"): the stock click
 //                  path from the button on (SkillSlotUI listener -> QuickSlotUI -> input -> event queue -> handler)
 //   key <i>        UseQuickSlotSkillRequested(i): the skill key of bar slot i (stock input path)
-//   state          every QuickSlotUI (the real bar + the cards): name, active, slots, shown unit; the summary card's body
+//   state          every QuickSlotUI (the real bar + the cards): name, active, slots, shown unit; the summary card's body;
+//                  per shown card its size and place on screen ("geo": fractions of the root canvas width)
 // and logs, as they happen, every UseSkillModeContext.AddUseSkill (unit, skill): who the game will use a skill with.
 // Each answer is one dsload.log line "multibar-probe: ...". Every game call by il2cpp name.
 #include "dsl_sdk.h"
@@ -19,6 +20,8 @@ DSL_PLUGIN();
 static const DSLHost *H;
 static DSLPlugin *ME;
 typedef void *Obj;
+typedef struct { float x, y, z; } V3;
+typedef struct { float r, g, b, a; } Col;
 #define AT(o, off, T) (*(T *)((char *)(o) + (off)))
 #define MC(mi, R, ...) ((R (*)(__VA_ARGS__))(*(void **)(mi)))
 
@@ -35,6 +38,8 @@ static void *mainflow_k, *qsui_k, *esv_k, *button_k, *unit_k;
 static void *m_find_any, *m_find_all, *m_go_find, *m_get_comp, *m_name, *m_go, *m_active_h, *m_active_self, *m_tr, *m_parent,
             *m_tr_find, *m_onclick, *m_invoke, *m_skill_key, *m_go_tr;
 static int32_t f_slots, f_selected, f_tabs, f_guid, f_key, f_slot_key;
+static void *graphic_k, *canvas_k, *v3_k, *m_child_n, *m_child, *m_corners, *m_comp_parent, *m_root_canvas, *m_act_en, *m_color;
+static Obj (*arr_new)(void *, uintptr_t);
 
 static void *msig(void *k, const char *name, int argc) {
     void *(*parent)(void *) = H->il2cpp_fn("il2cpp_class_get_parent");
@@ -69,6 +74,51 @@ static void my_add(Obj ctx, Obj unit, Obj skill, const void *mi) {
     o_add(ctx, unit, skill, mi);
 }
 
+/* world x range of a RectTransform (its 4 world corners) */
+static int xrange(Obj rt, float *x0, float *x1) {
+    Obj a = rt && v3_k && m_corners ? arr_new(v3_k, 4) : NULL;
+    if (!a) return 0;
+    MC(m_corners, void, Obj, Obj, void *)(rt, a, m_corners);
+    V3 *c = (V3 *)((char *)a + 0x20);
+    float lo = c[0].x, hi = c[0].x;
+    for (int i = 1; i < 4; i++) { if (c[i].x < lo) lo = c[i].x; if (c[i].x > hi) hi = c[i].x; }
+    *x0 = lo; *x1 = hi;
+    return 1;
+}
+/* every visible Graphic under tr (active objects, enabled, alpha > 0): their world x span. GetComponentsInChildren(Type, bool)
+   is stripped from this game, so the children are walked here */
+static void walk(Obj tr, int depth, float *lo, float *hi, int *used) {
+    Obj go = tr && depth < 16 ? go_of(tr) : NULL;
+    if (!go || !(MC(m_active_self, uint8_t, Obj, void *)(go, m_active_self) & 1)) return;
+    Obj g = MC(m_get_comp, Obj, Obj, Obj, void *)(tr, tobj(ctype(graphic_k)), m_get_comp);
+    float a, b;
+    if (g && (MC(m_act_en, uint8_t, Obj, void *)(g, m_act_en) & 1) && !(m_color && MC(m_color, Col, Obj, void *)(g, m_color).a < 0.01f)
+        && xrange(tr, &a, &b)) {
+        if (a < *lo) *lo = a;
+        if (b > *hi) *hi = b;
+        (*used)++;
+    }
+    int n = MC(m_child_n, int32_t, Obj, void *)(tr, m_child_n);
+    for (int i = 0; i < n; i++) walk(MC(m_child, Obj, Obj, int32_t, void *)(tr, i, m_child), depth + 1, lo, hi, used);
+}
+/* a card's size and place, measured on screen (not the module's numbers): panel = the bar's width, x = the span of every
+   visible Graphic under the card's Panel_QuickSlot (bar, portrait, name, status block, F/G/H, effects), all as fractions
+   of the root canvas width (0..1 = on screen) */
+static void geo(Obj v, const char *nm) {
+    Obj tr = MC(m_tr, Obj, Obj, void *)(v, m_tr);
+    Obj panel = MC(m_tr_find, Obj, Obj, Obj, void *)(tr, str_new("Panel_QuickSlot"), m_tr_find);
+    Obj cv = m_comp_parent && canvas_k ? MC(m_comp_parent, Obj, Obj, Obj, void *)(v, tobj(ctype(canvas_k)), m_comp_parent) : NULL;
+    Obj root = cv && m_root_canvas ? MC(m_root_canvas, Obj, Obj, void *)(cv, m_root_canvas) : NULL;
+    float c0, c1, p0, p1;
+    if (!panel || !root || !xrange(MC(m_tr, Obj, Obj, void *)(root, m_tr), &c0, &c1) || c1 <= c0 || !xrange(panel, &p0, &p1)) {
+        H->log(ME, "multibar-probe: geo [%s none]", nm); return;
+    }
+    float lo = p0, hi = p1; int used = 0;
+    if (graphic_k && m_child_n && m_child && m_act_en) walk(panel, 0, &lo, &hi, &used);
+    float w = c1 - c0;
+    H->log(ME, "multibar-probe: geo [%s panel=%.4f x=%.4f..%.4f graphics=%d]", nm, (p1 - p0) / w, (lo - c0) / w, (hi - c0) / w, used);
+}
+
 static void do_state(void) {
     Obj arr = MC(m_find_all, Obj, Obj, uint8_t, void *)(tobj(ctype(qsui_k)), 1, m_find_all);   /* FindObjectsOfType(Type, true) */
     int n = arr ? (int)AT(arr, 0x18, uintptr_t) : 0;
@@ -84,6 +134,7 @@ static void do_state(void) {
             ko += (size_t)snprintf(keys + ko, ko < sizeof keys ? sizeof keys - ko : 0, "%s%s", j ? "," : "", kk);
         }
         H->log(ME, "multibar-probe: bar [%s active=%d slots=%d unit=%s keys=%s]", nm, active_h(v), list_n(sl), g, keys);   /* one line each: log lines stop at 1 KB */
+        if (!strncmp(nm, "QuickSlotUI_Multi", 17) && active_h(v)) geo(v, nm);
         o++;
     }
     Obj esv = MC(m_find_any, Obj, Obj, int32_t, void *)(tobj(ctype(esv_k)), 1, m_find_any);
@@ -176,6 +227,14 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     f_slots = fofs(qsui_k, "_skillSlots"); f_selected = fofs(qsui_k, "_selected"); f_tabs = fofs(esv_k, "_toggleButtons");
     f_guid = fofs(unit_k, "<Guid>k__BackingField"); f_key = fofs(H->find_class("Refactor", "Skill_Base"), "<Key>k__BackingField");
     f_slot_key = fofs(H->find_class("Refactor.UI", "SkillSlotUI"), "_key");
+    *(void **)&arr_new = H->il2cpp_fn("il2cpp_array_new");
+    graphic_k = H->find_class("UnityEngine.UI", "Graphic"); canvas_k = H->find_class("UnityEngine", "Canvas"); v3_k = H->find_class("UnityEngine", "Vector3");
+    m_child_n = msig(kt, "get_childCount", 0); m_child = msig(kt, "GetChild", 1); m_comp_parent = msig(kc, "GetComponentInParent", 1);
+    m_corners = msig(H->find_class("UnityEngine", "RectTransform"), "GetWorldCorners", 1); m_root_canvas = msig(canvas_k, "get_rootCanvas", 0);
+    m_act_en = msig(graphic_k, "get_isActiveAndEnabled", 0); m_color = msig(graphic_k, "get_color", 0);
+    if (!arr_new || !graphic_k || !canvas_k || !v3_k || !m_child_n || !m_child || !m_comp_parent || !m_corners || !m_root_canvas || !m_act_en)
+        H->log(ME, "multibar-probe: geo names missing (%p %p %p %p %p %p %p %p %p %p)", (void *)arr_new, graphic_k, canvas_k, v3_k, m_child_n,
+               m_child, m_comp_parent, m_corners, m_root_canvas, m_act_en);
     (void)m_skill_key; (void)nested;
     if (!obj_new || !add_event || !mainflow_k || !qsui_k || !m_find_any || !m_find_all || !m_go_find || !m_onclick || !m_invoke || !m_go_tr || f_slots < 0 || f_selected < 0) {
         H->log(ME, "multibar-probe: names missing"); return 4;
