@@ -8,10 +8,10 @@
 //    B "ready" -> A yields activation to B and writes "go".  B "shown" -> A orders its windows out and quits.
 //    No "ready" within DSL_SOFT_TIMEOUT s (default 90) or B died: A kills B, fades back in, keeps its mods.
 //    DSL_SOFT_LOAD=<save> in env_lines (flow K, from the title): B opens that save before it is shown.
-// Prewarm: dsl_soft_prewarm(profile, env) starts B early, hidden; it boots to the title (at 10 fps until A applies),
-//    puts the loading screen up, writes "ready" and waits there (muted, 10 fps). dsl_soft_apply with the same profile
-//    CONTENT and env lines uses it (swap at once); anything else stops it and starts cold. B never outlives A; a waiting
-//    B quits after DSL_SOFT_PREWARM_MAX s (default 1800); A stops it when A enters a world.
+// Prewarm: dsl_soft_prewarm(profile, env) starts B early, hidden; it boots to the title, puts the loading screen up,
+//    writes "ready" and waits there (muted, 10 fps). dsl_soft_apply with the same profile CONTENT and env lines uses it
+//    (swap at once); anything else stops it and starts cold. B never outlives A; a waiting B quits after
+//    DSL_SOFT_PREWARM_MAX s (default 1800); A stops it when A enters a world.
 // B  DSL_SOFT_HANDOFF=<handoff.json>: from its first window on, every window is invisible, the app never activates and
 //    has no Dock / taskbar entry (dsl_soft_os.h). Audio is muted (AudioListener pause + volume 0) while hidden. Boot
 //    fluff cut while hidden (Unity splash cancelled, frames uncapped, background loading High). At the title: the
@@ -78,8 +78,8 @@ static Obj (*cap_tex)(const void *); static Obj (*enc_png)(Obj, const void *); s
 static int (*get_fsmode)(void); static void (*set_fsmode)(int);         /* Screen.fullScreenMode (icalls): B takes A's */
 
 /* B boot speed: the Unity splash is cancelled and frames are uncapped while hidden (the boot is frame bound:
-   one loading step per frame); a prewarm B waiting at the title runs at DSL_SOFT_IDLE_FPS (10), and boots at it too
-   until A applies its set (b_pw_applied). The game's own frame cap and vsync come back at the swap. */
+   one loading step per frame); a prewarm B waiting at the title runs at DSL_SOFT_IDLE_FPS (10). The game's own frame
+   cap and vsync come back at the swap. */
 static _Bool (*splash_done)(void); static void (*splash_cancel)(void);    /* bool: only the low byte is set (Windows x64) */
 static void (*set_fps)(int); static int (*get_fps)(void);              /* icalls (the managed getters are stripped) */
 static void (*set_vsync)(int); static int (*get_vsync)(void);
@@ -115,7 +115,6 @@ static void force_fps(int target) {
     if (vok) set_vsync(0);
     set_fps(target);
 }
-static int b_pw_slow(void);
 static void fast_tick(void) {
     if (!fast_on) return;
     if (role_b && splash_done && splash_cancel && !splash_done()) {
@@ -126,7 +125,7 @@ static void fast_tick(void) {
         int b = get_blp();
         if (b != 4) { if (saved_blp < 0) SLOG("B: background loading priority %d -> High while hidden", b); saved_blp = b; set_blp(4); }
     }
-    if (role_b || a_part_fps) force_fps(b_pw_slow() ? (int)env_num("DSL_SOFT_IDLE_FPS", 10) : 10000);
+    if (role_b || a_part_fps) force_fps(10000);
 }
 static void fast_end(void) {
     if (!fast_on) return;
@@ -643,21 +642,6 @@ static void b_read_handoff(void) {                                     /* at "go
     JNode *f = json_get(hand, "frame"); int k = 0; double fr[4] = { 0, 0, 0, 0 };
     if (f && f->t == JN_ARR) for (JNode *c = f->child; c && k < 4; c = c->next) fr[k++] = c->num;
     if (k == 4 && fr[2] > 0) { memcpy(a_frame, fr, sizeof fr); a_has_frame = 1; }
-}
-/* A prewarm B boots at the idle frame cap (FPS audit 2026-10-26, row 8: uncapped, it competed with the player's title
-   for ~10 s). When A applies its set while that B still boots (the handoff gets A's apply time), it boots uncapped from
-   then on, as a B started by the Apply does. */
-static int b_pw_applied;
-static int b_pw_slow(void) {
-    if (!role_b || !b_prewarm || b_pw_applied || b_state >= B_FADING) return 0;
-    static double last; double t = since();
-    if (t - last < 0.5) return 1;
-    last = t;
-    char *txt = slurp(handoff_path); JNode *j = txt ? json_parse(txt) : NULL; free(txt);
-    JNode *aa = j ? json_get(j, "apply_at") : NULL;
-    if (aa && aa->num > 0) { b_pw_applied = 1; SLOG("B: prewarm: A applied this set while B boots: frames uncapped"); }
-    json_free(j);
-    return !b_pw_applied;
 }
 static void b_fade_start(double t) {
     if (fade) fade_out(fade, NULL, 1, NULL);
