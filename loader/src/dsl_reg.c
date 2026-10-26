@@ -1303,21 +1303,18 @@ static void test_frame(void) {
 static void *(*il_str2)(const char *);
 static void loading_tip(const char *text) {
     static void *k_fade, *k_tmp; static int32_t o_lui = -1, o_tip = -1, o_key = -1; static void (*set_text)(void *, void *, const void *);
-    static void *(*find)(void *, int, const void *); static void *t_fade;
     if (!k_fade) {
         k_fade = dsl_find_class("Refactor.UI", "ScreenFadeEffectView"); void *k_lui = dsl_find_class("Refactor", "LoadingUI");
         void *k_das = dsl_find_class("Refactor.UI", "DASText"); k_tmp = dsl_find_class("TMPro", "TMP_Text");
         o_lui = k_fade ? dsl_field_offset(k_fade, "_loadingUI") : -1; o_tip = k_lui ? dsl_field_offset(k_lui, "_tipText") : -1;
         o_key = k_das ? dsl_field_offset(k_das, "_useTextKey") : -1;
         void *m = k_tmp ? dsl_find_method(k_tmp, "set_text", 1) : NULL; set_text = m ? dsl_method_address(m) : NULL;
-        void *ko = dsl_find_class("UnityEngine", "Object"); void *mf = ko ? dsl_find_method(ko, "FindObjectOfType", 2) : NULL; find = mf ? dsl_method_address(mf) : NULL;
-        void *(*ct)(void *) = dsl_ga_sym("il2cpp_class_get_type"); void *(*to)(void *) = dsl_ga_sym("il2cpp_type_get_object");
-        if (ct && to && k_fade) t_fade = to(ct(k_fade));
         il_str2 = dsl_ga_sym("il2cpp_string_new");
     }
     static int said;
-    if (!find || !t_fade || o_lui < 0 || o_tip < 0 || !set_text || !il_str2) { if (!said++) dsl_log("reg: loading tip off (names: find %p type %p lui %d tip %d set %p)", find, t_fade, o_lui, o_tip, set_text); return; }
-    Obj f = find(t_fade, 0, NULL), lui = f ? AT(f, o_lui, Obj) : NULL, tip = lui ? AT(lui, o_tip, Obj) : NULL;
+    if (o_lui < 0 || o_tip < 0 || !set_text || !il_str2) { if (!said++) dsl_log("reg: loading tip off (names: lui %d tip %d set %p)", o_lui, o_tip, set_text); return; }
+    /* the fade view dsl_soft holds from its Awake: no scene search on the loading screen (NOTES.md "Game-view lookups") */
+    Obj f = dsl_soft_fade(), lui = f ? AT(f, o_lui, Obj) : NULL, tip = lui ? AT(lui, o_tip, Obj) : NULL;
     if (said < 2) { said = 2; dsl_log("reg: loading tip: view %p loading ui %p tip text %p (useTextKey at %d)", f, lui, tip, o_key); }
     if (!tip) return;
     if (o_key >= 0) AT(tip, o_key, uint8_t) = 0;                       /* plain text, not a text key */

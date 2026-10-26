@@ -4,10 +4,11 @@
 1. A without BepInEx (multiplayer: its dsload hook on MainFlow.Update runs the rig command pump).
    Apply + samefn-bie (BepInEx plugin, Harmony postfix on the SAME function MainFlow.Update) with a FRESH BepInEx folder:
    download at first use, then the soft restart with the Doorstop env, 300 s first-start timeout, "Preparing mods"
-   on A's loading screen. B: both the dsload hook and the Harmony postfix fire; first-start marker written.
+   on A's loading screen (the tip is set, and the loader makes no scene search there: scan guard, NOTES.md
+   "Game-view lookups"). B: both the dsload hook and the Harmony postfix fire; first-start marker written.
 2. From B, Apply without samefn-bie: C starts without Doorstop.
 Output: <out>/ (logs, frames, summary.json)."""
-import glob, hashlib, json, os, shutil, subprocess, sys, threading, time
+import glob, hashlib, json, os, re, shutil, subprocess, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import l1_test as t
 
@@ -100,6 +101,12 @@ def main():
         summary['apply_to_screen_s'] = round(dt, 1)
         t.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'B title', 60); time.sleep(12)
         L = t.dlog(); BL = bie_log()
+        AL = open(os.path.join(t.I, 'dsload.prev.log'), errors='replace').read()      # A's log (B renamed it at its start)
+        AL = AL[AL.find('reg: Apply: '):] if 'reg: Apply: ' in AL else ''
+        tip = re.findall(r'reg: loading tip: view (\S+) loading ui (\S+) tip text (\S+)', AL)
+        t.check("A: 'Preparing mods' tip set on A's loading screen", tip and '0x0' not in tip[0], tip[:1])
+        sc = [l for l in AL.splitlines() if re.search(r'scan: loading [\d.]+ s: .*\bloader \d', l)]
+        t.check('A: no loader scene search on its loading screen (scan guard lines)', 'scan: loading' in AL and not sc, sc[:2])
         t.check('B: BepInEx plugin running', '1 BepInEx plugin(s) running' in L, [l for l in L.splitlines() if 'running gameplay' in l])
         t.check('B: Harmony patched the function', 'SAMEFN harmony patched MainFlow.Update' in BL, BL[-400:])
         t.check('B: Harmony postfix fires', count(BL, 'SAMEFN harmony postfix') >= 2, count(BL, 'SAMEFN harmony postfix'))

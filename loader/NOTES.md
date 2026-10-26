@@ -1236,7 +1236,9 @@ Callers moved onto it: title_view, lang_open, notice_view, tooltip_view + the to
 id, else one search on a hover), ui_prefab's UIFactory, field_source, the splash logos, the assets scan (also at most 3 a
 scene), the title corner (`dsl_ui_game_window_shown` = the popup container, every frame), the Load list (dsl_rows: the
 SaveLoadPresenter's view in OpenLoad / Refresh; the 30-frame poll is gone: the records every 6 frames, no search), the
-new-game fallback (dsl_newgame side_set), the test-only Load list and saves probes. The crash report asks for the notice
+new-game fallback (dsl_newgame side_set), the test-only Load list and saves probes, the BepInEx / MelonLoader
+first-start tip on the loading screen (dsl_reg loading_tip: the fade view dsl_soft holds from its Awake, `dsl_soft_fade()`;
+l1_bie_test checks that the tip is set and that the loader makes no search there). The crash report asks for the notice
 box only when it is about to ask its question. The title column's layout rebuild (brand_frame) runs when what it depends
 on changed, else every 2 s (was every 10 frames).
 GUARD (test copies only, the same gate as UI-RULE: background-only app or DSRIG_CTL=1, never a player's start, traps T7):
@@ -1244,7 +1246,8 @@ the 14 non-generic UnityEngine.Object.Find*Object* / Resources.FindObjectsOfType
 by its caller's image (return address: "loader", "game" = GameAssembly / UnityPlayer, else the module's file name). In the
 steady states title (idle), list (the Load list open), world, after the state's first 5 s, more than 6 calls of one module
 within 60 s logs `SCAN-RULE <module> <n>/min <state> (... last <method> <class>)` once per state; `scan: <state> <secs> s:
-<module> <n>, ...` every 30 s and at each state's end. Start line `scan guard: on (test copy, <why>): 14 of 14 ...`.
+<module> <n>, ...` every 30 s, at each state's end and when a soft restart's old process (A) quits. Start line
+`scan guard: on (test copy, <why>): 14 of 14 ...`.
 Known limits: a search tail-called straight from a hook body, or made by the game inside one of these (FindObjectOfType
 calls FindObjectsOfType), counts as the game's.
 Test: `test/scan_rate_test.py <out> [--mods none|default]` (one hidden copy, default FSC; title idle 60 s, Load list 30 s,

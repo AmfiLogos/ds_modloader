@@ -146,6 +146,7 @@ void *dsl_view_get(void *klass, int flags);              /* the kit's view_find 
 void *dsl_view_all(void *klass, int flags);              /* FindObjectsOfType: at most one search a frame, never while loading */
 void *dsl_view_assets(void *klass, int flags);           /* Resources.FindObjectsOfTypeAll: the same + one a second per class */
 int dsl_view_popup_shown(void);                          /* a window of the game shows (its popup container, no search) */
+void dsl_view_flush(void);                               /* test copies: the scan counts of the state now (soft restart A, before it quits) */
 /* dsl_reg.c: mods per world (the loader's own row line and the New Game screen's "Mods of this world") */
 int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: Hell difficulty, Multiplayer" (or "Mods: none") */
 void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */
@@ -181,6 +182,7 @@ int dsl_mod_dep_text(const char *id, char *out, size_t cap);   /* a dependency r
 void dsl_deps_for_set(const char *const *ids, int n, int *ok);   /* the dependency rule for a set to start */
 int dsl_soft_shot(const char *png_path);                 /* test: full frame incl. UI */
 void *dsl_soft_mainflow(void);                           /* dsl_soft.c: the live MainFlow or NULL */
+void *dsl_soft_fade(void);                               /* dsl_soft.c: the live ScreenFadeEffectView (held from its Awake) or NULL; no scene search */
 /* dsl_settings.c: mod settings (SDK API 5) */
 struct DSLHost; void dsl_settings_host(struct DSLHost *h);   /* fills the API 5 host fields */
 void dsl_settings_init(void);                            /* mod.json "settings" + settings.json + the profile's values */

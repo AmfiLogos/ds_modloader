@@ -314,6 +314,7 @@ static void sg_frame(void) {
     for (int i = 0; i < nmods; i++) { mods[i].n = mods[i].nw = mods[i].flagged = mods[i].ri = 0; memset(mods[i].ring, 0, sizeof mods[i].ring); }
     sg_state = st; sg_t0 = sg_tw = t;
 }
+void dsl_view_flush(void) { if (sg_on && sg_state >= 0) sg_counts(now_s()); }
 static void *msig(void *k, const char *name, int argc, const char *sig) {   /* overloads: parameter type names; no generics */
     void *it = NULL, *m;
     while (k && (m = I.methods(k, &it))) {

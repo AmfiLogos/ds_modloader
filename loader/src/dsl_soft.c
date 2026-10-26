@@ -245,6 +245,7 @@ static Obj live_fade(void) {
     for (int i = nfades - 1; i >= 0; i--) { Obj o = gc_get(fades[i]); if (o && AT(o, 0x10, void *)) return o; }
     return NULL;
 }
+void *dsl_soft_fade(void) { return live_fade(); }
 
 static void *meth(const char *ns, const char *k, const char *m, int argc) { return dsl_find_method_address(ns, k, m, argc); }
 
@@ -608,6 +609,7 @@ static void a_tick(void) {
     if (a_state == A_WAIT_SHOWN) {
         path_of(p, sizeof p, "shown"); if (!exists(p)) return;
         SLOG("A: B shown: A orders its windows out and quits (%.3f s after apply)", t - a_t0);
+        dsl_view_flush();                                                  /* test copies: the loading screen's scan counts */
         dsl_sos_order_out();
         frame_log("A");
         a_state = A_QUITTING; cap_on = 0;
