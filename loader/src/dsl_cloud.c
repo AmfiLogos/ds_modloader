@@ -12,9 +12,13 @@
 //           stay at most CLOUD_MAX_FILES (app quota 10 GB / 700 files, appinfo ufs); else no upload, one status line.
 //           Multiplayer temporary saves (mp_*, dsl_save_is_mp_temp) are never uploaded or downloaded; remote
 //           "dsmodded_mp_*" files (uploaded by loaders before 0.1.15 on every multiplayer join) are deleted when seen.
+//           Mod worlds (owner 2026-10-26): a save a Load-list filter with no label hides (dsl_rows_mod_world: the
+//           multiplayer hub / PvP worlds, Units Laboratory's Test Fights and DPS Check worlds) is never uploaded or
+//           downloaded, and its cloud copy is never deleted (one log line counts them). See "mod worlds" below.
 //           State: <DSML_DATA>/Mods/cloud_state.tsv (name, local mtime, local size, remote time at the last sync).
 // Env: DSML_DATA (required), DSL_CLOUD=0 (cloud off), DSL_CLOUD_API=<library> (tests: a fake
-// steam_api instead of the game's), DSL_CLOUD_EVERY=<seconds between passes, default 30>.
+// steam_api instead of the game's), DSL_CLOUD_EVERY=<seconds between passes, default 30>,
+// DSL_CLOUD_ASK_WAIT=<seconds a pass waits for the mods' answer, default 20>.
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include "dsl_os.h"
@@ -181,12 +185,62 @@ static void state_set(const char *n, int64_t lm, int64_t ls, int64_t rts) {
 static void state_drop(const char *n) { St *s = state_get(n); if (s) s->name[0] = 0; }
 
 /* ------------------------------------------------------------------ one pass */
-typedef struct { char name[256]; int64_t mtime, size, rts, rsize; int here, there; } Ent;
+typedef struct { char name[256]; int64_t mtime, size, rts, rsize; int here, there, mod; } Ent;
 static Ent E[MAXF]; static int nE;
 static Ent *ent(const char *n) {
     for (int i = 0; i < nE; i++) if (!strcasecmp(E[i].name, n)) return &E[i];
     if (nE >= MAXF) return NULL;
     Ent *e = &E[nE++]; memset(e, 0, sizeof *e); snprintf(e->name, sizeof e->name, "%s", n); return e;
+}
+
+/* ------------------------------------------------------------------ mod worlds
+   Which saves are a mod's own worlds is the Load list's test (dsl_rows_mod_world: a filter with no label hides it), and
+   the filters are module code made for the main thread. So a pass hands its names to the main thread (AQ) and waits up
+   to ask_wait seconds; the next frame (dsl_cloud_frame) answers all of them at once (AA). No answer = the pass is skipped:
+   nothing is uploaded, downloaded or deleted before the mods have said which saves are theirs. The modules set their
+   filters up in their init, before the first frame, and some read the game's folders on their first frames (Units
+   Laboratory's test-world list), so the frames answer only from the 60th frame at the title or in a world (a scene the
+   loader cannot read: after 3600 frames, about a minute, so a game update never stops the backup for good). */
+int dsl_reg_scene(void);                                   /* dsl_reg.c: 1 title, 2 a world */
+static pthread_cond_t ask_cv = PTHREAD_COND_INITIALIZER;
+static char AQ[MAXF][256]; static unsigned char AA[MAXF];
+static int aq_n, aq_gen, aa_gen, aq_wait, ask_wait = 20, ask_said;
+int dsl_cloud_mod_here, dsl_cloud_mod_there;               /* the last pass: mod worlds here (not uploaded) / in the cloud (ignored) */
+void dsl_cloud_frame(void) {
+    static int frames, other;
+    if (frames < 60) { if (dsl_reg_scene() >= 1 || ++other > 3600) frames++; return; }
+    if (!__atomic_load_n(&aq_wait, __ATOMIC_ACQUIRE)) return;
+    static char nm[MAXF][256]; static unsigned char mod[MAXF];
+    pthread_mutex_lock(&mu);
+    int n = aq_n, gen = aq_gen;
+    memcpy(nm, AQ, (size_t)n * sizeof AQ[0]);
+    pthread_mutex_unlock(&mu);
+    for (int i = 0; i < n; i++) {                                         /* the Load list's save name: the file name without .json */
+        char stem[256]; snprintf(stem, sizeof stem, "%.*s", (int)strlen(nm[i]) - 5, nm[i]);
+        mod[i] = (unsigned char)dsl_rows_mod_world("", stem, 0);
+    }
+    pthread_mutex_lock(&mu);
+    if (aq_wait && gen == aq_gen) { memcpy(AA, mod, (size_t)n); aa_gen = gen; __atomic_store_n(&aq_wait, 0, __ATOMIC_RELEASE); pthread_cond_signal(&ask_cv); }
+    pthread_mutex_unlock(&mu);
+}
+/* every name of E gets e->mod; 0 = answered, -1 = no answer in time (a late answer is dropped by its number) */
+static int ask_mods(void) {
+    if (!nE) return 0;
+    pthread_mutex_lock(&mu);
+    aq_n = nE; aq_gen++;
+    for (int i = 0; i < nE; i++) snprintf(AQ[i], sizeof AQ[i], "%s", E[i].name);
+    __atomic_store_n(&aq_wait, 1, __ATOMIC_RELEASE);
+    struct timespec dl; clock_gettime(CLOCK_REALTIME, &dl); dl.tv_sec += ask_wait;
+    int r = 0;
+    while (__atomic_load_n(&aq_wait, __ATOMIC_ACQUIRE) && r != ETIMEDOUT) r = pthread_cond_timedwait(&ask_cv, &mu, &dl);
+    int ok = !__atomic_load_n(&aq_wait, __ATOMIC_ACQUIRE) && aa_gen == aq_gen;
+    __atomic_store_n(&aq_wait, 0, __ATOMIC_RELEASE);
+    if (ok) for (int i = 0; i < nE; i++) E[i].mod = AA[i];
+    pthread_mutex_unlock(&mu);
+    if (!ok && !ask_said) dsl_log("cloud: the mods have not said which saves are their own worlds yet (no game frame in %ds): pass skipped, nothing synced", ask_wait);
+    if (ok && ask_said) dsl_log("cloud: the mods answered which saves are their own worlds: passes go on");
+    ask_said = !ok;
+    return ok ? 0 : -1;
 }
 static int download(void *rs, Ent *e) {
     char rn[300], p[1400]; snprintf(rn, sizeof rn, PFX "%s", e->name); snprintf(p, sizeof p, "%s/%s", saves_d, e->name);
@@ -296,18 +350,25 @@ static int pass_locked(void) {
         }
         closedir(d);
     }
+    /* a mod's own worlds (see "mod worlds"): never synced and not the player's saves in the counts below; their cloud
+       copies stay as they are (the owner decides about them) */
+    if (ask_mods()) return 1;
+    int mh = 0, mt = 0; for (int i = 0; i < nE; i++) if (E[i].mod) { mh += E[i].here != 0; mt += E[i].there; }
+    if (mh != dsl_cloud_mod_here) dsl_log("cloud: %d mod worlds here are not uploaded (a mod's own worlds, hidden from the Load list)", mh);
+    if (mt != dsl_cloud_mod_there) dsl_log("cloud: %d mod worlds in the cloud are ignored (never downloaded or deleted)", mt);
+    dsl_cloud_mod_here = mh; dsl_cloud_mod_there = mt;
     /* many synced saves gone at once looks like a lost folder, not a player's choice: no cloud delete this time */
     int gone = 0, synced = 0;
-    for (int i = 0; i < nE; i++) { St *s = state_get(E[i].name); if (s) { synced++; if (!E[i].here && E[i].there && s->rts == E[i].rts) gone++; } }
+    for (int i = 0; i < nE; i++) { St *s = E[i].mod ? NULL : state_get(E[i].name); if (s) { synced++; if (!E[i].here && E[i].there && s->rts == E[i].rts) gone++; } }
     int no_delete = gone > 2 && gone * 2 > synced;
-    int rgone = 0; for (int i = 0; i < nE; i++) { St *s = state_get(E[i].name); if (s && s->rts && E[i].here == 1 && !E[i].there) rgone++; }
+    int rgone = 0; for (int i = 0; i < nE; i++) { St *s = E[i].mod ? NULL : state_get(E[i].name); if (s && s->rts && E[i].here == 1 && !E[i].there) rgone++; }
     int no_rdelete = rgone > 2 && rgone * 2 > synced;                    /* an empty or failed cloud list: keep everything */
     if (no_rdelete) dsl_log("cloud: %d of %d synced saves are missing in the cloud: nothing moved aside here", rgone, synced);
     if (no_delete) dsl_log("cloud: %d of %d synced saves are missing here: nothing deleted in the cloud", gone, synced);
     int fails = 0, space = 0;
     for (int i = 0; i < nE; i++) {
         Ent *e = &E[i]; St *s = state_get(e->name);
-        if (e->here == 2) continue;
+        if (e->here == 2 || e->mod) continue;
         if (e->here && e->there) {
             int lchg = !s || s->lm != e->mtime || s->ls != e->size, rchg = !s || s->rts != e->rts || s->ls != e->rsize;
             if (!lchg && !rchg) continue;
@@ -358,7 +419,7 @@ static int pass_locked(void) {
     char tm[16]; time_t t = time(NULL); strftime(tm, sizeof tm, "%H:%M", localtime(&t));
     if (space) set_status(CS_PAUSED, space, NULL);
     else if (fails) set_status(CS_FAILED, fails, tm);
-    else set_status(CS_OK, ours_n, tm);
+    else set_status(CS_OK, ours_n - mt, tm);                              /* the player's saves: not the mod worlds' copies */
     (void)busy;
     return 0;
 }
@@ -409,6 +470,7 @@ void dsl_cloud_install(DSLHost *host) {
     snprintf(saves_d, sizeof saves_d, "%s/Saves", d); snprintf(mods_d, sizeof mods_d, "%s/Mods", d);
     snprintf(state_p, sizeof state_p, "%s/cloud_state.tsv", mods_d); snprintf(backups_d, sizeof backups_d, "%s/cloud_backups", mods_d);
     mkdir(mods_d, 0755);
+    const char *aw = getenv("DSL_CLOUD_ASK_WAIT"); ask_wait = aw && atoi(aw) > 0 ? atoi(aw) : 20;
     const char *off = getenv("DSL_CLOUD");
     if (off && !strcmp(off, "0")) { set_status(CS_OFF_ENV, 0, NULL); return; }
     pthread_t th; if (pthread_create(&th, NULL, cloud_thread, NULL)) { dsl_log("cloud: thread failed"); return; }

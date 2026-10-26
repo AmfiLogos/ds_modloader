@@ -34,6 +34,19 @@ int dsl_rows_filter(const char *owner, const DSLLoadFilter *f) {
     dsl_log("rows: load-list filter added by %s", owner); dirty = 1; return 0;
 }
 void dsl_rows_refresh(void) { dirty = 1; }
+/* 1 = a filter with no label hides this save: one of a mod's own worlds (the multiplayer hub / PvP worlds, Units
+   Laboratory's test worlds; owner 2026-10-25), never a player's world. The one test for both users: the Load list (never
+   on the hidden-worlds line, filters_apply) and the Steam Cloud backup (never uploaded or downloaded, dsl_cloud.c).
+   Main thread only (the filters are module code). guid "" = not known (the cloud has the file name only); list 1 = the
+   open list (a filter whose mode() said DSL_LIST_OFF for this opening does nothing), 0 = every such filter. */
+int dsl_rows_mod_world(const char *guid, const char *save, int list) {
+    for (int f = 0; f < nf; f++) {
+        if (list && F[f].mode == DSL_LIST_OFF) continue;
+        const char *lb = F[f].f.label ? F[f].f.label(F[f].f.ud) : NULL;
+        if ((!lb || !*lb) && !F[f].f.show(F[f].f.ud, guid ? guid : "", save, F[f].on)) return 1;
+    }
+    return 0;
+}
 /* test only (dsl_reg.c test_frame): every filter toggle on, as a click would do */
 void dsl_rows_test_toggles(int on) {
     const DSLUi *u = dsl_ui_kit();
@@ -680,12 +693,13 @@ static void filters_apply(Obj slv) {
         int show = 1, why = 0;
         world_kinds(w);
         if (o_cur >= 0 && AT(cs, o_cur, uint8_t)) show = 1;                 /* the world being played always shows */
-        else {                                                              /* a filter with no label (a mod's own worlds) first, then the panel, then the toggles */
-            for (int f = 0; f < nf && why != 3; f++) if (F[f].mode != DSL_LIST_OFF && !F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on)) {
-                const char *lb = F[f].f.label ? F[f].f.label(F[f].f.ud) : NULL;
-                why = lb && *lb ? 2 : 3;
+        else if (dsl_rows_mod_world(w->guid, w->save, 1)) { show = 0; why = 3; }   /* a mod's own world first, then the panel, then the toggles */
+        else {
+            for (int f = 0; f < nf && !why; f++) {
+                const char *lb = F[f].mode != DSL_LIST_OFF && F[f].f.label ? F[f].f.label(F[f].f.ud) : NULL;
+                if (lb && *lb && !F[f].f.show(F[f].f.ud, w->guid, w->save, F[f].on)) why = 2;
             }
-            if (why != 3 && lf_panel && lf_hides(w)) why = 1;
+            if (lf_panel && lf_hides(w)) why = 1;
             show = !why;
         }
         w->hid = !show; w->why = why;

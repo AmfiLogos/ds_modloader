@@ -8,6 +8,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 - Load Campaign: worlds that a mod hides as its own (old multiplayer hub and PvP worlds, Units Laboratory test worlds) no longer add the line "worlds are hidden by a filter under the list". There is no box that shows them.
 - Unit cards you tick by a click (Units Laboratory: My Units, Test Fights world units and teams) no longer show a white or grey block next to the card when you point at it or click it.
+- Steam Cloud backup: worlds that a mod makes for itself (Units Laboratory Test Fights and DPS Check worlds, old multiplayer hub and PvP worlds) are no longer uploaded, and copies of them already in the cloud are not downloaded to your computer. Those copies stay in the cloud; nothing is deleted.
 
 ### 0.1.28 (2026-10-25)
 

@@ -4,6 +4,8 @@ take a lease first: rig.py lease <lane> --pid). Uses this worktree's build/. The
 a folder under <out>): the real Steam Cloud is never read or written. The owner's save folder: hash before/after.
  1. the loader's cloud thread uploads the copy's modded save as dsmodded_<name> (same bytes) while the game runs
  2. a file the "game" owns in the fake cloud (no prefix) stays as it is
+ 3. mod worlds (a Load-list filter with no label hides them; here multiplayer's): the copy's MPHub_ world is not uploaded,
+    a dsmodded_MPPvP_ copy already in the cloud is not downloaded and stays (the game's frames answer the cloud thread)
 Output: <out>/ (logs, shots, summary.json)."""
 import json, os, sys, time, glob, shutil, signal, subprocess, threading, hashlib
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -34,11 +36,14 @@ def main():
     fake = os.path.join(run, 'fake_steam_api.dylib')
     subprocess.run(['clang', '-O0', '-dynamiclib', '-o', fake, os.path.join(HERE, 'cloud', 'fake_steam_api.c')], check=True)
     open(os.path.join(cloud, 'Game_own_file.json'), 'w').write('the game auto-cloud file')
+    open(os.path.join(cloud, 'dsmodded_MPPvP_cloudtest.json'), 'w').write('a PvP temp world an earlier loader uploaded')
     shutil.copy2(os.path.join(r.SEED_DATA, 'Saves', MOON), gsaves)
     old = os.path.join(T.I, 'old', time.strftime('%Y%m%d-%H%M%S'))                  # last run's state out of the way
     for f in ('cloud_state.tsv', 'cloud_backups'):
         if os.path.exists(os.path.join(T.MODS, f)): os.makedirs(old, exist_ok=True); shutil.move(os.path.join(T.MODS, f), old)
     os.makedirs(T.SDIR, exist_ok=True)
+    hub = os.path.join(T.I, 'data', 'Saves', 'MPHub_cloudtest.json')      # moved out again in finally (never deleted)
+    shutil.copy2(os.path.join(T.I, 'data', 'Saves', T.SAVE + '.json'), hub)
     V.install()
     g = threading.Thread(target=T.guard, daemon=True); g.start()
     S = {'violations': T.violations, 'checks': T.checks}
@@ -55,6 +60,10 @@ def main():
               os.path.exists(remote) and open(remote, 'rb').read() == open(local, 'rb').read(), S['cloud_files'])
         check("the game's own cloud file untouched", open(os.path.join(cloud, 'Game_own_file.json')).read() == 'the game auto-cloud file')
         check('status line logged', T.wait_log('cloud: Cloud backup: ', 20))
+        check('mod worlds: the MPHub_ world here not uploaded', not os.path.exists(os.path.join(cloud, 'dsmodded_MPHub_cloudtest.json')), S['cloud_files'])
+        check('mod worlds: the MPPvP_ copy in the cloud not downloaded, kept, logged',
+              not os.path.exists(os.path.join(T.I, 'data', 'Saves', 'MPPvP_cloudtest.json')) and os.path.exists(os.path.join(cloud, 'dsmodded_MPPvP_cloudtest.json'))
+              and T.wait_log('cloud: 1 mod worlds in the cloud are ignored', 5))
     except Exception as e:
         check('run finished', False, repr(e))
     finally:
@@ -65,6 +74,7 @@ def main():
             except Exception: pass
             time.sleep(3)
             if T.alive(p): os.kill(p, signal.SIGKILL)
+        if os.path.exists(hub): os.makedirs(old, exist_ok=True); shutil.move(hub, old)
         check("owner's real save folder unchanged (hash before/after)", tree_sum(r.REAL_DATA) == real0)
         check("owner's prefs + UserSetting identical (check_prefs)", r.check_prefs(restore=False))
         for f in ['dsload.log', 'dsload.prev.log']:

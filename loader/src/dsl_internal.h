@@ -113,6 +113,7 @@ void dsl_frame_hook(void);                               /* dsl_reg.c: every fra
 /* dsl_rows.c: load list service (stock Load list rows, its filter toggles and panel). No hook on the
    row sites (multiplayer owns them until it moves to this API): polling the open SaveLoadView each frame. */
 struct DSLHost; void dsl_cloud_install(struct DSLHost *host);   /* dsl_cloud.c: after dsl_reg_ready */
+void dsl_cloud_frame(void);                              /* from dsl_frame_hook: answers a pass's "which saves are mod worlds" */
 /* "mp_*" = a multiplayer temporary save (mp_sync join point, mp_fullcheck full-state check, test saves): the mod writes
    it through the game's Save and reads it back from <DSML_DATA>/Saves by path. Never a game save (dsl_saves.c), never
    in the Steam Cloud backup (dsl_cloud.c). One rule for both. */
@@ -132,6 +133,7 @@ void dsl_rows_frame(void);                               /* from dsl_frame_hook 
 void dsl_rows_late(void);                                /* dsl_ui.c, right before the UI is drawn: the Load list filtered before its first frame */
 int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
 int dsl_rows_filter(const char *owner_id, const struct DSLLoadFilter *f);
+int dsl_rows_mod_world(const char *guid, const char *save, int list);   /* 1 = a filter with no label hides it (a mod's own world); main thread */
 void dsl_rows_refresh(void);
 /* dsl_reg.c: mods per world (the loader's own row line and the New Game screen's "Mods of this world") */
 int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: Hell difficulty, Multiplayer" (or "Mods: none") */

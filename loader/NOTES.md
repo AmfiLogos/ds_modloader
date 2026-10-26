@@ -663,6 +663,19 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   so they are not on the hidden-worlds line (it said "N worlds are hidden by a filter under the list" with no box there);
   the log line "rows: hidden-worlds lines" counts them. Such a filter wins over the panel and the toggles (dsl_rows.c why 3).
   Test: ds_multiplayer ext/dsmphide/hub_hide_test.py (fails on a loader without it).
+  ONE test of "a mod's own world" for every user: `dsl_rows_mod_world(guid, save, list)` (dsl_rows.c, main thread). The
+  Load list (filters_apply) and the Steam Cloud backup (dsl_cloud.c, owner 2026-10-26: Test Fights / DPS Check worlds
+  were uploaded, 5.7 MB each) both call it; a new place that must leave a mod's worlds alone calls it too, never a list
+  of names of its own. Cloud: such a save is never uploaded or downloaded and its cloud copy is never deleted; the log
+  says "cloud: N mod worlds in the cloud are ignored" (copies from loaders before 0.1.29; the owner decides about them).
+  The filters are module code for the main thread: a pass hands its file names (guid "", save = name without .json) to
+  the frame (dsl_cloud_frame, from the 60th frame at the title or in a world: Units Laboratory reads its test-world list
+  on its first frames; a scene the loader cannot read: after 3600 frames) and waits up to DSL_CLOUD_ASK_WAIT s (20); no
+  answer = the pass is skipped (nothing synced). Game check: `loader/test/l1_cloud_test.py` (copy K, fake cloud, MPHub_ /
+  MPPvP_ files; MP pin with ds_multiplayer ee9a39f+).
+  Limit: Units Laboratory's filter knows a test world only while it is listed (Mods/custom-modes/test_worlds.json,
+  cleared back at the title), so a copy uploaded before 0.1.29 of a test world that is gone is not recognised.
+  Test: `loader/test/cloud/run.sh` sections 0 (no frame yet) and 15 (fails on 0.1.28's dsl_cloud.c).
 - Data guard (the one real break): Load and Remove File act on `SaveLoadPresenter._selectedSaveName` (set by a click on a
   save row), not on the view's selected row; `SaveLoadView.UnselectAllSlots` + `LockLoadButtons` change only the view. So:
   (1) a selected save that a filter or Latest save only hides is unselected and both buttons locked (each apply + each

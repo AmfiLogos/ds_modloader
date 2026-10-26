@@ -215,5 +215,10 @@ $CC -O2 -Wall -I"$L/src" bie/cfg_console_test.c -o "$OUT/cfg_console_test" && "$
 check "BepInEx.cfg console setting" '(( rc == 0 )) && grep -q PASS "$OUT/cfg_console.txt"'
 (( rc == 0 )) || cat "$OUT/cfg_console.txt"
 
+print "== T9 Steam Cloud backup of the modded saves (cloud/run.sh: fake cloud folder; mod worlds never synced)"
+zsh cloud/run.sh > "$OUT/cloud.txt" 2>&1; rc=$?
+check "cloud backup host test" '(( rc == 0 )) && grep -q "^== [0-9]* ok, 0 failed" "$OUT/cloud.txt"'
+(( rc == 0 )) || grep -v "^ok " "$OUT/cloud.txt"
+
 print "== $pass passed, $fails failed (output $OUT)"
 exit $fails
