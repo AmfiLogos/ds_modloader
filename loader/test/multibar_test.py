@@ -4,6 +4,8 @@ draws; DSRIG_BG=1). One rig lease. The world: the wiki's public base save (4 pla
 The probe module (multibar_probe.c, test only) sends the game's own selection events and presses the cards' slot buttons.
 
   multibar_test.py run [out]        the whole proof; exit 1 on a failed check
+  multibar_test.py scale [out] [WxH] [ui]   only check 4, at that window size and UI Scale (default 1080x698 = the owner's
+                                    1671-wide canvas, 1.1)
   multibar_test.py probe '<line>'   one probe request to the running copy (sel i | add i | click k s | state)
   multibar_test.py up [out] / down  start + load and hold (manual look) / stop
 
@@ -12,7 +14,9 @@ Real breaks the run catches:
     the game's UseSkillModeContext.AddUseSkill gets exactly unit k (basic attack slot 0 and the quick-slot skill slot 1)
  2  selection still works after the module's hooks: Shift-select (add / remove) changes the cards, one card per unit,
     in party order; back to one unit = the stock bar for that unit and the summary card's body back with its tabs
- 3  no game exception in player.log, the copy never shows a window"""
+ 3  no game exception in player.log, the copy never shows a window
+ 4  the cards keep ONE size whether 2, 3 or 4 units are selected, and every card stays on screen (owner 2026-10-25: the bars
+    zoomed in and out at each selection; measured on screen by the probe, not taken from the module's numbers)"""
 import json, os, re, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
@@ -70,18 +74,33 @@ def state():
     bars = [dict(name=m[0], active=int(m[1]), slots=int(m[2]), unit=m[3], keys=m[4].split(','))
             for m in re.findall(r'bar \[(\S+) active=(\d) slots=(\d+) unit=(\S+) keys=(\S*)\]', '\n'.join(L))]
     s = ' '.join('[%s %s %s]' % (b['name'], b['unit'][:8], ','.join(b['keys'])) for b in bars) + ' ' + s
+    geo = [dict(name=m[0], panel=float(m[1]), x0=float(m[2]), x1=float(m[3]), graphics=int(m[4]))
+           for m in re.findall(r'geo \[(\S+) panel=([\d.]+) x=(-?[\d.]+)\.\.(-?[\d.]+) graphics=(\d+)\]', '\n'.join(L))]
     body = re.search(r'summary_body=(-?\d) tabs_in_body=(-?\d)', s)
     real = [b for b in bars if not b['name'].startswith('QuickSlotUI_Multi')]
     cards = sorted((b for b in bars if b['name'].startswith('QuickSlotUI_Multi') and b['active']), key=lambda b: b['name'])
     return dict(real=real[0] if real else None, cards=[c['unit'] for c in cards], card_slots=[c['slots'] for c in cards],
                 card_keys=[c['keys'] for c in cards],
-                body=int(body.group(1)) if body else None, tabs_in_body=int(body.group(2)) if body else None, raw=s[-600:])
+                geo=sorted(geo, key=lambda g: g['name']), body=int(body.group(1)) if body else None, tabs_in_body=int(body.group(2)) if body else None, raw=s[-600:])
 
 
 def wait_state(pred, limit=10):
     t0 = time.time(); s = state()
     while not pred(s) and time.time() - t0 < limit: time.sleep(0.7); s = state()
     return s
+
+
+def scale_checks(S, where):
+    """check 4 on the states of 2, 3 and 4 selected units (S['state_<n>'])"""
+    geo = {n: (S.get('state_%d' % n) or {}).get('geo') or [] for n in (2, 3, 4)}
+    w = [g['panel'] for n in geo for g in geo[n]]
+    lay = re.findall(r'multi-bar: layout (n=\d canvas=\d+ u=[\d.]+ scale=[\d.]+)', dlog())
+    S['scale_' + where] = {'geo': geo, 'layout': lay[-6:]}
+    check('%s: 2, 3, 4 units: every card the same size (no zoom when the selection changes)' % where,
+          all(len(geo[n]) == n for n in geo) and w and max(w) <= min(w) * 1.005, ({n: [g['panel'] for g in geo[n]] for n in geo}, lay[-3:]))
+    check('%s: 2, 3, 4 units: every card on screen' % where,
+          w and all(g['x0'] >= -0.002 and g['x1'] <= 1.002 for n in geo for g in geo[n]),
+          {n: ['%.3f..%.3f' % (g['x0'], g['x1']) for g in geo[n]] for n in geo})
 
 
 def click_units(k, s, settle=2.5):
@@ -116,8 +135,9 @@ def lease():
     raise SystemExit('no rig lease in 30 min')
 
 
-def up(out):
-    """mods of this tree + the probe; copy W started hidden; the base save loaded"""
+def up(out, size=None, ui=None):
+    """mods of this tree + the probe; copy W started hidden (window size WxH, UI Scale ui: the copy's own settings); the base
+    save loaded"""
     if r.alive(r.read_pid(X)): raise SystemExit('copy W already running')
     md = os.path.join(out, 'mods')
     if os.path.exists(md): aside(md, out)
@@ -141,7 +161,16 @@ def up(out):
     os.environ.update({'LRIG_DYLIB': os.path.join(LB, 'build', 'dsload.dylib'), 'DSL_MODS_DIR': md, 'DSL_PROFILE': prof,
                        'DSML_DATA': os.path.join(I, 'data'), 'DSL_CLOUD': '0', 'DSL_NO_ALERT': '1', 'DSRIG_BG': '1'})
     os.environ.pop('DSML_SESSION', None)
-    r.start(X, window=True)
+    if size: os.environ['LRIG_SIZE'] = size
+    orig = r.prepare_data
+    def prep(x):                                       # the copy's own UserSetting.json: UI Scale
+        orig(x)
+        if ui is None: return
+        p = os.path.join(r.idir(x), 'data', 'UserSetting.json'); d = json.load(open(p))
+        d['GraphicSettingData']['UIScale'] = float(ui); json.dump(d, open(p, 'w'), indent=1)
+    r.prepare_data = prep
+    try: r.start(X, window=True)
+    finally: r.prepare_data = orig
     r.wait_for(X, lambda s: s.get('scene') == 1 and not s.get('busy'), 'title', timeout=900)
     L = dlog()
     check('module ready (every name found, 17 hooks)', 'multi-bar: ready (17 hooks' in L, [l for l in L.splitlines() if 'multi-bar' in l][-6:])
@@ -200,6 +229,7 @@ def flow():
                 what = 'weapon slot' if WS and slot == 5 else 'slot %d' % slot
                 check('%d units: card %d %s uses unit %d only%s' % (n, k, what, k, (' (' + want + ')') if want else ''),
                       users == [party[k]] and (want is None or [a[1] for a in adds] == [want]), (adds, mod))
+    scale_checks(S, os.environ.get('LRIG_SIZE', '960x540'))
     # ---- Shift-select removes a unit again; then one unit = stock
     probe('add 3', 'add 3:')
     s = wait_state(lambda s: len(s['cards']) == 3)
@@ -232,9 +262,23 @@ def flow():
     return S
 
 
+def flow_scale(where):
+    """check 4 alone: 1, 2, 3, 4 units by Shift-select"""
+    S = {}
+    time.sleep(3)
+    probe('sel 0', 'sel 0:')
+    wait_state(lambda s: s['real'] and s['real']['active'] and not s['cards'])
+    for n in (2, 3, 4):
+        probe('add %d' % (n - 1), 'add %d:' % (n - 1))
+        S['state_%d' % n] = s = wait_state(lambda s: len(s['cards']) == n)
+        check('%d units: %d cards' % (n, n), len(s['cards']) == n, s['raw'])
+    scale_checks(S, where)
+    return S
+
+
 def main():
     a = sys.argv[1:] or ['run']
-    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'up') else '~/ds_launcher/loader/test_env/l1_out/multibar')
+    out = os.path.expanduser(a[1] if len(a) > 1 and a[0] in ('run', 'up', 'scale') else '~/ds_launcher/loader/test_env/l1_out/multibar')
     if a[0] == 'probe': print('\n'.join(probe(a[1]))); return
     if a[0] == 'down': open(STOPF, 'w').write('stop\n'); return
     os.makedirs(out, exist_ok=True)
@@ -252,6 +296,9 @@ def main():
             t0 = time.time()
             while not os.path.exists(STOPF) and time.time() - t0 < 3 * 3600 and r.alive(r.read_pid(X)): time.sleep(2)
             if os.path.exists(STOPF): aside(STOPF, out)
+        elif a[0] == 'scale':
+            size = a[2] if len(a) > 2 else '1080x698'; ui = a[3] if len(a) > 3 else '1.1'
+            g0 = up(out, size, ui); S = flow_scale('%s UI %s' % (size, ui))
         else:
             S, g0 = run(out)
     except Exception as e:

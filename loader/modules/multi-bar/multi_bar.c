@@ -632,17 +632,25 @@ static void summary_multi(int on) {
     }
 }
 
-/* ---------------- layout: one row, centred, shrunk to the screen width, never above the stock size */
+/* ---------------- layout: one row, centred, at ONE scale for 2, 3 or 4 cards: the scale that fits MAXB cards on this
+   canvas, never above the stock size. Only the canvas width and UI Scale change it, never the number of selected units
+   (owner 2026-10-25: the bars zoomed in and out at each selection; canvas 1671 wide at UI 1.1 gave 1.00 / 0.92 / 0.69). */
 #define GAP 16.0f
 #define MARGIN 8.0f
+static float row_w(int n) { return n * BLOCK_W + (n - 1) * GAP; }
+static float lay_w, lay_u;                                       /* canvas width and UI Scale of the last layout */
+static int canvas_moved(void) {
+    Obj real = real_view(gc_get(h_presenter));
+    return real && (rt_rect(tr_parent(tr_of(real))).w != lay_w || ui_scale() != lay_u);
+}
 static void layout(void) {
     Obj real = real_view(gc_get(h_presenter));
     if (!real) return;
     Rect r = rt_rect(tr_parent(tr_of(real)));
     float u = ui_scale(), W = r.w / u;                          /* bar copies live in the root scaled by u */
-    float total = n_active * BLOCK_W + (n_active - 1) * GAP;
-    float s = (W - 2 * MARGIN) / total; if (s > 1) s = 1;
-    float x0 = -s * total / 2;
+    lay_w = r.w; lay_u = u;
+    float s = (W - 2 * MARGIN) / row_w(MAXB); if (s > 1) s = 1;
+    float x0 = -s * row_w(n_active) / 2;
     for (int k = 0; k < n_active; k++) {
         Obj c = copy_k(k); if (!c) continue;
         Obj panelTr = tr_find(tr_of(c), "Panel_QuickSlot"); if (!panelTr) continue;
@@ -654,7 +662,9 @@ static void layout(void) {
     g_sideDelta = 192 * u;
     hud_shift(h);
     summary_multi(1);
-    static float lastH; if (h != lastH) H->log(ME, "multi-bar: layout n=%d canvas=%.0f u=%.2f scale=%.2f shift=%.0f", n_active, r.w, u, s, h); lastH = h;
+    static float lastH; static int lastN;
+    if (h != lastH || n_active != lastN) H->log(ME, "multi-bar: layout n=%d canvas=%.0f u=%.2f scale=%.2f shift=%.0f", n_active, r.w, u, s, h);
+    lastH = h; lastN = n_active;
 }
 
 /* ---------------- show / hide */
@@ -743,6 +753,7 @@ static void hk_frame(Obj p, Obj data, const void *mi) {
     o_frame(p, data, mi);
     if (!n_active) return;
     if (mp_session()) { hide_all(); return; }
+    if (canvas_moved()) layout();                                /* window resized or UI Scale changed while the cards show */
     for (int k = 0; k < n_active; k++) {
         Obj c = copy_k(k), u = unit_k(k);
         if (c && u) with_copy(p, c, u, o_frame, data, mi);
