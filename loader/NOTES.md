@@ -673,8 +673,10 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
   on its first frames; a scene the loader cannot read: after 3600 frames) and waits up to DSL_CLOUD_ASK_WAIT s (20); no
   answer = the pass is skipped (nothing synced). Game check: `loader/test/l1_cloud_test.py` (copy K, fake cloud, MPHub_ /
   MPPvP_ files; MP pin with ds_multiplayer ee9a39f+).
-  Limit: Units Laboratory's filter knows a test world only while it is listed (Mods/custom-modes/test_worlds.json,
-  cleared back at the title), so a copy uploaded before 0.1.29 of a test world that is gone is not recognised.
+  Units Laboratory's filter (tfw_is_test) knows its test worlds for good since ds_custommodes 52532d3 (0.1.45): their
+  campaign guid carries the mark 7e57f167-xxxx-0xxx and every test world made is recorded in
+  Mods/custom-modes/test_worlds_made.txt (never cleared). Not covered: a test world made before the mark whose list entry
+  (test_worlds.json, cleared at the title) was already gone, and another computer's test worlds made before the mark.
   Test: `loader/test/cloud/run.sh` sections 0 (no frame yet) and 15 (fails on 0.1.28's dsl_cloud.c).
 - Data guard (the one real break): Load and Remove File act on `SaveLoadPresenter._selectedSaveName` (set by a click on a
   save row), not on the view's selected row; `SaveLoadView.UnselectAllSlots` + `LockLoadButtons` change only the view. So:
@@ -1182,6 +1184,36 @@ UX L6: the reason line names the needed mod as the list does (dsl_reg.c dsl_mod_
 turned off adds "Turn it on." (key "%s. Turn it on.").
 UX L7: ru "Privacy" = "Конфиденциальность" (the game's word, Политика конфиденциальности), as the bug report's; that button
 220 wide; the group-name row's Save / Cancel 100 wide (field 216 shorter).
+
+## New in-game panel? dsl_movable + dsl_panel_size (SIZE RULE: owner 2026-10-25 "allow to both make the chat and the DPS check window smaller or bigger with a plus or minus"; kit 0.1.29, lane dspanelzoom) - `src/dsl_ui.c` "SIZE RULE"
+One template, next to `movable`: `dsl_panel_size(ui, panel, key, x, y, flags)` (DSLUi `panel_size` + `panel_size_get`, appended
+after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100 %).
+- Two kit buttons "-" (U+2212 when the game's body font has it, else U+2013, else "-") and "+", 22 x 22 units, 2 apart, in a
+  holder (a plain RectTransform) anchored to the panel's top-right corner, x / y units in from it: they stay in the corner
+  when the panel's width changes. Labels 20, the body font (txt_body; the UI-RULE font check covers them). Each click =
+  the size 10 % down / up, 60 % .. 150 % (tenths 6 .. 15), the button greyed at its end; the click leaves the EventSystem
+  selection (esc_deselect), so Space / Enter stay the game's (the chat's read state pauses with Space).
+- Kept as the row `<key>@size<TAB><size><TAB>0` of `<DSML_DATA>/Mods/ui_places.tsv`, beside the place rows (an older kit
+  never asks for such a key). Keys up to 58 bytes. Put back by the next panel_size call with that key (next game start,
+  a rebuilt panel).
+- Who draws it: a panel that follows UI Scale through the kit (scale_follow, window_std) is drawn at UI Scale x size by
+  sf_apply (smaller when it would not fit its parent); flags `DSL_SIZE_OWN` = the panel scales itself and multiplies its
+  scale by `panel_size_get(panel)` (read every frame: it changes on a click); any other panel gets localScale = size.
+  For 10 frames after a change (2 frames' wait for an own scale) a movable panel is put back on the screen (mv_clamp).
+- window_std: `DSL_WIN_SIZE` (DSLWinStd.flags, DSL_WIN_PANEL) puts them left of the red X, key = move_key; the title then
+  keeps 120 units free on each side (76 without a red X).
+- Users: multiplayer chat (`multiplayer.chat`, DSL_SIZE_OWN: the chat's root at its bottom-left corner is drawn at the size,
+  the box keeps its own units, so its layout and drags stay; mpmenu.c, bridge mp_esc.c mpesc_size); Units Laboratory's DPS
+  meter (`custom-modes.dps_meter`, DSL_SIZE_OWN: tf_meter.c place_now, UI Scale x size, kept on the screen) and its own DPS
+  log panel when there is no chat (`custom-modes.dps_log`, scale_follow). Could take it later (owner's word first): the
+  Players panel, Teams window, PvP match / bring / result windows (multiplayer), the Test Fights restart panel
+  (`custom-modes.tf_restart`), the Multi-unit view cards.
+- No UI-RULE line for a panel without "-" / "+" (lead 2026-10-26: the owner named the chat and the DPS Check window only).
+Test: `test/panelsize_test.py` (hidden copy KIT, uikit-demo api stdpanel a:1 = the template panel with DSL_WIN_SIZE, targets
+stdp_size.minus / .plus): start 1 at 960x540 UI 1.0: buttons in the game's font, "+" 110 %, "-" "-" 90 %, stops at 60 %,
+each size kept; start 2 at 800x600 UI 1.4: back at the kept 130 %, "+" "+" 150 % and the whole panel on the screen (its
+first place runs past the window), no UI-RULE line: 14/0; main 7f901f5: 2 FAIL (no buttons, nothing kept).
+Units Laboratory's dps_test checks the meter and the chat in a DPS Check world (size_checks).
 
 ## CHANGELOG.md + the "What's new" window (owner 2026-10-25, "All three"; kit 0.1.28, lane dschangelog) - `src/dsl_whatsnew.c`, `tools/changelog/changelog.py`
 Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repos) has an entry in its repo's
