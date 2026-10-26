@@ -12,7 +12,7 @@ Lease: rig.py lease loaderui --pid <this pid>; released at the end (not when the
 B's multiplayer control socket: env DSRIG_DIR=<V>/rigB or rigC (data/ links to <V>/data), so A keeps its own;
 DSL_LOG_DIR=<V> for every process (logs + softrestart/ stay in one place).
 """
-import json, os, shutil, signal, subprocess, sys, threading, time, glob
+import json, os, re, shutil, signal, subprocess, sys, threading, time, glob
 sys.path.insert(0, os.path.expanduser('~/ds_launcher/loader/test'))
 import lrig as r
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -277,7 +277,7 @@ def b_checks(pid, tag):
     L = blog()
     check(f'{tag}: B muted while hidden', 'B: audio paused while hidden' in L and 'mute while hidden: volume ok, pause ok' in L,
           [l for l in L.splitlines() if 'audio' in l or 'mute' in l][-4:])
-    check(f'{tag}: B idle frame cap while waiting', 'frame cap -> 10 while hidden' in L, [l for l in L.splitlines() if 'frame cap' in l][-3:])
+    check(f'{tag}: B idle frame cap while waiting', re.search(r'frame cap (-?\d+ vsync \d+ )?-> 10 while hidden', L), [l for l in L.splitlines() if 'frame cap' in l][-3:])   # a prewarm B boots at 10 too (0.1.29)
     ws = r.windows([pid])
     check(f'{tag}: B windows alpha 0 (window server)', ws and all(w['alpha'] == 0 for w in ws), ws)
     cpu = subprocess.run(['ps', '-o', '%cpu=,rss=', '-p', str(pid)], capture_output=True, text=True).stdout.split()
@@ -331,7 +331,7 @@ def run_chain(mode, n, out, summary):
             check(f'run {i + 1}: the prewarmed B was used', b == pw and 'the prewarmed B pid' in logs(), (b, pw))
         st = wait_status(sock(i + 1), lambda s: s.get('scene') == 1, 'B title answer', 30)
         L = blog()
-        nm = 2 if prof == P2 else 1
+        nm = (2 if prof == P2 else 1) + ('runs whenever installed' in L)   # + hell-difficulty: loaded whenever installed (0.1.28, NOTES "Hell always loaded")
         check(f'run {i + 1}: B runs {nm} module(s)', f'modules: {nm} loaded of {nm} opened' in L, [l for l in L.splitlines() if 'modules:' in l][-2:])
         check(f'run {i + 1}: A exited', a_gone)
         info.update({'request_to_shown_s': round(dt, 3), 'apply_to_shown_s': g, 'b_pid': b})

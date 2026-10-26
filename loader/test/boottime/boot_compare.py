@@ -145,7 +145,7 @@ def one(c, run, first):
             if w[1] == 'state' and w[2] == '1' and w[3] == '1' and t_title is None: t_title = float(w[0])
         if t_title is not None and (c in ('a', 'b') or t_done is not None or time.time() - t_title > 20): break
         if c not in ('a', 'b') and t_done is None and os.path.exists(dl):
-            m = [l for l in open(dl, errors='replace').read().splitlines() if 'boot done (title ready)' in l]
+            m = [l for l in open(dl, errors='replace').read().splitlines() if 'boot done (title ready' in l]
             if m:
                 lt = time.localtime(t0); day0 = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
                 t_done = day0 + clock(m[0])
