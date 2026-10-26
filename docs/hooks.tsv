@@ -257,6 +257,7 @@ multiplayer	detour	Refactor.UI.ExpeditionPlanView$$ShowCriticalRiskConfirm	-	0xb
 custom-modes	detour	Refactor.Main.InputModule.InputDispatcher$$Update	0xd3b550	0xa4c970	always (module loaded)	custom-modes InputDispatcher.Update	ds_custommodes:fights/cm_win.c
 custom-modes	detour	Refactor.FX.AffecterFX_SelfRepair$$OnFXCall	0x9c20b0	0x71f5d0	always (module loaded)	custom-modes AffecterFX_SelfRepair.OnFXCall	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.AffecterSimulator$$Simulate	0x94a380	0x6b3d20	always (module loaded)	custom-modes AffecterSimulator.Simulate	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.Combat.CombatUtility$$GetClosestSingleEnemy	0x8af164	0x6120d0	always (module loaded)	custom-modes CombatUtility.GetClosestSingleEnemy	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.DamageSimulator$$Simulate	0x94ae24	0x6b62b0	always (module loaded)	custom-modes DamageSimulator.Simulate	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.UI.EntitySummaryUIView$$UpdateBuildingEntityUI	0xed4464	0xbd84c0	always (module loaded)	custom-modes EntitySummaryUIView.UpdateBuildingEntityUI	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.HealSimulator$$Simulate	0x94d83c	0x6b73b0	always (module loaded)	custom-modes HealSimulator.Simulate	ds_custommodes:fights/tf_dps.c

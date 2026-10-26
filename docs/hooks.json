@@ -7,8 +7,8 @@
   "mac-arm64",
   "win-x64"
  ],
- "mp_pin": "1a163d1e798a9146a68776f1a98cb3582fc13d88",
- "cm_pin": "2c2f2f212e0246981287590ac6f6d79b4e513f2e",
+ "mp_pin": "fdfc92618e408070d31f3bc34932e7ab8d4af872",
+ "cm_pin": "f94ceffd61b4b55aa8c5e301b86013b58831428b",
  "fields": {
   "owner": "loader or the mod id",
   "kind": "detour (the first instructions jump to our code; the original stays callable) or patch (instruction bytes changed in place)",
@@ -5091,6 +5091,23 @@
    "label": "custom-modes AffecterSimulator.Simulate",
    "source": "ds_custommodes:fights/tf_dps.c",
    "key": "custom-modes|tf_dps.c|h_asim|"
+  },
+  {
+   "owner": "custom-modes",
+   "kind": "detour",
+   "method": "Refactor.Combat.CombatUtility$$GetClosestSingleEnemy",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0x8af164"
+    },
+    "win-x64": {
+     "rva": "0x6120d0"
+    }
+   },
+   "active": "always (module loaded)",
+   "label": "custom-modes CombatUtility.GetClosestSingleEnemy",
+   "source": "ds_custommodes:fights/tf_dps.c",
+   "key": "custom-modes|tf_dps.c|h_cse|"
   },
   {
    "owner": "custom-modes",

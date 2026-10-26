@@ -4,7 +4,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
-### Unreleased (0.1.29)
+### 0.1.29 (2026-10-26)
 
 - Smoother game on the title screen, on the loading screen and in your worlds: the mod loader no longer searches all the objects of the game many times a second to find the Load list, the game's windows and its notice box. Before, this made a slow frame about every half second in a world and every fifth frame on the title screen.
 - Load Campaign: worlds that a mod hides as its own (old multiplayer hub and PvP worlds, Units Laboratory test worlds) no longer add the line "worlds are hidden by a filter under the list". There is no box that shows them.
@@ -12,6 +12,9 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - Steam Cloud backup: worlds that a mod makes for itself (Units Laboratory Test Fights and DPS Check worlds, old multiplayer hub and PvP worlds) are no longer uploaded, and copies of them already in the cloud are not downloaded to your computer. Those copies stay in the cloud; nothing is deleted.
 - Mods can give a panel small "-" and "+" buttons: each click makes the panel and its text 10 % smaller or bigger, from 60 % to 150 %. The size is kept for your next game. The multiplayer chat and the DPS Check panels of Units Laboratory use them.
 - VSync: when VSync is off in the game's Settings, it now stays off. Before, the fast start of the modded game turned VSync on again for the whole game. The frame rate limit after the start is always the game's own.
+- Units Laboratory 0.1.47: less stutter while you play (no more searches of the whole game scene in a world or while a world loads). Test Fights World Units shows four unit cards at once. Units picked from a save keep that save's Auto Skill choices. Test worlds stay out of the Load list and the Steam Cloud backup for good. "DPS Log in Chat" acts at once, and the DPS meter and the DPS log have "-" and "+" buttons.
+- Multiplayer 0.1.28: single player runs smoother with the multiplayer mod. The old "Foreign Expedition Hub" and "PvP Base" worlds no longer show in the Load list. A click anywhere on a Bring Units row ticks the unit. The chat has "-" and "+" buttons.
+- Multi-unit view 0.1.1: the unit cards keep one size when you select or unselect units.
 
 ### 0.1.28 (2026-10-25)
 
@@ -371,7 +374,7 @@ Fixes:
 
 ## Multi-unit view (multi-bar)
 
-### Unreleased (0.1.1)
+### 0.1.1 (2026-10-26)
 
 - The unit cards keep one size when you select or unselect units. Before, they grew or shrank each time the number of selected units changed (2, 3 or 4). They now always have the size that lets 4 cards fit across your screen, and they change only when you change the window size or the UI Scale.
 
