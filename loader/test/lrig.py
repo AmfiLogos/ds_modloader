@@ -390,6 +390,7 @@ def prepare_data(x):
             g[a], g[b] = win_size()
         g['SaveCurrentScreenType'] = 1
         s['GeneralSettingData']['IsKeyboardEnvironmentNoticeAcknowledged'] = True
+        s['GeneralSettingData']['MoveScreenByEdgeScreen'] = False      # owner 2026-10-26: no edge scrolling in test games
         json.dump(s, open(us, 'w'), indent=1)
     og = os.path.join(d, 'OutGame.json')
     if not os.path.exists(og) and os.path.exists(os.path.join(SEED_DATA, 'OutGame.json')):
