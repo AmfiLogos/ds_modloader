@@ -1279,3 +1279,30 @@ Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repo
   on the Escape stack, one Escape closes it, title menu stays; same version again = no window; a test copy without
   DSL_WHATSNEW_TEST = no window; no UI-RULE / ESC-MISSING line. 19/0 (0.1.26 entry, and the long 0.1.28 entry); the
   main loader fails it (no window).
+
+## The loader never changes the player's VSync or frame cap (FPS audit 2026-10-26 rows 1, 10; kit 0.1.29, lane fpsvsync) - `src/dsl_soft.c` force_fps / fast_end
+Rule (lead brief 2026-10-26): "Fix the mod loader so it never changes the player's VSync / frame cap." Every frame cap or
+vsync the loader forces (A's boot speed-up, a soft-restart B, a prewarm B) goes through `force_fps` and comes back through
+`fast_end`: new code that needs another frame cap uses those two, never its own `set_targetFrameRate` / `set_vSyncCount`.
+- What the game sets itself (build 25846389, Mac and Windows binaries): `MainFlow.Awake` sets `Application.targetFrameRate
+  = 60`; the `GraphicSetting` ctor (MainFlow.Start), `SetGraphicSetting` and `SetVSync` set `QualitySettings.vSyncCount =
+  GraphicSettingData.VSyncEnabled` (Settings > VSync). The speed-up's first read comes before the ctor: vsync 1 (Unity's
+  default) with the player's setting OFF.
+- The bug (row 1): the speed-up forces vsync 0, so a 0 written by the game looks like its own; it restored the first value
+  read, 1. Every player with VSync OFF had VSync ON all session, up to v0.1.28 (Mac and Windows logs: "frame cap 60
+  vsync 1 restored").
+- Now: vsync at the restore = the player's setting read by name (`MainFlow._userSetting` -> `UserSettingContainer.GraphicSetting`
+  -> `GraphicSettingData` -> `VSyncEnabled`); setting not made yet (a restore before MainFlow.Start) = the value before the
+  speed-up (the game's ctor sets its own later). Those names not found (another build) = vsync is never touched (the
+  speed-up then only lifts the frame cap). Frame cap: the value the game wrote last (any value but ours), as before.
+- Row 10: A's speed-up also ends when the game leaves the title (scene >= 2: a save opened before an idle title was seen)
+  and DSL_FB_MAX s after the process start (default 120); MainFlow.Awake not hooked = no speed-up at all. Log line
+  "A: boot done (<why>, scene <n>): frame cap, vsync and loading priority restored" + "A: frame cap 60 vsync 0 restored
+  (vsync: the player's VSync setting)".
+- Row 8 (Mac: a prewarm B boots uncapped beside the player's title for ~3 s): NOT changed (owner 2026-10-26: "i personally
+  didn't have any issue on the title"). A 10 fps prewarm boot was tried (merge d5c8710) and undone: it made a prewarm
+  ready after ~28 s instead of ~3 s, and an Apply 3 s after the prewarm started showed the new game 2.5 s after the click
+  instead of ~1 s. The ~90 ms LaunchServices wait at spawn stays too (the handover checks B's pid).
+- Guard: `test/vsync_test.py` (copy Y, batchmode, no multiplayer: its rig mode sets fps + vsync itself; probe
+  `test/vsync_probe.c`): base run (speed-up off) = the game's own values; VSync OFF and ON with the speed-up on: vSyncCount
+  = the setting and the game's frame cap, at the title and in a world.

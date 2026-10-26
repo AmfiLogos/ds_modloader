@@ -87,18 +87,33 @@ static void (*set_blp)(int); static int (*get_blp)(void);              /* Applic
 static int fast_on, fast_saved, saved_fps, saved_vsync, splash_seen, saved_blp = -1;
 static int a_part_splash = 1, a_part_fps = 1, a_part_blp = 1;          /* A: DSL_FB_SPLASH / DSL_FB_FPS / DSL_FB_BLP (dsl_fastboot_part) */
 static int fps_mode;                                                    /* frame cap forced while hidden: 10000 boot, idle fps waiting */
+/* What the game sets itself (build 25846389, Mac and Windows binaries): MainFlow.Awake sets
+   Application.targetFrameRate = 60; the GraphicSetting ctor (MainFlow.Start), SetGraphicSetting and SetVSync set
+   QualitySettings.vSyncCount = GraphicSettingData.VSyncEnabled (Settings > VSync). The first read here can come before
+   either (Unity's own defaults, vsync 1). Restored: the frame cap the game wrote last (any value but ours), and vsync =
+   the player's setting read by name at the restore (MainFlow._userSetting.GraphicSetting.GraphicSettingData.VSyncEnabled);
+   not applied by the game yet = the value before the speed-up (the game then sets its own). A vsync 0 the game writes
+   cannot be told from ours: until 0.1.29 the first value read came back, and a player with VSync OFF had it ON all
+   session (FPS audit 2026-10-26, row 1). Setting not found by name (another build): vsync is never touched. */
+static int32_t off_us = -1, off_gs = -1, off_gsd = -1, off_vse = -1;
+static int vs_names(void) { return off_us >= 0 && off_gs >= 0 && off_gsd >= 0 && off_vse >= 0; }
+static int game_vsync(void) {                                           /* 0 / 1, or -1 = not known (yet) */
+    if (!mf || !vs_names()) return -1;
+    Obj us = AT(mf, off_us, Obj), gs = us ? AT(us, off_gs, Obj) : NULL, gd = gs ? AT(gs, off_gsd, Obj) : NULL;
+    return gd ? AT(gd, off_vse, uint8_t) != 0 : -1;
+}
 static void force_fps(int target) {
     if (!set_fps || !get_fps || !set_vsync || !get_vsync) return;
-    int f = get_fps(), v = get_vsync();
-    if (f == target && v == 0) return;                                  /* the game (re)applies its settings at boot */
-    if (!fast_saved) { fast_saved = 1; saved_fps = f; saved_vsync = v; SLOG("B: frame cap %d vsync %d -> %d while hidden", f, v, target); }
+    int vok = vs_names(), f = get_fps(), v = get_vsync();
+    if (f == target && (v == 0 || !vok)) return;                        /* the game (re)applies its settings at boot */
+    if (!fast_saved) { fast_saved = 1; saved_fps = f; saved_vsync = v; SLOG("%s: frame cap %d vsync %d -> %d %s%s", role_b ? "B" : "A", f, v, target, role_b ? "while hidden" : "during the boot", vok ? "" : " (vsync left to the game: its setting not found by name)"); }
     else {
         if (f != target && f != fps_mode) saved_fps = f;                /* a value the game set itself */
-        if (v != 0) saved_vsync = v;
-        if (target != fps_mode) SLOG("B: frame cap -> %d while hidden", target);
+        if (target != fps_mode) SLOG("%s: frame cap -> %d %s", role_b ? "B" : "A", target, role_b ? "while hidden" : "during the boot");
     }
     fps_mode = target;
-    set_vsync(0); set_fps(target);
+    if (vok) set_vsync(0);
+    set_fps(target);
 }
 static void fast_tick(void) {
     if (!fast_on) return;
@@ -116,11 +131,17 @@ static void fast_end(void) {
     if (!fast_on) return;
     fast_on = 0;
     if (saved_blp >= 0 && set_blp) set_blp(saved_blp);
+    if (!fast_saved || !set_fps || !set_vsync) return;
+    int gv = game_vsync(), want = gv >= 0 ? gv : saved_vsync;
     /* test only: DSL_SOFT_NO_VSYNC=1 (set by the loader tests when the Mac's display is asleep): vsync stays 0. With the
        display asleep a SHOWN window with vsync on blocks Unity's main thread waiting for a frame (no frames, no rig
        commands): l1_test 8/9 "timeout waiting for B in the world" while the owner's screen was off, 2026-10-16. */
-    int vs = test_mode && getenv("DSL_SOFT_NO_VSYNC") && *getenv("DSL_SOFT_NO_VSYNC") == '1' ? 0 : saved_vsync;
-    if (fast_saved && set_fps && set_vsync) { set_vsync(vs); set_fps(saved_fps); SLOG("B: frame cap %d vsync %d restored%s", saved_fps, vs, vs != saved_vsync ? " (test: display asleep, vsync off)" : ""); }
+    int vs = test_mode && getenv("DSL_SOFT_NO_VSYNC") && *getenv("DSL_SOFT_NO_VSYNC") == '1' ? 0 : want;
+    if (vs_names()) set_vsync(vs);
+    set_fps(saved_fps);
+    SLOG("%s: frame cap %d vsync %d restored (vsync: %s)%s", role_b ? "B" : "A", saved_fps, vs_names() ? vs : get_vsync(),
+         !vs_names() ? "not touched" : gv >= 0 ? "the player's VSync setting" : "the value before the speed-up, the game applies its setting later",
+         vs != want ? " (test: display asleep, vsync off)" : "");
 }
 
 /* B mute while hidden: AudioListener.pause + volume 0 (icalls; the game's own volume / pause wanted values come back
@@ -863,7 +884,11 @@ static void a_fast_tick(void) {
         a_splash_tick(title && (!fv || !fade_done || !fade_done(fv, NULL) || since() - title_at > 3));
     }
     if (!a_fast || !fast_on) return;
-    if (title) { fast_end(); a_fast = 0; SLOG("A: boot done (title ready): frame cap and loading priority restored"); return; }
+    /* never past the boot (FPS audit row 10): the title, a world (a save opened before an idle title was seen), or the
+       time limit (DSL_FB_MAX s after the process start, default 120; Mac boots in ~3 s, a Windows VM in 7-20 s) */
+    int sc = mf ? scene() : -1;
+    const char *why = title ? "title ready" : sc >= 2 ? "the game left the title" : since() > env_num("DSL_FB_MAX", 120) ? "time limit" : NULL;
+    if (why) { fast_end(); a_fast = 0; SLOG("A: boot done (%s, scene %d): frame cap, vsync and loading priority restored", why, sc); return; }
     fast_tick();
 }
 /* A's boot screen (owner 2026-10-17: the screen never looks dead between start and title). From the first scene to
@@ -989,8 +1014,10 @@ void dsl_soft_install(void) {
     if (kmf) {
         off_scene = foff(kmf, "_currentScene"); off_boot = foff(kmf, "_bootReady"); off_eq = foff(kmf, "_eventQueue");
         off_set = foff(kmf, "_campaignSetting"); off_sl = foff(kmf, "_sceneLoader"); off_ts = foff(kmf, "_mapTransitionState");
-        off_lc = foff(kmf, "_mapLoadingChecker");
+        off_lc = foff(kmf, "_mapLoadingChecker"); off_us = foff(kmf, "_userSetting");
     }
+    { void *ku = klass("Refactor.Main", "UserSettingContainer"), *kg = klass("Refactor.Setting", "GraphicSetting"), *kd = klass("Refactor.Setting", "GraphicSettingData");
+      off_gs = ku ? foff(ku, "GraphicSetting") : -1; off_gsd = kg ? foff(kg, "GraphicSettingData") : -1; off_vse = kd ? foff(kd, "VSyncEnabled") : -1; }
     eq_add = meth("Refactor.Main", "EventQueue", "AddEvent", 1);
     lc_loading = meth("Refactor.Main", "MapLoadingChecker", "get_IsLoading", 0);
     k_load = klass("Refactor.Main.Event", "LoadCampaignRequested"); ctor_load = meth("Refactor.Main.Event", "LoadCampaignRequested", ".ctor", 1);
@@ -1055,6 +1082,9 @@ void dsl_soft_install(void) {
     void *a1 = meth("Refactor.Main", "MainFlow", "Awake", 0), *a2 = meth("Refactor.UI", "ScreenFadeEffectView", "Awake", 0);
     int h1 = a1 ? dsl_hook(DSL_OWNER_LOADER, a1, (void *)my_mf_awake, (void **)&o_mf_awake, "loader soft MainFlow.Awake") : -1;
     int h2 = a2 ? dsl_hook(DSL_OWNER_LOADER, a2, (void *)my_fade_awake, (void **)&o_fade_awake, "loader soft ScreenFadeEffectView.Awake") : -1;
+    if (fast_on && !role_b && (h1 || off_scene < 0 || off_boot < 0)) {   /* the title can never be seen: no speed-up at all */
+        fast_on = 0; a_fast = 0; SLOG("A: boot speed-up off (MainFlow not captured: the title could not be seen)");
+    }
     if (miss || h1 || h2) { dsl_log("soft: game functions missing (%d) or hooks refused (%d %d): soft restart OFF", miss, h1, h2); obj_new = NULL; return; }
     SLOG("soft restart ready (%s)", role_b ? (b_prewarm ? "B prewarm: waiting for the title" : "B: waiting for the title") : "A");
 }

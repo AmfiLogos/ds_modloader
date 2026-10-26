@@ -331,7 +331,7 @@ def run_chain(mode, n, out, summary):
             check(f'run {i + 1}: the prewarmed B was used', b == pw and 'the prewarmed B pid' in logs(), (b, pw))
         st = wait_status(sock(i + 1), lambda s: s.get('scene') == 1, 'B title answer', 30)
         L = blog()
-        nm = 2 if prof == P2 else 1
+        nm = (2 if prof == P2 else 1) + ('runs whenever installed' in L)   # + hell-difficulty: loaded whenever installed (0.1.28, NOTES "Hell always loaded")
         check(f'run {i + 1}: B runs {nm} module(s)', f'modules: {nm} loaded of {nm} opened' in L, [l for l in L.splitlines() if 'modules:' in l][-2:])
         check(f'run {i + 1}: A exited', a_gone)
         info.update({'request_to_shown_s': round(dt, 3), 'apply_to_shown_s': g, 'b_pid': b})
