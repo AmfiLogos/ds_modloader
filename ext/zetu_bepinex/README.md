@@ -7,8 +7,12 @@ The ZET-U Mod Suite of Dungeon Settlers Modded, as a plugin for plain BepInEx 6 
 - **Max units in the dungeon**: how many units can go on one expedition (4 to 8; 4 is the game's normal value).
   The expedition window, the supplies step, the Inventory / Status / Skill windows and the result screen show every unit.
 
-Game version: Dungeon Settlers build 25846389 (DS_B.0.4.29). After a game update, a part whose game code changed
-switches itself off and says so in `BepInEx/LogOutput.log`.
+Game version: Dungeon Settlers build 25846389 (DS_B.0.4.29), tested in the game. Older builds (24354931 to 25284551):
+every game method and field the plugin uses was checked in their code. After a game update, a part whose game code
+changed switches itself off and says so in `BepInEx/LogOutput.log`.
+
+Version 0.1.3. Fix: on game builds older than 25846389, "max units in the dungeon" was off (the log said
+`DungeonResultView.SetPlayerData (4 args): 0 methods found`). The result screen method has 3 parameters on those builds.
 
 Version 0.1.2. Fix: a world did not load on game builds other than 25846389. The save warning and backup are removed:
 tests showed saves made with the mod load and play in the normal game.

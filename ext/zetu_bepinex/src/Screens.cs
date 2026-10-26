@@ -41,7 +41,9 @@ namespace ZetuSuite
                 && Plugin.Patch(h, o, typeof(EntitySkillUIPresenter), "RefreshSelectedEntityUI", 1, prefix: nameof(SkillRefreshPre), postfix: nameof(SkillRefresh))
                 && Plugin.Patch(h, o, typeof(ExpeditionPlanView), "Init", 8, prefix: nameof(PlanInit))
                 && Plugin.Patch(h, o, typeof(SubUI_ExpeditionPlanLowerPanel), "OnSetUnit", 1, postfix: nameof(LowerSetUnit))
-                && Plugin.Patch(h, o, typeof(DungeonResultView), "SetPlayerData", 4, prefix: nameof(ResultPre), postfix: nameof(ResultPost));
+                // 4 parameters on build 25846389 (+ missingUnitNameKeys), 3 on the older builds; ResultPost reads only the two
+                // lists both have (Harmony binds them by name)
+                && Plugin.Patch(h, o, typeof(DungeonResultView), "SetPlayerData", 4, prefix: nameof(ResultPre), postfix: nameof(ResultPost), orArgc: 3);
             if (ok) Log($"expedition UI: {Max} unit panels, portraits and result portraits; count text /{Max}; unit windows {Max} panels");
             return ok;
         }

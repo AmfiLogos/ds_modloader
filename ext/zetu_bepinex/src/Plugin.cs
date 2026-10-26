@@ -27,7 +27,7 @@ namespace ZetuSuite
     public class Plugin : BasePlugin
     {
         public const string Guid = "amfi.zetu-suite";
-        public const string Version = "0.1.2";
+        public const string Version = "0.1.3";
         internal static ManualLogSource L;
         internal static bool SkillsWithoutWeapon;
         internal static int MaxUnits;
@@ -154,14 +154,22 @@ namespace ZetuSuite
         // ---------------------------------------------------------------- one patch; false = not installed (logged).
         // The game method by class, name and parameter count (as the loader's hook_method). Each part has its own Harmony
         // id: a part with a missing method takes all of its patches out (UnpatchSelf).
-        internal static bool Patch(Harmony h, Type owner, Type t, string name, int argc, string prefix = null, string postfix = null)
+        /* orArgc: the parameter count of the same method on other game builds (-1: none). Example: DungeonResultView.SetPlayerData
+           has 3 parameters up to build 25284551 and 4 on 25846389; 0.1.2 asked for 4 only, so on a player's older build the
+           whole max-units part was OFF. */
+        internal static bool Patch(Harmony h, Type owner, Type t, string name, int argc, string prefix = null, string postfix = null,
+                                   int orArgc = -1)
         {
             try
             {
                 MethodInfo m = null; int found = 0;
                 foreach (var c in AccessTools.GetDeclaredMethods(t))
-                    if (c.Name == name && c.GetParameters().Length == argc) { m = c; found++; }
-                if (found != 1) { L.LogError($"{t.FullName}.{name} ({argc} args): {found} methods found, not patched"); return false; }
+                {
+                    int n = c.GetParameters().Length;
+                    if (c.Name == name && (n == argc || n == orArgc)) { m = c; found++; }
+                }
+                string args = orArgc < 0 ? $"{argc}" : $"{argc} or {orArgc}";
+                if (found != 1) { L.LogError($"{t.FullName}.{name} ({args} args): {found} methods found, not patched"); return false; }
                 h.Patch(m, prefix == null ? null : new HarmonyMethod(AccessTools.Method(owner, prefix)),
                            postfix == null ? null : new HarmonyMethod(AccessTools.Method(owner, postfix)));
                 return true;

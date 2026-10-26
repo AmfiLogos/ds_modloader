@@ -25,6 +25,14 @@ $DN build ZetuSuite.csproj -c Release -o build/plugin -nologo -v q
 guard build/plugin/ZetuSuite.dll
 $DN build probe/ZetuProbe.csproj -c Release -o build/probe -nologo -v q
 [[ $1 == zip ]] || exit 0
+# Compat gate: every patch target and game member the DLL uses exists on each game build we have a dump of (players run
+# older builds: 0.1.2 asked for SetPlayerData with 4 parameters, a player's build has 3, max units was OFF). ~50 s.
+# ZETU_DUMPS = other dump.cs files; ZETU_DUMPS=none skips the gate (say so in the release report).
+if [[ $ZETU_DUMPS != none ]]; then
+  dumps=(${=ZETU_DUMPS:-$HOME/ds_skill_truth/dump_*/dump.cs(N)})
+  (( $#dumps )) || { print -u2 "compat: FAIL, no dump.cs found (ZETU_DUMPS)"; exit 1 }
+  python3 test/compat_check.py build/plugin/ZetuSuite.dll $dumps
+fi
 V=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' ZetuSuite.csproj)
 R=build/release; S=$R/zetu-suite-bepinex-v$V; mkdir -p $R
 [[ -e $S ]] && mv $S $R/old-$(date +%Y%m%d-%H%M%S)-${S:t}

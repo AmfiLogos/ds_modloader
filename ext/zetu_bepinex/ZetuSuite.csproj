@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><AssemblyName>ZetuSuite</AssemblyName><RootNamespace>ZetuSuite</RootNamespace><Version>0.1.2</Version></PropertyGroup>
+  <PropertyGroup><AssemblyName>ZetuSuite</AssemblyName><RootNamespace>ZetuSuite</RootNamespace><Version>0.1.3</Version></PropertyGroup>
   <ItemGroup><Compile Remove="probe/**;test/**;old/**" /></ItemGroup>
 </Project>
