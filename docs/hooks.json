@@ -542,6 +542,223 @@
   {
    "owner": "loader",
    "kind": "detour",
+   "method": "UnityEngine.Resources$$FindObjectsOfTypeAll",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0x50e8ba4"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0x395ff30",
+     "shared_with": [
+      "UnityEngine.Object$$FindObjectsOfTypeAll"
+     ]
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindObjectsOfType",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": [
+      "0x50fccc0",
+      "0x50fcd74"
+     ],
+     "rva": null,
+     "shared_with": []
+    },
+    "win-x64": {
+     "rvas": [
+      "0x395ffe0",
+      "0x3960050"
+     ],
+     "rva": null,
+     "shared_with": []
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindObjectsByType",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": [
+      "0x50fcdd8",
+      "0x50fce80"
+     ],
+     "rva": null,
+     "shared_with": []
+    },
+    "win-x64": {
+     "rvas": [
+      "0x395feb0",
+      "0x395fe60"
+     ],
+     "rva": null,
+     "shared_with": []
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindSceneObjectsOfType",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0x50fd500"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0x39600a0"
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindObjectsOfTypeIncludingAssets",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0x50fd5fc"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0x395ffa0"
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindObjectsOfTypeAll",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0x50fd64c"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0x395ff30",
+     "shared_with": [
+      "UnityEngine.Resources$$FindObjectsOfTypeAll"
+     ]
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindObjectOfType",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": [
+      "0x50fd6d4",
+      "0x50fd97c"
+     ],
+     "rva": null,
+     "shared_with": []
+    },
+    "win-x64": {
+     "rvas": [
+      "0x395fdd0",
+      "0x395fd30"
+     ],
+     "rva": null,
+     "shared_with": []
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindFirstObjectByType",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": [
+      "0x50fd7ac",
+      "0x50fda58"
+     ],
+     "rva": null,
+     "shared_with": []
+    },
+    "win-x64": {
+     "rvas": [
+      "0x395fb20",
+      "0x395fbc0"
+     ],
+     "rva": null,
+     "shared_with": []
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "UnityEngine.Object$$FindAnyObjectByType",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": [
+      "0x50fd894",
+      "0x50fdb44"
+     ],
+     "rva": null,
+     "shared_with": []
+    },
+    "win-x64": {
+     "rvas": [
+      "0x395f9d0",
+      "0x395fa70"
+     ],
+     "rva": null,
+     "shared_with": []
+    }
+   },
+   "active": "test copies only (background-only app, or DSRIG_CTL=1): the SCAN-RULE guard counts each scene search by caller",
+   "label": "loader",
+   "source": "ds_modloader:loader/src/dsl_view.c",
+   "key": "loader|dsl_view.c|sg_fn[i]|"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
    "method": "Refactor.Main.Event.CampaignLoadingEventHandler$$LoadCampaign",
    "platforms": {
     "mac-arm64": {

@@ -2938,7 +2938,8 @@ static void h_es_update(Obj self, const void *mi) {
     int32_t fc = m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : last_frame + 1;
     if (fc == last_frame || in_tick) return;                        /* several EventSystems: once per frame */
     last_frame = fc; in_tick = 1;
-    static uintptr_t h_es; if (!hget(h_es)) { hset(&h_es, self); tview_fast_until = frames + 300; }   /* a new scene (the last EventSystem is gone) */
+    static uintptr_t h_es; if (!hget(h_es)) { hset(&h_es, self); tview_fast_until = frames + 300; dsl_view_new_scene(); }   /* a new scene (the last EventSystem is gone) */
+    dsl_view_frame();
     if (dsl_lang_poll()) { if (kit_ok) kit_lang_changed(); dsl_reg_lang_changed(); }
     if (kit_ok) tick();
     dsl_frame_hook();
@@ -3001,6 +3002,7 @@ const DSLUi *dsl_ui_kit(void) { return kit_ok ? &KIT : NULL; }
 void dsl_ui_install(void) {
     static int done; if (done) return; done = 1;
     if (!dsl_ready) { dsl_log("ui: dsl_ui_install before il2cpp_init returned: kit off"); return; }
+    dsl_view_install();                                             /* game-view lookups (dsl_view.c): also without the kit */
 #define X(var, name) *(void **)&I.var = dsl_il2cpp_fn(name)
     X(string_new, "il2cpp_string_new"); X(gchandle_new, "il2cpp_gchandle_new"); X(gchandle_get_target, "il2cpp_gchandle_get_target");
     X(gchandle_free, "il2cpp_gchandle_free"); X(object_get_class, "il2cpp_object_get_class");

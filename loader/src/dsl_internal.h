@@ -135,6 +135,16 @@ int dsl_rows_add(const char *owner_id, const struct DSLLoadRow *r);
 int dsl_rows_filter(const char *owner_id, const struct DSLLoadFilter *f);
 int dsl_rows_mod_world(const char *guid, const char *save, int list);   /* 1 = a filter with no label hides it (a mod's own world); main thread */
 void dsl_rows_refresh(void);
+int dsl_rows_list_shown(void);                           /* the Load list is open now (its live view, no search) */
+/* dsl_view.c: game-view lookups, THE path to a game object of a class (no FindObjectOfType poll anywhere: loader/NOTES.md
+   "Game-view lookups"); flags DSL_VIEW_* (dsl_sdk.h). Main thread. */
+void dsl_view_install(void);                             /* dsl_ui_install */
+void dsl_view_frame(void);                               /* the kit tick, first */
+void dsl_view_new_scene(void);                           /* a new EventSystem: the misses of the last scene are forgotten */
+void *dsl_view_get(void *klass, int flags);              /* the kit's view_find */
+void *dsl_view_all(void *klass, int flags);              /* FindObjectsOfType: at most one search a frame, never while loading */
+void *dsl_view_assets(void *klass, int flags);           /* Resources.FindObjectsOfTypeAll: the same + one a second per class */
+int dsl_view_popup_shown(void);                          /* a window of the game shows (its popup container, no search) */
 /* dsl_reg.c: mods per world (the loader's own row line and the New Game screen's "Mods of this world") */
 int dsl_world_label(const char *guid, char *out, size_t cap);        /* "Mods: Hell difficulty, Multiplayer" (or "Mods: none") */
 void dsl_world_change(const char *guid, const char *save_name);       /* its [Change] was clicked */

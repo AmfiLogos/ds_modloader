@@ -3,7 +3,7 @@
 # Copy = APFS clone of the installed app; stock GameAssembly (build 25846389) + Steam gate patch;
 # own bundle id (prefs separate); LSBackgroundOnly. The real install is only READ.
 set -e
-X=$1; [[ $X == [K-Z] ]] || { echo "usage: $0 K..Z" >&2; exit 1; }
+X=$1; [[ $X == [K-Z] || $X == [A-Z][A-Z]* ]] || { echo "usage: $0 K..Z | a name of 2+ capitals (FSC)" >&2; exit 1; }   # A..J: the multiplayer rig's
 REAL="$HOME/Library/Application Support/Steam/steamapps/common/Dungeon Settlers/DungeonSettlers.app"
 I=~/ds_launcher/loader/test_env/instances/$X; APP=$I/DungeonSettlers.app; FW=$APP/Contents/Frameworks
 mkdir -p $I

@@ -1156,3 +1156,4 @@ void dsl_rows_frame(void) {
     if (slv) list_poll(slv);
     else if (list_open) list_poll(NULL);
 }
+int dsl_rows_list_shown(void) { return ok && list_open; }               /* dsl_view.c guard state "list" */

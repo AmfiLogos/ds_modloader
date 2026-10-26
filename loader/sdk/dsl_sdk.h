@@ -221,8 +221,22 @@ typedef struct DSLUi {
        control). */
     DSLObj (*panel_size)(DSLObj panel, const char *key, float x, float y, int flags);
     float (*panel_size_get)(DSLObj panel);   /* the panel's size, 1 = 100 % (also 1 for a panel without panel_size) */
+    /* appended (kit 0.1.29): GAME-VIEW LOOKUPS, the only way to get a game object (a view, a MonoBehaviour) of a class
+       (lane fpsscan 2026-10-26: FindObjectOfType polls cost 2-10 ms a call; one every 5 or 30 frames was the loader's
+       FPS loss). Never call Object.FindObjectOfType / FindObjectsOfType / Resources.FindObjectsOfTypeAll in a frame or
+       timer callback: ask view_find (wrapper dsl_view_find) each time instead. The live object of class `klass`, else
+       NULL: the one found before while it lives (no search), else the game's own records (its view presenters and
+       window containers: the title menu, the notice box, the tooltip, the Load window ...), else a real search, at most
+       one a frame for all callers, never while loading, and after a miss not again for 2 s, 4 s ... 60 s in that scene.
+       flags DSL_VIEW_*: INACTIVE = also a hidden object (the search's includeInactive); NOW = an event or a player
+       action says it exists now: the search runs at once (no frame limit, no wait after a miss); TITLE = a title-only
+       class: never searched outside the title; WORLD = a world-only class: never searched outside a world. The object
+       may be hidden: check its state. Never keep it past the frame: ask again (a cheap handle read). In test copies a
+       module whose own scene searches pass 6 a minute in an idle state logs "SCAN-RULE <module> ..." (tests fail). */
+    void *(*view_find)(void *klass, int flags);
 } DSLUi;
 enum { DSL_SIZE_OWN = 1 };                                    /* panel_size flags: the panel applies the size itself */
+enum { DSL_VIEW_INACTIVE = 1, DSL_VIEW_NOW = 2, DSL_VIEW_TITLE = 4, DSL_VIEW_WORLD = 8 };   /* view_find flags */
 enum { DSL_WIN_MODAL = 0, DSL_WIN_PANEL = 1 };                /* DSLWinStd.kind */
 enum { DSL_WIN_OWN_SCALE = 1, DSL_WIN_SIZE = 2 };            /* DSLWinStd.flags: the caller applies UI Scale itself; DSL_WIN_PANEL:
                                                                 "-" / "+" size left of its red X (panel_size, key move_key; kit 0.1.29) */
@@ -431,6 +445,8 @@ static inline int dsl_rules_own(const DSLUi *ui, DSLObj win, int rules) { return
 /* the size template (kit 0.1.29): NULL / 1 with an older kit (then: no "-" / "+", the panel keeps its size) */
 static inline DSLObj dsl_panel_size(const DSLUi *ui, DSLObj panel, const char *key, float x, float y, int flags) {
     return DSL_UI_HAS(ui, panel_size) ? ui->panel_size(panel, key, x, y, flags) : NULL; }
+/* game-view lookups (view_find above); NULL on an older kit: the module's own fallback must then not poll either */
+static inline void *dsl_view_find(const DSLUi *ui, void *klass, int flags) { return DSL_UI_HAS(ui, view_find) ? ui->view_find(klass, flags) : NULL; }
 static inline float dsl_panel_size_get(const DSLUi *ui, DSLObj panel) { return DSL_UI_HAS(ui, panel_size_get) ? ui->panel_size_get(panel) : 1.0f; }
 
 #ifdef __cplusplus
