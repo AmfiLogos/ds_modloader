@@ -18,8 +18,9 @@ Real breaks the run catches (Windows: the 1-byte bool ABI class of the v0.1.15 Z
  N  the world loads with no question and writes no backup folder (0.1.2: no save warning)
  P  the game's party cap reads 8
  5  Inventory / Status / Skill windows: 8 panels (4 stock + 4 copies), the shown units inside the screen, no exception
- S  weapons taken off in the dungeon, the player's own skill order for Greatsword / FireStaff skills: bypass asked +
-    answered, the cast runs with an empty hand (durability cost skipped), no exception, the game keeps running (no hang)
+ S  full-HP units from the base into the dungeon, weapons taken off there, the player's own skill order for a FireStaff
+    skill: bypass asked + answered, the cast runs with an empty hand (durability cost skipped), no exception, the game
+    keeps running (no hang)
  O  the owner's LocalLow and Steam userdata files are unchanged"""
 import base64, json, os, re, subprocess, sys, time, uuid
 H = os.path.expanduser('~')
@@ -118,6 +119,7 @@ def setup(out):
     for k in list(us.get('SoundSettingData', {})):             # owner: no sound in tests
         if k.endswith('Percent'): us['SoundSettingData'][k] = 0.0
         if k.endswith('Mute'): us['SoundSettingData'][k] = True
+    us.setdefault('GeneralSettingData', {})['MoveScreenByEdgeScreen'] = False   # owner: no edge scrolling in tests
     w.write(DATA + r'\UserSetting.json', json.dumps(us, indent=1))
     saves = {}
     for tag in ('Load',):
@@ -146,12 +148,12 @@ def start(timeout=900, data=DATA):
     raise SystemExit('no title in %d s' % timeout)
 
 
-# the weapon skills cast in step S (seed units; keys seen asking Equipment_Greatsword / Equipment_FireStaff on Mac runs 7-11).
-# Water skills (SummonBubbling, WaterDive: the stock game throws NullReferenceException when ordered so) and
-# EmergencyEscape (no target) are never cast.
-WEAPON_CASTS = {'477ad25a-7c22-43f5-be28-db055895297e': ['SKILL_WhirlwindSlash', 'SKILL_Slay'],                      # Greatsword
-                '137a4264-054d-4b21-81f2-a69d349a3bd0': ['SKILL_FireMissile', 'SKILL_Incinerate', 'SKILL_Explosion'],  # FireStaff
-                '92be08ca-b7de-497a-a4ea-9aac4be0b603': ['SKILL_Incinerate', 'SKILL_Explosion', 'SKILL_BlazingEcho']}   # FireStaff
+# the weapon skill cast in step S: a seed unit at the BASE (full HP; the seed's dungeon units are near death: all 4 died
+# before a cast, Windows run 2026-10-26). FireCloak asks Equipment_FireStaff; with the hand emptied in the dungeon it gave
+# the bypass + the empty-slot skip on Mac and on Windows (2026-10-26). Water skills (SummonBubbling, WaterDive: the stock
+# game throws NullReferenceException when ordered so), EmergencyEscape (no target) and tile-target skills (traps.md 8,
+# e.g. DestructiveSplit) are never cast.
+WEAPON_CASTS = {'60c78b46-2bec-4a71-9db2-fbd10a4e28ab': ['SKILL_FireCloak']}                                        # FireStaff
 def running():
     """the game runs (not paused); a window's speed lock / PopupTimeLock is released, the result screen never opened"""
     sp = ''.join(probe('speed'))
@@ -162,38 +164,60 @@ def running():
     return 'speed: Normal' in sp, sp
 
 
+def notices(n=4):
+    """answer the game's confirmation boxes with their OK button (the player's click), up to n; their texts"""
+    seen = []
+    for _ in range(n):
+        time.sleep(1.5)
+        nt = ''.join(probe('notice'))
+        if 'shown True' not in nt: break
+        seen.append(nt[:300]); probe('notice_ok')
+    return seen
+def expedition(S):
+    """8 full-HP units from the base (recruits fill it up, the WEAPON_CASTS units first) into the dungeon through the game's
+    expedition window (probe exped_*); True = 8 there"""
+    for _ in range(6):
+        if len(units_in(0)) >= 8: break
+        probe('recruit'); time.sleep(5)
+    base = sorted(units_in(0)); cs = [g for g in WEAPON_CASTS if g in base]
+    g8 = (cs + [g for g in base if g not in cs])[:8]; S['g8'] = g8
+    probe('exped_open'); time.sleep(4)
+    if not re.search(r'region [1-9]', ''.join(probe('exped_state'))): probe('exped_region 1'); time.sleep(1)
+    S['exped'] = probe('exped_select ' + ','.join(g8))[:1]; time.sleep(2)
+    probe('exped_next'); time.sleep(3)
+    probe('exped_start'); S['start_notices'] = notices()
+    t0 = time.time()
+    while time.time() - t0 < 300 and len(units_in(1)) < 8: time.sleep(3)
+    S['dungeon_units'] = len(units_in(1)); log('expedition', len(g8), 'selected,', S['dungeon_units'], 'in the dungeon')
+    time.sleep(8); running()
+    return S['dungeon_units'] == 8
+
+
 def weapon_step(S, out):
-    """S: weapons off, then only Greatsword / FireStaff skills, by live units next to their target, while the game runs.
+    """S: weapons off in the dungeon right before the casts (unequip_all 1; an unequip at the base left the hand full on
+    Windows), then the WEAPON_CASTS skill by its unit, while the game runs.
     Pass: the bypass asked and answered yes, and at least 2 casts with an empty hand (durability cost skipped)."""
     mark = len(blog()); p0 = len(plog())
-    uq = probe('unequip_all 1'); S['unequip'] = uq; time.sleep(2)
+    uq = probe('unequip_all 1'); S['unequip'] = uq; time.sleep(4)
     S['casts'] = []; S['paused'] = []
     empty = lambda: blog()[mark:].count('durability cost with an empty slot skipped')
-    for r in range(20):
+    for r in range(15):
         if empty() >= 2: break
         alive = units_in(1)
         todo = [(g, ks[r % len(ks)]) for g, ks in WEAPON_CASTS.items() if g in alive]
         if not todo: S['casts'].append('no weapon-skill unit alive in the dungeon'); break
         ok, sp = running()
         if not ok: S['paused'].append(sp[-120:]); time.sleep(2); continue
-        g0, k0 = todo[0]                                        # walk next to the target first (an order out of range waits)
-        S['casts'] += probe('approach 1')[:1]
-        for _ in range(10):
-            d = re.findall(r'distance (\d+)', ''.join(probe(f'cast 1 {g0} {k0}')[:1]))
-            if d and int(d[0]) <= 3: break
-            time.sleep(3)
-        for g, k in todo:
-            ok, sp = running()
-            if not ok: S['paused'].append(sp[-120:]); continue
-            S['casts'] += probe(f'cast 1 {g} {k}')[:1]
-        for _ in range(6):
-            if empty() >= 2: break
-            time.sleep(1)
+        if r % 3 == 0: S['casts'] += probe('approach 1')[:1]; time.sleep(10)     # walk first: a cast order stops the walk
+        for g, k in todo: S['casts'] += probe(f'cast 1 {g} {k}')[:1]
+        time.sleep(6)
     L = blog()[mark:]
     S['weapon_lines'] = [l for l in L.splitlines() if 'weapon requirement skipped' in l or 'durability cost' in l][:8]
     S['bypass'] = probe('bypass'); S['empty_casts'] = empty()
     check('S: weapons taken off (the game\'s unequip)', uq and re.search(r'unequip_all 1: [1-9] units', uq[0]), uq)
-    check('S: the game asks for a skill without its weapon and gets yes', 'weapon requirement skipped' in L and re.search(r'bypass: yes [1-9]', ''.join(S['bypass'])), S['weapon_lines'] + S['bypass'])
+    # the plugin logs its first 5 bypass answers only, and the expedition (FireCloak's unit without a FireStaff) can use them
+    # up before this step: the log line is read from the whole log, the yes count from the probe
+    check('S: the game asks for a skill without its weapon and gets yes', 'weapon requirement skipped' in blog() and re.search(r'bypass: yes [1-9]', ''.join(S['bypass'])), S['weapon_lines'] + S['bypass'])
     check('S: at least 2 weapon skills cast with an empty hand (durability cost skipped)', empty() >= 2, [empty()] + S['paused'][:3])
     sc = probe('scene', 10)
     check('S: the game still answers (no hang)', bool(sc), sc)
@@ -231,9 +255,9 @@ def main_run(out):
     time.sleep(10)
     pp = probe('party'); S['party'] = pp
     check('P: the game\'s party cap reads 8', pp and 'PlayerPartyMax 8' in pp[0], pp)
-    # ---- S first, while the seed units are fresh (no window opened yet)
-    weapon_step(S, out)
-    # ---- 5: the three windows
+    # ---- 8 full-HP units from the base into the dungeon (the seed's dungeon units are near death)
+    expedition(S)
+    # ---- 5: the three windows with the 8 selected (before S: the unarmed units may fall during the casts)
     p0 = len(plog())
     probe('select_all'); time.sleep(2)
     for t, n, view in ((8, 'inventory', 'EntityInventoryUI'), (6, 'status', 'EntityStatusUI'), (7, 'skill', 'EntitySkillUI')):
@@ -247,6 +271,8 @@ def main_run(out):
         probe('toggle %d' % t); time.sleep(1)
     exc = [l for l in plog()[p0:].splitlines() if 'Exception' in l]
     check('5: the three windows: no exception', not exc, exc[:4])
+    # ---- S: weapons off, the FireStaff skill with an empty hand
+    weapon_step(S, out)
     S['exceptions'] = [l for l in plog().splitlines() if 'Exception' in l][:10]
     check('no exception in Player.log during the run', not S['exceptions'], S['exceptions'][:4])
     return S
