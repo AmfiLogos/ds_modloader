@@ -151,6 +151,22 @@ static void sec_open(void) {
     DSLWinParts pt; sec_p = dsl_window_std(U, &o, &pt);
     sec_paint();
 }
+/* FOLD RULE (kit 0.1.30; owner 2026-11-01: "the size of the dps check window changes depending on collapsed expanded
+   toggles... It shouldn't"): a template panel that follows UI Scale and is 300 units high folded, 900 open (taller than
+   the 1080 canvas at UI Scale 1.4): opening its section must not change its scale */
+static DSLObj fit_p, fit_h;
+static void fit_paint(void) { if (fit_p) U->place(fit_p, 100, 60, 360, dsl_section_open(U, "uikit-demo.secfit.body", 0) ? 900 : 300); }
+static void fit_changed(void *ud, DSLObj hdr, int open) { (void)ud; (void)hdr; (void)open; fit_paint(); }
+static void fit_closed(void *ud) { (void)ud; if (fit_p) dsl_window_close(U, fit_p); fit_p = fit_h = NULL; }
+static void fit_open(int on) {
+    if (!on) { fit_closed(NULL); return; }
+    if (fit_p) return;
+    DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_PANEL, .w = 360, .h = 300, .title = "Fold Panel", .close = fit_closed,
+                    .move_key = "uikit-demo.secfit", .x = 100, .y = 60, .band_h = 52, .title_size = 22 };
+    DSLWinParts pt; fit_p = dsl_window_std(U, &o, &pt);
+    if (fit_p) fit_h = dsl_section(U, fit_p, 10, pt.body_y + 10, 340, "Fold me", "uikit-demo.secfit.body", DSL_SEC_FOLDED, fit_changed, NULL);
+    fit_paint();
+}
 static int std_sub, std_backs, std_card_clicks;
 static int std_back(void *ud) { (void)ud; if (!std_sub) return 0; std_sub = 0; std_backs++; H->log(ME, "template window: Back (sub-page closed)"); return 1; }
 static void std_closed(void *ud) { (void)ud; H->log(ME, "template window closed"); dsl_window_close(U, std_win); std_win = std_x = std_card = std_check = NULL; }
@@ -279,7 +295,7 @@ static DSLObj target(const char *t) {
         { "press", &b_press }, { "disabled", &b_disabled }, { "toggle", &tg }, { "value", &vr }, { "field", &fd }, { "scroll", &sc },
         { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close }, { "x", &b_x },
         { "stdw", &std_win }, { "std_x", &std_x }, { "std_card", &std_card }, { "std_check", &std_check }, { "stdp", &std_panel }, { "stdp_x", &std_panel_x }, { "stdp_size", &std_size },
-        { "ovA", &ov_a }, { "ovB", &ov_b }, { "ovC", &ov_c }, { "secp", &sec_p }, { "sec1", &sec_h1 }, { "sec2", &sec_h2 }, { "sec1_body", &sec_b1 }, { "sec2_body", &sec_b2 } };
+        { "ovA", &ov_a }, { "ovB", &ov_b }, { "ovC", &ov_c }, { "secp", &sec_p }, { "sec1", &sec_h1 }, { "sec2", &sec_h2 }, { "sec1_body", &sec_b1 }, { "sec2_body", &sec_b2 }, { "fitp", &fit_p }, { "fith", &fit_h } };
     for (size_t i = 0; i < sizeof map / sizeof *map; i++) if (!strcmp(t, map[i].n)) return *map[i].o;
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
@@ -351,7 +367,7 @@ static void state(char *out, size_t cap) {
         o += (size_t)snprintf(out + o, cap - o, ",\"toggle\":%d,\"value\":%d,\"field\":\"%s\"", U->toggle_get(tg), U->value_get(vr), fe);
     }
     { DSLObj ut = target("update"); o += (size_t)snprintf(out + o, cap - o, ",\"update_on\":%d", ut ? U->toggle_get(ut) : -1); }
-    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x", "stdp_size", "ovA", "ovB", "ovC", "secp", "sec1", "sec2", "sec1_body", "sec2_body" };
+    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x", "stdp_size", "ovA", "ovB", "ovC", "secp", "sec1", "sec2", "sec1_body", "sec2_body", "fitp", "fith" };
     o += (size_t)snprintf(out + o, cap - o, ",\"w\":{");
     for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
         DSLObj w = target(names[i]); float r[4] = { 0 }; int on = w ? t_rect(w, r) : -1; char l[200] = "", le[260];
@@ -456,6 +472,7 @@ static void handle(const char *j) {
             static void (*raise)(DSLObj, int); if (!raise) *(void **)&raise = dlsym(RTLD_DEFAULT, "dsl_ui_raise");
             if (ov_a && a > 0) { if (raise) raise(ov_a, (int)a); else rc = -6; }
         }
+        else if (!strcmp(op, "secfit")) { fit_open((int)a); rc = !a || fit_h ? 0 : -5; }
         else if (!strcmp(op, "secpanel")) { if (a) sec_open(); else sec_closed(NULL); rc = !a || sec_h1 ? 0 : -5; }
         else if (!strcmp(op, "mouse_away")) { float r[4] = { -200, -200, -200, -200 }; move_rect(r); }   /* the fake mouse far off the window */
         else if (!strcmp(op, "badwin")) bad_open((int)a);

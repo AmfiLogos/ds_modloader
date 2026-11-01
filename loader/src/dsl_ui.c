@@ -1917,12 +1917,23 @@ static float k_ui_scale(void) {
     return s >= 0.5f && s <= 2.f ? s : 1.f;
 }
 #define SF_MAX 32
-static struct { uintptr_t h; DSLObj id; } sfs[SF_MAX]; static int nsf; static float sf_u = -1;
+/* FOLD RULE (owner 2026-11-01: "the size of the dps check window changes depending on collapsed expanded toggles... It
+   shouldn't"): folding or opening a section (or any other change of a window's own height or width) never changes its
+   scale. The fit to the parent uses the window's size from the last REFIT: the first apply, a UI Scale change, a "-" / "+"
+   click, a new parent size (the game window resized). fw / fh = that size, pw / ph = the parent's. */
+static struct { uintptr_t h; DSLObj id; float fw, fh, pw, ph; } sfs[SF_MAX]; static int nsf; static float sf_u = -1;
 static float sz_of(Obj o);                                           /* its "-" / "+" size (panel_size, below), 1 = none */
-static void sf_apply(Obj o, float u) {                               /* UI Scale x its size, less when the window would not fit in its parent */
+static void sf_apply(Obj o, float u, int refit) {                    /* UI Scale x its size, less when the window would not fit in its parent */
     Obj p = tr_parent(o); float s = u * sz_of(o);
+    int k = 0; while (k < nsf && hget(sfs[k].h) != o) k++;
     if (p && m_rt_rect && isa(tr_of(p), K.RectTransform) && isa(tr_of(o), K.RectTransform)) {
         R4 r = CALL(m_rt_rect, R4, Obj)(tr_of(p), m_rt_rect), me = CALL(m_rt_rect, R4, Obj)(tr_of(o), m_rt_rect);
+        if (k < nsf) {
+            if (refit || sfs[k].fh <= 1 || r.w != sfs[k].pw || r.h != sfs[k].ph) { sfs[k].fw = me.w; sfs[k].fh = me.h; sfs[k].pw = r.w; sfs[k].ph = r.h; }
+            else if ((me.w != sfs[k].fw || me.h != sfs[k].fh) && frames % 300 == 0)
+                dsl_log("ui: UI Scale: a window is %.0f x %.0f now (fitted at %.0f x %.0f): its scale stays (FOLD RULE)", me.w, me.h, sfs[k].fw, sfs[k].fh);
+            me.w = sfs[k].fw; me.h = sfs[k].fh;
+        }
         if (r.w >= 100 && r.h >= 100 && me.w > 1 && me.h > 1) { float f = r.w / me.w, g = r.h / me.h; if (g < f) f = g; if (f < s) s = f; }
     }
     tr_scale(o, s);
@@ -1937,7 +1948,7 @@ static int k_scale_follow(DSLObj win) {
         i = nsf++; memset(&sfs[i], 0, sizeof sfs[i]); sfs[i].id = win;
     }
     hfree(&sfs[i].h); sfs[i].h = x_weak ? x_weak(o, false) : hnew(o);
-    sf_apply(o, k_ui_scale());
+    sf_apply(o, k_ui_scale(), 1);
     return 0;
 }
 static void sf_frame(void) {
@@ -1946,7 +1957,7 @@ static void sf_frame(void) {
     if (!changed && frames % 30) return;                             /* else: the game window may have been resized */
     if (changed && sf_u > 0) dsl_log("ui: UI Scale %.2f -> %.2f: %d window(s) follow it", sf_u, u, nsf);
     sf_u = u;
-    for (int i = nsf - 1; i >= 0; i--) { Obj o = hget(sfs[i].h); if (!o) { hfree(&sfs[i].h); sfs[i] = sfs[--nsf]; continue; } sf_apply(o, u); }
+    for (int i = nsf - 1; i >= 0; i--) { Obj o = hget(sfs[i].h); if (!o) { hfree(&sfs[i].h); sfs[i] = sfs[--nsf]; continue; } sf_apply(o, u, changed); }
 }
 
 #define MV_MAX 32
@@ -2103,7 +2114,7 @@ static void sz_labels(int i) {                                       /* "-" / "+
 static void sz_apply(int i) {
     Obj o = hget(szs[i].h); if (!o) return;
     int k = 0; while (k < nsf && hget(sfs[k].h) != o) k++;
-    if (k < nsf) sf_apply(o, k_ui_scale());                          /* it follows UI Scale: UI Scale x size, fitted to its parent */
+    if (k < nsf) sf_apply(o, k_ui_scale(), 1);                       /* it follows UI Scale: UI Scale x size, fitted to its parent */
     else if (!(szs[i].flags & DSL_SIZE_OWN)) tr_scale(o, szs[i].step / 10.f);
     szs[i].settle = 10;                                              /* sz_frame: back on the screen (an own scale lands at its next layout) */
 }

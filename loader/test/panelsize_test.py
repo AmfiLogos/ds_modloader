@@ -20,6 +20,8 @@ The template's in-game panel (dsl_window_std DSL_WIN_PANEL + DSL_WIN_SIZE, key u
           chat's closed box), the buttons still show "-" and "+" once it shows (their labels were empty: blank buttons).
  start 2 (800x600, the smallest window the tests use, UI Scale 1.4): the panel comes back at 130 % (on top of UI Scale);
           "+" "+" = 150 % and the whole panel is on the screen (its first place, x 1400, runs past a 800x600 window).
+          FOLD RULE (kit 0.1.30; owner 2026-11-01: "the size of the dps check window changes depending on collapsed
+          expanded toggles... It shouldn't"): a UI Scale panel 300 high folded / 900 open keeps its width (scale) both ways.
 Old loaders fail: no "-" / "+" (the holder is missing), nothing is kept; kit 0.1.29: "-" / "+" show without the mouse,
 the newest registered panel (A) takes the right-drag, no sections.
   panelsize_test.py [out] [--no-build]     Exit 0 = PASS. <out>/summary.json, <out>/<start>_dsload.log."""
@@ -175,6 +177,19 @@ def start1():
     check('start 1: made in a hidden panel, they still show "-" and "+" once it shows', j.get('rc') == 0 and size(s).get('labels_on') == 1 and labels_ok(size(s).get('labels')), (j.get('rc'), size(s)))
 
 
+def fold_cases():
+    # FOLD RULE (owner 2026-11-01: "the size of the dps check window changes depending on collapsed expanded toggles... It
+    # shouldn't"): a UI Scale panel 300 high folded, 900 open (taller than the screen at UI Scale 1.4): its width stays
+    j = ui('api', op='secfit', a=1); time.sleep(1.0); away(); s = st(); r0 = rect(s, 'fitp')
+    if j.get('rc') != 0 or width(r0) <= 0:
+        check('fold: the fold panel opens', False, (j, r0)); return
+    ui('click', target='fith'); time.sleep(1.5); away(); s = st(); r1 = rect(s, 'fitp')
+    check('fold: opening its section makes the panel taller only (width = scale kept, < 1 %)', abs(width(r1) / width(r0) - 1) < 0.01 and (r1[3] - r1[1]) > 2 * (r0[3] - r0[1]), (r0, r1))
+    ui('click', target='fith'); time.sleep(1.5); away(); s = st(); r2 = rect(s, 'fitp')
+    check('fold: folding it again: back to the first size', abs(width(r2) / width(r0) - 1) < 0.01 and abs((r2[3] - r2[1]) - (r0[3] - r0[1])) <= 2, (r0, r2))
+    ui('api', op='secfit', a=0); time.sleep(0.4)
+
+
 def start2():
     j, s = open_panel()
     sw, sh = s.get('w', {}).get('screen', [0, 0]); u = s.get('w', {}).get('ui_scale', 0)
@@ -186,6 +201,8 @@ def start2():
     want = 360 * 1.4 * 1.5 * sh / 1080.0
     check('start 2: "+" "+" = 150 %', abs(size(s).get('f', 0) - 1.5) < 0.001 and abs(width(rc) - want) < 4, (size(s), width(rc), want))
     check('start 2: at 150 % the whole panel is on the 800x600 screen', rc[0] >= -1 and rc[1] >= -1 and rc[2] <= sw + 1 and rc[3] <= sh + 1 and width(rc) > 0, (rc, sw, sh))
+    ui('api', op='stdpanel_off'); time.sleep(0.4)
+    fold_cases()
 
 
 def run(tag, wh, scale, fresh):

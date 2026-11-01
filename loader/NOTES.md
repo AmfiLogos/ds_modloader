@@ -1245,6 +1245,14 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   button x, y px from the click" after each click. Guard: panelsize_test.py anchor_cases ("+" x3 and "-" x3 at ONE point
   with the fake mouse held there, uikit-demo api click_xy; < 2 px; place kept after close/open): kit without it 2 FAIL
   (the button moved 14 px). Chat: ds_multiplayer ext/nvanchor/chat_anchor_test.py.
+- FOLD RULE (kit 0.1.30, lane nvanchor; owner 2026-11-01: "the size of the dps check window changes depending on collapsed
+  expanded toggles... It shouldn't"): folding / opening a section (or any change of a window's own size) never changes
+  its scale or width, only its height. sf_apply (windows that follow UI Scale) fits to the parent with the window's size
+  from the last REFIT (first apply, UI Scale change, "-" / "+" click, parent resized); the 30-frame pass keeps that scale.
+  A window opened taller than the screen stays at its scale (mv_clamp keeps its top on the screen). Own-scale panels
+  (DSL_SIZE_OWN: the DPS meter's auto-fit) follow the rule in their own code (Units Laboratory, lane nvulmeter).
+  Guard: panelsize_test.py fold_cases (start 2, UI Scale 1.4: uikit-demo api secfit, 300 high folded / 900 open; width
+  < 1 % both ways).
 - window_std: `DSL_WIN_SIZE` (DSLWinStd.flags, DSL_WIN_PANEL) puts them left of the red X, key = move_key; the title then
   keeps 120 units free on each side (76 without a red X).
 - Users: multiplayer chat (`multiplayer.chat`, DSL_SIZE_OWN: the chat's root at its bottom-left corner is drawn at the size,
