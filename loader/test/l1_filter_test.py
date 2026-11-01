@@ -7,7 +7,8 @@ must not stay selected, so Remove File / Load never act on a save the player can
 the stock Remove File + its two boxes answered Yes delete the hidden game save: this test fails there.
 Player-visible faults checked in the same runs: the panel is outside the Load window on its right, inside the screen
 and off the title corner (Auto-update mod loader), at 16:9 and 16:10 and UI scale 0.75 / 1.0 / 1.4; each world in its
-kind; the multiplayer mod's box under the list is gone; Latest save only shows the newest save of a world; the choices
+kind; a fresh profile shows only solo worlds (Multiplayer box off, owner 2026-10-15) and the box shows the multiplayer
+world; the multiplayer mod's box under the list is gone; Latest save only shows the newest save of a world; the choices
 come back after a restart.
 Worlds: Elven (game save, gcd-cdr + zetu-suite, installed and off = Modded; Hell would not count: Elven is not on Hell), Template (the wiki's public base save, only the fix gcd-cdr =
 Vanilla & Vanilla+: a fix never counts as Modded, owner 2026-10-24; two saves),
@@ -252,8 +253,7 @@ def group_checks():
 
 
 def run_main():
-    seed()
-    open(os.path.join(T.MODS, 'loadlist.json'), 'w').write('{"vanilla": true, "modded": true, "multiplayer": false, "latest_only": false}\n')   # an older file
+    seed()                                                          # a fresh profile: no loadlist.json
     start()
     T.request({'cmd': 'warn_cancel'}); time.sleep(1)
     m0 = open_list()
@@ -262,14 +262,14 @@ def run_main():
     log('state', json.dumps(st)[:600])
     place_checks('main 960x540', st)
     b = st.get('boxes', {})
-    check('an older loadlist.json carries over: its choices kept (Multiplayer off), Solo on, Show tags on; both Play boxes there',
+    check('fresh profile: Vanilla & Vanilla+, Modded, Solo on, Multiplayer off (owner 2026-10-15: single player only by default), Show tags on; both Play boxes there',
           (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags'), b.get('mp_box'), b.get('solo_box')) == (1, 1, 1, 0, 0, 1, 1, 1), b)
     e, t, m = world(st, ELVEN_GUID), world(st, TPL_GUID), world(st, MOON_GUID)
     check('kinds: Elven (gcd-cdr + zetu-suite) Modded, Template (only the fix gcd-cdr) Vanilla, Moonlight (tag) Multiplayer', (e.get('kind'), t.get('kind'), m.get('kind')) == (1, 0, 2), (e, t, m))
     sl = world(st, SLOT_GUID)
     check('kinds: Slot (gcd-cdr + weapon-slot, "vanilla_plus") is Vanilla & Vanilla+ and shows', (sl.get('kind'), sl.get('shown')) == (0, 1), sl)
     check('kinds: Moonlight is Modded (its mods) and Multiplayer (its tag); the others Solo', (m.get('mods'), m.get('play'), e.get('play'), t.get('play'), sl.get('play')) == (1, 1, 0, 0, 0), (m, e.get('play')))
-    check('Multiplayer off: Moonlight hidden, the others shown; the line counts 1', (e.get('shown'), t.get('shown'), m.get('shown'), st.get('hidden_line')) == (1, 1, 0, 1), st)
+    check('default (Multiplayer off): only the solo worlds show, Moonlight hidden; the line counts 1', (e.get('shown'), t.get('shown'), m.get('shown'), st.get('hidden_line')) == (1, 1, 0, 1), st)
     ml = mp('mpm_list')
     check("the multiplayer mod's box under the list is gone and it hides nothing (the panel decides)", ml.get('open') and ml.get('toggle') == 0 and ml.get('hidden') == 0,
           {k: ml.get(k) for k in ('open', 'mode', 'toggle', 'hidden', 'shown')})
@@ -278,6 +278,7 @@ def run_main():
     tag_checks('main, Show tags on (default)', st, True)
     shot('main_defaults')
     st = lf('lf', multiplayer=1); time.sleep(0.5); st = lf()
+    check('Multiplayer box ticked: Moonlight shows, no world hidden', world(st, MOON_GUID).get('shown') == 1 and st.get('hidden_line') == 0, st)
     tag_checks('main, Multiplayer box on', st, True); rm_checks('main en', st); shot('main_tags_on')
     st = lf('lf', show_tags=0); time.sleep(0.5); st = lf()
     tag_checks('main, Show tags off', st, False); line_checks('main, Show tags off', st); shot('main_tags_off')
@@ -338,10 +339,13 @@ def line_checks(tag, st):
 def run_layout():
     """the hidden-worlds line after filter / Latest save only changes (owner 2026-10-25: over the last save row after
     Latest save only went off while a world with 2 saves was hidden)"""
-    seed(); start(); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
+    seed()
+    open(os.path.join(T.MODS, 'loadlist.json'), 'w').write('{"vanilla": true, "modded": false, "solo": true, "multiplayer": true, "latest_only": false, "show_tags": true}\n')   # kit 0.1.28 / 0.1.29
+    start(); T.request({'cmd': 'warn_cancel'}); time.sleep(1)
     open_list()
     b = lf().get('boxes', {})
-    check('defaults (no loadlist.json): all four boxes on, all saves, Show tags on', (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags')) == (1, 1, 1, 1, 0, 1), b)
+    check('a 0.1.28 loadlist.json (no "filters_v"): its choices kept (Modded off), its Multiplayer on (the old default) not kept', (b.get('vanilla'), b.get('modded'), b.get('solo'), b.get('multiplayer'), b.get('latest_only'), b.get('show_tags')) == (1, 0, 1, 0, 0, 1), b)
+    lf('lf', modded=1, multiplayer=1); time.sleep(0.5)               # every box on for the layout cases, as before
     for tag, kw in (('defaults', {}), ('latest on', dict(latest_only=1)), ('Vanilla off', dict(vanilla=0)), ('latest off', dict(latest_only=0)),
                     ('Vanilla on', dict(vanilla=1)), ('Modded off', dict(modded=0)), ('Modded on', dict(modded=1))):
         st = lf('lf', **kw) if kw else lf(); time.sleep(0.8); st = lf()
