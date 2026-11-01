@@ -356,7 +356,7 @@ fn worlds_hell_and_client_mod_compose() {
     assert_eq!(before, owner_files());
 }
 
-/// Copies for the weapon-slot pair test (tests/weaponslot_pair.py): host = weapon slot + no-Steam patch,
+/// Copies for the weapon-slot pair test (tests/old/weaponslot_pair_0.1.py): host = weapon slot + no-Steam patch,
 /// guest = no-Steam patch only. Each with the rig's own bundle id for its instance letter (own prefs domain).
 /// Env PAIR=EF (the leased pair). Writes test_env/pair/<X>/DungeonSettlers.app.
 #[test]

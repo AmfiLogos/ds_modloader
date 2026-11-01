@@ -227,8 +227,9 @@ Tests:
   real GameAssembly are unchanged. Test files go to `test_env/` (git-ignored).
   `worlds_hell_and_client_mod_compose` (same command): two worlds, Hell (gameplay) + weapon slot (client) as
   byte-patch mods on one copy, plain world on another; the Hell copy boots to the title screen hidden.
-- `tests/weaponslot_pair.py <PAIR>`: host WITH the weapon-slot mod, guest WITHOUT, one lockstep game on a
-  leased rig pair (copies from `make_pair_copies`). Result in `test_env/pair/result.json`.
+- `loader/test/weapon_slot_pair.py [--mod host|guest]`: weapon-slot is client only (0.2.0): a player WITH it and a
+  player WITHOUT it play one lockstep game (weapon swap, casts through the weapon button), 0 desyncs. The old
+  launcher-era test (5-slot weapon-slot 0.1) is in `tests/old/`.
 
 Env: `DSML_ROOT` (launcher folder, default `~/Library/Application Support/DSModLauncher`), `DSML_INDEX_URL`
 (default: placeholder GitHub URL), `DSML_STOCK_DIRS` (verified stock asset copies, optional).

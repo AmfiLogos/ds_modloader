@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""rig.py's guard process, with the rig's instance folder pointed at test_env/pair (weaponslot_pair.py sets
+"""rig.py's guard process, with the rig's instance folder pointed at test_env/pair (tests/old/weaponslot_pair_0.1.py sets
 rig.__file__ to this file, so rig.start() spawns this guard instead of rig.py's own)."""
 import os, sys
 sys.path.insert(0, os.path.expanduser('~/ds_multiplayer/rig'))

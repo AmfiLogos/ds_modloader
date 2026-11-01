@@ -28,3 +28,13 @@ not in this lane. Logged in MORNING_QUESTIONS.md.
   quick slots. Same for Set/Move into slot 4 (not tested). Client-safe would need the multiplayer mod to send these by skill key.
 - So: the mod stays GAMEPLAY; the QuickSlots skip was reverted (93ce3f8); no "scope": "client" anywhere.
 - Test: tests/weaponslot_pair.py `--auto weapon|last`, `--flip`, `--dylib`, env WEAPONSLOT_ROOT (pair_guard.py honours it too).
+
+## 2026-11-01 (lane nvwslot): weapon-slot 0.2.0 is CLIENT ONLY (owner: "it's client only")
+- The slot is now a view: the game's data keeps 4 quick slots, the saves are the game's own, the AI order is stock.
+  The 6th bar button shows the equipped weapon's skill (when the unit has it) and a click goes through the stock click
+  path: UseQuickSlotSkillRequested Index 5 -> PlayerControlEventHandler -> GetSkillAt(unit, 4), which the module answers.
+  The cast is the game's own order UseSkillTargetRequested (by skill key), so a stock player applies it the same way.
+- What client-only cannot do (owner questions in ~/ds_multiplayer/ext/nvwslot/PLAN.md): weapon skill first in auto-use,
+  one more free slot, a weapon skill for a unit that equipped with a full bar.
+- Tests: loader/test/weapon_slot_test.py (single player), loader/test/weapon_slot_pair.py --mod host|guest (pair, mixed).
+  The 0.1 tests above are in tests/old/.

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Windows VM run of the weapon-slot checks (test/weapon_slot_test.py: A = E1, the owner's 5-slot world saved in stock
-form; D = the old binary-mod layout; F = the 0.1.1 fill on load) through winrig (ds_multiplayer win/winbot, WINBOT_DIR),
-the VM running visibly with the agent up. Saves are stock 4-slot bars since 0.1.2 (on Windows the stock save copy is
-inlined in UnitQuickSlotContainer.Serialize). The mod-off phases (E2, E3) run the stock quick-slot code, the same on
-both systems: Mac only. E1's world: WS_E1_SAVE or the owner's autosave (copied).
+"""Windows VM run of the weapon-slot 0.2 checks (client only; test/weapon_slot_test.py) through winrig (ds_multiplayer
+win/winbot, WINBOT_DIR), the VM running visibly with the agent up. World: weapon_slot_test's 4-slot fixture. Checks: the
+module runs (7 hooks found by name on Windows), the save is the game's own after a load + save, the weapon button shows
+and uses each unit's weapon skill (module log lines: Windows has no probe), a weapon swap moves it, no exception.
   python3 weapon_slot_vm.py --mods <dir with weapon-slot/> [--out DIR]
 weapon-slot goes into the profile's mods folder for the run; anything installed under that name is moved aside and
 moved back after (never deleted). Exit 0 = every check passed."""
@@ -54,79 +53,45 @@ def load(w, local, name):
     w.cmd(cmd='set_speed', speed=0); time.sleep(3)
 
 
-def phase_a(w, out):
+def shown_used(w, g, mp):
+    """select g (portrait click): the module's last 'shows' line for g, then bar slot 5: its 'used' line for g"""
+    pos = len(w.text(W.PROF + r'\dsload.log') or '')
+    inject(w, 'SelectPlayerUnitRequested', i32_16=-1, guid_20=g); time.sleep(2)
+    inject(w, 'UseQuickSlotSkillRequested', i32_16=5); time.sleep(2)
+    inject(w, 'BaseControlModeRequested')
+    L = (w.text(W.PROF + r'\dsload.log') or '')[pos:]
+    used = [l.split(' -> ', 1)[1].strip() for l in L.splitlines() if 'weapon slot used: unit ' + g[:8] in l]
+    return used[-1] if used else None
+
+
+def phase(w, out):
     L = w.text(W.PROF + r'\dsload.log') or ''
-    check('A: module on (16 hooks, AI order)', 'weapon skill slot on (16 hooks; AI auto-use order weapon skill first)' in L,
+    check('module on: client only, 7 hooks', 'weapon skill slot on (client only: 7 hooks, no game data written)' in L,
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
-    before = T.units_of(T.OWNER_SAVE)
-    load(w, T.OWNER_SAVE, 'owner_world')
-    L = w.text(W.PROF + r'\dsload.log') or ''
-    wl = [l for l in L.splitlines() if 'weapon skills (' in l]
-    check('A: the 8 weapon skills read from the game table', wl and set(wl[-1].split(': ', 2)[-1].split()) == T.W, wl[-1:])
-    exp = {g: T.expect_new(u) for g, u in before.items()}
-    got = live(w, list(before))
-    check('A: live slots (units on the map) = the saved world with its weapon slots', len(got) >= 2 and all(got[g] == exp[g] for g in got),
-          {g[:8]: (got[g], exp[g]) for g in got if got[g] != exp[g]} or len(got))
-    check('A: the bar has its weapon slot', 'skill bar: weapon slot added' in L, [l for l in L.splitlines() if 'skill bar' in l][-2:])
-    after = T.units_of(save_now(w, out, 'ws_vm_a'))
-    check('A: the save written: 4 slots per unit, the weapon skill where the stock game keeps it (first empty free slot, or none)',
-          after and set(after) == set(before) and not T.stock_form(after, exp), T.stock_form(after, exp) or len(after))
-    check('A: nothing else of the units changes in the save (skill trees, skills + auto-use choices, items)',
-          after and not T.same_units(before, after), T.same_units(before, after))
+    src = os.path.join(out, 'ws_world.json'); T.make_fill_fixture(src, free_eq=True)
+    before = T.units_of(src)
+    load(w, src, 'ws_world')
     mp = w.cmd(cmd='status').get('map', 0)
-    g = next((g for g in got if exp[g][4]), None)
-    if g:
-        e0 = len(errors(w))
-        inject(w, 'SelectPlayerUnitRequested', i32_16=0, guid_20=g); time.sleep(2)
-        w.gshot(os.path.join(out, 'win_bar_selected.png'))
-        inject(w, 'SetQuickSlotRequested', i32_16=mp, guid_20=g, str_40=exp[g][4], i32_48=4); time.sleep(2)
-        check('A: a Set to slot 4 changes nothing', live(w, [g]).get(g) == exp[g], live(w, [g]).get(g))
-        inject(w, 'UseQuickSlotSkillRequested', i32_16=5); time.sleep(2)
-        check('A: a click on bar slot 5 throws nothing', len(errors(w)) == e0, errors(w)[e0:][:3])
-    check('A: no exception', not errors(w), errors(w)[:4])
-
-
-def phase_d(w, out):
-    before = T.units_of(T.OLD_SAVE)
-    e0 = len(errors(w))
-    load(w, T.OLD_SAVE, 'old_layout')
-    exp = {g: T.expect_new(u, old_layout=True) for g, u in before.items()}
-    got = live(w, list(before))
-    s0 = T.units_of(save_now(w, out, 'ws_vm_d0'))
-    check('D: an old binary-mod save gets the new layout (live) and is saved in stock form',
-          all(got[g] == exp[g] for g in got) and s0 and not T.stock_form(s0, exp),
-          ({g[:8]: (got.get(g), exp[g]) for g in got if got[g] != exp[g]}, T.stock_form(s0, exp)))
-    u0 = s0.get(T.EQ_UNIT, {}); inv = u0.get('inv') or []
-    if T.EQ_UNIT in got and T.EQ_ITEM in inv:
-        mp = w.cmd(cmd='status').get('map', 0)
+    on_map = list(live(w, list(before)))
+    exp = {g: T.weapon_skill(before[g]) for g in on_map}
+    for g, x in exp.items():
+        got = shown_used(w, g, mp)
+        check('unit %s: the weapon button uses %s' % (g[:8], x or 'nothing'), got == (x or '(none: no weapon skill)'), got)
+    after = T.units_of(save_now(w, out, 'ws_vm_round'))
+    diff = {g[:8]: [k for k in ('quick', 'tree', 'skills', 'equip', 'inv') if after.get(g, {}).get(k) != u[k]] for g, u in before.items()}
+    diff = {g: d for g, d in diff.items() if d}
+    check('the save is the game\'s own (quick slots, skill trees, skills + auto-use, items unchanged)', after and not diff, diff or len(after))
+    inv = before[T.EQ_UNIT]['inv']
+    if T.EQ_UNIT in exp and T.EQ_ITEM in inv:
         w.cmd(cmd='ord_select', guids=T.EQ_UNIT, group=3003); time.sleep(1)
         inject(w, 'EquipItemRequested', i32_16=mp, guid_20=T.EQ_UNIT, i32_36=0, guid_40=T.EQ_UNIT, i32_56=inv.index(T.EQ_ITEM)); time.sleep(4)
         q = live(w, [T.EQ_UNIT]).get(T.EQ_UNIT)
-        want = list(exp[T.EQ_UNIT][:4]) + [T.EQ_SKILL]
-        check('D: equip WoodClub: weapon slot = StunCharge, free slots unchanged', q == want, (exp[T.EQ_UNIT], q, want))
-        act = (T.units_of(save_now(w, out, 'ws_vm_d1')).get(T.EQ_UNIT, {}).get('skills') or {}).get('ActiveSkills') or []
-        check('D: the unit has StunCharge and no longer WhirlwindSlash', T.EQ_SKILL in act and T.OLD_SKILL not in act, act)
+        check('swap: the game puts StunCharge in its first empty free slot (stock, 4 slots)', q and len(q) == 4 and q[3] == T.EQ_SKILL, q)
+        check('swap: the weapon button uses StunCharge', shown_used(w, T.EQ_UNIT, mp) == T.EQ_SKILL)
+        w.gshot(os.path.join(out, 'win_bar_weapon_slot.png'))
     else:
-        check('D: the WoodClub unit is on the shown map', False, (list(got), inv))
-    check('D: no exception', len(errors(w)) == e0, errors(w)[e0:][:4])
-
-
-def phase_f(w, out):
-    src = os.path.join(out, 'fill_fixture.json'); want = T.make_fill_fixture(src)
-    before = T.units_of(src)
-    e0 = len(errors(w))
-    load(w, src, 'fill_fixture')
-    exp = {g: T.expect_new(u) for g, u in before.items()}
-    got = live(w, list(before))
-    after = T.units_of(save_now(w, out, 'ws_vm_f'))
-    check('F: fill on load: every armed unit has its weapon skill in the weapon slot (live), the save in stock form',
-          len(got) >= 2 and all(got[g] == exp[g] for g in got) and all(exp[g][4] == s_ for g, s_ in want.items()) and not T.stock_form(after, exp),
-          ({g[:8]: (got.get(g), exp[g]) for g in got if got[g] != exp[g]}, T.stock_form(after, exp)))
-    once = lambda lst, s_: (lst or []).count(s_) == 1
-    check('F: the weapon skill once in the unit\'s skills and extra skills',
-          all(once((after[g]['skills'] or {}).get('ActiveSkills'), s_) and once((after[g]['tree'] or {}).get('ExtraSkills'), s_) for g, s_ in want.items()),
-          {g[:8]: ((after[g]['skills'] or {}).get('ActiveSkills'), (after[g]['tree'] or {}).get('ExtraSkills')) for g in want})
-    check('F: no exception', len(errors(w)) == e0, errors(w)[e0:][:4])
+        check('swap unit on the shown map with WoodClub in its bag', False, (list(exp), inv))
+    check('no exception', not errors(w), errors(w)[:4])
 
 
 def main():
@@ -146,11 +111,7 @@ def main():
         try:
             w.prepare(lang=0, consent='no', active=['multiplayer', 'weapon-slot'], settings={})
             w.start(env={'DSL_CLOUD': '0'})
-            phase_a(w, out)
-            w.stop(); w.start(env={'DSL_CLOUD': '0'})     # a fresh game per world, as the Mac test does
-            phase_d(w, out)
-            w.stop(); w.start(env={'DSL_CLOUD': '0'})
-            phase_f(w, out)
+            phase(w, out)
         except Exception as e:
             check('run finished', False, repr(e))
         finally:
