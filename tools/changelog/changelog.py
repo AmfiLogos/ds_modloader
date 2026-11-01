@@ -13,6 +13,11 @@ Format (newest first; `lint` enforces it):
     ### <version> (<YYYY-MM-DD>)             one per released version, newest first
     - what changed, in plain English        bullets; a longer bullet goes on over lines indented by two spaces;
       (two spaces) more of the same bullet   a line ending in ":" groups the bullets under it ("Multiplayer:")
+ROADMAP.md (same three repos): sections "## Now" and "## Next" list what is coming; each bullet there ends with an
+id comment `<!-- id: <name> -->` (invisible on GitHub). The CHANGELOG bullet that ships it ends with
+`<!-- roadmap: <name> -->` (also invisible; never shown in the What's new window). A line "Updated: YYYY-MM-DD" near
+the top says when the roadmap was last brought up to date: each release moves its shipped items to "## Done" and
+sets that date, so the roadmap is never older than the newest release.
 A tag names its entry: v0.1.27 = (kit, 0.1.27); multiplayer-v0.1.26 = (multiplayer, 0.1.26); bepinex-mac-0.1.3 =
 (bepinex-mac, 0.1.3).
 
@@ -28,10 +33,19 @@ Usage:
   changelog.py fill   --tag TAG --head H [--file F]       H with its line "<!-- CHANGELOG -->" replaced by the entry
   changelog.py cheader --version V --out O [--file F]     C header for the loader: the kit entry of version V as the
                                                            in-game text (empty when there is none: no window)
+  changelog.py roadmap --roadmap R [--file F]             release check of ROADMAP.md R (owner 2026-10-16: "a clear to-do
+                                                           on all GitHub projects"; PLAN_v013 item 12): FAIL when a "Now"
+                                                           or "Next" bullet has no id, when a DATED entry of F ships one of
+                                                           those ids, or when R's "Updated: YYYY-MM-DD" line is older than
+                                                           the newest dated entry of F (see ROADMAP below)
 F defaults to CHANGELOG.md of the repo this tool sits in. Exit 1 = a check failed (the line says why).
 """
 import argparse, os, re, sys
 
+COMMENT = re.compile(r"\s*<!--.*?-->")
+RM_ID = re.compile(r"<!--\s*id:\s*([a-z0-9][a-z0-9-]*)\s*-->")
+RM_SHIP = re.compile(r"<!--\s*roadmap:\s*([a-z0-9][a-z0-9-]*)\s*-->")
+RM_UPDATED = re.compile(r"^Updated: (\d{4}-\d{2}-\d{2})\s*$")
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 MARK = "<!-- CHANGELOG -->"
@@ -138,6 +152,7 @@ def display(body):
     """the in-game text: markdown links -> their text, no backticks / bold marks; bullets and groups stay"""
     out = []
     for l in body:
+        l = COMMENT.sub("", l)                     # roadmap ids (<!-- roadmap: x -->) never show in the game
         l = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", l)
         l = l.replace("`", "").replace("**", "")
         out.append(l)
@@ -158,9 +173,50 @@ def c_lit(s):
     return "".join(out)
 
 
+def roadmap(secs, path, rpath):
+    """-> list of problems of ROADMAP.md rpath against the parsed CHANGELOG (see the module text)"""
+    try:
+        lines = open(rpath, encoding="utf-8").read().split("\n")
+    except OSError as e:
+        return [f"{rpath}: cannot read: {e}"]
+    probs, part, items, updated = [], None, {}, None
+    for n, l in enumerate(lines, 1):
+        m = RM_UPDATED.match(l)
+        if m:
+            updated = m.group(1)
+        if l.startswith("## "):
+            part = l[3:].strip().split()[0].lower() if l[3:].strip() else ""
+        elif part in ("now", "next") and l.startswith("- "):
+            ids = RM_ID.findall(l)
+            if ids:
+                for i in ids:
+                    items[i] = (n, part, l)
+            elif not l.startswith("- Nothing"):
+                probs.append(f"{rpath}:{n}: a '{part.title()}' item has no id: end it with '<!-- id: <name> -->'")
+    shipped = {}
+    for sid, sec in secs.items():
+        for e in sec["entries"]:
+            if e["date"]:
+                for l in e["body"]:
+                    for i in RM_SHIP.findall(l):
+                        shipped.setdefault(i, f"({sid}) {e['ver']} ({e['date']})")
+    for i, (n, part, l) in sorted(items.items(), key=lambda x: x[1][0]):
+        if i in shipped:
+            probs.append(f"{rpath}:{n}: '{i}' is still under '{part.title()}' but shipped in {shipped[i]} of {path}: "
+                         f"move it to '## Done'")
+    dates = [e["date"] for sec in secs.values() for e in sec["entries"] if e["date"]]
+    newest = max(dates) if dates else None
+    if updated is None:
+        probs.append(f"{rpath}: no line 'Updated: YYYY-MM-DD' (the day the roadmap was last brought up to date)")
+    elif newest and updated < newest:
+        probs.append(f"{rpath}: 'Updated: {updated}' is older than the newest release in {path} ({newest}): move what "
+                     f"shipped to '## Done', check Now / Next, then set the date")
+    return probs
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["lint", "check", "notes", "fill", "cheader"])
+    ap.add_argument("cmd", choices=["lint", "check", "notes", "fill", "cheader", "roadmap"])
     ap.add_argument("--file", default=os.path.join(REPO, "CHANGELOG.md"))
     ap.add_argument("--tag")
     ap.add_argument("--binary", action="append", default=[])
@@ -168,6 +224,7 @@ def main():
     ap.add_argument("--notes")
     ap.add_argument("--version")
     ap.add_argument("--out")
+    ap.add_argument("--roadmap")
     a = ap.parse_args()
     secs, errs = parse(a.file)
 
@@ -179,6 +236,21 @@ def main():
         if errs or not n:
             die(f"CHANGELOG LINT FAIL: {len(errs)} problem(s), {n} entries in {a.file}")
         print(f"CHANGELOG LINT OK: {len(secs)} sections, {n} entries")
+        return
+
+    if a.cmd == "roadmap":
+        if not a.roadmap:
+            die("roadmap needs --roadmap")
+        if errs:
+            for e in errs:
+                print(e)
+            die(f"ROADMAP FAIL: {a.file} has {len(errs)} format problem(s) (changelog.py lint)")
+        probs = roadmap(secs, a.file, a.roadmap)
+        for p in probs:
+            print(p)
+        if probs:
+            die(f"ROADMAP FAIL: {len(probs)} problem(s) in {a.roadmap}")
+        print(f"ROADMAP OK {a.roadmap}")
         return
 
     if a.cmd == "cheader":

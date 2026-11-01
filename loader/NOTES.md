@@ -1283,6 +1283,18 @@ Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repo
   DSL_WHATSNEW_TEST = no window; no UI-RULE / ESC-MISSING line. 19/0 (0.1.26 entry, and the long 0.1.28 entry); the
   main loader fails it (no window).
 
+## ROADMAP.md: a to-do anybody can read (owner 2026-10-16: "a clear to-do on all GitHub projects ... so that anybody can know what's next"; PLAN_v013 item 12) - `tools/changelog/changelog.py roadmap`
+Rule: each of the three repos has a ROADMAP.md for players: Now / Next / Later / Done / Needs help / Known issues, plain
+English, no lane names, hashes, internal paths or the owner's name. Each Now / Next bullet ends with `<!-- id: <name> -->`;
+the CHANGELOG bullet that ships it ends with `<!-- roadmap: <name> -->` (both invisible on GitHub; `display()` strips
+them from the in-game What's new text). Each release moves what it shipped to Done and sets the "Updated: YYYY-MM-DD" line.
+- Template: the three ROADMAP.md of 2026-11-01 (same sections, same "three repos" header).
+- Guard: `changelog.py roadmap --file CHANGELOG.md --roadmap ROADMAP.md` fails on a shipped id still under Now / Next, a
+  Now / Next bullet without an id, or an "Updated:" date older than the newest dated CHANGELOG entry.
+  `sign_release.sh` runs it for every release (ds_multiplayer / ds_custommodes: their public main) and refuses to sign;
+  gate0127 `g027_roadmap` runs it for the three repos. Test: `tools/changelog/roadmap_test.py` (MP_REPO / CM_REPO = the
+  other two trees, to also check their real roadmaps).
+
 ## The loader never changes the player's VSync or frame cap (FPS audit 2026-10-26 rows 1, 10; kit 0.1.29, lane fpsvsync) - `src/dsl_soft.c` force_fps / fast_end
 Rule (lead brief 2026-10-26): "Fix the mod loader so it never changes the player's VSync / frame cap." Every frame cap or
 vsync the loader forces (A's boot speed-up, a soft-restart B, a prewarm B) goes through `force_fps` and comes back through
