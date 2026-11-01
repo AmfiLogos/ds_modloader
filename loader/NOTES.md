@@ -1215,6 +1215,32 @@ each size kept; start 2 at 800x600 UI 1.4: back at the kept 130 %, "+" "+" 150 %
 first place runs past the window), no UI-RULE line: 14/0; main 7f901f5: 2 FAIL (no buttons, nothing kept).
 Units Laboratory's dps_test checks the meter and the chat in a DPS Check world (size_checks).
 
+### Kit 0.1.30 (lane nvkit, 2026-11-01): HOVER rule, TOP rule, dsl_section (PLAN_v013 items 2, 4, 6)
+- HOVER RULE (owner: if you do not want to change anything, having them on screen is redundant): the "-" / "+" of every
+  panel_size panel show ONLY while the mouse is over the panel or the buttons (8 units more), and stay 18 frames (~0.3 s)
+  after it leaves: crossing the edge onto the buttons never flickers; while its right-drag runs they stay. sz_frame sets the
+  holder active every frame while the panel shows: a module never set_active's the holder. No mouse reading = shown.
+  Tests that click "-" / "+" hover the panel first (Units Laboratory dps_test size_checks: hover the meter / chat first).
+- TOP RULE (owner: "all of the windows that are under the right click irrespective of whether it's on top or below they all
+  move at the same time"): a right press goes to the ONE panel drawn on top under the mouse: the sorting order of its
+  canvas (nearest root or override-sorting canvas), then the hierarchy order under it (a later sibling or a child is
+  above); same order on different canvases = the newest registered (as before). It was "the newest registered", which is
+  wrong once a window is raised. A panel with its OWN drag code joins the choice with `dsl_movable_own(ui, panel, key)`
+  (the kit never moves or keeps it) and arms its drag only while `dsl_drag_owner(ui) == panel` (callable any time in the
+  frame; the pick is keyed on Time.frameCount, so a caller before the kit's frame tick sees the same pick). NOT done yet:
+  the multiplayer chat (mpmenu.c) and Players panel (ui_game.c plist_mouse) have their own right-drag code and still move
+  under a kit window until they call these two.
+- SECTION RULE (owner, Units Laboratory test window: "otherwise they just take a lot of space for no reason"): new
+  `dsl_section(ui, parent, x, y, w, title, key, flags, cb, ud)` = a header DSL_SECTION_H (32) units high: the kit's chevron
+  (right = folded, down = open) and the title in the game's title font, gold 0xD9BE8F; a click ANYWHERE on it (the card
+  template's full-area click) folds / unfolds, keeps `<key>@fold<TAB>1|0<TAB>0` in ui_places.tsv (key
+  "<mod id>.<window>.<section>", <= 58 bytes) and calls cb(ud, header, open) LAST (it may destroy and paint again).
+  `dsl_section_open(ui, key, dflt)` = draw the body or not; DSL_SEC_FOLDED = folded until first opened. Every collapsible
+  section of a window uses it; never a hand-made fold arrow (Units Laboratory's team-row fold_arrow is a row, not a section).
+Test: `test/panelsize_test.py` (own copy: DSL_TEST_COPY=<yours>): hover hidden / shown / no flicker onto "+" / hidden after
+leaving, clicks after a hover; uikit-demo `ov` (A registered last but drawn below B: a right-drag on the overlap moves only
+B; with an own-drag C on top nothing moves and drag_owner = C); `secpanel` (fold, close + open, game restart: still folded).
+
 ## Game-view lookups: dsl_view_find, never a FindObjectOfType poll (the template + the SCAN-RULE guard; owner rule 2026-10-25 "TEMPLATES + GUARDS"; FPS audit 2026-10-26, lane fpsscan) - `src/dsl_view.c`
 RULE: a game object of a class (a view, a MonoBehaviour) is got ONLY through the lookup helper: loader code
 `dsl_view_get(klass, flags)` (arrays: `dsl_view_all`, loaded assets: `dsl_view_assets`, "a game window shows":

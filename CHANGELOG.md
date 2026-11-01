@@ -4,6 +4,11 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.30)
+
+- The small "-" and "+" size buttons of a panel (multiplayer chat, DPS meter, DPS log) now show only while your mouse is over that panel. They stay clickable: move the mouse onto the panel and they appear.
+- A right-click drag where mod windows overlap now moves only the window on top (for example the DPS meter over the DPS log). Before, a window below could move instead. The multiplayer chat and Players panel get this in a later update.
+
 ### 0.1.29 (2026-10-26)
 
 - Smoother game on the title screen, on the loading screen and in your worlds: the mod loader no longer searches all the objects of the game many times a second to find the Load list, the game's windows and its notice box. Before, this made a slow frame about every half second in a world and every fifth frame on the title screen.

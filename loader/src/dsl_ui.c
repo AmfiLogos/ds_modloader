@@ -89,7 +89,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
     *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
     *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create, *m_spr_create7, *m_spr_tex, *m_spr_texrect, *m_img_ppm,
-    *m_cv_mode, *m_cv_getmode, *m_cv_order, *m_cv_override, *m_cv_root, *m_cv_cam, *m_cs_mode, *m_cs_getmode, *m_cs_ref, *m_cs_getref,
+    *m_cv_mode, *m_cv_getmode, *m_cv_order, *m_cv_override, *m_cv_getorder, *m_cv_getover, *m_cv_root, *m_cv_cam, *m_cs_mode, *m_cs_getmode, *m_cs_ref, *m_cs_getref,
     *m_cs_match, *m_cs_getmatch, *m_cs_smm, *m_cs_getsmm, *m_rtu_w2s,
     *m_sr_content, *m_sr_viewport, *m_sr_h, *m_sr_v, *m_sr_move, *m_sr_sens,
     *m_es_update, *m_tb_init, *m_tb_inter, *m_nv_select, *m_nv_confirm, *m_ui_prefab,
@@ -1921,7 +1921,7 @@ static void sf_frame(void) {
 
 #define MV_MAX 32
 #define MVP_MAX 128
-static struct { uintptr_t h; DSLObj id; char key[64]; int seq; } mvs[MV_MAX]; static int nmv, mv_seq;
+static struct { uintptr_t h; DSLObj id; char key[64]; int seq, own; } mvs[MV_MAX]; static int nmv, mv_seq;   /* own: moved by its own code (movable_own) */
 static struct { char key[64]; float x, y; } mvp[MVP_MAX]; static int nmvp, mvp_loaded;
 static DSLObj mv_id; static int mv_on; static float mv_x0, mv_y0, mv_lx, mv_ly;
 static const char *mvp_file(void) { static char p[1200]; if (!p[0]) snprintf(p, sizeof p, "%s/ui_places.tsv", dsl_reg_data_dir()); return p; }
@@ -1949,7 +1949,7 @@ static void mv_clamp(Obj o) {                                        /* all of i
     if (r[3] > H || r[3] - r[1] >= H) dy = H - r[3]; else if (r[1] < 0) dy = -r[1];
     if (dx != 0 || dy != 0) rt_move_screen(o, dx, dy);
 }
-static int k_movable(DSLObj panel, const char *key) {
+static int mv_reg(DSLObj panel, const char *key, int own) {
     W *w = w_of(panel); Obj o = w ? w_root(w) : (Obj)panel;
     if (!alive(o) || !isa(tr_of(o), K.RectTransform) || !key || !*key || strlen(key) >= 64 || strchr(key, '\t') || strchr(key, '\n')) return -1;
     int i = 0; while (i < nmv && mvs[i].id != panel) i++;
@@ -1959,7 +1959,8 @@ static int k_movable(DSLObj panel, const char *key) {
         i = nmv++; memset(&mvs[i], 0, sizeof mvs[i]); mvs[i].id = panel;
     }
     hfree(&mvs[i].h); mvs[i].h = x_weak ? x_weak(o, false) : hnew(o);
-    snprintf(mvs[i].key, sizeof mvs[i].key, "%s", key); mvs[i].seq = ++mv_seq;
+    snprintf(mvs[i].key, sizeof mvs[i].key, "%s", key); mvs[i].seq = ++mv_seq; mvs[i].own = own;
+    if (own) { dsl_log("ui: move: %s takes part in the top-panel choice (moved by its own code)", key); return 0; }
     mvp_load();
     for (int k = 0; k < nmvp; k++) if (!strcmp(mvp[k].key, key) && m_rt_pos) {
         CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ mvp[k].x, mvp[k].y }, m_rt_pos);
@@ -1978,30 +1979,73 @@ static void mv_keep(int i) {                                         /* the plac
     mvp_save();
     dsl_log("ui: move: %s kept at %.0f, %.0f", mvs[i].key, p.x, p.y);
 }
+/* TOP RULE (owner, PLAN_v013 item 4: "all of the windows that are under the right click irrespective of whether it's on
+   top or below they all move at the same time"): a right press goes to the ONE panel drawn on top under the mouse. Draw
+   order = the sorting order of its canvas (the nearest root or override-sorting canvas), then the hierarchy order under
+   that canvas (a later sibling, or a child, is drawn above). Canvases with the same order: the newest registered. */
+#define ORD_DEPTH 32
+typedef struct { Obj cv; int order, n, path[ORD_DEPTH]; } OrdKey;
+static void ord_key(Obj o, OrdKey *k) {
+    int tmp[ORD_DEPTH], n = 0; Obj t = tr_of(o); k->cv = NULL; k->order = 0;
+    while (t && n < ORD_DEPTH) {
+        Obj p = tr_parent(t), cv = K.Canvas ? comp_get(t, K.Canvas) : NULL;
+        tmp[n++] = sibling(t);
+        if (cv && (!p || (m_cv_getover && CALL(m_cv_getover, bool, Obj)(cv, m_cv_getover)))) {
+            k->cv = cv; k->order = m_cv_getorder ? CALL(m_cv_getorder, int, Obj)(cv, m_cv_getorder) : 0; break;
+        }
+        t = p;
+    }
+    k->n = n; for (int j = 0; j < n; j++) k->path[j] = tmp[n - 1 - j];
+}
+static int ord_cmp(const OrdKey *a, const OrdKey *b) {               /* > 0: a is drawn above b; 0: not known */
+    if (a->cv != b->cv) return a->order - b->order;
+    for (int j = 0; j < a->n && j < b->n; j++) if (a->path[j] != b->path[j]) return a->path[j] - b->path[j];
+    return a->n - b->n;                                              /* a child is drawn above its parent */
+}
+static int mv_own_drag; static int64_t mv_pick_at = -1;
+static void mv_pick(void) {                                          /* once a frame: who takes this right press */
+    int64_t f = m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : frames;   /* the game's frame: a caller before the kit's frame tick sees the same pick */
+    if (mv_pick_at == f) return;
+    mv_pick_at = f;
+    if (mv_id || !nmv || !m_input_mbd || !m_input_mouse || !CALL(m_input_mbd, bool, int)(1, m_input_mbd)) return;
+    V3 m = CALL0(m_input_mouse, V3)(m_input_mouse);
+    int best = -1, under = 0; OrdKey kb, ki;
+    for (int i = nmv - 1; i >= 0; i--) if (!hget(mvs[i].h)) { hfree(&mvs[i].h); mvs[i] = mvs[--nmv]; }
+    for (int i = 0; i < nmv; i++) {
+        Obj o = hget(mvs[i].h); float r[4];
+        if (!o || !on_tree(o) || !rect_screen(o, r) || m.x < r[0] || m.x > r[2] || m.y < r[1] || m.y > r[3]) continue;
+        under++; ord_key(o, &ki);
+        if (best < 0) { best = i; kb = ki; continue; }
+        int c = ord_cmp(&ki, &kb);
+        if (c > 0 || (c == 0 && mvs[i].seq > mvs[best].seq)) { best = i; kb = ki; }
+    }
+    if (best < 0) return;
+    mv_id = mvs[best].id; mv_on = 0; mv_own_drag = mvs[best].own; mv_x0 = mv_lx = m.x; mv_y0 = mv_ly = m.y;
+    if (under > 1) dsl_log("ui: move: right press on %d panels: %s (the top one) takes it", under, mvs[best].key);
+}
+static DSLObj k_drag_owner(void) {                                   /* the panel that took the right press being held, else NULL */
+    if (!m_input_mb) return NULL;
+    mv_pick();
+    int i = mv_find(mv_id);
+    return i >= 0 && hget(mvs[i].h) && CALL(m_input_mb, bool, int)(1, m_input_mb) ? mv_id : NULL;
+}
+static int k_movable(DSLObj panel, const char *key) { return mv_reg(panel, key, 0); }
+static int k_movable_own(DSLObj panel, const char *key) { return mv_reg(panel, key, 1); }
 static void mv_frame(void) {
     if (!nmv || !m_input_mb || !m_input_mbd || !m_input_mouse) return;
     V3 m = CALL0(m_input_mouse, V3)(m_input_mouse);
-    if (!mv_id && CALL(m_input_mbd, bool, int)(1, m_input_mbd)) {   /* a right press on a movable panel (the top-most: the newest) */
-        int best = -1;
-        for (int i = nmv - 1; i >= 0; i--) if (!hget(mvs[i].h)) { hfree(&mvs[i].h); mvs[i] = mvs[--nmv]; }
-        for (int i = 0; i < nmv; i++) {
-            Obj o = hget(mvs[i].h); float r[4];
-            if (!o || !on_tree(o) || !rect_screen(o, r) || m.x < r[0] || m.x > r[2] || m.y < r[1] || m.y > r[3]) continue;
-            if (best < 0 || mvs[i].seq > mvs[best].seq) best = i;
-        }
-        if (best >= 0) { mv_id = mvs[best].id; mv_on = 0; mv_x0 = mv_lx = m.x; mv_y0 = mv_ly = m.y; }
-    }
+    mv_pick();
     int i = mv_find(mv_id); Obj o = i >= 0 ? hget(mvs[i].h) : NULL;
     if (mv_id && (!o || !CALL(m_input_mb, bool, int)(1, m_input_mb))) {   /* let go (or the panel is gone) */
-        if (o && mv_on) mv_keep(i);
-        mv_id = NULL; mv_on = 0;
-    } else if (o) {
+        if (o && mv_on && !mv_own_drag) mv_keep(i);
+        mv_id = NULL; mv_on = 0; mv_own_drag = 0;
+    } else if (o && !mv_own_drag) {
         float dx = m.x - mv_x0, dy = m.y - mv_y0;
         if (!mv_on && dx * dx + dy * dy >= 36) { mv_on = 1; dsl_log("ui: move: %s follows the right-drag", mvs[i].key); }   /* 6 px: a right-click stays a click */
         if (mv_on && (m.x != mv_lx || m.y != mv_ly)) { rt_move_screen(o, m.x - mv_lx, m.y - mv_ly); mv_clamp(o); mv_lx = m.x; mv_ly = m.y; }
     }
     if (frames % 30 == 0)                                            /* the game window was resized: back on the screen */
-        for (int k = 0; k < nmv; k++) { Obj q = hget(mvs[k].h); if (q && on_tree(q) && mvs[k].id != mv_id) mv_clamp(q); }
+        for (int k = 0; k < nmv; k++) { Obj q = hget(mvs[k].h); if (q && !mvs[k].own && on_tree(q) && mvs[k].id != mv_id) mv_clamp(q); }
 }
 /* SIZE RULE (kit 0.1.29; owner 2026-10-25: "allow to both make the chat and the DPS check window smaller or bigger with a
    plus or minus"): panel_size puts "-" and "+" in a panel's top-right corner; a click = 10 % smaller / bigger, 60 % ..
@@ -2010,7 +2054,7 @@ static void mv_frame(void) {
 #define SZ_MAX 16
 #define SZ_LO 6                                                      /* tenths: 60 % .. 150 % */
 #define SZ_HI 15
-static struct { uintptr_t h, h_hold; DSLObj id, hold, minus, plus; const char *mtxt; char key[64]; int step, flags, settle, shown; } szs[SZ_MAX]; static int nsz;
+static struct { uintptr_t h, h_hold; DSLObj id, hold, minus, plus; const char *mtxt; char key[64]; int step, flags, settle, shown; int64_t hov_until; } szs[SZ_MAX]; static int nsz;
 static void k_set_enabled(DSLObj o, int on);
 static void *m_fa_has;                                               /* TMP_FontAsset.HasCharacter(char, fallbacks, add) */
 static int sz_find(DSLObj id) { for (int i = 0; id && i < nsz; i++) if (szs[i].id == id && hget(szs[i].h)) return i; return -1; }
@@ -2078,9 +2122,28 @@ static DSLObj k_panel_size(DSLObj panel, const char *key, float x, float y, int 
     dsl_log("ui: size: %s \"-\" / \"+\" at %d %% (%s)", key, szs[i].step * 10, flags & DSL_SIZE_OWN ? "the panel applies it" : "the kit applies it");
     return szs[i].hold;
 }
+/* HOVER RULE (owner, PLAN_v013 item 2: if you do not want to change anything, having them on screen is redundant): the
+   "-" / "+" show only while the mouse is over the panel (its rect or the buttons' rect, 8 px more) and stay 18 frames
+   (~0.3 s) after it leaves, so crossing the edge onto the buttons never flickers. Still clickable: the mouse is there. */
+#define SZ_HOVER_PAD 8
+#define SZ_HOVER_KEEP 18
+static int sz_hovered(Obj o, Obj hd) {
+    if (!m_input_mouse) return 1;                                    /* no mouse reading: shown, as before */
+    V3 m = CALL0(m_input_mouse, V3)(m_input_mouse); float r[4];
+    for (int n = 0; n < 2; n++) {
+        Obj x = n ? hd : o;
+        if (x && rect_screen(x, r) && m.x >= r[0] - SZ_HOVER_PAD && m.x <= r[2] + SZ_HOVER_PAD && m.y >= r[1] - SZ_HOVER_PAD && m.y <= r[3] + SZ_HOVER_PAD) return 1;
+    }
+    int k = mv_find(mv_id); return k >= 0 && hget(mvs[k].h) == o;     /* its right-drag runs */
+}
 static void sz_frame(void) {
     for (int i = nsz - 1; i >= 0; i--) {
         Obj o = hget(szs[i].h); if (!o) { hfree(&szs[i].h); hfree(&szs[i].h_hold); szs[i] = szs[--nsz]; continue; }
+        { Obj hd = hget(szs[i].h_hold);
+          if (hd && on_tree(o)) {
+              if (sz_hovered(o, hd)) szs[i].hov_until = frames + SZ_HOVER_KEEP;
+              go_active(hd, frames <= szs[i].hov_until);
+          } }
         /* made in a hidden panel (the chat's closed box), the buttons showed no label once shown (panelsize_test hidden
            case): the labels are written again each time the buttons show */
         Obj hd = hget(szs[i].h_hold); int sh = hd && on_tree(hd);
@@ -2091,7 +2154,7 @@ static void sz_frame(void) {
         }
         szs[i].shown = sh ? 1 : szs[i].shown ? -1 : szs[i].shown;      /* 0 never shown, 1 shown, -1 hidden again */
         if (szs[i].settle <= 0 || --szs[i].settle > 8 || !on_tree(o)) continue;   /* 2 frames for an own scale to land, then 8 checks */
-        for (int k = 0; k < nmv; k++) if (hget(mvs[k].h) == o && mvs[k].id != mv_id) { mv_clamp(o); break; }
+        for (int k = 0; k < nmv; k++) if (hget(mvs[k].h) == o && !mvs[k].own && mvs[k].id != mv_id) { mv_clamp(o); break; }
     }
 }
 /* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
@@ -2222,6 +2285,54 @@ static int k_card_toggle(DSLObj card, DSLObj check, dsl_ui_cb click, void *ud) {
     w_done(wd, tr_of(b), NULL);
     card_guard_add(i, root, b);
     return 0;
+}
+
+/* SECTION RULE (owner, PLAN_v013 item 6: "otherwise they just take a lot of space for no reason"): a collapsible section
+   header. A click anywhere on the header folds / unfolds (the card template's full-area click), the fold mark is the kit's
+   chevron (the value rows' next arrow), pointing right when folded and down when open, the title in the game's title font.
+   The state is kept per key "<mod id>.<window>.<section>" as the row "<key>@fold" of ui_places.tsv: the same after the
+   window is closed and opened and after a game restart. The caller draws the body when section_open says open and lays out
+   again in its callback (a window that paints from its state just paints again). */
+#define SEC_MAX 64
+#define SEC_GOLD 0xD9BE8FFFu
+static struct { uintptr_t h; DSLObj id, mark; char key[64]; dsl_section_cb cb; void *ud; int open; } secs[SEC_MAX]; static int nsec;
+static int sec_kept(const char *key) {                               /* 1 open, 0 folded, -1 not kept */
+    char k[72]; snprintf(k, sizeof k, "%s@fold", key); mvp_load();
+    for (int n = 0; n < nmvp; n++) if (!strcmp(mvp[n].key, k)) return mvp[n].x >= 0.5f;
+    return -1;
+}
+static int k_section_open(const char *key, int dflt) { int k = key && *key ? sec_kept(key) : -1; return k < 0 ? dflt != 0 : k; }
+static void sec_keep(const char *key, int open) {
+    char k[72]; snprintf(k, sizeof k, "%s@fold", key);
+    int n = 0; while (n < nmvp && strcmp(mvp[n].key, k)) n++;
+    if (n == nmvp) { if (nmvp == MVP_MAX) { dsl_log("ui: section: %d places kept: %s not kept", MVP_MAX, k); return; } nmvp++; }
+    snprintf(mvp[n].key, sizeof mvp[n].key, "%s", k); mvp[n].x = open ? 1.f : 0.f; mvp[n].y = 0;
+    mvp_save();
+}
+static void sec_click(void *ud, DSLObj w) {
+    (void)ud; int i = 0; while (i < nsec && !(secs[i].id == w && hget(secs[i].h))) i++;
+    if (i == nsec) return;
+    int open = !secs[i].open; secs[i].open = open; sec_keep(secs[i].key, open);
+    if (secs[i].mark) dsl_ui_turned(secs[i].mark, 16, 16, 28, open ? -90.f : 0.f);
+    dsl_log("ui: section: %s %s", secs[i].key, open ? "open" : "folded");
+    dsl_section_cb cb = secs[i].cb; void *cud = secs[i].ud; DSLObj id = secs[i].id;
+    if (cb) cb(cud, id, open);                                       /* last: the caller may destroy and paint again */
+}
+static DSLObj k_section(DSLObj parent, float x, float y, float w, const char *title, const char *key, int flags, dsl_section_cb cb, void *ud) {
+    if (!key || !*key || strlen(key) > 58 || strchr(key, '\t') || strchr(key, '\n') || w < 60 || !ready_basic()) return NULL;
+    for (int k = nsec - 1; k >= 0; k--) if (!hget(secs[k].h)) { hfree(&secs[k].h); secs[k] = secs[--nsec]; }
+    if (nsec == SEC_MAX) { dsl_log("ui: section: more than %d sections: refused", SEC_MAX); return NULL; }
+    DSLObj hd = k_panel(parent, x, y, w, DSL_SECTION_H, 0x00000000); if (!hd) return NULL;
+    int open = k_section_open(key, !(flags & DSL_SEC_FOLDED));
+    DSLObj mark = k_text(hd, 2, 2, 28, 28, "\xE2\x80\xBA", 24, DSL_TXT_CENTER, SEC_GOLD);
+    if (mark) dsl_ui_turned(mark, 16, 16, 28, open ? -90.f : 0.f);
+    k_text(hd, 34, 0, w - 34, DSL_SECTION_H - 1, title ? title : "", 19, DSL_TXT_LEFT | DSL_TXT_TITLE, SEC_GOLD);
+    int i = nsec++; memset(&secs[i], 0, sizeof secs[i]);
+    W *hw = w_of(hd); Obj ho = hw ? w_root(hw) : NULL;
+    secs[i].h = ho ? (x_weak ? x_weak(ho, false) : hnew(ho)) : 0; secs[i].id = hd; secs[i].mark = mark; secs[i].cb = cb; secs[i].ud = ud; secs[i].open = open;
+    snprintf(secs[i].key, sizeof secs[i].key, "%s", key);
+    if (k_card_toggle(hd, NULL, sec_click, NULL) != 0) dsl_log("ui: section: %s: no click area", key);
+    return hd;
 }
 
 /* The UI rules' guard (owner 2026-10-25: rule + template + guard). Test copies only, once per root panel of ours that has
@@ -2480,7 +2591,8 @@ static DSLUi KIT = {
     .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
     .esc_push = k_esc_push, .esc_drop = k_esc_drop, .close_x = k_close_x, .ui_scale = k_ui_scale, .scale_follow = k_scale_follow,
     .movable = k_movable, .window_std = k_window_std, .window_close = k_window_close, .card_toggle = k_card_toggle, .rules_own = k_rules_own,
-    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get, .view_find = dsl_view_get
+    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get, .view_find = dsl_view_get,
+    .movable_own = k_movable_own, .drag_owner = k_drag_owner, .section = k_section, .section_open = k_section_open
 };
 
 /* ------------------------------------------------------------------ title screen buttons */
@@ -3076,6 +3188,7 @@ void dsl_ui_install(void) {
     m_spr_create7 = OPTSIG(K.Sprite, "Create", 7, "UnityEngine.Texture2D,UnityEngine.Rect,UnityEngine.Vector2,System.Single,System.UInt32,UnityEngine.SpriteMeshType,UnityEngine.Vector4");
     m_cv_mode = MTH(K.Canvas, "set_renderMode", 1); m_cv_order = OPT(K.Canvas, "set_sortingOrder", 1);
     m_cv_override = OPT(K.Canvas, "set_overrideSorting", 1); m_cv_root = OPT(K.Canvas, "get_rootCanvas", 0);
+    m_cv_getorder = OPT(K.Canvas, "get_sortingOrder", 0); m_cv_getover = OPT(K.Canvas, "get_overrideSorting", 0);   /* movable: the top panel */
     m_cv_cam = OPT(K.Canvas, "get_worldCamera", 0);
     m_cv_getmode = OPT(K.Canvas, "get_renderMode", 0);
     m_cs_mode = OPT(K.CanvasScaler, "set_uiScaleMode", 1); m_cs_getmode = OPT(K.CanvasScaler, "get_uiScaleMode", 0);

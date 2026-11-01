@@ -94,6 +94,7 @@ typedef struct DSLLoadFilter {
    Coordinates: pixels inside `parent`, origin top-left, y down. Every create call returns the widget's
    RectTransform (DSLObj) or NULL. Strings are copied. Callbacks run on the main thread between frames. */
 typedef void (*dsl_ui_cb)(void *ud, DSLObj w);
+typedef void (*dsl_section_cb)(void *ud, DSLObj header, int open);   /* section (kit 0.1.30) */
 struct DSLWinStd; struct DSLWinParts;                      /* the window template (below DSLUi) */
 enum { DSL_TXT_LEFT = 0, DSL_TXT_CENTER = 1, DSL_TXT_RIGHT = 2, DSL_TXT_WRAP = 4, DSL_TXT_TITLE = 8 /* Cinzel */ };
 typedef struct DSLUi {
@@ -217,8 +218,10 @@ typedef struct DSLUi {
            lays out (read it every frame: it changes on a click) and keeps itself on the screen;
          - any other panel: the kit sets its scale (localScale) to the size.
        A movable panel (movable) is kept on the screen after a change. Call it once the panel is built (after movable).
-       Returns the buttons' holder (a child of panel: set_active hides both); NULL = not built (an older kit: no size
-       control). */
+       HOVER RULE (kit 0.1.30; owner: if you do not want to change anything, having them on screen is redundant): the
+       buttons show only while the mouse is over the panel or the buttons (8 units more) and ~0.3 s after it leaves;
+       the kit shows / hides the holder every frame while the panel shows (do not set_active it yourself).
+       Returns the buttons' holder (a child of panel); NULL = not built (an older kit: no size control). */
     DSLObj (*panel_size)(DSLObj panel, const char *key, float x, float y, int flags);
     float (*panel_size_get)(DSLObj panel);   /* the panel's size, 1 = 100 % (also 1 for a panel without panel_size) */
     /* appended (kit 0.1.29): GAME-VIEW LOOKUPS, the only way to get a game object (a view, a MonoBehaviour) of a class
@@ -234,7 +237,27 @@ typedef struct DSLUi {
        may be hidden: check its state. Never keep it past the frame: ask again (a cheap handle read). In test copies a
        module whose own scene searches pass 6 a minute in an idle state logs "SCAN-RULE <module> ..." (tests fail). */
     void *(*view_find)(void *klass, int flags);
+    /* appended (kit 0.1.30): TOP RULE of the right-drag (owner: "all of the windows that are under the right click
+       irrespective of whether it's on top or below they all move at the same time"). A right press goes to the ONE panel
+       drawn on top under the mouse (canvas sorting order, then hierarchy order), among the kit's movable panels and the
+       panels registered here. movable_own: `panel` moves by its OWN drag code (the kit never moves or keeps it) but takes
+       part in that choice; its code arms its drag only while drag_owner() == panel (wrapper dsl_drag_owner). drag_owner:
+       the panel that took the right press now held, else NULL (callable any time in the frame, also before the kit's
+       frame tick). */
+    int (*movable_own)(DSLObj panel, const char *key);
+    DSLObj (*drag_owner)(void);
+    /* appended (kit 0.1.30): SECTION RULE (owner, Units Laboratory test window: sections can be collapsed, "otherwise they
+       just take a lot of space for no reason"). section: a header row DSL_SECTION_H units high at x, y of `parent`, w wide:
+       the fold mark (the kit's chevron: right = folded, down = open) and `title` in the game's title font. A click
+       anywhere on it folds / unfolds; the state is kept under `key` "<mod id>.<window>.<section>" (at most 58 bytes) in the
+       file of the kept places: the same after the window is closed and opened and after a game restart. Draw the body
+       under the header only when section_open(key, dflt) says 1, and lay out again in cb(ud, header, open) (a window that
+       paints from its state just paints again; cb may destroy the header). flags DSL_SEC_FOLDED = folded until the player
+       opens it the first time. NULL = not built (an older kit: draw your own title, body always open). */
+    DSLObj (*section)(DSLObj parent, float x, float y, float w, const char *title, const char *key, int flags, dsl_section_cb cb, void *ud);
+    int (*section_open)(const char *key, int dflt);   /* 1 open, 0 folded; dflt when never toggled */
 } DSLUi;
+enum { DSL_SECTION_H = 32, DSL_SEC_FOLDED = 1 };             /* section: header height; flags */
 enum { DSL_SIZE_OWN = 1 };                                    /* panel_size flags: the panel applies the size itself */
 enum { DSL_VIEW_INACTIVE = 1, DSL_VIEW_NOW = 2, DSL_VIEW_TITLE = 4, DSL_VIEW_WORLD = 8 };   /* view_find flags */
 enum { DSL_WIN_MODAL = 0, DSL_WIN_PANEL = 1 };                /* DSLWinStd.kind */
@@ -448,6 +471,12 @@ static inline DSLObj dsl_panel_size(const DSLUi *ui, DSLObj panel, const char *k
 /* game-view lookups (view_find above); NULL on an older kit: the module's own fallback must then not poll either */
 static inline void *dsl_view_find(const DSLUi *ui, void *klass, int flags) { return DSL_UI_HAS(ui, view_find) ? ui->view_find(klass, flags) : NULL; }
 static inline float dsl_panel_size_get(const DSLUi *ui, DSLObj panel) { return DSL_UI_HAS(ui, panel_size_get) ? ui->panel_size_get(panel) : 1.0f; }
+/* the top rule + the section template (kit 0.1.30): -1 / NULL / dflt with an older kit */
+static inline int dsl_movable_own(const DSLUi *ui, DSLObj panel, const char *key) { return DSL_UI_HAS(ui, movable_own) ? ui->movable_own(panel, key) : -1; }
+static inline DSLObj dsl_drag_owner(const DSLUi *ui) { return DSL_UI_HAS(ui, drag_owner) ? ui->drag_owner() : NULL; }
+static inline DSLObj dsl_section(const DSLUi *ui, DSLObj parent, float x, float y, float w, const char *title, const char *key, int flags, dsl_section_cb cb, void *ud) {
+    return DSL_UI_HAS(ui, section) ? ui->section(parent, x, y, w, title, key, flags, cb, ud) : NULL; }
+static inline int dsl_section_open(const DSLUi *ui, const char *key, int dflt) { return DSL_UI_HAS(ui, section_open) ? ui->section_open(key, dflt) : dflt != 0; }
 
 #ifdef __cplusplus
 }
