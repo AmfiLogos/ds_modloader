@@ -6,21 +6,50 @@
 // pointer after an unhook keeps calling valid code (same rule as the Mac engine). rax is a scratch register in the
 // x64 calling convention (no argument travels in it).
 // Code patches (patch_rva): x64 has no instruction alignment, so only 1 <= n <= 16 is checked.
+// Several modules on one function: src/dsl_chain.h (shared with the Mac engine). The slot then points at the newest
+// module's replacement or at a counting veneer (32 bytes after the thunks):
+//   +0 lock inc qword [rip+8] (count @+16) ; +8 jmp [rip+10] (next @+24)
+// rax keeps the thunk's value only up to `jmp rax`; the veneer uses no register, only the flags (not kept across calls).
 #include "dsl_internal.h"
 #include "MinHook.h"
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MAXH 2048
 #define THUNK_SZ 48
-typedef struct { uintptr_t site; uint8_t *thunk; void *tramp; int owner; int active; char name[48]; } Hook;
-static Hook H[MAXH];
-static int nh;
+#define MAXV 1024
+#define VEN_SZ 32
 static uint8_t *thunks;
+static int nven;
 static int late;
 static SRWLOCK lock = SRWLOCK_INIT;
 int dsl_codepatch_ok = 1;
+
+static int ch_veneer(uintptr_t *code, volatile uint64_t **cnt, void *volatile **next) {
+    static const uint8_t c[14] = { 0xF0, 0x48, 0xFF, 0x05, 0x08, 0x00, 0x00, 0x00,     /* lock inc qword [rip+8] (-> +16) */
+                                   0xFF, 0x25, 0x0A, 0x00, 0x00, 0x00 };             /* jmp [rip+10] (-> +24) */
+    if (!thunks || nven >= MAXV) return -1;
+    uint8_t *v = thunks + (size_t)MAXH * THUNK_SZ + (size_t)nven * VEN_SZ;
+    memset(v, 0xCC, VEN_SZ);
+    memcpy(v, c, sizeof c);
+    *(uint64_t *)(v + 16) = 0; *(void **)(v + 24) = NULL;
+    FlushInstructionCache(GetCurrentProcess(), v, VEN_SZ);
+    nven++;
+    *code = (uintptr_t)v; *cnt = (volatile uint64_t *)(v + 16); *next = (void *volatile *)(v + 24);
+    return 0;
+}
+#include "dsl_chain.h"
+
+typedef struct { uintptr_t site; uint8_t *thunk; void *tramp; int owner; int active; char name[48]; ChainSite cs; } Hook;
+static Hook H[MAXH];
+static int nh;
+static void site_sync(Hook *h) {
+    int t = ch_top(&h->cs);
+    h->active = t >= 0;
+    if (t >= 0) { h->owner = CL[h->cs.lk[t]].owner; snprintf(h->name, sizeof h->name, "%s", CL[h->cs.lk[t]].name); }
+}
 
 #define SLOT(h) ((void *volatile *)((h)->thunk + 24))
 
@@ -68,7 +97,7 @@ int dsl_engine_init(void) {
     MH_STATUS s = MH_Initialize();
     if (s != MH_OK && s != MH_ERROR_ALREADY_INITIALIZED) { dsl_log("engine: MH_Initialize failed (%d): hooks off", s); return -1; }
     const char *where = "";
-    thunks = alloc_near_ga(MAXH * THUNK_SZ, &where);
+    thunks = alloc_near_ga((size_t)MAXH * THUNK_SZ + (size_t)MAXV * VEN_SZ, &where);
     if (!thunks) { dsl_log("engine: no thunk memory: hooks off"); return -1; }
     dsl_log("engine: MinHook, %d thunks at %p (%s)", MAXH, (void *)thunks, where);
     return 0;
@@ -164,7 +193,8 @@ static int same_jump(const uint8_t *site, const uint8_t *tramp) {
     return want && jump_ref(tramp) == want;
 }
 
-static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who) {
+static void chain_watch_start(void);
+static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who, const char *method) {
     uintptr_t site = (uintptr_t)target;
     if (!dsl_build_id) { dsl_log("%s: hook refused: the game build is not the pinned one", who); return -1; }
     if (!thunks || !site || !repl) { dsl_log("%s: hook refused (null target/replacement or engine inactive)", who); return -1; }
@@ -173,17 +203,16 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     }
     uintptr_t rva = site - dsl_ga_base;
     Hook *h = find_site(site);
-    if (h && h->active) {
-        dsl_log("%s: hook refused: %#llx is already hooked by %s (%s)%s", who, (unsigned long long)rva, dsl_owner_name(h->owner), h->name,
-                h->owner != owner ? " (on Windows two methods can share one body: MSVC identical-code folding)" : "");
-        return -1;
+    if (h && !h->active) {
+        const Patch *pq = patch_over(site, 5);
+        if (pq) { dsl_log("%s: hook refused: %#llx is inside a code patch of %s (%s)", who, (unsigned long long)rva, dsl_owner_name(pq->owner), pq->name); return -1; }
     }
-    if (h) {                                            /* re-hook a site unhooked earlier: reuse its thunk */
-        *SLOT(h) = repl; h->owner = owner; h->active = 1;
-        if (orig) *orig = h->tramp;
-        snprintf(h->name, sizeof h->name, "%s", who);
-        dsl_log("%s: hook %#llx re-armed", who, (unsigned long long)rva);
-        return 0;
+    if (h) {                                            /* a site hooked before (maybe by another module): chain */
+        int had = h->cs.ven != 0;
+        int r = ch_add(&h->cs, owner, repl, method, who, orig);
+        site_sync(h);
+        if (!r && !had && h->cs.ven) chain_watch_start();
+        return r;
     }
     const Patch *pp = patch_over(site, 5);
     if (pp) { dsl_log("%s: hook refused: %#llx is inside a code patch of %s (%s)", who, (unsigned long long)rva, dsl_owner_name(pp->owner), pp->name); return -1; }
@@ -192,7 +221,7 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
         dsl_log("%s: hook refused: %#llx already starts with a jump (a static patch or another loader's hook)", who, (unsigned long long)rva);
         return -1;
     }
-    if (nh >= MAXH) { dsl_log("%s: hook refused: no free thunk left", who); return -1; }
+    if (nh >= MAXH || ncl >= CH_MAXL) { dsl_log("%s: hook refused: no free thunk left", who); return -1; }
     uint8_t *t = thunks + (size_t)nh * THUNK_SZ;
     void *tramp = NULL;
     MH_STATUS s = MH_CreateHook(target, t, &tramp);
@@ -203,46 +232,68 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
         return -1;
     }
     if (chain) dsl_log("%s: %#llx already starts with another loader's jump (BepInEx/Dobby?): chained, ours runs first", who, (unsigned long long)rva);
-    make_thunk(t, tramp, repl);
+    make_thunk(t, tramp, NULL);                         /* the slot is set by the first link below, before the enable */
     dsl_mark_codepatch();
     s = batch ? MH_QueueEnableHook(target) : MH_EnableHook(target);
     if (s != MH_OK) { MH_RemoveHook(target); dsl_log("%s: hook %#llx failed (MinHook enable %d)", who, (unsigned long long)rva, s); return -1; }
     if (batch) queued++;
     Hook *n = &H[nh++];
-    *n = (Hook){ site, t, tramp, owner, 1, "" };
-    snprintf(n->name, sizeof n->name, "%s", who);
-    if (orig) *orig = tramp;
+    memset(n, 0, sizeof *n);
+    n->site = site; n->thunk = t; n->tramp = tramp;
+    n->cs.slot = SLOT(n); n->cs.orig_code = tramp; n->cs.rva = rva;
+    ch_add(&n->cs, owner, repl, method, who, orig);   /* first link: cannot be refused (room checked above) */
+    site_sync(n);
     return 0;
 }
 
-int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who) {
+int dsl_hook_m(int owner, void *target, void *repl, void **orig, const char *who, const char *method) {
     AcquireSRWLockExclusive(&lock);
-    int r = hook_locked(owner, target, repl, orig, who);
+    int r = hook_locked(owner, target, repl, orig, who, method);
     ReleaseSRWLockExclusive(&lock);
     if (!r) dsl_log("%s: hooked %#llx for %s", who, (unsigned long long)((uintptr_t)target - dsl_ga_base), dsl_owner_name(owner));
     return r;
 }
 
+int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who) { return dsl_hook_m(owner, target, repl, orig, who, NULL); }
+
 int dsl_unhook(int owner, void *target, const char *who) {
     AcquireSRWLockExclusive(&lock);
     Hook *h = find_site((uintptr_t)target);
-    int ok = h && h->active && h->owner == owner;
-    if (ok) { *SLOT(h) = NULL; h->active = 0; }
+    if (h) ch_check(&h->cs);                            /* skip guard before the counts restart */
+    int ok = h && ch_remove(&h->cs, owner);
+    if (h) site_sync(h);
     ReleaseSRWLockExclusive(&lock);
     if (!ok) { dsl_log("%s: unhook %p: not hooked by this module", who, target); return -1; }
-    dsl_log("%s: unhooked %#llx (original code runs again)", who, (unsigned long long)((uintptr_t)target - dsl_ga_base));
+    dsl_log("%s: unhooked %#llx (%s)", who, (unsigned long long)((uintptr_t)target - dsl_ga_base), h->active ? "the other hooks on it still run" : "original code runs again");
     return 0;
 }
 
 int dsl_unhook_owner(int owner) {
     int n = 0;
     AcquireSRWLockExclusive(&lock);
-    for (int i = 0; i < nh; i++) if (H[i].active && H[i].owner == owner) { *SLOT(&H[i]) = NULL; H[i].active = 0; n++; }
+    for (int i = 0; i < nh; i++) if (ch_link_of(&H[i].cs, owner)) { ch_check(&H[i].cs); n += ch_remove(&H[i].cs, owner); site_sync(&H[i]); }
     for (int i = 0; i < npt; i++) if (PT[i].active && PT[i].owner == owner) {        /* put the original bytes back */
         if (!memcmp((void *)PT[i].addr, PT[i].neu, PT[i].n) && !write_ga(PT[i].addr, PT[i].old, PT[i].n)) { PT[i].active = 0; n++; }
     }
     ReleaseSRWLockExclusive(&lock);
     return n;
+}
+
+/* skip guard runs: every 2 s while a chained site exists, and at exit */
+static void chain_check_all(void) { for (int i = 0; i < nh; i++) if (H[i].cs.ven) ch_check(&H[i].cs); }
+static DWORD WINAPI chain_watch(LPVOID u) {
+    (void)u;
+    for (;;) { Sleep(2000); AcquireSRWLockExclusive(&lock); chain_check_all(); ReleaseSRWLockExclusive(&lock); }
+    return 0;
+}
+static void chain_at_exit(void) { if (TryAcquireSRWLockExclusive(&lock)) { chain_check_all(); ReleaseSRWLockExclusive(&lock); } }
+static void chain_watch_start(void) {              /* engine lock held */
+    static int started;
+    if (started) return;
+    started = 1;
+    HANDLE t = CreateThread(NULL, 0, chain_watch, NULL, 0, NULL);
+    if (t) CloseHandle(t);
+    atexit(chain_at_exit);
 }
 
 int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t n, const char *who) {
@@ -277,7 +328,10 @@ int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t 
 int dsl_hook_count(int owner) {
     int n = 0;
     AcquireSRWLockExclusive(&lock);
-    for (int i = 0; i < nh; i++) if (H[i].active && (owner == -2 || H[i].owner == owner)) n++;
+    for (int i = 0; i < nh; i++) for (int k = 0; k < H[i].cs.nlk; k++) {
+        const ChainLink *l = &CL[H[i].cs.lk[k]];
+        if (l->active && (owner == -2 || l->owner == owner)) n++;
+    }
     for (int i = 0; i < npt; i++) if (PT[i].active && (owner == -2 || PT[i].owner == owner)) n++;
     ReleaseSRWLockExclusive(&lock);
     return n;

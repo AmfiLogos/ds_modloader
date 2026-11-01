@@ -48,6 +48,32 @@ Log: `<log dir>/dsload.log` (previous run: `dsload.prev.log`).
 - Another hook engine in the same process (old `dsrig.dylib` / `dsmods.dylib`, Doorstop) is logged as a warning.
   Hooks on the SAME function by two engines are refused by ours, not chained. Chaining with Harmony/Dobby is not done.
   (Windows since v0.1.16: chained over an `E9` / `FF 25` jump, see "Harmony + our MinHook on one function, Windows".)
+  Two MODULES on one function: chained by our engine (next section).
+
+## Hook chaining: several modules on one function (kit 0.1.30, owner 2026-10-24)
+Owner: "can't we modify the loader to allow multiple mods modifying similar functions ? Isn't this a better idea than
+modifying the mods ?". Before, the engine refused a second hook on a function ("already hooked by").
+- ONE implementation for both engines: `src/dsl_chain.h` (included by `src/dsl_engine.c` and
+  `start/win/dsl_engine_win.c`; each engine only writes its counting veneer). Never chain by hand in an engine.
+- Order = install order (= load order): the newest hook runs first, its `orig` calls the next older one, the oldest
+  calls the game. A site with one owner is unchanged (orig = the plain stub / trampoline).
+- A link over another gets a veneer (`count += 1; jump [next]`, Mac 24 B stub + 16 B slot memory, Windows 32 B after
+  the thunks); a chained site's slot points at an entry veneer that counts calls. Veneers are never freed: a call
+  still in flight in an unhooked mod keeps going down the chain.
+- Unhook, a failed phase (`dsl_unhook_owner`) or the crash guard taking a module off = only that link goes; the
+  `next` of every veneer of the site is recomputed oldest first, then the entry. Log: `<hook>: <rva>: <mod> taken off
+  the chain: runs <mod> > ... > game`; a new link logs `chained over <mod>: runs <mod> > <mod> > game`.
+- GUARD (skip): `chain <rva>: <mod> (<hook>) did not call the original in N calls: <mods> below it did not run`, once
+  per link, N >= 50 calls (checked every 2 s while a chained site exists, at each unhook, at exit). Not blocked.
+- Still refused: the same module twice on one function; two different methods with one body (identical-code
+  folding; only when both came by `hook_method`, which passes `ns.Class.Method/argc`); `hook_rva` / raw hooks have no
+  method name and are chained.
+- docs/hooks.json: a site may list several owners (6 sites have two today, all guarded by platform / env / the other
+  mod's presence, e.g. custom-modes hooks the wheel only without multiplayer).
+- Tests: `test/run_tests.sh` T1h (three test mods on one function: order B > M > A > game, middle then oldest unhook,
+  skip logged, same mod twice and folded method refused) and T1 (a failing module chained over floor-logger is taken
+  off, floor-logger and the game keep running). Real game (2026-11-01, Mac hidden copy NVC): `test/chainprobe`
+  chained over the loader's EventSystem.Update, 600 frames, unhooked itself, the loader's tick kept running.
 
 ## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).
@@ -1223,6 +1249,32 @@ stdp_size.minus / .plus): start 1 at 960x540 UI 1.0: buttons in the game's font,
 each size kept; start 2 at 800x600 UI 1.4: back at the kept 130 %, "+" "+" 150 % and the whole panel on the screen (its
 first place runs past the window), no UI-RULE line: 14/0; main 7f901f5: 2 FAIL (no buttons, nothing kept).
 Units Laboratory's dps_test checks the meter and the chat in a DPS Check world (size_checks).
+
+### Kit 0.1.30 (lane nvkit, 2026-11-01): HOVER rule, TOP rule, dsl_section (PLAN_v013 items 2, 4, 6)
+- HOVER RULE (owner: if you do not want to change anything, having them on screen is redundant): the "-" / "+" of every
+  panel_size panel show ONLY while the mouse is over the panel or the buttons (8 units more), and stay 18 frames (~0.3 s)
+  after it leaves: crossing the edge onto the buttons never flickers; while its right-drag runs they stay. sz_frame sets the
+  holder active every frame while the panel shows: a module never set_active's the holder. No mouse reading = shown.
+  Tests that click "-" / "+" hover the panel first (Units Laboratory dps_test size_checks: hover the meter / chat first).
+- TOP RULE (owner: "all of the windows that are under the right click irrespective of whether it's on top or below they all
+  move at the same time"): a right press goes to the ONE panel drawn on top under the mouse: the sorting order of its
+  canvas (nearest root or override-sorting canvas), then the hierarchy order under it (a later sibling or a child is
+  above); same order on different canvases = the newest registered (as before). It was "the newest registered", which is
+  wrong once a window is raised. A panel with its OWN drag code joins the choice with `dsl_movable_own(ui, panel, key)`
+  (the kit never moves or keeps it) and arms its drag only while `dsl_drag_owner(ui) == panel` (callable any time in the
+  frame; the pick is keyed on Time.frameCount, so a caller before the kit's frame tick sees the same pick). NOT done yet:
+  the multiplayer chat (mpmenu.c) and Players panel (ui_game.c plist_mouse) have their own right-drag code and still move
+  under a kit window until they call these two.
+- SECTION RULE (owner, Units Laboratory test window: "otherwise they just take a lot of space for no reason"): new
+  `dsl_section(ui, parent, x, y, w, title, key, flags, cb, ud)` = a header DSL_SECTION_H (32) units high: the kit's chevron
+  (right = folded, down = open) and the title in the game's title font, gold 0xD9BE8F; a click ANYWHERE on it (the card
+  template's full-area click) folds / unfolds, keeps `<key>@fold<TAB>1|0<TAB>0` in ui_places.tsv (key
+  "<mod id>.<window>.<section>", <= 58 bytes) and calls cb(ud, header, open) LAST (it may destroy and paint again).
+  `dsl_section_open(ui, key, dflt)` = draw the body or not; DSL_SEC_FOLDED = folded until first opened. Every collapsible
+  section of a window uses it; never a hand-made fold arrow (Units Laboratory's team-row fold_arrow is a row, not a section).
+Test: `test/panelsize_test.py` (own copy: DSL_TEST_COPY=<yours>): hover hidden / shown / no flicker onto "+" / hidden after
+leaving, clicks after a hover; uikit-demo `ov` (A registered last but drawn below B: a right-drag on the overlap moves only
+B; with an own-drag C on top nothing moves and drag_owner = C); `secpanel` (fold, close + open, game restart: still folded).
 
 ## Game-view lookups: dsl_view_find, never a FindObjectOfType poll (the template + the SCAN-RULE guard; owner rule 2026-10-25 "TEMPLATES + GUARDS"; FPS audit 2026-10-26, lane fpsscan) - `src/dsl_view.c`
 RULE: a game object of a class (a view, a MonoBehaviour) is got ONLY through the lookup helper: loader code

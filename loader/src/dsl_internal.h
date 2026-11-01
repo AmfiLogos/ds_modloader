@@ -31,6 +31,7 @@ int dsl_engine_init(void);               /* after GameAssembly is mapped; 0 = ok
 void dsl_engine_batch(int on);           /* 1: hooks are queued (no game code can run yet), 0: all enabled at once */
 void dsl_engine_set_late(void);          /* game code may run on other threads: new stubs go to the late page */
 int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who);
+int dsl_hook_m(int owner, void *target, void *repl, void **orig, const char *who, const char *method);   /* method = "ns.Class.Method/argc" (NULL = unknown): two different methods on one body are not chained */
 int dsl_unhook(int owner, void *target, const char *who);
 int dsl_unhook_owner(int owner);
 int dsl_hook_count(int owner);           /* active hooks + code patches of an owner (-2 = all) */
