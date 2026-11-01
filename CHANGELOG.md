@@ -6,8 +6,8 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ### Unreleased (0.1.30)
 
-- The small "-" and "+" size buttons of a panel (multiplayer chat, DPS meter, DPS log) now show only while your mouse is over that panel. They stay clickable: move the mouse onto the panel and they appear.
-- A right-click drag where mod windows overlap now moves only the window on top (for example the DPS meter over the DPS log). Before, a window below could move instead. The multiplayer chat and Players panel get this in a later update.
+- The small "-" and "+" size buttons of a panel (multiplayer chat, DPS meter, DPS log) now show only while your mouse is over that panel. They stay clickable: move the mouse onto the panel and they appear. <!-- roadmap: size-buttons-on-hover -->
+- A right-click drag where mod windows overlap now moves only the window on top (for example the DPS meter over the DPS log). Before, a window below could move instead. The multiplayer chat and Players panel get this in a later update. <!-- roadmap: right-drag-top-window -->
 - Two or more mods can now change the same game function. Before, the second mod was refused ("already hooked") and did not work. Now both run, the mod loaded last first. If one mod is turned off or fails, the others keep working. <!-- roadmap: hook-chaining -->
 
 ### 0.1.29 (2026-10-26)
