@@ -22,6 +22,8 @@
 # the keys the loader trusts (a key that is not in dsl_sig.c fails here); a kit whose loaders do not hold exactly the two
 # release keys, or also trust the public dev key (a test build, -DDSL_SIGN_DEV_KEY), is refused (check_keys.py); a release
 # with no final CHANGELOG.md entry, or a kit whose loaders lack it, is refused (tools/changelog/changelog.py check).
+# A release whose repo ROADMAP.md still lists a shipped item under Now / Next, or is older than the newest release, is
+# refused (changelog.py roadmap).
 set -euo pipefail
 H="${0:A:h}"; REPO="${H:h:h}"; SVC=ds-modloader-release-signing; ACCT=${KEY_ACCOUNT:-ed25519}
 T=$(mktemp -d "${TMPDIR:-/tmp}/sign_release.XXXXXX")
@@ -76,6 +78,15 @@ if (( ! existing )); then
   fi
   kb=(); [[ $TAG == v* ]] && for f in "$@"; do kb+=(--binary $f); done
   python3 -I $H/../changelog/changelog.py check --file $CL --tag $TAG $kb || { print -u2 "sign_release: the CHANGELOG entry of $TAG is missing or not final: not signed"; exit 1; }
+  # the repo's ROADMAP.md (owner 2026-10-16, "a clear to-do on all GitHub projects"): nothing that this or an earlier
+  # release shipped is still under Now / Next, and its "Updated:" date is not older than the newest release.
+  # ROADMAP=<file> names the file; else next to the CHANGELOG (ds_modloader: this tree; others: their public main).
+  RM=${ROADMAP:-}
+  if [[ -z $RM && $CL == $T/CHANGELOG.md ]]; then
+    git -C $C show origin/main:ROADMAP.md > $T/ROADMAP.md || { print -u2 "sign_release: no ROADMAP.md on the main of $R ($C): not signed"; exit 1; }
+    RM=$T/ROADMAP.md
+  elif [[ -z $RM ]]; then RM=${CL:h}/ROADMAP.md; fi
+  python3 -I $H/../changelog/changelog.py roadmap --file $CL --roadmap $RM || { print -u2 "sign_release: $RM still lists shipped items, or is older than the newest release: move them to Done, set 'Updated:', then sign"; exit 1; }
 fi
 # a kit: every loader in its files must trust exactly the two release keys, never the public dev key (check_keys.py)
 if [[ $TAG == v* ]]; then python3 -I $H/check_keys.py "$@" || { print -u2 "sign_release: kit loader keys wrong: not signed"; exit 1; }; fi
