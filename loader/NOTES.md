@@ -625,8 +625,13 @@ modifying gameplay), modded, & multiplayer worlds. Also make a toggle to show mu
 - Solo FILTER (owner 2026-10-25, next version: "i don't want a solo tag but a solo filter - which is the opposite of
   multiplayer worlds"; the Solo row tag of that morning is gone). Two groups of boxes: Mods = Vanilla & Vanilla+ /
   Modded (the world's mods, multiplayer worlds too) and Play = Solo / Multiplayer (the multiplayer mod's tag). A world
-  shows when the box of its mods AND the box of its play are on; a group with every box off does not filter. All four on
-  by default; an older loadlist.json keeps its values, Solo on (`solo` key). No multiplayer mod = no Play boxes. A thin
+  shows when the box of its mods AND the box of its play are on; a group with every box off does not filter. Defaults
+  (owner 2026-10-15, next version after kit 0.1.29: "should only show single player by default with maybe a toggle to
+  show multiplayer worlds"): Vanilla & Vanilla+, Modded and Solo on, Multiplayer OFF. loadlist.json is written only by a
+  click and holds every box; `"filters_v": 2` marks a file of this rule. An older file (0.1.28 / 0.1.29 wrote all four
+  on by default) cannot tell a chosen Multiplayer on from the old default: its `multiplayer` is not read (off), its other
+  boxes are kept, Solo on if absent (`solo` key). Test: l1_filter_test main (fresh profile: Moonlight hidden, the box on
+  shows it) and layout (a 0.1.28 file with all four on). No multiplayer mod = no Play boxes. A thin
   line between the groups; the ornament line stays above Latest save only / Show tags. A removed multiplayer tag makes
   the world Solo at once (`list_sig` takes the world names' text objects: the multiplayer mod's rewrite rebuilds the
   rows). lf_state: "kind" as before (2 = multiplayer), "mods" / "play" for each group.
@@ -1282,6 +1287,18 @@ Rule: every release (the kit `v<ver>`, each mod `<id>-v<ver>`, in all three repo
   on the Escape stack, one Escape closes it, title menu stays; same version again = no window; a test copy without
   DSL_WHATSNEW_TEST = no window; no UI-RULE / ESC-MISSING line. 19/0 (0.1.26 entry, and the long 0.1.28 entry); the
   main loader fails it (no window).
+
+## ROADMAP.md: a to-do anybody can read (owner 2026-10-16: "a clear to-do on all GitHub projects ... so that anybody can know what's next"; PLAN_v013 item 12) - `tools/changelog/changelog.py roadmap`
+Rule: each of the three repos has a ROADMAP.md for players: Now / Next / Later / Done / Needs help / Known issues, plain
+English, no lane names, hashes, internal paths or the owner's name. Each Now / Next bullet ends with `<!-- id: <name> -->`;
+the CHANGELOG bullet that ships it ends with `<!-- roadmap: <name> -->` (both invisible on GitHub; `display()` strips
+them from the in-game What's new text). Each release moves what it shipped to Done and sets the "Updated: YYYY-MM-DD" line.
+- Template: the three ROADMAP.md of 2026-11-01 (same sections, same "three repos" header).
+- Guard: `changelog.py roadmap --file CHANGELOG.md --roadmap ROADMAP.md` fails on a shipped id still under Now / Next, a
+  Now / Next bullet without an id, or an "Updated:" date older than the newest dated CHANGELOG entry.
+  `sign_release.sh` runs it for every release (ds_multiplayer / ds_custommodes: their public main) and refuses to sign;
+  gate0127 `g027_roadmap` runs it for the three repos. Test: `tools/changelog/roadmap_test.py` (MP_REPO / CM_REPO = the
+  other two trees, to also check their real roadmaps).
 
 ## The loader never changes the player's VSync or frame cap (FPS audit 2026-10-26 rows 1, 10; kit 0.1.29, lane fpsvsync) - `src/dsl_soft.c` force_fps / fast_end
 Rule (lead brief 2026-10-26): "Fix the mod loader so it never changes the player's VSync / frame cap." Every frame cap or

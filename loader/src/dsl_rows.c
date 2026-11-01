@@ -407,11 +407,14 @@ static DSLObj held(uintptr_t *h); static void hold(uintptr_t *h, DSLObj o);   /*
    mod loader); a screen too narrow for it scales it down (never under half). */
 /* the boxes: group Mods (LK_VAN, LK_MOD: the world's mods), group Play (LK_SOLO, LK_MP: the multiplayer tag); then the view
    options LK_N Latest save only, LK_TAGS Show tags. Owner 2026-10-25: a world shows when the box of its mods AND the box of
-   its play are on; a group with every box off does not filter; all four on by default (an older loadlist.json keeps its
-   Multiplayer value, Solo on) */
+   its play are on; a group with every box off does not filter. Defaults: Vanilla & Vanilla+, Modded and Solo on,
+   Multiplayer OFF (owner 2026-10-15: "should only show single player by default with maybe a toggle to show multiplayer
+   worlds"). loadlist.json is written only by a click on a box and always holds every box; "filters_v": 2 marks a file of
+   this rule. An older file (kit 0.1.28 / 0.1.29: all four on by default) cannot tell a Multiplayer on the player chose
+   from the old default, so its "multiplayer" is not read (Multiplayer off); its other boxes are kept, Solo on if absent */
 enum { LK_VAN, LK_MOD, LK_SOLO, LK_MP, LK_N, LK_TAGS };
 static const char *const lf_key[LK_TAGS + 1] = { "vanilla", "modded", "solo", "multiplayer", "latest_only", "show_tags" };
-static int lf_on[LK_N] = { 1, 1, 1, 1 }, lf_latest, lf_tags = 1, lf_loaded, lf_panel, lt_applied;   /* Show tags on by default (owner 2026-10-25) */
+static int lf_on[LK_N] = { 1, 1, 1, 0 }, lf_latest, lf_tags = 1, lf_loaded, lf_panel, lt_applied;   /* Show tags on by default (owner 2026-10-25) */
 static int *lf_val(int k) { return k < LK_N ? &lf_on[k] : k == LK_N ? &lf_latest : &lf_tags; }
 static int (*lf_is_mp)(const char *guid);                /* NULL: no multiplayer mod (or an older one): no Multiplayer box */
 static uintptr_t pn_h, pn_fr_h, pn_tog_h[LK_TAGS + 1];   /* panel, its parent (the Load window), boxes (LK_N, LK_TAGS: the view options) */
@@ -435,8 +438,10 @@ static void lf_load(void) {
     FILE *f = fopen(p, "rb"); if (!f) return;
     char b[1024]; size_t n = fread(b, 1, sizeof b - 1, f); fclose(f); b[n] = 0;
     JNode *j = json_parse(b); if (!j) { dsl_log("rows: filters: %s is not JSON: the defaults", p); return; }
+    JNode *ver = json_get(j, "filters_v"); int v2 = ver && ver->t == JN_NUM && ver->num >= 2;
     for (int i = 0; i <= LK_TAGS; i++) {
         JNode *v = json_get(j, lf_key[i]); if (!v || v->t != JN_BOOL) continue;
+        if (i == LK_MP && !v2) { dsl_log("rows: filters: an older loadlist.json: its Multiplayer value is not kept (off by default now)"); continue; }
         *lf_val(i) = v->b != 0;
     }
     json_free(j);
@@ -444,7 +449,7 @@ static void lf_load(void) {
 }
 static void lf_save(void) {
     char p[1300], tmp[1340], b[300]; lf_path(p, sizeof p); snprintf(tmp, sizeof tmp, "%s.tmp", p);
-    snprintf(b, sizeof b, "{\"vanilla\": %s, \"modded\": %s, \"solo\": %s, \"multiplayer\": %s, \"latest_only\": %s, \"show_tags\": %s}\n",
+    snprintf(b, sizeof b, "{\"filters_v\": 2, \"vanilla\": %s, \"modded\": %s, \"solo\": %s, \"multiplayer\": %s, \"latest_only\": %s, \"show_tags\": %s}\n",
              lf_on[LK_VAN] ? "true" : "false", lf_on[LK_MOD] ? "true" : "false", lf_on[LK_SOLO] ? "true" : "false", lf_on[LK_MP] ? "true" : "false",
              lf_latest ? "true" : "false", lf_tags ? "true" : "false");
     FILE *f = fopen(tmp, "w"); int bad = !f || fputs(b, f) < 0; if (f) bad |= fclose(f) != 0;
