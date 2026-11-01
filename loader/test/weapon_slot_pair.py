@@ -134,7 +134,9 @@ def main():
         gq = {x: {u['guid']: c(x, cmd='ord_read', guid=u['guid']).get('quick') for u in mine} for x in (H_, G_)}
         check('pair: both players have the same 4-slot bars after the join (the game\'s own data)',
               gq[H_] == gq[G_] and all(len(q or []) == 4 for q in gq[H_].values()), gq)
-        claim = [u['guid'] for u in mine if u['guid'] != T.EQ_UNIT][:2]
+        # the guest's units: with --mod guest, units whose weapon button has a skill (the guest casts through it)
+        armed = lambda g: g in before and T.weapon_skill(before[g])
+        claim = [u['guid'] for u in mine if u['guid'] != T.EQ_UNIT and (armed(u['guid']) if MODP == 'guest' else True)][:2]
         for g in claim: c(G_, cmd='mp_claim', guid=g)
         owner_of = lambda g: G_ if g in claim else H_
         for x in (H_, G_): c(x, cmd='ord_hover', n=0); c(x, cmd='det_frame_reset')
