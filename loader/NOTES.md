@@ -1235,6 +1235,16 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   sf_apply (smaller when it would not fit its parent); flags `DSL_SIZE_OWN` = the panel scales itself and multiplies its
   scale by `panel_size_get(panel)` (read every frame: it changes on a click); any other panel gets localScale = size.
   For 10 frames after a change (2 frames' wait for an own scale) a movable panel is put back on the screen (mv_clamp).
+- ANCHOR (kit 0.1.30, lane nvanchor; owner 2026-11-01: "the - + should stay in the same place so i can click multiple
+  time"): sz_click notes the clicked button's screen centre; at the click (a size the kit draws) and in each of the 8
+  settle checks (an own scale lands later) sz_anchor moves the panel so that centre is back on the same point, THEN
+  mv_clamp (the screen wins at an edge), and the last check keeps the new place (mv_keep -> ui_places.tsv). A panel that
+  places itself (registered `dsl_movable_own`: the chat) is never moved by the kit: it reads `dsl_panel_size_shift(ui,
+  panel, &dx, &dy)` each frame (DSLUi `panel_size_shift`, screen px, y up; handed again for a rest >= 1 px, at most 3
+  times a click), adds it to its own place, clamps and saves (mpmenu.c, mp_esc.c mpesc_size_shift). Log: "ui: size: <key>:
+  button x, y px from the click" after each click. Guard: panelsize_test.py anchor_cases ("+" x3 and "-" x3 at ONE point
+  with the fake mouse held there, uikit-demo api click_xy; < 2 px; place kept after close/open): kit without it 2 FAIL
+  (the button moved 14 px). Chat: ds_multiplayer ext/nvanchor/chat_anchor_test.py.
 - window_std: `DSL_WIN_SIZE` (DSLWinStd.flags, DSL_WIN_PANEL) puts them left of the red X, key = move_key; the title then
   keeps 120 units free on each side (76 without a red X).
 - Users: multiplayer chat (`multiplayer.chat`, DSL_SIZE_OWN: the chat's root at its bottom-left corner is drawn at the size,

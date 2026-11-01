@@ -2084,7 +2084,10 @@ static void mv_frame(void) {
 #define SZ_MAX 16
 #define SZ_LO 6                                                      /* tenths: 60 % .. 150 % */
 #define SZ_HI 15
-static struct { uintptr_t h, h_hold; DSLObj id, hold, minus, plus; const char *mtxt; char key[64]; int step, flags, settle, shown; int64_t hov_until; } szs[SZ_MAX]; static int nsz;
+/* ANCHOR (owner 2026-11-01: "the - + should stay in the same place so i can click multiple time"): abtn = the button
+   clicked last, ax / ay = its screen centre at the click; sh* = the move handed to a panel that places itself */
+static struct { uintptr_t h, h_hold; DSLObj id, hold, minus, plus, abtn; const char *mtxt; char key[64]; int step, flags, settle, shown, sh_on, sh_given;
+                float ax, ay, shx, shy; int64_t hov_until; } szs[SZ_MAX]; static int nsz;
 static void k_set_enabled(DSLObj o, int on);
 static void *m_fa_has;                                               /* TMP_FontAsset.HasCharacter(char, fallbacks, add) */
 static int sz_find(DSLObj id) { for (int i = 0; id && i < nsz; i++) if (szs[i].id == id && hget(szs[i].h)) return i; return -1; }
@@ -2111,12 +2114,44 @@ static void sz_keep(int i) {
     snprintf(mvp[n].key, sizeof mvp[n].key, "%s", k); mvp[n].x = szs[i].step / 10.f; mvp[n].y = 0;
     mvp_save();
 }
+/* ANCHOR: after a "-" / "+" click the panel grows or shrinks around the clicked button (its centre stays on the same
+   screen point, so the next click hits it again without a mouse move). Then the screen wins: a panel that would leave the
+   screen is moved back on it (mv_clamp), and the new place is kept. A panel that places itself (movable_own: the chat)
+   gets the move once through panel_size_shift and adds it to its own place. */
+static int sz_btn_c(int i, float c[2]) {
+    W *b = w_of(szs[i].abtn); Obj bo = b ? w_root(b) : NULL; float r[4];
+    if (!bo || !rect_screen(bo, r) || r[2] - r[0] < 1) return 0;
+    c[0] = (r[0] + r[2]) / 2; c[1] = (r[1] + r[3]) / 2; return 1;
+}
+static int sz_mv(Obj o) { for (int k = 0; o && k < nmv; k++) if (hget(mvs[k].h) == o) return k; return -1; }
+static void sz_anchor(int i) {
+    Obj o = hget(szs[i].h); float c[2];
+    if (!szs[i].abtn || !o || !on_tree(o) || !sz_btn_c(i, c)) return;
+    float dx = szs[i].ax - c[0], dy = szs[i].ay - c[1];
+    if (dx * dx + dy * dy < 0.25f) return;
+    int k = sz_mv(o);
+    if (k >= 0 && mvs[k].own) {                                      /* it places itself: hand it the move, once a click */
+        if (!szs[i].sh_on && szs[i].sh_given < 3 && dx * dx + dy * dy >= 1) {   /* the rest again once taken (its units may round) */
+            szs[i].shx = dx; szs[i].shy = dy; szs[i].sh_on = 1; szs[i].sh_given++;
+            dsl_log("ui: size: %s: the button moved %.1f, %.1f px: handed to the panel (%d)", szs[i].key, -dx, -dy, szs[i].sh_given); }
+        return;
+    }
+    rt_move_screen(o, dx, dy);
+}
+static int k_panel_size_shift(DSLObj panel, float *dx, float *dy) {
+    int i = sz_find(panel); if (i < 0 || !szs[i].sh_on) return 0;
+    if (dx) *dx = szs[i].shx; if (dy) *dy = szs[i].shy; szs[i].sh_on = 0;
+    return 1;
+}
 static void sz_click(void *ud, DSLObj w) {
     int i = sz_find((DSLObj)ud); if (i < 0) return;
     W *b = w_of(w); Obj bo = b ? hget(b->h_btn) : NULL; if (bo) esc_deselect(bo);   /* never left selected: Space / Enter stay the game's */
     int s = szs[i].step + (w == szs[i].plus ? 1 : -1);
     if (s < SZ_LO || s > SZ_HI) return;
+    float c[2]; szs[i].abtn = w; szs[i].sh_on = szs[i].sh_given = 0;
+    if (sz_btn_c(i, c)) { szs[i].ax = c[0]; szs[i].ay = c[1]; } else szs[i].abtn = NULL;
     szs[i].step = s; sz_apply(i); sz_keep(i); sz_look(i);
+    sz_anchor(i);                                                    /* a size the kit draws: at once (sz_frame checks again) */
     dsl_log("ui: size: %s %d %%", szs[i].key, s * 10);
 }
 static const char *sz_minus(void) {                                  /* the minus sign, else the en dash, else '-' (what the game's font has) */
@@ -2183,8 +2218,14 @@ static void sz_frame(void) {
             sz_labels(i);
         }
         szs[i].shown = sh ? 1 : szs[i].shown ? -1 : szs[i].shown;      /* 0 never shown, 1 shown, -1 hidden again */
-        if (szs[i].settle <= 0 || --szs[i].settle > 8 || !on_tree(o)) continue;   /* 2 frames for an own scale to land, then 8 checks */
-        for (int k = 0; k < nmv; k++) if (hget(mvs[k].h) == o && !mvs[k].own && mvs[k].id != mv_id) { mv_clamp(o); break; }
+        if (szs[i].settle <= 0 || --szs[i].settle > 8) continue;    /* 2 frames for an own scale to land, then 8 checks */
+        int k = sz_mv(o), kit_moves = k >= 0 && !mvs[k].own && mvs[k].id != mv_id;
+        if (on_tree(o)) { sz_anchor(i); if (kit_moves || k < 0) mv_clamp(o); }   /* the button back under the mouse, then on the screen */
+        if (szs[i].settle == 0 && szs[i].abtn) {
+            if (kit_moves) mv_keep(k);                               /* the new place (ui_places.tsv) */
+            float c[2]; if (sz_btn_c(i, c)) dsl_log("ui: size: %s: button %.1f, %.1f px from the click", szs[i].key, c[0] - szs[i].ax, c[1] - szs[i].ay);
+            szs[i].abtn = NULL;
+        }
     }
 }
 /* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
@@ -2621,7 +2662,7 @@ static DSLUi KIT = {
     .text_height = k_text_height, .slider = k_slider, .slider_get = k_slider_get, .slider_set = k_slider_set,
     .esc_push = k_esc_push, .esc_drop = k_esc_drop, .close_x = k_close_x, .ui_scale = k_ui_scale, .scale_follow = k_scale_follow,
     .movable = k_movable, .window_std = k_window_std, .window_close = k_window_close, .card_toggle = k_card_toggle, .rules_own = k_rules_own,
-    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get, .view_find = dsl_view_get,
+    .panel_size = k_panel_size, .panel_size_get = k_panel_size_get, .view_find = dsl_view_get, .panel_size_shift = k_panel_size_shift,
     .movable_own = k_movable_own, .drag_owner = k_drag_owner, .section = k_section, .section_open = k_section_open
 };
 

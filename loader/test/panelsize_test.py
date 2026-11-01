@@ -13,7 +13,9 @@ control socket) and the test module uikit-demo (fake mouse, kit state), as kitlo
  reason"): a click on a section's title folds / unfolds it; folded stays folded after the panel is closed and opened, and
  after a game restart.
 The template's in-game panel (dsl_window_std DSL_WIN_PANEL + DSL_WIN_SIZE, key uikit-demo.stdpanel), two game starts:
- start 1 (960x540, UI Scale 1.0): it shows "-" and "+" in the game's font; "+" = 110 %, "-" "-" = 90 %, the size stops at
+ start 1 (960x540, UI Scale 1.0): it shows "-" and "+" in the game's font; ANCHOR (kit 0.1.30; owner 2026-11-01: "the - +
+          should stay in the same place so i can click multiple time"): "+" 3 times and "-" 3 times, each at one fixed screen
+          point, all size the panel and the button's centre moves < 2 px, the new place is kept; "+" = 110 %, "-" "-" = 90 %, the size stops at
           60 % (one more "-" does nothing), each size kept in ui_places.tsv; left at 130 %. Made in a hidden panel (as the
           chat's closed box), the buttons still show "-" and "+" once it shows (their labels were empty: blank buttons).
  start 2 (800x600, the smallest window the tests use, UI Scale 1.4): the panel comes back at 130 % (on top of UI Scale);
@@ -66,6 +68,34 @@ def hover_cases():
     check('hover: the mouse moved onto "+": they stay shown (no flicker)', seen == [1] * 8, seen)
     away(); s = st()
     check('hover: the mouse left: hidden again', held(s) == 0, held(s))
+
+
+def part(r, name):                                                    # the "-" (left 22 of 46) or "+" (right 22) of the holder rect
+    w = (r[2] - r[0]) * 22 / 46.0
+    return [r[0], r[1], r[0] + w, r[3]] if name == 'minus' else [r[2] - w, r[1], r[2], r[3]]
+
+
+def centre(r): return ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0)
+
+
+def anchor_cases():
+    # ANCHOR (owner 2026-11-01: "the - + should stay in the same place so i can click multiple time"): the mouse stays on one
+    # screen point; each click there must hit the button and size the panel, and the button's centre stays on that point
+    s = st(); r0 = rect(s, 'stdp'); sw, sh = s.get('w', {}).get('screen', [0, 0])
+    ui('rdrag', target='stdp', dx=sw / 2.0 - (r0[0] + r0[2]) / 2.0, dy=sh / 2.0 - (r0[1] + r0[3]) / 2.0); time.sleep(1.8)   # off the screen's edges
+    hover_on(); s = st(); f = size(s).get('f', 0)
+    for name, d in (('plus', 0.1), ('minus', -0.1)):
+        bx, by = centre(part(rect(s, 'stdp_size'), name)); seen = []
+        for n in range(3):
+            ui('api', op='click_xy', x=bx, y=by); time.sleep(1.2); s = st(); f2 = size(s).get('f', 0)
+            cx, cy = centre(part(rect(s, 'stdp_size'), name)); seen.append((round(f2, 2), round(cx - bx, 1), round(cy - by, 1)))
+            ok = abs(f2 - f - d) < 0.001 and abs(cx - bx) < 2 and abs(cy - by) < 2
+            f = f2
+            if not ok: break
+        check(f'anchor: "{"+" if d > 0 else "-"}" clicked 3 times at one point: each click sizes the panel 10 % and the button stays under the mouse (< 2 px)', ok and len(seen) == 3, ((bx, by), seen))
+    away(); r1 = rect(st(), 'stdp')
+    ui('api', op='stdpanel_off'); time.sleep(0.4); _, s = open_panel(); r2 = rect(s, 'stdp')
+    check('anchor: the place after the clicks is kept (closed and opened: same place)', same(r1, r2) or all(abs(r1[i] - r2[i]) <= 2 for i in range(4)), (r1, r2))
 
 
 def open_panel():
@@ -125,6 +155,7 @@ def start1():
     if j.get('rc') != 0: return
     check('start 1: their text is in the game\'s font', size(s).get('font') == 1, size(s))
     check('start 1: they show "-" and "+"', size(s).get('labels_on') == 1 and labels_ok(size(s).get('labels')), size(s))
+    anchor_cases()
     hover_cases(); s = st()
     w0 = width(rect(s, 'stdp'))
     check('start 1: a new panel is at 100 %', abs(size(s).get('f', 0) - 1.0) < 0.001 and w0 > 0, (size(s), w0))

@@ -446,6 +446,8 @@ static void handle(const char *j) {
             rc = std_size ? 0 : -6; }
         else if (!strcmp(op, "ov")) { ov_open((int)a); rc = ov_a && ov_b ? 0 : -5; }
         else if (!strcmp(op, "ov_off")) ov_close(NULL);
+        else if (!strcmp(op, "click_xy")) { float r[4] = { (float)x, (float)y, (float)x, (float)y }; rc = click_rect(r); fk_until = 0x7fffffff; }   /* a left click at a screen point; the mouse stays there until "mouse_away" */
+        else if (!strcmp(op, "move_xy")) { float r[4] = { (float)x, (float)y, (float)x, (float)y }; rc = move_rect(r); }   /* the fake mouse to a screen point (stays) */
         else if (!strcmp(op, "rdrag_xy")) { float r[4] = { (float)x, (float)y, (float)x, (float)y }; rc = rdrag_rect(r, (float)ww, (float)hh); }   /* a right-drag from a screen point by w, h px */
         else if (!strcmp(op, "kp")) {                                   /* TOP RULE vs the chat: one big movable kit panel over the bottom-left
                                                                            (where the chat sits); a > 0 = its own canvas at sorting order a */
