@@ -401,5 +401,14 @@
  "Size keys": "Клавиши размера",
  "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
  "Ctrl + keypad - / +": "Ctrl + цифр. блок - / +",
- "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Когда указатель мыши над окном мода с кнопками размера «-» и «+», эти клавиши уменьшают или увеличивают его."
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Когда указатель мыши над окном мода с кнопками размера «-» и «+», эти клавиши уменьшают или увеличивают его.",
+ "Global settings": "Общие настройки",
+ "Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here.": "Запомнить место и размер каждого окна мода как вашу раскладку. «Сбросить всё» вернёт их сюда.",
+ "Layout saved. \"Reset all\" now puts the mod windows back here.": "Раскладка сохранена. «Сбросить всё» теперь вернёт окна модов сюда.",
+ "Put every mod window back to its first place and size?": "Вернуть каждое окно мода на его первое место и к первому размеру?",
+ "Put every mod window back to the place and size of your saved layout?": "Вернуть каждое окно мода на место и к размеру из сохранённой раскладки?",
+ "Put every mod window back to your saved layout, or to its first place and size when none is saved.": "Возвращает каждое окно мода к сохранённой раскладке, а если её нет, на первое место и к первому размеру.",
+ "Reset all": "Сбросить всё",
+ "Save current layout": "Сохранить раскладку",
+ "The layout could not be saved.": "Не удалось сохранить раскладку."
 }

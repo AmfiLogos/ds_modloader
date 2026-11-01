@@ -1962,7 +1962,7 @@ static void sf_frame(void) {
 
 #define MV_MAX 32
 #define MVP_MAX 128
-static struct { uintptr_t h; DSLObj id; char key[64]; int seq, own; } mvs[MV_MAX]; static int nmv, mv_seq;   /* own: moved by its own code (movable_own) */
+static struct { uintptr_t h; DSLObj id; char key[64]; int seq, own, has_df; float dfx, dfy; } mvs[MV_MAX]; static int nmv, mv_seq;   /* own: moved by its own code (movable_own); df: its place before a kept one (LAYOUT reset) */
 static struct { char key[64]; float x, y; } mvp[MVP_MAX]; static int nmvp, mvp_loaded;
 static DSLObj mv_id; static int mv_on; static float mv_x0, mv_y0, mv_lx, mv_ly;
 static const char *mvp_file(void) { static char p[1200]; if (!p[0]) snprintf(p, sizeof p, "%s/ui_places.tsv", dsl_reg_data_dir()); return p; }
@@ -1999,6 +1999,7 @@ static int mv_reg(DSLObj panel, const char *key, int own) {
         if (nmv == MV_MAX) { dsl_log("ui: move: more than %d movable panels: refused", MV_MAX); return -1; }
         i = nmv++; memset(&mvs[i], 0, sizeof mvs[i]); mvs[i].id = panel;
     }
+    if (!own && (!mvs[i].has_df || hget(mvs[i].h) != o) && m_rt_getpos) { V2 p = rt_pos(o); mvs[i].dfx = p.x; mvs[i].dfy = p.y; mvs[i].has_df = 1; }   /* the mod's own place */
     hfree(&mvs[i].h); mvs[i].h = x_weak ? x_weak(o, false) : hnew(o);
     snprintf(mvs[i].key, sizeof mvs[i].key, "%s", key); mvs[i].seq = ++mv_seq; mvs[i].own = own;
     if (own) { dsl_log("ui: move: %s takes part in the top-panel choice (moved by its own code)", key); return 0; }
@@ -2241,6 +2242,56 @@ static void sz_frame(void) {
             szs[i].abtn = NULL;
         }
     }
+}
+/* LAYOUT (kit 0.1.30; owner 2026-11-01: "add a global settings + save current options + reset all"; the Mods window's
+   Global settings block): save = every kept place and "-" / "+" size row of ui_places.tsv (not section folds, not kit@
+   settings) copied to ui_layout_saved.tsv next to it; reset = those rows replaced by the saved ones (none saved: removed,
+   so every panel comes back at its mod's own place and 100 %), and the panels that show now are put there at once.
+   Panels that place themselves (movable_own: the multiplayer chat's place) keep their place; their size is reset. */
+static const char *lay_file(void) { static char p[1200]; if (!p[0]) snprintf(p, sizeof p, "%s/ui_layout_saved.tsv", dsl_reg_data_dir()); return p; }
+static int lay_row(const char *key) { return !strstr(key, "@fold") && strncmp(key, "kit@", 4) != 0; }
+int dsl_ui_layout_saved(void) { FILE *f = fopen(lay_file(), "r"); if (f) fclose(f); return f != NULL; }
+int dsl_ui_layout_save(void) {
+    mvp_load();
+    char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", lay_file());
+    FILE *f = fopen(tmp, "w"); if (!f) { dsl_log("ui: layout: %s cannot be written", lay_file()); return -1; }
+    int n = 0;
+    for (int i = 0; i < nmvp; i++) if (lay_row(mvp[i].key)) { fprintf(f, "%s\t%.1f\t%.1f\n", mvp[i].key, mvp[i].x, mvp[i].y); n++; }
+    if (fclose(f) != 0 || dsl_os_replace(tmp, lay_file()) != 0) { dsl_log("ui: layout: not saved"); return -1; }
+    dsl_log("ui: layout: saved %d place / size rows", n);
+    return n;
+}
+int dsl_ui_layout_reset(void) {
+    mvp_load();
+    static struct { char key[64]; float x, y; } sv[MVP_MAX]; int ns = 0;
+    FILE *f = fopen(lay_file(), "r");
+    if (f) { char line[256];
+             while (ns < MVP_MAX && fgets(line, sizeof line, f)) {
+                 char *t1 = strchr(line, '\t'), *t2 = t1 ? strchr(t1 + 1, '\t') : NULL; if (!t2 || t1 - line >= 64 || t1 == line) continue;
+                 *t1 = 0; if (!lay_row(line)) continue;
+                 snprintf(sv[ns].key, sizeof sv[ns].key, "%s", line); sv[ns].x = strtof(t1 + 1, NULL); sv[ns].y = strtof(t2 + 1, NULL); ns++;
+             }
+             fclose(f); }
+    int n = 0; for (int i = 0; i < nmvp; i++) if (!lay_row(mvp[i].key)) mvp[n++] = mvp[i];
+    nmvp = n;
+    for (int i = 0; i < ns && nmvp < MVP_MAX; i++) { snprintf(mvp[nmvp].key, sizeof mvp[nmvp].key, "%s", sv[i].key); mvp[nmvp].x = sv[i].x; mvp[nmvp].y = sv[i].y; nmvp++; }
+    mvp_save();
+    for (int i = 0; i < nsz; i++) {                                  /* the sizes first (a place is kept for its size) */
+        if (!hget(szs[i].h)) continue;
+        char k[72]; snprintf(k, sizeof k, "%s@size", szs[i].key); int st = 10;
+        for (int j = 0; j < ns; j++) if (!strcmp(sv[j].key, k)) { int v = (int)(sv[j].x * 10 + 0.5f); st = v < SZ_LO ? SZ_LO : v > SZ_HI ? SZ_HI : v; break; }
+        szs[i].abtn = NULL; szs[i].sh_on = 0;
+        if (st != szs[i].step) { szs[i].step = st; sz_apply(i); sz_look(i); }
+    }
+    for (int k = 0; k < nmv; k++) {
+        Obj o = hget(mvs[k].h); if (!o || mvs[k].own || !m_rt_pos) continue;
+        int j = 0; while (j < ns && strcmp(sv[j].key, mvs[k].key)) j++;
+        if (j < ns) CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ sv[j].x, sv[j].y }, m_rt_pos);
+        else if (mvs[k].has_df) CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ mvs[k].dfx, mvs[k].dfy }, m_rt_pos);
+        mv_clamp(o);
+    }
+    dsl_log("ui: layout: reset to %s (%d rows)", ns ? "the saved layout" : "the defaults", ns);
+    return ns;
 }
 /* SIZE KEYS (kit 0.1.30; owner 2026-11-01: "configurable keys" for the "-" / "+" resize): with Ctrl held, "-" / "=" (or
    keypad "-" / "+", or none: the Mods window's "Size keys" row) make the panel UNDER THE MOUSE (the one drawn on top) one

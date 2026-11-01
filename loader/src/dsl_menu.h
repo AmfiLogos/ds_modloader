@@ -16,6 +16,9 @@ void dsl_ui_field_number(DSLObj f, int max_chars);   /* a kit field takes digits
 int dsl_ui_field_focused(DSLObj f);                 /* the kit field has the keyboard */
 int dsl_ui_size_keys(void);                          /* the size keys choice: 0 Ctrl + - / =, 1 Ctrl + keypad - / +, 2 off */
 void dsl_ui_size_keys_set(int v);
+int dsl_ui_layout_save(void);                         /* LAYOUT: the kept places + sizes -> ui_layout_saved.tsv; rows or -1 */
+int dsl_ui_layout_reset(void);                        /* back to the saved layout (rows) or the defaults (0) */
+int dsl_ui_layout_saved(void);
 void dsl_ui_field_multiline(DSLObj f, int max_chars);   /* a kit field takes many lines (Enter = new line), max_chars long */
 /* the Load list's filter panel (dsl_rows.c): screen rects in pixels (y up), 1 = shown; a child by path; scale; width */
 int dsl_ui_screen_rect(DSLObj o, float r[4]);       /* a kit widget or any RectTransform */

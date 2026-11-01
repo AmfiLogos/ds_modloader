@@ -364,6 +364,19 @@ static void folder_click(void *ud, DSLObj w) {
 /* crash reports (owner 2026-10-18, src/dsl_crash.c): the switch changes the answer of the first-start question */
 static void crash_change(void *ud, DSLObj w) { (void)ud; dsl_crash_set_consent(U->toggle_get(w) != 0); }
 static void sizekeys_change(void *ud, DSLObj w) { (void)ud; dsl_ui_size_keys_set(U->value_get(w)); }
+/* Global settings (owner 2026-11-01: "add a global settings + save current options + reset all"): the mod windows' places
+   and "-" / "+" sizes, saved as the player's own layout, and a reset back to it (or to each mod's own place and 100 %) */
+static void lay_save_click(void *ud, DSLObj w) {
+    (void)ud; (void)w; int n = dsl_ui_layout_save();
+    U->notice(n < 0 ? TR("The layout could not be saved.") : TR("Layout saved. \"Reset all\" now puts the mod windows back here."), TR("OK"), NULL, NULL, NULL, NULL);
+}
+static void lay_reset_ok(void *ud, DSLObj w) { (void)ud; (void)w; dsl_ui_layout_reset(); }
+static void lay_reset_click(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    U->notice(dsl_ui_layout_saved() ? TR("Put every mod window back to the place and size of your saved layout?")
+                                    : TR("Put every mod window back to its first place and size?"),
+              TR("Reset all"), TR("Cancel"), lay_reset_ok, NULL, NULL);
+}
 static void privacy_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
     const char *u = dsl_crash_privacy_url(); dsl_log("win: open the privacy note %s", u);
@@ -554,14 +567,20 @@ static void mods_open(DSLObj root, float w, float h) {
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: the switch the column's width, Privacy under it
                                                                           (side by side, ru / fr wrapped the switch's label on its frame) */
-    float kh = world_mode ? 0 : 52;                                    /* the size keys row (kit 0.1.30): above the crash switch */
+    float kh = world_mode ? 0 : 136;                                   /* Global settings (kit 0.1.30): above the crash switch */
     m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - tb - (crash ? 98 : 0) - kh);
     groups_build();
-    if (kh) {   /* owner 2026-11-01 ("configurable keys" for the "-" / "+" resize): the keys that size the panel under the mouse */
+    if (kh) {   /* owner 2026-11-01: the size keys ("configurable keys" for the "-" / "+" resize), save + reset of the layout */
+        float y0 = h - 76 - tb - (crash ? 98 : 0) - kh, bw = (m_rw - 8) / 2;
+        U->text(root, m_rx, y0 + 4, m_rw, 28, TR("Global settings"), 18, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
         static const char *kv[3]; kv[0] = TR("Ctrl + - / Ctrl + ="); kv[1] = TR("Ctrl + keypad - / +"); kv[2] = TR("Off");
-        DSLObj kr = named(U->value_row(root, m_rx, h - 76 - tb - (crash ? 98 : 0) - kh + 8, m_rw, TR("Size keys"), kv, 3, dsl_ui_size_keys(), sizekeys_change, NULL), 4,
+        DSLObj kr = named(U->value_row(root, m_rx, y0 + 36, m_rw, TR("Size keys"), kv, 3, dsl_ui_size_keys(), sizekeys_change, NULL), 4,
                           "size-keys", sizekeys_change, NULL, kv[dsl_ui_size_keys()]);
         U->tooltip(kr, TR("Size keys"), TR("With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger."));
+        DSLObj sb = named(U->button(root, m_rx, y0 + 90, bw, 40, TR("Save current layout"), lay_save_click, NULL), 0, "layout-save", lay_save_click, NULL, TR("Save current layout"));
+        U->tooltip(sb, TR("Save current layout"), TR("Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here."));
+        DSLObj rb = named(U->button(root, m_rx + bw + 8, y0 + 90, bw, 40, TR("Reset all"), lay_reset_click, NULL), 0, "layout-reset", lay_reset_click, NULL, TR("Reset all"));
+        U->tooltip(rb, TR("Reset all"), TR("Put every mod window back to your saved layout, or to its first place and size when none is saved."));
     }
     if (crash) {
         DSLObj ct = named(U->toggle(root, m_rx, h - 162, m_rw, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,

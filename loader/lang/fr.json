@@ -383,5 +383,14 @@
  "Size keys": "Touches de taille",
  "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
  "Ctrl + keypad - / +": "Ctrl + pavé num. - / +",
- "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Avec la souris sur une fenêtre de mod qui a les boutons de taille « - » et « + », ces touches la rendent plus petite ou plus grande."
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Avec la souris sur une fenêtre de mod qui a les boutons de taille « - » et « + », ces touches la rendent plus petite ou plus grande.",
+ "Global settings": "Réglages généraux",
+ "Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here.": "Garder la place et la taille de chaque fenêtre de mod comme votre disposition. « Tout réinitialiser » les remet ici.",
+ "Layout saved. \"Reset all\" now puts the mod windows back here.": "Disposition enregistrée. « Tout réinitialiser » remet maintenant les fenêtres de mod ici.",
+ "Put every mod window back to its first place and size?": "Remettre chaque fenêtre de mod à sa première place et à sa première taille ?",
+ "Put every mod window back to the place and size of your saved layout?": "Remettre chaque fenêtre de mod à la place et à la taille de votre disposition enregistrée ?",
+ "Put every mod window back to your saved layout, or to its first place and size when none is saved.": "Remet chaque fenêtre de mod à votre disposition enregistrée, ou à sa première place et taille si aucune n'est enregistrée.",
+ "Reset all": "Tout réinitialiser",
+ "Save current layout": "Enregistrer la disposition",
+ "The layout could not be saved.": "La disposition n'a pas pu être enregistrée."
 }

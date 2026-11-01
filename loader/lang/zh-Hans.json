@@ -365,5 +365,14 @@
  "Size keys": "缩放快捷键",
  "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
  "Ctrl + keypad - / +": "Ctrl + 小键盘 - / +",
- "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "鼠标位于带有“-”和“+”大小按钮的模组窗口上时，这些按键可将其缩小或放大。"
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "鼠标位于带有“-”和“+”大小按钮的模组窗口上时，这些按键可将其缩小或放大。",
+ "Global settings": "全局设置",
+ "Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here.": "将每个模组窗口的位置和大小保存为你的布局。“全部重置”会把它们放回这里。",
+ "Layout saved. \"Reset all\" now puts the mod windows back here.": "布局已保存。“全部重置”现在会把模组窗口放回这里。",
+ "Put every mod window back to its first place and size?": "将每个模组窗口恢复到最初的位置和大小？",
+ "Put every mod window back to the place and size of your saved layout?": "将每个模组窗口恢复到已保存布局的位置和大小？",
+ "Put every mod window back to your saved layout, or to its first place and size when none is saved.": "将每个模组窗口恢复到已保存的布局；没有保存时恢复到最初的位置和大小。",
+ "Reset all": "全部重置",
+ "Save current layout": "保存当前布局",
+ "The layout could not be saved.": "无法保存布局。"
 }

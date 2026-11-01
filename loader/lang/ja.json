@@ -365,5 +365,14 @@
  "Size keys": "サイズ変更キー",
  "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
  "Ctrl + keypad - / +": "Ctrl + テンキー - / +",
- "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "サイズボタン「-」「+」があるMODウィンドウにマウスを重ねると、これらのキーでウィンドウを小さく・大きくできます。"
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "サイズボタン「-」「+」があるMODウィンドウにマウスを重ねると、これらのキーでウィンドウを小さく・大きくできます。",
+ "Global settings": "全体設定",
+ "Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here.": "各MODウィンドウの位置とサイズを自分のレイアウトとして保存します。「すべてリセット」でここに戻ります。",
+ "Layout saved. \"Reset all\" now puts the mod windows back here.": "レイアウトを保存しました。「すべてリセット」でMODウィンドウがここに戻ります。",
+ "Put every mod window back to its first place and size?": "すべてのMODウィンドウを最初の位置とサイズに戻しますか？",
+ "Put every mod window back to the place and size of your saved layout?": "すべてのMODウィンドウを保存したレイアウトの位置とサイズに戻しますか？",
+ "Put every mod window back to your saved layout, or to its first place and size when none is saved.": "すべてのMODウィンドウを保存したレイアウトに戻します。保存がない場合は最初の位置とサイズに戻します。",
+ "Reset all": "すべてリセット",
+ "Save current layout": "現在のレイアウトを保存",
+ "The layout could not be saved.": "レイアウトを保存できませんでした。"
 }

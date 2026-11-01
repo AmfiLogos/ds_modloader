@@ -383,5 +383,14 @@
  "Size keys": "Teclas de tamaño",
  "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
  "Ctrl + keypad - / +": "Ctrl + teclado num. - / +",
- "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Con el ratón sobre una ventana de mod que tiene los botones de tamaño \"-\" y \"+\", estas teclas la hacen más pequeña o más grande."
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Con el ratón sobre una ventana de mod que tiene los botones de tamaño \"-\" y \"+\", estas teclas la hacen más pequeña o más grande.",
+ "Global settings": "Ajustes generales",
+ "Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here.": "Guarda el lugar y el tamaño de cada ventana de mod como tu diseño. \"Restablecer todo\" las devuelve aquí.",
+ "Layout saved. \"Reset all\" now puts the mod windows back here.": "Diseño guardado. \"Restablecer todo\" ahora devuelve las ventanas de mod aquí.",
+ "Put every mod window back to its first place and size?": "¿Devolver cada ventana de mod a su primer lugar y tamaño?",
+ "Put every mod window back to the place and size of your saved layout?": "¿Devolver cada ventana de mod al lugar y tamaño de tu diseño guardado?",
+ "Put every mod window back to your saved layout, or to its first place and size when none is saved.": "Devuelve cada ventana de mod a tu diseño guardado, o a su primer lugar y tamaño si no hay ninguno guardado.",
+ "Reset all": "Restablecer todo",
+ "Save current layout": "Guardar diseño",
+ "The layout could not be saved.": "No se pudo guardar el diseño."
 }

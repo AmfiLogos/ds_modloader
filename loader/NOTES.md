@@ -1261,6 +1261,16 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   the game's KeySettingData binds no Minus 45 / Equals 61 / Keypad 269 / 270; Ctrl alone is its EntityHover hold (stays).
   Guard: panelsize_test.py key_cases (real AppKit events: uikit-demo "key" ctrl 1 = flagsChanged Control + key; ctrl 0
   code -1 = Control up): over the panel one step each way, button < 2 px; mouse off every panel: nothing; Off: nothing.
+- LAYOUT (kit 0.1.30, lane nvanchor; owner 2026-11-01 "add a global settings + save current options + reset all"): the
+  Mods window's "Global settings" block (right column, title page only): Size keys row + "Save current layout" + "Reset
+  all" (confirm notice). Save = every place row and "<key>@size" row of ui_places.tsv (not "@fold", not "kit@") copied to
+  ui_layout_saved.tsv next to it. Reset = those rows replaced by the saved ones (none saved: removed), then every open
+  panel at once: size step, then place (saved, else the place the mod gave it before a kept one: mvs[].dfx/dfy, read in
+  mv_reg), then mv_clamp. movable_own panels (the chat) keep their place, their size is reset.
+  Owner question (asleep at 23:08): the lead's reading was used (key row + save layout + reset all in one block); folds
+  of sections and the size keys choice are not part of the layout.
+  Guard: panelsize_test.py layout_cases (start 1 save / move + resize / reset; start 2 after a restart: the saved file
+  is used; file moved away: reset = mod place + 100 %).
 - window_std: `DSL_WIN_SIZE` (DSLWinStd.flags, DSL_WIN_PANEL) puts them left of the red X, key = move_key; the title then
   keeps 120 units free on each side (76 without a red X).
 - Users: multiplayer chat (`multiplayer.chat`, DSL_SIZE_OWN: the chat's root at its bottom-left corner is drawn at the size,

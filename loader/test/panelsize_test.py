@@ -125,6 +125,55 @@ def key_cases():
     keys_choice(0); away()
 
 
+def rows(path, pre):                                                  # {key: (x, y)} of a places file, keys starting with pre
+    try: return {l.split('\t')[0]: tuple(float(v) for v in l.split('\t')[1:3]) for l in open(path) if l.startswith(pre)}
+    except OSError: return {}
+
+
+def near(a, b, d=3): return all(abs(a[i] - b[i]) <= d for i in range(4)) and a[2] > a[0]
+
+
+def layout(op):                                                       # the Mods window's Global settings buttons, then the notice's first button
+    win('open'); wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10); time.sleep(0.5)
+    j = win('click', target='layout-' + op); time.sleep(0.8); k = ui('click', target='notice_ok'); time.sleep(1.2)
+    win('esc'); time.sleep(0.8); return j.get('ok') and k.get('rc', 0) == 0
+
+
+def layout_cases(tag):
+    # LAYOUT (owner 2026-11-01: "add a global settings + save current options + reset all")
+    dd = os.path.join(r.idir(E.X), 'data', 'Mods'); saved, places = os.path.join(dd, 'ui_layout_saved.tsv'), os.path.join(dd, 'ui_places.tsv')
+    if tag == 'start1':                                                # stdp (open) + ovB (opened, moved, closed: a panel not open at the reset)
+        away(); s = st(); s1, f1 = rect(s, 'stdp'), size(s).get('f', 0); ui('api', op='stdpanel_off'); time.sleep(0.4)
+        def ov_b(dx, dy):
+            ui('api', op='ov', a=1); time.sleep(0.8); away(); ui('rdrag', target='ovB', dx=dx, dy=dy); time.sleep(1.8); away()
+            b = rect(st(), 'ovB'); ui('api', op='ov_off'); time.sleep(0.4); return b
+        b1 = ov_b(20, 15); open_panel(); ok = layout('save')
+        sv = rows(saved, 'uikit-demo.')
+        check('layout: "Save current layout" writes ui_layout_saved.tsv (both panels\' places + the 130 % size)',
+              ok and 'uikit-demo.ovB' in sv and 'uikit-demo.stdpanel' in sv and abs(sv.get('uikit-demo.stdpanel@size', (0, 0))[0] - f1) < 0.001, (ok, sv, f1))
+        away(); ui('rdrag', target='stdp', dx=-50, dy=-30); time.sleep(1.8); click('stdp_size.minus'); click('stdp_size.minus'); away(); s = st()
+        s2, f2 = rect(s, 'stdp'), size(s).get('f', 0); ui('api', op='stdpanel_off'); time.sleep(0.4)
+        b2 = ov_b(-30, 20); open_panel()
+        moved = not near(s1, s2) and abs(f2 - (f1 - 0.2)) < 0.001 and not near(b1, b2)
+        ok = layout('reset'); away(); s = st(); s3, f3 = rect(s, 'stdp'), size(s).get('f', 0)
+        ui('api', op='ov', a=1); time.sleep(0.8); away(); b3 = rect(st(), 'ovB'); ui('api', op='ov_off'); time.sleep(0.4)
+        check('layout: moved + resized, then "Reset all" (confirmed): the open panel and the closed one back at the saved place and size',
+              moved and ok and near(s1, s3) and abs(f3 - f1) < 0.001 and near(b1, b3), (moved, ok, s1, s2, s3, f1, f2, f3, b1, b2, b3))
+        return
+    # start 2 (a game restart): the saved file is still there and still used
+    sv = rows(saved, 'uikit-demo.')
+    j, s = open_panel(); click('stdp_size.minus'); away(); ui('rdrag', target='stdp', dx=-30, dy=-20); time.sleep(1.8)
+    ok = layout('reset'); away(); s = st(); kp = rows(places, 'uikit-demo.stdpanel')
+    check('layout: after a restart the saved layout is still there; "Reset all" = its size (130 %) and its kept place',
+          sv and ok and abs(size(s).get('f', 0) - 1.3) < 0.001 and kp == {k: v for k, v in sv.items() if k.startswith('uikit-demo.stdpanel')}, (sv, ok, kp, size(s)))
+    os.makedirs(os.path.join(OUT, 'old'), exist_ok=True); os.replace(saved, os.path.join(OUT, 'old', 'ui_layout_saved.%d.tsv' % time.time()))
+    ok = layout('reset'); away(); s = st(); r_reset, kp = rect(s, 'stdp'), rows(places, 'uikit-demo.stdpanel')
+    ui('api', op='stdpanel_off'); time.sleep(0.4); j, s = open_panel(); away(); s = st(); r_new = rect(s, 'stdp')
+    check('layout: no saved layout: "Reset all" = the mod\'s own place and 100 % (same as a panel never moved)',
+          ok and abs(size(s).get('f', 0) - 1.0) < 0.001 and not kp and near(r_reset, r_new), (ok, size(s), kp, r_reset, r_new))
+    ui('api', op='stdpanel_off'); time.sleep(0.4)
+
+
 def open_panel():
     j = ui('api', op='stdpanel', a=1); s = until(lambda s: s.get('w', {}).get('std', {}).get('panel') == 1, 4) or st(); time.sleep(0.6)
     return j, st()
@@ -197,6 +246,7 @@ def start1():
     check('start 1: the size stops at 60 % (one more "-" does nothing)', abs(w / w0 - 0.6) < 0.02 and abs(w2 - w) <= 1 and size(s).get('kept') == [1, 0.6], (w0, w, w2, size(s)))
     for _ in range(7): s = click('stdp_size.plus')
     check('start 1: left at 130 %', abs(width(rect(s, 'stdp')) / w0 - 1.3) < 0.02 and size(s).get('kept') == [1, 1.3], (w0, width(rect(s, 'stdp')), size(s)))
+    layout_cases('start1')
     # made while the panel is hidden (the chat's closed box): the title button clones lost their label when they first showed
     ui('api', op='stdpanel_off'); time.sleep(0.4)
     j = ui('api', op='stdpanel_hidden'); time.sleep(1.0); hover_on(); s = st(); ui('capture', name='start1_hidden'); away()
@@ -229,6 +279,7 @@ def start2():
     check('start 2: at 150 % the whole panel is on the 800x600 screen', rc[0] >= -1 and rc[1] >= -1 and rc[2] <= sw + 1 and rc[3] <= sh + 1 and width(rc) > 0, (rc, sw, sh))
     ui('api', op='stdpanel_off'); time.sleep(0.4)
     fold_cases()
+    layout_cases('start2')
 
 
 def run(tag, wh, scale, fresh):
@@ -241,7 +292,8 @@ def run(tag, wh, scale, fresh):
         json.dump(s, open(p, 'w'), indent=1)
     r.prepare_data = prep
     places = os.path.join(r.idir(E.X), 'data', 'Mods', 'ui_places.tsv')
-    if fresh and os.path.exists(places): os.makedirs(os.path.join(OUT, 'old'), exist_ok=True); os.replace(places, os.path.join(OUT, 'old', 'ui_places.%d.tsv' % time.time()))
+    for f in ((places, os.path.join(os.path.dirname(places), 'ui_layout_saved.tsv')) if fresh else ()):
+        if os.path.exists(f): os.makedirs(os.path.join(OUT, 'old'), exist_ok=True); os.replace(f, os.path.join(OUT, 'old', '%s.%d' % (os.path.basename(f), time.time())))
     try:
         E.start()
         wait_for(lambda: (lambda s: s if s.get('scene') == 1 and not s.get('busy') else None)(E.ctl({'cmd': 'status'}, 5)), 240, 1)
