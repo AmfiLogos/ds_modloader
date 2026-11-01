@@ -53,6 +53,10 @@ Log: `<log dir>/dsload.log` (previous run: `dsload.prev.log`).
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).
   The loader has no global mod list: it loads exactly that profile.
 - **Scope.** mod.json `"scope": "gameplay" | "client"`. The default is gameplay, the same as the launcher's `model.rs`.
+  RULE (owner 2026-11-01, weapon slot: "it's client only"): a `scope: client` mod never writes game data (no sim state,
+  no save field, no AI choice); it changes views only, and may answer a read the stock game cannot make (weapon-slot:
+  GetSkillAt index 4). Its actions go through the game's own orders. Guard: weapon_slot_pair.py (a player with the mod +
+  a player without it, 0 desyncs).
   After the modules start, the loader writes `<log dir>/dsload_modset.json` with the gameplay and client modules
   that really run (id, version, sha256 of each file in `platforms.mac-arm64.files`, else of the dylib) plus the
   `provided` (data / patch) ids. Modules read the same JSON with `host->gameplay_mods()`, for example for the HELLO

@@ -7,6 +7,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 ### Unreleased (0.1.30)
 
 - Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->
+- Weapon skill slot 0.2.0 now changes only your own screen. Its button next to the basic attack shows the skill of your unit's weapon and uses it with a click, the same as the game's own skill slots. Friends in your multiplayer game no longer need the mod, and your saves stay the game's own. What it no longer does: it does not put the weapon skill first for automatic use, and the weapon skill also stays in its normal skill slot. If a unit got its weapon while its 4 skill slots were full, the game did not give it the skill, so the button stays empty. <!-- roadmap: weapon-slot-local -->
 
 ### 0.1.29 (2026-10-26)
 
