@@ -363,6 +363,7 @@ static void folder_click(void *ud, DSLObj w) {
 }
 /* crash reports (owner 2026-10-18, src/dsl_crash.c): the switch changes the answer of the first-start question */
 static void crash_change(void *ud, DSLObj w) { (void)ud; dsl_crash_set_consent(U->toggle_get(w) != 0); }
+static void sizekeys_change(void *ud, DSLObj w) { (void)ud; dsl_ui_size_keys_set(U->value_get(w)); }
 static void privacy_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
     const char *u = dsl_crash_privacy_url(); dsl_log("win: open the privacy note %s", u);
@@ -553,8 +554,15 @@ static void mods_open(DSLObj root, float w, float h) {
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: the switch the column's width, Privacy under it
                                                                           (side by side, ru / fr wrapped the switch's label on its frame) */
-    m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - tb - (crash ? 98 : 0));
+    float kh = world_mode ? 0 : 52;                                    /* the size keys row (kit 0.1.30): above the crash switch */
+    m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - tb - (crash ? 98 : 0) - kh);
     groups_build();
+    if (kh) {   /* owner 2026-11-01 ("configurable keys" for the "-" / "+" resize): the keys that size the panel under the mouse */
+        static const char *kv[3]; kv[0] = TR("Ctrl + - / Ctrl + ="); kv[1] = TR("Ctrl + keypad - / +"); kv[2] = TR("Off");
+        DSLObj kr = named(U->value_row(root, m_rx, h - 76 - tb - (crash ? 98 : 0) - kh + 8, m_rw, TR("Size keys"), kv, 3, dsl_ui_size_keys(), sizekeys_change, NULL), 4,
+                          "size-keys", sizekeys_change, NULL, kv[dsl_ui_size_keys()]);
+        U->tooltip(kr, TR("Size keys"), TR("With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger."));
+    }
     if (crash) {
         DSLObj ct = named(U->toggle(root, m_rx, h - 162, m_rw, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
                           "crash-reports", crash_change, NULL, dsl_crash_consent() == 1 ? "on" : "off");

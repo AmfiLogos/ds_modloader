@@ -361,5 +361,9 @@
  "this update needs the installer (new game version)": "游戏有新版本，此更新需要安装程序",
  "this world": "此世界",
  "unknown error": "未知错误",
- "works only with %s, but version %s is installed": "仅适用于 %s，但已安装的版本是 %s"
+ "works only with %s, but version %s is installed": "仅适用于 %s，但已安装的版本是 %s",
+ "Size keys": "缩放快捷键",
+ "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
+ "Ctrl + keypad - / +": "Ctrl + 小键盘 - / +",
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "鼠标位于带有“-”和“+”大小按钮的模组窗口上时，这些按键可将其缩小或放大。"
 }

@@ -1253,6 +1253,14 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   (DSL_SIZE_OWN: the DPS meter's auto-fit) follow the rule in their own code (Units Laboratory, lane nvulmeter).
   Guard: panelsize_test.py fold_cases (start 2, UI Scale 1.4: uikit-demo api secfit, 300 high folded / 900 open; width
   < 1 % both ways).
+- SIZE KEYS (kit 0.1.30, lane nvanchor; owner 2026-11-01 "configurable keys" for the "-" / "+" resize): Ctrl + "-" /
+  Ctrl + "=" (or Ctrl + keypad "-" / "+", or Off) size the panel_size panel drawn on top under the mouse, through the same
+  sz_step as a click (step, limits, kept size, ANCHOR on the matching button). Not while a text field has the keyboard
+  (esc_focused). Choice = the Mods window's "Size keys" row (right column, above Send crash reports; dsl_win.c
+  "size-keys"), kept as the row "kit@size_keys" of ui_places.tsv (dsl_ui_size_keys / _set). Free keys checked 2026-11-01:
+  the game's KeySettingData binds no Minus 45 / Equals 61 / Keypad 269 / 270; Ctrl alone is its EntityHover hold (stays).
+  Guard: panelsize_test.py key_cases (real AppKit events: uikit-demo "key" ctrl 1 = flagsChanged Control + key; ctrl 0
+  code -1 = Control up): over the panel one step each way, button < 2 px; mouse off every panel: nothing; Off: nothing.
 - window_std: `DSL_WIN_SIZE` (DSLWinStd.flags, DSL_WIN_PANEL) puts them left of the red X, key = move_key; the title then
   keeps 120 units free on each side (76 without a red X).
 - Users: multiplayer chat (`multiplayer.chat`, DSL_SIZE_OWN: the chat's root at its bottom-left corner is drawn at the size,

@@ -361,5 +361,9 @@
  "this update needs the installer (new game version)": "此更新需要安裝程式：遊戲版本已變更",
  "this world": "此世界",
  "unknown error": "未知錯誤",
- "works only with %s, but version %s is installed": "僅適用於 %s，但已安裝的版本是 %s"
+ "works only with %s, but version %s is installed": "僅適用於 %s，但已安裝的版本是 %s",
+ "Size keys": "縮放快捷鍵",
+ "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
+ "Ctrl + keypad - / +": "Ctrl + 數字鍵盤 - / +",
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "滑鼠位於帶有「-」和「+」大小按鈕的模組視窗上時，這些按鍵可將其縮小或放大。"
 }

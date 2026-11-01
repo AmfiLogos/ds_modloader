@@ -15,7 +15,9 @@ control socket) and the test module uikit-demo (fake mouse, kit state), as kitlo
 The template's in-game panel (dsl_window_std DSL_WIN_PANEL + DSL_WIN_SIZE, key uikit-demo.stdpanel), two game starts:
  start 1 (960x540, UI Scale 1.0): it shows "-" and "+" in the game's font; ANCHOR (kit 0.1.30; owner 2026-11-01: "the - +
           should stay in the same place so i can click multiple time"): "+" 3 times and "-" 3 times, each at one fixed screen
-          point, all size the panel and the button's centre moves < 2 px, the new place is kept; "+" = 110 %, "-" "-" = 90 %, the size stops at
+          point, all size the panel and the button's centre moves < 2 px, the new place is kept; SIZE KEYS: Ctrl + "=" /
+          "-" over the panel = one step each way (button < 2 px), nothing with the mouse off it or with "Size keys" Off
+          in the Mods window; "+" = 110 %, "-" "-" = 90 %, the size stops at
           60 % (one more "-" does nothing), each size kept in ui_places.tsv; left at 130 %. Made in a hidden panel (as the
           chat's closed box), the buttons still show "-" and "+" once it shows (their labels were empty: blank buttons).
  start 2 (800x600, the smallest window the tests use, UI Scale 1.4): the panel comes back at 130 % (on top of UI Scale);
@@ -33,7 +35,7 @@ OUT = os.path.abspath(os.path.expanduser(ARGS[0] if ARGS else os.path.join(os.pa
 sys.argv = [sys.argv[0], OUT] + [a for a in sys.argv[1:] if a.startswith('--')]
 import esc_test as E                                                  # its copy start, drivers and guard (same test copy rules)
 import lrig as r
-log, check, ui, st, wait_for, until = E.log, E.check, E.ui, E.st, E.wait_for, E.until
+log, check, ui, st, wait_for, until, win = E.log, E.check, E.ui, E.st, E.wait_for, E.until, E.win
 
 
 def rect(s, name): return s.get('w', {}).get(name, {}).get('r', [0, 0, 0, 0])
@@ -100,6 +102,29 @@ def anchor_cases():
     check('anchor: the place after the clicks is kept (closed and opened: same place)', same(r1, r2) or all(abs(r1[i] - r2[i]) <= 2 for i in range(4)), (r1, r2))
 
 
+def ctrl_key(code):                                                   # real AppKit events: Control down, the key down + up, Control up
+    ui('key', code=code, ctrl=1); time.sleep(0.5); ui('key', code=-1, ctrl=0); time.sleep(0.8)
+
+
+def keys_choice(v):                                                   # the Mods window's "Size keys" row (0 Ctrl + - / =, 2 Off)
+    win('open'); wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10); time.sleep(0.5)
+    j = win('value', target='size-keys', value=v); win('esc'); time.sleep(0.8); return j
+
+
+def key_cases():
+    # SIZE KEYS (owner 2026-11-01: "configurable keys" for the - / + resize): Ctrl + "-" / "=" size the panel under the mouse
+    hover_on(); s = st(); f0 = size(s).get('f', 0); pb = centre(part(rect(s, 'stdp_size'), 'plus'))
+    ctrl_key(24); hover_on(); s = st(); f1 = size(s).get('f', 0); pc = centre(part(rect(s, 'stdp_size'), 'plus'))
+    check('keys: Ctrl + "=" with the mouse over the panel = 10 % bigger, its "+" stays put (< 2 px)', abs(f1 - f0 - 0.1) < 0.001 and abs(pc[0] - pb[0]) < 2 and abs(pc[1] - pb[1]) < 2, (f0, f1, pb, pc))
+    mb = centre(part(rect(s, 'stdp_size'), 'minus')); ctrl_key(27); hover_on(); s = st(); f2 = size(s).get('f', 0); mc = centre(part(rect(s, 'stdp_size'), 'minus'))
+    check('keys: Ctrl + "-" = 10 % smaller, its "-" stays put (< 2 px)', abs(f2 - f1 + 0.1) < 0.001 and abs(mc[0] - mb[0]) < 2 and abs(mc[1] - mb[1]) < 2, (f1, f2, mb, mc))
+    away(); ctrl_key(24); f3 = size(st()).get('f', 0)
+    check('keys: with the mouse off every panel, Ctrl + "=" changes nothing', abs(f3 - f2) < 0.001, (f2, f3))
+    j = keys_choice(2); hover_on(); ctrl_key(24); f4 = size(st()).get('f', 0)
+    check('keys: "Size keys" set to Off in the Mods window: Ctrl + "=" over the panel changes nothing', j.get('ok') and abs(f4 - f2) < 0.001, (j, f2, f4))
+    keys_choice(0); away()
+
+
 def open_panel():
     j = ui('api', op='stdpanel', a=1); s = until(lambda s: s.get('w', {}).get('std', {}).get('panel') == 1, 4) or st(); time.sleep(0.6)
     return j, st()
@@ -158,6 +183,7 @@ def start1():
     check('start 1: their text is in the game\'s font', size(s).get('font') == 1, size(s))
     check('start 1: they show "-" and "+"', size(s).get('labels_on') == 1 and labels_ok(size(s).get('labels')), size(s))
     anchor_cases()
+    key_cases()
     hover_cases(); s = st()
     w0 = width(rect(s, 'stdp'))
     check('start 1: a new panel is at 100 %', abs(size(s).get('f', 0) - 1.0) < 0.001 and w0 > 0, (size(s), w0))

@@ -379,5 +379,9 @@
  "this update needs the installer (new game version)": "dieses Update braucht den Installer, weil sich die Spielversion geändert hat",
  "this world": "diese Welt",
  "unknown error": "unbekannter Fehler",
- "works only with %s, but version %s is installed": "funktioniert nur mit %s, aber Version %s ist installiert"
+ "works only with %s, but version %s is installed": "funktioniert nur mit %s, aber Version %s ist installiert",
+ "Size keys": "Größentasten",
+ "Ctrl + - / Ctrl + =": "Strg + - / Strg + =",
+ "Ctrl + keypad - / +": "Strg + Ziffernblock - / +",
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "Mit der Maus über einem Mod-Fenster mit den Größenknöpfen „-“ und „+“ machen diese Tasten es kleiner oder größer."
 }

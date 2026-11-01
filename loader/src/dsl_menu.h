@@ -14,6 +14,8 @@ const char *dsl_tab_owner(int i);               /* module id that added it */
 const DSLUi *dsl_ui_kit(void);                  /* NULL before il2cpp_init returned */
 void dsl_ui_field_number(DSLObj f, int max_chars);   /* a kit field takes digits only (TMP IntegerNumber), max_chars long */
 int dsl_ui_field_focused(DSLObj f);                 /* the kit field has the keyboard */
+int dsl_ui_size_keys(void);                          /* the size keys choice: 0 Ctrl + - / =, 1 Ctrl + keypad - / +, 2 off */
+void dsl_ui_size_keys_set(int v);
 void dsl_ui_field_multiline(DSLObj f, int max_chars);   /* a kit field takes many lines (Enter = new line), max_chars long */
 /* the Load list's filter panel (dsl_rows.c): screen rects in pixels (y up), 1 = shown; a child by path; scale; width */
 int dsl_ui_screen_rect(DSLObj o, float r[4]);       /* a kit widget or any RectTransform */

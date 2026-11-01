@@ -87,7 +87,7 @@ static void *m_obj_implicit, *m_obj_name, *m_obj_inst, *m_obj_destroy, *m_obj_do
     *m_tmp_rich, *m_tmp_shmat, *m_asset_mat,
     *m_tmp_fsmin, *m_tmp_fsmax, *m_tmp_pw, *m_tmp_ph, *m_tmp_prefv,   /* text fit (+ m_tmp_getsize, m_tmp_getauto, m_rt_rect) */
     *m_in_text, *m_in_settext, *m_in_limit, *m_in_ctype, *m_in_ph, *m_in_tc, *m_in_focused, *m_sel_inter,
-    *m_input_mouse, *m_input_keydown, *m_time_frame, *m_clip_get, *m_clip_set,
+    *m_input_mouse, *m_input_keydown, *m_input_key, *m_time_frame, *m_clip_get, *m_clip_set,
     *m_tex_ctor, *m_tex_load, *m_tex_filter, *m_tex_wrap, *m_tex_apply, *m_tex_w, *m_tex_h, *m_spr_create, *m_spr_create7, *m_spr_tex, *m_spr_texrect, *m_img_ppm,
     *m_cv_mode, *m_cv_getmode, *m_cv_order, *m_cv_override, *m_cv_getorder, *m_cv_getover, *m_cv_root, *m_cv_cam, *m_cs_mode, *m_cs_getmode, *m_cs_ref, *m_cs_getref,
     *m_cs_match, *m_cs_getmatch, *m_cs_smm, *m_cs_getsmm, *m_rtu_w2s,
@@ -2154,9 +2154,7 @@ static int k_panel_size_shift(DSLObj panel, float *dx, float *dy) {
     if (dx) *dx = szs[i].shx; if (dy) *dy = szs[i].shy; szs[i].sh_on = 0;
     return 1;
 }
-static void sz_click(void *ud, DSLObj w) {
-    int i = sz_find((DSLObj)ud); if (i < 0) return;
-    W *b = w_of(w); Obj bo = b ? hget(b->h_btn) : NULL; if (bo) esc_deselect(bo);   /* never left selected: Space / Enter stay the game's */
+static void sz_step(int i, DSLObj w) {                             /* one step toward w's side ("+" or "-"), anchored on w */
     int s = szs[i].step + (w == szs[i].plus ? 1 : -1);
     if (s < SZ_LO || s > SZ_HI) return;
     float c[2]; szs[i].abtn = w; szs[i].sh_on = szs[i].sh_given = 0;
@@ -2164,6 +2162,11 @@ static void sz_click(void *ud, DSLObj w) {
     szs[i].step = s; sz_apply(i); sz_keep(i); sz_look(i);
     sz_anchor(i);                                                    /* a size the kit draws: at once (sz_frame checks again) */
     dsl_log("ui: size: %s %d %%", szs[i].key, s * 10);
+}
+static void sz_click(void *ud, DSLObj w) {
+    int i = sz_find((DSLObj)ud); if (i < 0) return;
+    W *b = w_of(w); Obj bo = b ? hget(b->h_btn) : NULL; if (bo) esc_deselect(bo);   /* never left selected: Space / Enter stay the game's */
+    sz_step(i, w);
 }
 static const char *sz_minus(void) {                                  /* the minus sign, else the en dash, else '-' (what the game's font has) */
     Obj f = hget(h_body_font);
@@ -2238,6 +2241,51 @@ static void sz_frame(void) {
             szs[i].abtn = NULL;
         }
     }
+}
+/* SIZE KEYS (kit 0.1.30; owner 2026-11-01: "configurable keys" for the "-" / "+" resize): with Ctrl held, "-" / "=" (or
+   keypad "-" / "+", or none: the Mods window's "Size keys" row) make the panel UNDER THE MOUSE (the one drawn on top) one
+   step smaller / bigger: the same step, limits, kept size and ANCHOR as a click on its "-" / "+". Nothing while a text
+   field has the keyboard or no panel with "-" / "+" is under the mouse. Free keys (2026-11-01): the game binds none of
+   them (KeySettingData); Ctrl alone is its EntityHover hold, which stays. Kept as the row "kit@size_keys" (x = choice). */
+static const struct { int minus, plus; } SZK[] = { { 45, 61 }, { 269, 270 }, { 0, 0 } };   /* Minus / Equals, Keypad - / +, off */
+#define SZK_N 3
+static int szk_sel = -1;
+int dsl_ui_size_keys(void) {
+    if (szk_sel < 0) { szk_sel = 0; mvp_load(); for (int n = 0; n < nmvp; n++) if (!strcmp(mvp[n].key, "kit@size_keys")) { int v = (int)(mvp[n].x + 0.5f); szk_sel = v >= 0 && v < SZK_N ? v : 0; break; } }
+    return szk_sel;
+}
+void dsl_ui_size_keys_set(int v) {
+    if (v < 0 || v >= SZK_N) return;
+    szk_sel = v; mvp_load();
+    int n = 0; while (n < nmvp && strcmp(mvp[n].key, "kit@size_keys")) n++;
+    if (n == nmvp) { if (nmvp == MVP_MAX) return; nmvp++; }
+    snprintf(mvp[n].key, sizeof mvp[n].key, "kit@size_keys"); mvp[n].x = (float)v; mvp[n].y = 0; mvp_save();
+    dsl_log("ui: size keys: choice %d (%s)", v, v == 0 ? "Ctrl + - / =" : v == 1 ? "Ctrl + keypad - / +" : "off");
+}
+static int sz_under_mouse(void) {                                    /* the panel with "-" / "+" drawn on top under the mouse, -1 none */
+    if (!m_input_mouse) return -1;
+    V3 m = CALL0(m_input_mouse, V3)(m_input_mouse); int best = -1; OrdKey bk, k;
+    for (int i = 0; i < nsz; i++) {
+        Obj o = hget(szs[i].h), hd = hget(szs[i].h_hold); float r[4]; int in = 0;
+        if (!o || !on_tree(o)) continue;
+        for (int n = 0; n < 2 && !in; n++) { Obj x = n ? hd : o; in = x && rect_screen(x, r) && m.x >= r[0] && m.x <= r[2] && m.y >= r[1] && m.y <= r[3]; }
+        if (!in) continue;
+        ord_key(o, &k);
+        if (best < 0 || ord_cmp(&k, &bk) > 0) { best = i; bk = k; }
+    }
+    return best;
+}
+static void sz_keys_frame(void) {
+    if (!nsz || !m_input_keydown || !m_input_key) return;
+    int c = dsl_ui_size_keys(); if (!SZK[c].minus) return;
+    int dn = CALL(m_input_keydown, bool, int)(SZK[c].minus, m_input_keydown), up = CALL(m_input_keydown, bool, int)(SZK[c].plus, m_input_keydown);
+    if (!dn && !up) return;
+    if (!CALL(m_input_key, bool, int)(306, m_input_key) && !CALL(m_input_key, bool, int)(305, m_input_key)) return;   /* Left / Right Control */
+    if (esc_focused()) { dsl_log("ui: size keys: a text field has the keyboard: not used"); return; }
+    int i = sz_under_mouse();
+    if (i < 0) { dsl_log("ui: size keys: no panel with \"-\" / \"+\" under the mouse"); return; }
+    dsl_log("ui: size keys: Ctrl + %s on %s", up ? "plus" : "minus", szs[i].key);
+    sz_step(i, up ? szs[i].plus : szs[i].minus);
 }
 /* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
    rules / pattern to keep applying everywhere"). window_std: a window or an in-game panel with every owner rule on by
@@ -3086,6 +3134,7 @@ static void tick(void) {
     sf_frame();
     mv_frame();
     sz_frame();
+    sz_keys_frame();
     sliders_frame();
     tips_frame();
     if (!o_cur_perform) tip_place_frame();                          /* else right before the UI is drawn (h_cur_perform) */
@@ -3260,6 +3309,7 @@ void dsl_ui_install(void) {
     m_in_ph = OPT(K.TMP_Input, "get_placeholder", 0); m_in_tc = OPT(K.TMP_Input, "get_textComponent", 0);
     m_in_focused = OPT(K.TMP_Input, "get_isFocused", 0); m_sel_inter = OPT(K.Selectable, "set_interactable", 1);
     m_input_mouse = OPT(kInput, "get_mousePosition", 0); m_input_keydown = OPTSIG(kInput, "GetKeyDown", 1, "UnityEngine.KeyCode");
+    m_input_key = OPTSIG(kInput, "GetKey", 1, "UnityEngine.KeyCode");   /* size keys: Ctrl held */
     m_time_frame = MTH(kTime, "get_frameCount", 0);
     m_clip_get = OPT(kGUI, "get_systemCopyBuffer", 0); m_clip_set = OPT(kGUI, "set_systemCopyBuffer", 1);
     m_tex_ctor = OPTSIG(K.Texture2D, ".ctor", 4, "System.Int32,System.Int32,UnityEngine.TextureFormat,System.Boolean");

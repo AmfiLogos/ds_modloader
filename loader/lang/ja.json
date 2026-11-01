@@ -361,5 +361,9 @@
  "this update needs the installer (new game version)": "ゲームの新バージョンのため、このアップデートにはインストーラーが必要です",
  "this world": "このワールド",
  "unknown error": "不明なエラー",
- "works only with %s, but version %s is installed": "%sでのみ動作しますが、インストールされているのはバージョン%sです"
+ "works only with %s, but version %s is installed": "%sでのみ動作しますが、インストールされているのはバージョン%sです",
+ "Size keys": "サイズ変更キー",
+ "Ctrl + - / Ctrl + =": "Ctrl + - / Ctrl + =",
+ "Ctrl + keypad - / +": "Ctrl + テンキー - / +",
+ "With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger.": "サイズボタン「-」「+」があるMODウィンドウにマウスを重ねると、これらのキーでウィンドウを小さく・大きくできます。"
 }

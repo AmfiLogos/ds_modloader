@@ -230,7 +230,7 @@ static void send_ev(id w, id ev) {
     if (!via_view) { ((void (*)(id, SEL, id))objc_msgSend)(w, sel_registerName("sendEvent:"), ev); return; }
     id v = ((id (*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
     unsigned long t = ((unsigned long (*)(id, SEL))objc_msgSend)(ev, sel_registerName("type"));
-    const char *sel = t == 1 ? "mouseDown:" : t == 2 ? "mouseUp:" : t == 5 ? "mouseMoved:" : t == 22 ? "scrollWheel:" : t == 10 ? "keyDown:" : t == 11 ? "keyUp:" : NULL;
+    const char *sel = t == 1 ? "mouseDown:" : t == 2 ? "mouseUp:" : t == 5 ? "mouseMoved:" : t == 22 ? "scrollWheel:" : t == 10 ? "keyDown:" : t == 11 ? "keyUp:" : t == 12 ? "flagsChanged:" : NULL;
     if (v && sel && ((BOOL (*)(id, SEL, SEL))objc_msgSend)(v, sel_registerName("respondsToSelector:"), sel_registerName(sel)))
         ((void (*)(id, SEL, id))objc_msgSend)(v, sel_registerName(sel), ev);
     else ((void (*)(id, SEL, id))objc_msgSend)(w, sel_registerName("sendEvent:"), ev);
@@ -263,6 +263,24 @@ static int rdrag_rect(const float r[4], float dx, float dy) {      /* right pres
 static int move_rect(const float r[4]) { fk_at(r); fk_until = 0x7fffffff; return 0; }                           /* hover until "mouse_off" */
 static int wheel_rect(const float r[4], int dy) { fk_at(r); fk_wheel_at = fnow() + 3; fk_wy = (float)dy; fk_until = fk_wheel_at + 20; return 0; }
 static id ns_str(const char *s) { return ((id (*)(Class, SEL, const char *))objc_msgSend)(objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), s); }
+/* the size keys (kit 0.1.30): ctrl 1 = Control goes down (flagsChanged, kVK_Control 59), then kc (if >= 0) down + up with
+   Control held; ctrl 0 and kc < 0 = Control goes up (a later call: Unity reads the held state per frame) */
+static int key_ctrl(int kc, int ctrl) {
+    id w = game_window(); if (!w) return -1;
+    long wn = ((long (*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
+    unsigned long fl = ctrl ? (1ul << 18) : 0;                        /* NSEventModifierFlagControl */
+    for (int st = 0; st < 3; st++) {
+        unsigned long type = st == 0 ? 12 : st == 1 ? 10 : 11; unsigned short code = st == 0 ? 59 : (unsigned short)kc;
+        if (st == 0 && kc >= 0 && !ctrl) continue;
+        if (st > 0 && kc < 0) break;
+        char one[2] = { st == 0 ? 0 : kc == 27 ? '-' : kc == 24 ? '=' : kc == 78 ? '-' : kc == 69 ? '+' : 0, 0 };
+        id ev = ((id (*)(Class, SEL, unsigned long, CGPoint, unsigned long, double, long, id, id, id, BOOL, unsigned short))objc_msgSend)(
+            objc_getClass("NSEvent"), sel_registerName("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
+            type, CGPointZero, fl, uptime(), wn, nil, ns_str(one), ns_str(one), NO, code);
+        send_ev(w, ev);
+    }
+    return 0;
+}
 static int key_code(int kc) {                                     /* one special key (36 Return, 53 Escape) down + up */
     id w = game_window(); if (!w) return -1;
     long wn = ((long (*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
@@ -432,7 +450,7 @@ static void handle(const char *j) {
         o += (size_t)snprintf(out + o, sizeof out - o, "\"at\":[%.0f,%.0f,%.0f,%.0f],", r[0], r[1], r[2], r[3]);
     }
     else if (!strcmp(cmd, "via")) via_view = (int)jnum(j, "view", 1);
-    else if (!strcmp(cmd, "key")) rc = key_code((int)jnum(j, "code", 36));
+    else if (!strcmp(cmd, "key")) rc = jnum(j, "ctrl", -1) >= 0 ? key_ctrl((int)jnum(j, "code", -1), (int)jnum(j, "ctrl", 0)) : key_code((int)jnum(j, "code", 36));
     else if (!strcmp(cmd, "stock")) { jstr(j, "what", s, sizeof s); rc = stock_call(s); }
     else if (!strcmp(cmd, "type")) { jstr(j, "text", s, sizeof s); rc = t_type(fd, s); }
     else if (!strcmp(cmd, "capture")) { jstr(j, "name", s, sizeof s); rc = capture(s); }
