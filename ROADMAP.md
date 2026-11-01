@@ -2,28 +2,48 @@
 
 What we are working on, what comes next, and where you can help.
 
+Updated: 2026-11-01
+
 Dungeon Settlers Modded is made of three repos. Each item below is listed once, in the repo that does the work:
 
-- **Mod loader** (this repo): the app, the Mods window, which mods each world uses, the installers and their downloads.
-- **Multiplayer mod** ([ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer), [its roadmap](https://github.com/AmfiLogos/ds_multiplayer/blob/main/ROADMAP.md)): playing together, the Multiplayer page.
-- **Custom Modes** ([ds_custommodes](https://github.com/AmfiLogos/ds_custommodes), [its roadmap](https://github.com/AmfiLogos/ds_custommodes/blob/main/ROADMAP.md)): My Units, Unit Builder, Gallery, Test Fights, the Foreign Expedition hub, PvP.
+- **Mod loader** (this repo): the app, the Mods window, the Load Campaign list and its filters, which mods each world uses, the parts that every mod window shares (moving, the "-" and "+" size buttons), the installers and their downloads.
+- **Multiplayer mod** ([ds_multiplayer](https://github.com/AmfiLogos/ds_multiplayer), [its roadmap](https://github.com/AmfiLogos/ds_multiplayer/blob/main/ROADMAP.md)): playing together, the Multiplayer page, the chat, the Foreign Expedition hub and PvP.
+- **Units Laboratory** ([ds_custommodes](https://github.com/AmfiLogos/ds_custommodes), [its roadmap](https://github.com/AmfiLogos/ds_custommodes/blob/main/ROADMAP.md)): My Units, the Unit Builder, the Wiki Build Gallery, Test Fights and the DPS Check.
 
 ## Now
 
-- Nothing in progress right now.
+These are being built for the next version.
+
+- **The "-" and "+" size buttons show only while the mouse is over the window.** If you do not want to change the size, they stay out of the way. This works in every window that has them: the chat, the DPS Check panels and the Units Laboratory windows. <!-- id: size-buttons-on-hover -->
+- **A right-drag moves only the top window.** Today, when two of our windows overlap, a right-drag moves every window under the mouse at the same time. Soon only the window on top moves. <!-- id: right-drag-top-window -->
+- **Weapon skill slot for your screen only.** The weapon skill slot will change only your own screen: a button that uses your unit's weapon skill. Friends in your game will not need the mod. <!-- id: weapon-slot-local -->
+- **Load Campaign shows your solo worlds first.** In single player, the Load list will show only single-player worlds by default, with a box to also show your multiplayer worlds. <!-- id: load-solo-default -->
+- **Two mods can change the same part of the game.** Today the loader refuses a second mod that changes a game function another mod already changes. Soon both can run, and turning one off keeps the other. <!-- id: hook-chaining -->
+- **Export your units to the wiki.** A button opens the wiki's Character Builder with the units of your world loaded. There you can edit them, and they show in the Build Gallery like other builds, with a switch to keep them private. <!-- id: export-team-wiki -->
 
 ## Next
 
-- Nothing is planned for the loader yet.
+- Nothing else is planned for the next version. The Now list comes first.
+
+## Later / ideas
+
+- **Pick your game version.** A list of game versions that the mods work with, so you can choose which version to play.
+- **Mods that react to game events.** The loader tells mods when the game opens or closes one of its windows, so mods need less of their own code to find them.
+- **A "Local" tag on mods.** The loader finds out by itself if a mod only changes your screen ("Local", never blocks joining a friend) or if every player needs it.
+- **Save tags.** "Vanilla+" for mods after which the plain game can still play your save, and "Mod-dependent save" for mods that the save needs. Before you first load a save with a mod of the second kind, the loader makes a backup copy.
+- **A tidier Load list.** Your worlds, multiplayer copies, PvP and Expedition maps and plain game saves in clear groups.
+- **A check of the installed files after an install**, with a clear message when a file is wrong.
 
 ## Done
 
-- **Plainer text.** The Mods window help lines, the loader's messages and the mod descriptions are in plain words, without file names or programmer's notes. In v0.1.6.
-
-- **Mods are saved per world.** The mods you pick belong to the whole world, so every save and autosave of that world uses them. The Mods window shows the world's name, not the save file's long name. In v0.1.6.
-- **The hover card on a world lists all its mods.** One mod per line, Multiplayer and Custom Modes included. When the mods do not fit on the world's row, the row says how many are hidden, for example "Global cooldown +2". In v0.1.6.
-- **One download per mod.** Each mod is a single .zip file. Put it in the mods folder and the Mods window adds it. In v0.1.6.
-- **Mac .dmg and Windows installer.** These replace the zip files, so installing takes fewer steps. In v0.1.6.
+- **v0.1.29 (2026-10-26).** Smoother game on the title screen, on the loading screen and in your worlds. VSync stays off when you turn it off. Mods can give their panels "-" and "+" size buttons. Worlds that mods make for themselves stay out of the Load list and the Steam Cloud backup.
+- **v0.1.28 (2026-10-25).** Escape and the game's red X close the mod windows, and they follow the game's UI Scale. Load Campaign filters have a Solo box and two groups. New fix: Live building HP. After an update, a "What's new" window shows once.
+- **v0.1.27 (2026-10-25).** Load Campaign is one list in the game's own order. Hell difficulty is always loaded, with no restart. New mod: Locked Slots.
+- **v0.1.26 (2026-10-25).** A Fixes tab in the Mods window, with fixes that are on in all worlds.
+- **v0.1.23 to v0.1.25 (2026-10-24).** Load Campaign filters and "Latest save only". The loader windows use the game's text look. Mac: one "Dungeon Settlers Modded" in the Dock and Spotlight, and updates keep the app where it is. New mods: Sound settings fix, Multi-unit view, Weapon skill slot.
+- **v0.1.22 (2026-10-21).** Every mod window was checked in four languages, at five window sizes and at UI Scale 1.5, and now fits inside the game window.
+- **v0.1.21 (2026-10-21).** A "Download update" button. The game's Bug Report button opens our report window. Your tutorial progress comes over from the normal game.
+- **Earlier.** Mods are saved per world, a hover card lists all the mods of a world, one download per mod, a Mac .dmg and a Windows installer, plainer text. Every version is in the [CHANGELOG](CHANGELOG.md).
 
 ## Needs help / testing
 
@@ -38,4 +58,4 @@ Have you tried one of these? Please open an issue and tell us what happened.
 - **Mac asks you to allow the app the first time.** The app is not signed with an Apple developer ID, so you need to right-click it and click Open, or click "Open Anyway" in System Settings.
 - **BepInEx mods and MelonLoader mods cannot be on together.** Both start .NET inside the game. If you try, the Mods window refuses the second kind and tells you why.
 - **Extended Hotbar refuses to start on Mac.** That mod runs its own check, and we leave it as it is.
-- **The weapon-skill slot mod is left out of the download.** We tried to make it work when only the host has it, but other players' games then go out of sync. So every player in a game would need it.
+- **Weapon skill slot: every player in a game needs it.** Today it adds a real slot to the skill bar, which changes the game for everyone. The Now list makes it a mod for your own screen only.

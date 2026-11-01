@@ -54,7 +54,10 @@ print -r -- "$r" | sed 's/^/     /'
 check "game code runs through every stub" '[[ "$r" == *"$EXPECT"* ]]'
 check "floor-logger (API 1 binary, unchanged) loaded and logs" 'log | grep -q "floor-logger 1.0.0: loaded" && log | grep -q "\[floor-logger\] floor started: normal floor (game minute 25, safe flag 0)"'
 check "early-mod: load before mapping, early hook by RVA before il2cpp_init, init by name" 'log | grep -q "\[early-mod\] load: ga_base=0 build=test" && log | grep -q "\[early-mod\] early: ready=0 hook_rva=0" && log | grep -q "\[early-mod\] update hook ran 2 times" && log | grep -q "\[early-mod\] tick hook ran"'
-check "one engine: second hook on floor-logger's function refused, clash off" 'log | grep -q "is already hooked by floor-logger" && log | grep -q "clash: FAILED: dsl_plugin_init returned 5" && ! log | grep -q "BAD HOOK RAN"'
+# hook chaining (owner 2026-10-24): clash chains over floor-logger's function with a hook that never calls orig, then
+# fails. Break caught: the failed mod's link stays on the chain (floor-logger and the game skipped: orig_safe in EXPECT
+# drops, BAD HOOK RAN) or the chain is left broken (crash).
+check "chain: a failing module chained over floor-logger is taken off, floor-logger and the game still run" 'log | grep -q "OnEnterSafeFloor: 0x[0-9a-f]* chained over floor-logger: runs clash > floor-logger > game" && log | grep -q "clash: FAILED: dsl_plugin_init returned 5" && log | grep -q "clash taken off the chain: runs floor-logger > game" && ! log | grep -q "BAD HOOK RAN"'
 check "foreign loader's detour detected and not overwritten" 'log | grep -q "starts with a PC-relative instruction 58000050" && [[ "$r" == *"orig_foreign=0"* ]]'
 check "dependency order: early-mod before clash, data-mod satisfies plain" 'log | grep "load order:" | grep -q "early-mod.*clash" && log | grep -q "\[plain\] plain module plain up (table x=0x"'
 check "sha256 mismatch refused" 'log | grep -q "bad-sha: files do not match mod.json: not loaded"'
@@ -74,6 +77,25 @@ check "launcher feature (code, scope gameplay) runs but is not in the gameplay m
 check "world check off without a session" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: off"'
 check "build status for the launcher: active on the pinned build" 'grep -q "\"active\":true,\"reason\":\"ok\"" "$LOGD/dsload_status.json"'
 check "codepatch guard cleared" '[[ ! -e "$LOGD/dsload_state/_codepatch.pending" ]]'
+
+# hook chaining (owner 2026-10-24: "allow multiple mods modifying similar functions"). Breaks caught: a second mod on a
+# function refused or run in the wrong order; after one mod unhooks (middle or oldest) the others or the game stop
+# running, or the process crashes; a mod that never calls orig silently hides the mods under it; the same mod twice or
+# two methods folded into one body chained (one mod's code run for another method).
+print "== T1h hook chaining: three mods on one function, unhooks, a mod that skips orig"
+mod chain-a 7 '{"id":"chain-a","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}'
+mod chain-m 8 '{"id":"chain-m","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["chain-a"]}'
+mod chain-b 9 '{"id":"chain-b","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["chain-m"]}'
+mod skipper 10 '{"id":"skipper","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["chain-a"]}'
+cp "$M/profile.json" "$OUT/profile.json.chain"; print '{"enabled":["chain-b","skipper","chain-m","chain-a"],"provided":["notch-fix"]}' > "$M/profile.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" HOST_CHAIN=1)
+print -r -- "$r" | grep "^CHAIN" | sed 's/^/     /'
+check "chain: all three run, newest first, then the game (B > M > A > game)" '[[ "$r" == *"CHAIN1 BMAoamb"* && "$r" == *"CHAIN2 BMAoamb"* ]] && log | grep -q "chained over chain-m: runs chain-b > chain-m > chain-a > game"'
+check "chain: the middle mod unhooks, the others and the game still run" '[[ "$r" == *"CHAIN3 BAoab"* ]] && log | grep -q "\[chain-m\] unhook after call 2: 0" && log | grep -q "chain-m taken off the chain: runs chain-b > chain-a > game"'
+check "chain: the oldest mod unhooks, the newest still runs the game, no crash" '[[ "$r" == *"CHAIN4 Bob"* && "$r" == *"CHAIN2 orig=0"* ]] && log | grep -q "\[chain-a\] unhook after call 3: 0"'
+check "chain: a mod that never calls orig is logged with the mod it hides" 'log | grep -q "skipper (skipper DungeonBehaviorSimulator.ChainTarget2) did not call the original in [0-9]* calls: chain-a below it did not run"'
+check "chain: the same mod twice and a second method on the same body refused" 'log | grep -q "\[chain-b\] chain hooks=0 again=-1 folded=-1" && log | grep -q "is already hooked by this module" && log | grep -q "two methods share one body"'
+mv "$OUT/profile.json.chain" "$M/profile.json"; for d in chain-a chain-m chain-b skipper; do mv "$M/$d" "$OUT/$d.off"; done
 
 print "== T1b mods per world: session file from the launcher"
 EH=$(shasum -a 256 "$M/early-mod/early-mod.dylib" | cut -c1-64)
