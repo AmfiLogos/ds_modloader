@@ -4,6 +4,10 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.30)
+
+- Two or more mods can now change the same game function. Before, the second mod was refused ("already hooked") and did not work. Now both run, the mod loaded last first. If one mod is turned off or fails, the others keep working. <!-- roadmap: hook-chaining -->
+
 ### 0.1.29 (2026-10-26)
 
 - Smoother game on the title screen, on the loading screen and in your worlds: the mod loader no longer searches all the objects of the game many times a second to find the Load list, the game's windows and its notice box. Before, this made a slow frame about every half second in a world and every fifth frame on the title screen.

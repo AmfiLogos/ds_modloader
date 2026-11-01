@@ -28,8 +28,13 @@
 // Return 0 for success. Any other value: every hook of this module is removed, the module is off this session.
 // Crash guard: if the game dies inside one of these calls, the next start skips the module (until its file changes).
 //
-// Hooks: one engine for every module (one stub allocator, one registry). A function already hooked by any
-// module, or starting with a branch / PC-relative instruction (another loader's or a static patch), is refused.
+// Hooks: one engine for every module (one stub allocator, one registry). Several modules may hook ONE function
+// (hook chaining, kit 0.1.30): the module hooked later runs first and its `orig` calls the one hooked before it, the
+// oldest calls the game. ALWAYS call `orig` unless you mean to stop the game AND every older mod on that function:
+// a module that skips it in all of 50 calls is logged ("did not call the original ... below it did not run").
+// Unhook (or a module failing / turned off) takes only that module out; the others keep running.
+// Refused: the same module twice on one function; two different methods that share one body (identical-code folding,
+// Windows); a function starting with a branch / PC-relative instruction (another loader's or a static patch).
 // Hooks may be installed in any phase; after il2cpp_init they go to a separate stub page.
 //
 // mod.json "scope": "gameplay" (default: every multiplayer player needs it) or "client" (only this player).

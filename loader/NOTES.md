@@ -48,6 +48,32 @@ Log: `<log dir>/dsload.log` (previous run: `dsload.prev.log`).
 - Another hook engine in the same process (old `dsrig.dylib` / `dsmods.dylib`, Doorstop) is logged as a warning.
   Hooks on the SAME function by two engines are refused by ours, not chained. Chaining with Harmony/Dobby is not done.
   (Windows since v0.1.16: chained over an `E9` / `FF 25` jump, see "Harmony + our MinHook on one function, Windows".)
+  Two MODULES on one function: chained by our engine (next section).
+
+## Hook chaining: several modules on one function (kit 0.1.30, owner 2026-10-24)
+Owner: "can't we modify the loader to allow multiple mods modifying similar functions ? Isn't this a better idea than
+modifying the mods ?". Before, the engine refused a second hook on a function ("already hooked by").
+- ONE implementation for both engines: `src/dsl_chain.h` (included by `src/dsl_engine.c` and
+  `start/win/dsl_engine_win.c`; each engine only writes its counting veneer). Never chain by hand in an engine.
+- Order = install order (= load order): the newest hook runs first, its `orig` calls the next older one, the oldest
+  calls the game. A site with one owner is unchanged (orig = the plain stub / trampoline).
+- A link over another gets a veneer (`count += 1; jump [next]`, Mac 24 B stub + 16 B slot memory, Windows 32 B after
+  the thunks); a chained site's slot points at an entry veneer that counts calls. Veneers are never freed: a call
+  still in flight in an unhooked mod keeps going down the chain.
+- Unhook, a failed phase (`dsl_unhook_owner`) or the crash guard taking a module off = only that link goes; the
+  `next` of every veneer of the site is recomputed oldest first, then the entry. Log: `<hook>: <rva>: <mod> taken off
+  the chain: runs <mod> > ... > game`; a new link logs `chained over <mod>: runs <mod> > <mod> > game`.
+- GUARD (skip): `chain <rva>: <mod> (<hook>) did not call the original in N calls: <mods> below it did not run`, once
+  per link, N >= 50 calls (checked every 2 s while a chained site exists, at each unhook, at exit). Not blocked.
+- Still refused: the same module twice on one function; two different methods with one body (identical-code
+  folding; only when both came by `hook_method`, which passes `ns.Class.Method/argc`); `hook_rva` / raw hooks have no
+  method name and are chained.
+- docs/hooks.json: a site may list several owners (6 sites have two today, all guarded by platform / env / the other
+  mod's presence, e.g. custom-modes hooks the wheel only without multiplayer).
+- Tests: `test/run_tests.sh` T1h (three test mods on one function: order B > M > A > game, middle then oldest unhook,
+  skip logged, same mod twice and folded method refused) and T1 (a failing module chained over floor-logger is taken
+  off, floor-logger and the game keep running). Real game (2026-11-01, Mac hidden copy NVC): `test/chainprobe`
+  chained over the loader's EventSystem.Update, 600 frames, unhooked itself, the loader's tick kept running.
 
 ## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).

@@ -25,12 +25,44 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
     h->log(me, "init: tick=%d foreign=%d loaded(floor-logger)=%d", a, b, h->module_loaded("floor-logger"));
     return a;
 }
-#elif MODE == 2    /* clash: hooks a function floor-logger already hooked, then fails */
+#elif MODE == 2    /* clash: chains over a function floor-logger hooked (never calls orig), then fails: the loader takes it off */
 DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
     H = h; ME = me; void *o;
     int a = h->hook_method(me, "Refactor.Runtime", "DungeonBehaviorSimulator", "OnEnterSafeFloor", 0, (void *)my_nothing, &o);
     h->log(me, "clash hook=%d", a);
-    return a ? 5 : 0;
+    return 5;
+}
+#elif MODE >= 7 && MODE <= 10   /* hook chaining (T1h): 7 chain-a, 8 chain-m, 9 chain-b on ChainTarget; 10 skipper on ChainTarget2 */
+static void (*o_ch)(void *, const void *), (*o_ch2)(void *, const void *);
+static void *t_ch; static int n_ch;
+#if MODE == 7
+#define UP 'A'
+#define UNHOOK_AT 3
+#elif MODE == 8
+#define UP 'M'
+#define UNHOOK_AT 2
+#else
+#define UP 'B'
+#define UNHOOK_AT 0
+#endif
+static void my_ch(void *s, const void *mi) {
+    void (*add)(char) = (void (*)(char))dlsym(RTLD_DEFAULT, "fake_trace_add");
+    add(UP); o_ch(s, mi); add(UP + 32);
+    if (++n_ch == UNHOOK_AT) H->log(ME, "unhook after call %d: %d", n_ch, H->unhook(ME, t_ch));
+}
+static int n_ch2;
+static void my_ch2(void *s, const void *mi) { n_ch2++; if (MODE != 10) o_ch2(s, mi); }   /* the skipper never calls orig */
+DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
+    H = h; ME = me; t_ch = dlsym(RTLD_DEFAULT, "Chain_Target");
+    int r = 0, again = 0, fold = 0;
+    if (MODE != 10) r = h->hook_method(me, "Refactor.Runtime", "DungeonBehaviorSimulator", "ChainTarget", 0, (void *)my_ch, (void **)&o_ch);
+    if (MODE == 7 || MODE == 10) r |= h->hook_method(me, "Refactor.Runtime", "DungeonBehaviorSimulator", "ChainTarget2", 0, (void *)my_ch2, (void **)&o_ch2);
+    if (MODE == 9) {                                     /* refused: the same module twice, another method on the same body */
+        void *o; again = h->hook_method(me, "Refactor.Runtime", "DungeonBehaviorSimulator", "ChainTarget", 0, (void *)my_nothing, &o);
+        fold = h->hook_method(me, "Refactor.Runtime", "DungeonBehaviorSimulator", "FoldedTarget", 0, (void *)my_nothing, &o);
+    }
+    h->log(me, "chain hooks=%d again=%d folded=%d", r, again, fold);
+    return r;
 }
 #elif MODE == 5    /* patcher: patch_rva ok, wrong bytes refused, overlap with a hook refused */
 DSL_EXPORT int dsl_module_early(const DSLHost *h, DSLPlugin *me) {

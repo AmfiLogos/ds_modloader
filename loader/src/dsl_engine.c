@@ -9,6 +9,8 @@
 // patches there (multi-unit bars, GCD, weapon slot, Hell) and an old dsmods.dylib cave cannot collide with us.
 // Stub pages are written through a second RW mapping of the same memory: the RX pages other threads run are
 // never made non-executable. Only the 4-byte site write toggles a GameAssembly page (as both old engines did).
+// Several modules on one function: dsl_chain.h (the slot then points at the newest module's replacement or at a
+// counting veneer; veneers are 24-byte stubs from the same pages + 16 bytes of slot memory: count, next).
 #include "dsl_internal.h"
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
@@ -16,6 +18,8 @@
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #define EARLY_SZ 0x8000          /* 1365 stubs before game code runs */
 #define LATE_SZ  0x4000          /* 682 stubs installed while the game runs (own page) */
@@ -23,14 +27,48 @@
 #define REGION_SZ (EARLY_SZ + LATE_SZ + SLOT_SZ)
 #define MAXH 2048
 
-typedef struct { uintptr_t site, stub, slot; uint32_t insn; int owner; int active; char name[48]; } Hook;
-static Hook H[MAXH];
-static int nh;
 static uintptr_t region, region_w;                 /* RX view, RW alias (0 = no alias: toggle instead) */
 static uintptr_t next_early, next_late, next_slot;
 static int late;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 int dsl_codepatch_ok = 1;
+static int write_stub(uintptr_t stub, const void *src, size_t n);
+static int all_zero(uintptr_t a, size_t n);
+/* counting veneer (dsl_chain.h): adrp x16, data ; add x16, x16, :lo12:data ; mov x17, #1 ; stadd x17, [x16] ;
+   ldr x16, [x16, #8] ; br x16      data = { uint64 count, void *next } in the slot memory. x16/x17 are the
+   intra-procedure-call scratch registers (AAPCS64): free at a function entry and at a call. LSE (stadd): every Apple
+   Silicon Mac. */
+static int ch_veneer(uintptr_t *code, volatile uint64_t **cnt, void *volatile **next) {
+    uintptr_t *ns = late ? &next_late : &next_early;
+    uintptr_t hi = late ? region + EARLY_SZ + LATE_SZ : region + EARLY_SZ;
+    if (!region || *ns + 24 > hi || next_slot + 16 > region + REGION_SZ) return -1;
+    uintptr_t stub = *ns, data = next_slot;
+    if (!all_zero(stub, 24) || !all_zero(data, 16)) return -1;
+    int64_t pages = (int64_t)((data & ~(uintptr_t)0xFFF) - (stub & ~(uintptr_t)0xFFF)) >> 12;
+    uint32_t c[6];
+    c[0] = 0x90000000u | ((uint32_t)(pages & 3) << 29) | ((uint32_t)((pages >> 2) & 0x7FFFF) << 5) | 16;   /* adrp x16 */
+    c[1] = 0x91000000u | ((uint32_t)(data & 0xFFF) << 10) | (16 << 5) | 16;                              /* add x16, x16, #lo12 */
+    c[2] = 0xD2800031u;                                                                                  /* mov x17, #1 */
+    c[3] = 0xF831021Fu;                                                                                  /* stadd x17, [x16] */
+    c[4] = 0xF9400610u;                                                                                  /* ldr x16, [x16, #8] */
+    c[5] = 0xD61F0200u;                                                                                  /* br x16 */
+    if (write_stub(stub, c, sizeof c)) return -1;
+    *ns += 24; next_slot += 16;
+    *code = stub; *cnt = (volatile uint64_t *)data; *next = (void *volatile *)(data + 8);
+    return 0;
+}
+static int all_zero(uintptr_t a, size_t n) { for (size_t i = 0; i < n; i++) if (((volatile uint8_t*)a)[i]) return 0; return 1; }
+#include "dsl_chain.h"
+
+typedef struct { uintptr_t site, stub, slot; uint32_t insn; int owner; int active; char name[48]; ChainSite cs; } Hook;
+static Hook H[MAXH];
+static int nh;
+/* owner/active/name of a site = its newest active link (refusal messages, patch overlap) */
+static void site_sync(Hook *h) {
+    int t = ch_top(&h->cs);
+    h->active = t >= 0;
+    if (t >= 0) { h->owner = CL[h->cs.lk[t]].owner; snprintf(h->name, sizeof h->name, "%s", CL[h->cs.lk[t]].name); }
+}
 
 static int is_pc_relative(uint32_t i) {
     if ((i & 0x1F000000) == 0x10000000) return 1;   /* adr, adrp */
@@ -89,7 +127,6 @@ static int write_stub(uintptr_t stub, const void *src, size_t n) {
     sys_icache_invalidate((void*)stub, n);
     return kr == KERN_SUCCESS ? 0 : -1;
 }
-static int all_zero(uintptr_t a, size_t n) { for (size_t i = 0; i < n; i++) if (((volatile uint8_t*)a)[i]) return 0; return 1; }
 static Hook *find_site(uintptr_t site) { for (int i = 0; i < nh; i++) if (H[i].site == site) return &H[i]; return NULL; }
 
 /* In-place code patches (expected bytes -> new bytes), e.g. a custom difficulty's compare changes. Same registry
@@ -103,7 +140,8 @@ static const Patch *patch_over(uintptr_t a, size_t n) {
     return NULL;
 }
 
-static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who) {
+static void chain_watch_start(void);
+static int hook_locked(int owner, void *target, void *repl, void **orig, const char *who, const char *method) {
     uintptr_t site = (uintptr_t)target;
     if (!dsl_build_id) { dsl_log("%s: hook refused: the game build is not the pinned one", who); return -1; }
     if (!region || !site || !repl) { dsl_log("%s: hook refused (null target/replacement or engine inactive)", who); return -1; }
@@ -112,12 +150,16 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     }
     uintptr_t rva = site - dsl_ga_base;
     Hook *h = find_site(site);
-    if (h && h->active) { dsl_log("%s: hook refused: %#lx is already hooked by %s (%s)", who, (unsigned long)rva, dsl_owner_name(h->owner), h->name); return -1; }
-    if (h) {                                            /* re-hook a site unhooked earlier: reuse its stub */
-        *(void* volatile*)h->slot = repl; h->owner = owner; h->active = 1;
-        if (orig) *orig = (void*)(h->stub + 16);
-        dsl_log("%s: hook %#lx re-armed", who, (unsigned long)rva);
-        return 0;
+    if (h && !h->active) {
+        const Patch *pq = patch_over(site, 4);
+        if (pq) { dsl_log("%s: hook refused: %#lx is inside a code patch of %s (%s)", who, (unsigned long)rva, dsl_owner_name(pq->owner), pq->name); return -1; }
+    }
+    if (h) {                                            /* a site hooked before (maybe by another module): chain */
+        int had = h->cs.ven != 0;
+        int r = ch_add(&h->cs, owner, repl, method, who, orig);
+        site_sync(h);
+        if (!r && !had && h->cs.ven) chain_watch_start();
+        return r;
     }
     const Patch *pp = patch_over(site, 4);
     if (pp) { dsl_log("%s: hook refused: %#lx is inside a code patch of %s (%s)", who, (unsigned long)rva, dsl_owner_name(pp->owner), pp->name); return -1; }
@@ -132,7 +174,7 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     if (is_pc_relative(insn)) { dsl_log("%s: hook refused: %#lx starts with a PC-relative instruction %08x (maybe another loader's hook)", who, (unsigned long)rva, insn); return -1; }
     uintptr_t *ns = late ? &next_late : &next_early;
     uintptr_t hi = late ? region + EARLY_SZ + LATE_SZ : region + EARLY_SZ;
-    if (nh >= MAXH || *ns + 24 > hi || next_slot + 8 > region + REGION_SZ) { dsl_log("%s: hook refused: no free stub/slot left", who); return -1; }
+    if (nh >= MAXH || ncl >= CH_MAXL || *ns + 24 > hi || next_slot + 8 > region + REGION_SZ) { dsl_log("%s: hook refused: no free stub/slot left", who); return -1; }
     uintptr_t stub = *ns, slot = next_slot;
     if (!all_zero(stub, 24) || !all_zero(slot, 8)) { dsl_log("%s: hook refused: stub/slot not free", who); return -1; }
     if (!b_reach(site, stub) || !b_reach(stub + 20, site + 4)) { dsl_log("%s: hook refused: stub out of branch range", who); return -1; }
@@ -149,41 +191,63 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     uint32_t br = enc_b(site, stub);
     if (write_ga(site, &br, 4)) { *(void* volatile*)slot = NULL; dsl_log("%s: hook %#lx failed: site write", who, (unsigned long)rva); return -1; }
     Hook *n = &H[nh++];
-    *n = (Hook){ site, stub, slot, insn, owner, 1, "" };
-    snprintf(n->name, sizeof n->name, "%s", who);
+    memset(n, 0, sizeof *n);
+    n->site = site; n->stub = stub; n->slot = slot; n->insn = insn;
+    n->cs.slot = (void *volatile *)slot; n->cs.orig_code = (void *)(stub + 16); n->cs.rva = rva;
     *ns += 24; next_slot += 8;
-    if (orig) *orig = (void*)(stub + 16);
+    ch_add(&n->cs, owner, repl, method, who, orig);   /* first link: cannot be refused (room checked above) */
+    site_sync(n);
     return 0;
 }
 
-int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who) {
+int dsl_hook_m(int owner, void *target, void *repl, void **orig, const char *who, const char *method) {
     pthread_mutex_lock(&lock);
-    int r = hook_locked(owner, target, repl, orig, who);
+    int r = hook_locked(owner, target, repl, orig, who, method);
     pthread_mutex_unlock(&lock);
     if (!r) dsl_log("%s: hooked %#lx for %s", who, (unsigned long)((uintptr_t)target - dsl_ga_base), dsl_owner_name(owner));
     return r;
 }
 
+int dsl_hook(int owner, void *target, void *repl, void **orig, const char *who) { return dsl_hook_m(owner, target, repl, orig, who, NULL); }
+
 int dsl_unhook(int owner, void *target, const char *who) {
     pthread_mutex_lock(&lock);
     Hook *h = find_site((uintptr_t)target);
-    int ok = h && h->active && h->owner == owner;
-    if (ok) { *(void* volatile*)h->slot = NULL; h->active = 0; }
+    if (h) ch_check(&h->cs);                            /* skip guard before the counts restart */
+    int ok = h && ch_remove(&h->cs, owner);
+    if (h) site_sync(h);
     pthread_mutex_unlock(&lock);
     if (!ok) { dsl_log("%s: unhook %p: not hooked by this module", who, target); return -1; }
-    dsl_log("%s: unhooked %#lx (original code runs again)", who, (unsigned long)((uintptr_t)target - dsl_ga_base));
+    dsl_log("%s: unhooked %#lx (%s)", who, (unsigned long)((uintptr_t)target - dsl_ga_base), h->active ? "the other hooks on it still run" : "original code runs again");
     return 0;
 }
 
 int dsl_unhook_owner(int owner) {
     int n = 0;
     pthread_mutex_lock(&lock);
-    for (int i = 0; i < nh; i++) if (H[i].active && H[i].owner == owner) { *(void* volatile*)H[i].slot = NULL; H[i].active = 0; n++; }
+    for (int i = 0; i < nh; i++) if (ch_link_of(&H[i].cs, owner)) { ch_check(&H[i].cs); n += ch_remove(&H[i].cs, owner); site_sync(&H[i]); }
     for (int i = 0; i < npt; i++) if (PT[i].active && PT[i].owner == owner) {        /* put the original bytes back */
         if (!memcmp((void*)PT[i].addr, PT[i].neu, PT[i].n) && !write_ga(PT[i].addr, PT[i].old, PT[i].n)) { PT[i].active = 0; n++; }
     }
     pthread_mutex_unlock(&lock);
     return n;
+}
+
+/* skip guard runs: every 2 s while a chained site exists, and at exit */
+static void chain_check_all(void) { for (int i = 0; i < nh; i++) if (H[i].cs.ven) ch_check(&H[i].cs); }
+static void *chain_watch(void *u) {
+    (void)u;
+    for (;;) { sleep(2); pthread_mutex_lock(&lock); chain_check_all(); pthread_mutex_unlock(&lock); }
+    return NULL;
+}
+static void chain_at_exit(void) { if (!pthread_mutex_trylock(&lock)) { chain_check_all(); pthread_mutex_unlock(&lock); } }
+static void chain_watch_start(void) {              /* engine lock held */
+    static int started;
+    if (started) return;
+    started = 1;
+    pthread_t t;
+    if (!pthread_create(&t, NULL, chain_watch, NULL)) pthread_detach(t);
+    atexit(chain_at_exit);
 }
 
 int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t n, const char *who) {
@@ -218,7 +282,10 @@ int dsl_patch(int owner, void *target, const void *old, const void *neu, size_t 
 int dsl_hook_count(int owner) {
     int n = 0;
     pthread_mutex_lock(&lock);
-    for (int i = 0; i < nh; i++) if (H[i].active && (owner == -2 || H[i].owner == owner)) n++;
+    for (int i = 0; i < nh; i++) for (int k = 0; k < H[i].cs.nlk; k++) {
+        const ChainLink *l = &CL[H[i].cs.lk[k]];
+        if (l->active && (owner == -2 || l->owner == owner)) n++;
+    }
     for (int i = 0; i < npt; i++) if (PT[i].active && (owner == -2 || PT[i].owner == owner)) n++;
     pthread_mutex_unlock(&lock);
     return n;

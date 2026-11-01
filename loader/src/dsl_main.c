@@ -202,26 +202,27 @@ static void h_log(DSLPlugin *self, const char *fmt, ...) {
 static const char *h_plugin_id(DSLPlugin *self) { return self ? self->id : ""; }
 static void *h_rva(uintptr_t r) { return dsl_ga_base ? (void*)(dsl_ga_base + r) : NULL; }
 static int h_ready(void) { return dsl_ready; }
-static int mod_hook(DSLPlugin *self, void *t, void *r, void **o, const char *who) {
+static int mod_hook(DSLPlugin *self, void *t, void *r, void **o, const char *who, const char *method) {
     dsl_fastboot_yield(t, who);                 /* the loader's fast boot gives its method to a mod that hooks it (Hell tables) */
-    return dsl_hook(self->idx, t, r, o, who);
+    return dsl_hook_m(self->idx, t, r, o, who, method);
 }
 static int h_hook(DSLPlugin *self, void *t, void *r, void **o) {
     if (!self || self->state != 1) return -1;
-    return mod_hook(self, t, r, o, self->id);
+    return mod_hook(self, t, r, o, self->id, NULL);
 }
 static int h_hook_method(DSLPlugin *self, const char *ns, const char *k, const char *m, int argc, void *r, void **o) {
     if (!self || self->state != 1) return -1;
     void *a = dsl_find_method_address(ns, k, m, argc);
     if (!a) { dsl_log("[%s] hook %s.%s refused: method not found", self->id, k, m); return -1; }
-    char who[160]; snprintf(who, sizeof who, "%s %s.%s", self->id, k, m);
-    return mod_hook(self, a, r, o, who);
+    char who[160], key[200]; snprintf(who, sizeof who, "%s %s.%s", self->id, k, m);
+    snprintf(key, sizeof key, "%s.%s.%s/%d", ns ? ns : "", k, m, argc);
+    return mod_hook(self, a, r, o, who, key);
 }
 static int h_unhook(DSLPlugin *self, void *t) { return self ? dsl_unhook(self->idx, t, self->id) : -1; }
 static int h_hook_rva(DSLPlugin *self, uintptr_t rva, void *r, void **o, const char *name) {
     if (!self || self->state != 1 || !dsl_ga_base) return -1;
     char who[160]; snprintf(who, sizeof who, "%s %s", self->id, name ? name : "");
-    return mod_hook(self, (void*)(dsl_ga_base + rva), r, o, who);
+    return mod_hook(self, (void*)(dsl_ga_base + rva), r, o, who, NULL);
 }
 static void *h_table(DSLPlugin *self, const char *name) {
     if (!self || !name || !dsl_ga_base) return NULL;
