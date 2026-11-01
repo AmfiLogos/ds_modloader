@@ -446,6 +446,14 @@ static void handle(const char *j) {
             rc = std_size ? 0 : -6; }
         else if (!strcmp(op, "ov")) { ov_open((int)a); rc = ov_a && ov_b ? 0 : -5; }
         else if (!strcmp(op, "ov_off")) ov_close(NULL);
+        else if (!strcmp(op, "rdrag_xy")) { float r[4] = { (float)x, (float)y, (float)x, (float)y }; rc = rdrag_rect(r, (float)ww, (float)hh); }   /* a right-drag from a screen point by w, h px */
+        else if (!strcmp(op, "kp")) {                                   /* TOP RULE vs the chat: one big movable kit panel over the bottom-left
+                                                                           (where the chat sits); a > 0 = its own canvas at sorting order a */
+            ov_close(NULL); ov_a = ov_one(0, 60, "Kit panel"); if (ov_a) U->place(ov_a, 0, 60, 1500, 1000);
+            rc = ov_a && dsl_movable(U, ov_a, "uikit-demo.kp") == 0 ? 0 : -5;
+            static void (*raise)(DSLObj, int); if (!raise) *(void **)&raise = dlsym(RTLD_DEFAULT, "dsl_ui_raise");
+            if (ov_a && a > 0) { if (raise) raise(ov_a, (int)a); else rc = -6; }
+        }
         else if (!strcmp(op, "secpanel")) { if (a) sec_open(); else sec_closed(NULL); rc = !a || sec_h1 ? 0 : -5; }
         else if (!strcmp(op, "mouse_away")) { float r[4] = { -200, -200, -200, -200 }; move_rect(r); }   /* the fake mouse far off the window */
         else if (!strcmp(op, "badwin")) bad_open((int)a);
