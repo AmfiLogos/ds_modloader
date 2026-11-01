@@ -1275,7 +1275,7 @@ static float tip_cover(const float c[4]) {                          /* area of t
 }
 /* NEXT TO the element (owner 2026-11-01, Units Laboratory Test Fights: "the hover window for the kits ... are all the way to
    the left of the main test frame which is kind of off"): a side of the panel counts only when the card's nearest edge is
-   within `near` of the element (12 % of the screen width, at least 64 px). A big window as the panel put the card at its
+   within `near_px` of the element (12 % of the screen width, at least 64 px). A big window as the panel put the card at its
    far side, a window away from the kit row. No near free side: the card goes beside the element itself (right, else
    left) when it stays over ANOTHER column of the same window: it cuts across no group around the element (each one it
    touches holds it whole) and stays off the element's own column (a group around the element it does not touch).
@@ -1288,7 +1288,7 @@ static float tip_dist2(const float c[4], const float *E) {         /* squared ga
 /* the card's top-left corner (x, top; pixels, y up) for a card of w x h */
 static void tip_choose(float w, float h, float *ox, float *otop) {
     float sw = screen_w(), sh = m_scr_h ? (float)CALL0(m_scr_h, int)(m_scr_h) : 1080.f;
-    const float *P = tip_panel, *E = tip_el; float near = sw * 0.12f > 64.f ? sw * 0.12f : 64.f;
+    const float *P = tip_panel, *E = tip_el; float near_px = sw * 0.12f > 64.f ? sw * 0.12f : 64.f;
     float bx = tip_below ? P[0] : E[0];                                 /* below / above: the panel's left edge, else the element's */
     const float X[4] = { P[2] + TIP_GAP, P[0] - TIP_GAP - w, bx, bx }, TOP[4] = { E[3], E[3], P[1] - TIP_GAP, P[3] + TIP_GAP + h };   /* right, left, below, above */
     int pick = -1; float best = 0, cx[4], ct[4], cov[4]; int room[4];
@@ -1301,7 +1301,7 @@ static void tip_choose(float w, float h, float *ox, float *otop) {
         if (top - h < 0) top = h;                                       /* inside the screen (a long card slides up) */
         float c[4] = { x, top - h, x + w, top }; cx[i] = x; ct[i] = top; cov[i] = tip_cover(c);
         if (!room[i] || cov[i] > 0) continue;
-        if (!tip_below && tip_dist2(c, E) > near * near) continue;              /* free, but not next to the element */
+        if (!tip_below && tip_dist2(c, E) > near_px * near_px) continue;              /* free, but not next to the element */
         if (!tip_below) { if (pick < 0) pick = i; continue; }          /* the first free side in order */
         float dx = c[0] > E[2] ? c[0] - E[2] : E[0] > c[2] ? E[0] - c[2] : 0, dy = c[1] > E[3] ? c[1] - E[3] : E[1] > c[3] ? E[1] - c[3] : 0;
         float d = i == 2 ? -1 : dx * dx + dy * dy;                      /* below first, then the nearest free side */
