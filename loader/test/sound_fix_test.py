@@ -195,11 +195,11 @@ def game_pids():
     return [int(p) for p in subprocess.run(['pgrep', '-f', os.path.join(I, r.EXE_REL)], capture_output=True, text=True).stdout.split()]
 
 
-WORLDS_SET = ['multiplayer', 'gcd-cdr', 'weapon-slot', 'multi-bar', 'sound-fix']   # gameplay gcd-cdr + weapon-slot; client multi-bar + sound-fix
+WORLDS_SET = ['multiplayer', 'gcd-cdr', 'locked-slots', 'multi-bar', 'sound-fix']   # gameplay gcd-cdr + locked-slots; client multi-bar + sound-fix (weapon-slot is client since 0.2.0)
 
 
 def run_worlds(out):
-    """another world (owner 2026-10-25 "maybe it's just other worlds"): the copy runs gcd-cdr + weapon-slot, the world is
+    """another world (owner 2026-10-25 "maybe it's just other worlds"): the copy runs gcd-cdr + locked-slots, the world is
     registered with gcd-cdr only, so the load is refused and "Load it with them?" Load restarts into it (flow K, a soft
     restart). The client mods (sound-fix, multi-bar) must run in that new game, and the slider / Mute must reach its mixer."""
     o = os.path.join(out, 'worlds'); os.makedirs(o, exist_ok=True)

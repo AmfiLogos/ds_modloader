@@ -4,6 +4,14 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.30)
+
+- Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->
+- Weapon skill slot 0.2.0 now changes only your own screen. Its button next to the basic attack shows the skill of your unit's weapon and uses it with a click, the same as the game's own skill slots. Friends in your multiplayer game no longer need the mod, and your saves stay the game's own. What it no longer does: it does not put the weapon skill first for automatic use, and the weapon skill also stays in its normal skill slot. If a unit got its weapon while its 4 skill slots were full, the game did not give it the skill, so the button stays empty. <!-- roadmap: weapon-slot-local -->
+- The small "-" and "+" size buttons of a panel (multiplayer chat, DPS meter, DPS log) now show only while your mouse is over that panel. They stay clickable: move the mouse onto the panel and they appear. <!-- roadmap: size-buttons-on-hover -->
+- A right-click drag where mod windows overlap now moves only the window on top (for example the DPS meter over the DPS log). Before, a window below could move instead. The multiplayer chat and Players panel get this in a later update. <!-- roadmap: right-drag-top-window -->
+- Two or more mods can now change the same game function. Before, the second mod was refused ("already hooked") and did not work. Now both run, the mod loaded last first. If one mod is turned off or fails, the others keep working. <!-- roadmap: hook-chaining -->
+
 ### 0.1.29 (2026-10-26)
 
 - Smoother game on the title screen, on the loading screen and in your worlds: the mod loader no longer searches all the objects of the game many times a second to find the Load list, the game's windows and its notice box. Before, this made a slow frame about every half second in a world and every fifth frame on the title screen.

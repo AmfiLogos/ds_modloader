@@ -24,6 +24,12 @@ int main(void) {
     if (getenv("HOST_OPT_LINES")) {                     /* the loader export multiplayer's HELLO sends: loaded custom difficulty mods not counted now */
         char ol[4096] = ""; int (*f)(char *, size_t) = (int (*)(char *, size_t))dlsym(RTLD_DEFAULT, "dsl_mp_optional_lines");
         int k = f ? f(ol, sizeof ol) : -9; printf("OPTLINES n=%d %s\n", k, ol); }
+    if (getenv("HOST_CHAIN")) {                         /* hook chaining (T1h): 4 calls of the 3-mod site, 60 of the skipped one */
+        extern void fake_chain(void), fake_chain2(void); extern char fake_trace[]; extern int fake_orig_chain2;
+        for (int i = 1; i <= 4; i++) { fake_chain(); printf("CHAIN%d %s\n", i, fake_trace); }
+        for (int i = 0; i < 60; i++) fake_chain2();
+        printf("CHAIN2 orig=%d\n", fake_orig_chain2);
+    }
     const char *wf = getenv("HOST_WAIT_FILE");          /* update test: stay up (max 60 s) until the loader's thread wrote it */
     for (int i = 0; wf && *wf && i < 600 && access(wf, 0); i++) usleep(100000);
     return 0;

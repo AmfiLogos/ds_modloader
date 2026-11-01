@@ -104,6 +104,53 @@ static void on_title(void *ud) { (void)ud; n_title++; H->log(ME, "title button c
 
 /* ------------------------------------------------------------------ the templates (kit 0.1.28) and the UI-RULE probe */
 static DSLObj std_win, std_x, std_card, std_check, std_panel, std_panel_x, std_size, bad_win, bad_panel;
+/* kit 0.1.30 (loader/test/panelsize_test.py): ov {a: 1} = two overlapping in-game panels ovA (registered LAST, drawn
+   BELOW) and ovB (drawn on top); a: 2 adds ovC on top of both, moved by its own code (movable_own). The tick records who
+   the kit's drag_owner says took a right press. secpanel {a: 1/0}: an in-game panel with two sections (dsl_section, keys
+   uikit-demo.secpanel.one / .two), painted again from its state on each fold (as Units Laboratory's test window) */
+static DSLObj sec_body, ov_a, ov_b, ov_c, sec_p, sec_h1, sec_h2, sec_b1, sec_b2; static char ov_seen[16]; static int ov_c_seen, sec_cbs;
+static void ov_close(void *ud) { (void)ud; DSLObj *v[] = { &ov_a, &ov_b, &ov_c }; for (int i = 0; i < 3; i++) if (*v[i]) { U->destroy(*v[i]); *v[i] = NULL; } }
+static DSLObj ov_one(float x, float y, const char *name) {
+    DSLObj p = U->panel(NULL, x, y, 300, 200, 0);
+    if (!p) return NULL;
+    U->text(p, 20, 20, 260, 40, name, 18, DSL_TXT_LEFT, 0);
+    dsl_esc_push(U, p, (void (*)(void *))ov_close, NULL, DSL_ESC_HUD); dsl_rules_own(U, p, DSL_RULE_SCALE);
+    return p;
+}
+static void ov_open(int own) {
+    ov_close(NULL); ov_seen[0] = 0; ov_c_seen = 0;
+    ov_a = ov_one(600, 300, "Panel A (below)"); ov_b = ov_one(700, 350, "Panel B (top)");     /* B is made later: drawn above A */
+    int rb = dsl_movable(U, ov_b, "uikit-demo.ovB"), ra = dsl_movable(U, ov_a, "uikit-demo.ovA");   /* A registered LAST */
+    H->log(ME, "overlap: movable B %d, A %d", rb, ra);
+    if (own == 2) { ov_c = ov_one(650, 320, "Panel C (own drag)"); H->log(ME, "overlap: movable_own C %d", dsl_movable_own(U, ov_c, "uikit-demo.ovC")); }
+}
+static void ov_tick(void) {
+    if (!ov_a && !ov_b) return;
+    DSLObj o = dsl_drag_owner(U);
+    if (!o) return;
+    snprintf(ov_seen, sizeof ov_seen, "%s", o == ov_a ? "A" : o == ov_b ? "B" : o == ov_c ? "C" : "other");
+    if (o == ov_c) ov_c_seen++;
+}
+static void sec_paint(void);
+static void sec_changed(void *ud, DSLObj hdr, int open) { (void)ud; (void)hdr; (void)open; sec_cbs++; sec_paint(); }
+static void sec_closed(void *ud) { (void)ud; if (sec_p) dsl_window_close(U, sec_p); sec_p = sec_body = sec_h1 = sec_h2 = sec_b1 = sec_b2 = NULL; }
+static void sec_paint(void) {                                         /* from the state, as an immediate-mode window */
+    if (!sec_p) return;
+    if (sec_body) U->destroy(sec_body);
+    DSLObj body = sec_body = U->panel(sec_p, 0, 60, 360, 260, 0x00000000); sec_h1 = sec_h2 = sec_b1 = sec_b2 = NULL;
+    float y = 0;
+    sec_h1 = dsl_section(U, body, 10, y, 340, "Settings", "uikit-demo.secpanel.one", 0, sec_changed, NULL); y += DSL_SECTION_H;
+    if (dsl_section_open(U, "uikit-demo.secpanel.one", 1)) { sec_b1 = U->text(body, 20, y, 320, 60, "The first section's body.", 15, DSL_TXT_LEFT, 0); y += 64; }
+    sec_h2 = dsl_section(U, body, 10, y, 340, "Scarecrows", "uikit-demo.secpanel.two", DSL_SEC_FOLDED, sec_changed, NULL); y += DSL_SECTION_H;
+    if (dsl_section_open(U, "uikit-demo.secpanel.two", 0)) { sec_b2 = U->text(body, 20, y, 320, 60, "The second section's body.", 15, DSL_TXT_LEFT, 0); y += 64; }
+}
+static void sec_open(void) {
+    if (sec_p) return;
+    DSLWinStd o = { .size = sizeof o, .kind = DSL_WIN_PANEL, .w = 360, .h = 330, .title = "Section Panel", .close = sec_closed,
+                    .move_key = "uikit-demo.secpanel", .x = 200, .y = 300, .band_h = 52, .title_size = 22 };
+    DSLWinParts pt; sec_p = dsl_window_std(U, &o, &pt);
+    sec_paint();
+}
 static int std_sub, std_backs, std_card_clicks;
 static int std_back(void *ud) { (void)ud; if (!std_sub) return 0; std_sub = 0; std_backs++; H->log(ME, "template window: Back (sub-page closed)"); return 1; }
 static void std_closed(void *ud) { (void)ud; H->log(ME, "template window closed"); dsl_window_close(U, std_win); std_win = std_x = std_card = std_check = NULL; }
@@ -231,7 +278,8 @@ static DSLObj target(const char *t) {
     static const struct { const char *n; DSLObj *o; } map[] = { { "panel", &panel }, { "head", &t_head }, { "status", &t_status },
         { "press", &b_press }, { "disabled", &b_disabled }, { "toggle", &tg }, { "value", &vr }, { "field", &fd }, { "scroll", &sc },
         { "row1", &rows[0] }, { "row20", &rows[19] }, { "image", &img }, { "notice", &b_notice }, { "notice1", &b_notice1 }, { "close", &b_close }, { "x", &b_x },
-        { "stdw", &std_win }, { "std_x", &std_x }, { "std_card", &std_card }, { "std_check", &std_check }, { "stdp", &std_panel }, { "stdp_x", &std_panel_x }, { "stdp_size", &std_size } };
+        { "stdw", &std_win }, { "std_x", &std_x }, { "std_card", &std_card }, { "std_check", &std_check }, { "stdp", &std_panel }, { "stdp_x", &std_panel_x }, { "stdp_size", &std_size },
+        { "ovA", &ov_a }, { "ovB", &ov_b }, { "ovC", &ov_c }, { "secp", &sec_p }, { "sec1", &sec_h1 }, { "sec2", &sec_h2 }, { "sec1_body", &sec_b1 }, { "sec2_body", &sec_b2 } };
     for (size_t i = 0; i < sizeof map / sizeof *map; i++) if (!strcmp(t, map[i].n)) return *map[i].o;
     if (!strcmp(t, "notice_ok")) return t_notice_btn(0);
     if (!strcmp(t, "notice_cancel")) return t_notice_btn(1);
@@ -303,7 +351,7 @@ static void state(char *out, size_t cap) {
         o += (size_t)snprintf(out + o, cap - o, ",\"toggle\":%d,\"value\":%d,\"field\":\"%s\"", U->toggle_get(tg), U->value_get(vr), fe);
     }
     { DSLObj ut = target("update"); o += (size_t)snprintf(out + o, cap - o, ",\"update_on\":%d", ut ? U->toggle_get(ut) : -1); }
-    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x", "stdp_size" };
+    static const char *const names[] = { "panel", "head", "status", "press", "disabled", "toggle", "value", "field", "scroll", "row1", "row20", "image", "notice", "notice1", "close", "notice_ok", "notice_cancel", "update", "x", "win:close", "win:title", "stdw", "std_x", "std_card", "std_check", "stdp", "stdp_x", "stdp_size", "ovA", "ovB", "ovC", "secp", "sec1", "sec2", "sec1_body", "sec2_body" };
     o += (size_t)snprintf(out + o, cap - o, ",\"w\":{");
     for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
         DSLObj w = target(names[i]); float r[4] = { 0 }; int on = w ? t_rect(w, r) : -1; char l[200] = "", le[260];
@@ -347,6 +395,8 @@ static void state(char *out, size_t cap) {
                             std_panel ? dsl_panel_size_get(U, std_panel) : -1.f, sk, sf, std_size && tf ? tf(std_size) : -2, le, lon); }
     char tt[200] = "", te[260]; int ts = t_tip(tt, sizeof tt); jesc(te, sizeof te, tt);
     o += (size_t)snprintf(out + o, cap - o, "},\"tip\":{\"shown\":%d,\"title\":\"%s\"}", ts, te);
+    o += (size_t)snprintf(out + o, cap - o, ",\"ov\":{\"seen\":\"%s\",\"c_seen\":%d},\"sec\":{\"one\":%d,\"two\":%d,\"cbs\":%d}", ov_seen, ov_c_seen,
+                          dsl_section_open(U, "uikit-demo.secpanel.one", 1), dsl_section_open(U, "uikit-demo.secpanel.two", 0), sec_cbs);
 }
 static void handle(const char *j) {
     char cmd[32], t[64], s[512], out[16384]; int seq = (int)jnum(j, "seq", 0), rc = 0; size_t o = 0;
@@ -394,6 +444,18 @@ static void handle(const char *j) {
         else if (!strcmp(op, "stdpanel_hidden")) {                    /* "-" / "+" made while the panel is hidden (the chat's closed box) */
             stdp_open(0); if (std_panel) { U->set_active(std_panel, 0); std_size = dsl_panel_size(U, std_panel, "uikit-demo.stdpanel", 68, 15, 0); U->set_active(std_panel, 1); }
             rc = std_size ? 0 : -6; }
+        else if (!strcmp(op, "ov")) { ov_open((int)a); rc = ov_a && ov_b ? 0 : -5; }
+        else if (!strcmp(op, "ov_off")) ov_close(NULL);
+        else if (!strcmp(op, "rdrag_xy")) { float r[4] = { (float)x, (float)y, (float)x, (float)y }; rc = rdrag_rect(r, (float)ww, (float)hh); }   /* a right-drag from a screen point by w, h px */
+        else if (!strcmp(op, "kp")) {                                   /* TOP RULE vs the chat: one big movable kit panel over the bottom-left
+                                                                           (where the chat sits); a > 0 = its own canvas at sorting order a */
+            ov_close(NULL); ov_a = ov_one(0, 60, "Kit panel"); if (ov_a) U->place(ov_a, 0, 60, 1500, 1000);
+            rc = ov_a && dsl_movable(U, ov_a, "uikit-demo.kp") == 0 ? 0 : -5;
+            static void (*raise)(DSLObj, int); if (!raise) *(void **)&raise = dlsym(RTLD_DEFAULT, "dsl_ui_raise");
+            if (ov_a && a > 0) { if (raise) raise(ov_a, (int)a); else rc = -6; }
+        }
+        else if (!strcmp(op, "secpanel")) { if (a) sec_open(); else sec_closed(NULL); rc = !a || sec_h1 ? 0 : -5; }
+        else if (!strcmp(op, "mouse_away")) { float r[4] = { -200, -200, -200, -200 }; move_rect(r); }   /* the fake mouse far off the window */
         else if (!strcmp(op, "badwin")) bad_open((int)a);
         else if (!strcmp(op, "tree")) {                               /* the kit's object tree of a target -> <dir>/tree_<s>.txt */
             static int (*tt)(DSLObj, char *, size_t); if (!tt) *(void **)&tt = dlsym(RTLD_DEFAULT, "dsl_ui_test_tree");
@@ -432,7 +494,7 @@ static void focus_on(void) {
 }
 static void tick(CFRunLoopTimerRef tm, void *info) {
     (void)tm; (void)info;
-    focus_on();
+    focus_on(); ov_tick();
     char p[1200]; snprintf(p, sizeof p, "%s/req.json", tdir);
     FILE *f = fopen(p, "r"); if (!f) return;
     char j[4096]; size_t n = fread(j, 1, sizeof j - 1, f); fclose(f); j[n] = 0;

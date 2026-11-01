@@ -16,6 +16,11 @@ void DBS_OnEnterNonSafeFloor(uint8_t *self, const void *mi) { fake_orig_normal++
 void DBS_Tick(uint8_t *self, const void *mi) { fake_orig_tick++; }
 void MainFlow_Update(void *self, const void *mi) { fake_orig_update++; }
 void Foreign_Target(void *self, const void *mi) { fake_orig_foreign++; }
+/* hook chaining (T1h): the test mods add their letters to fake_trace around the original's 'o' */
+char fake_trace[64]; int fake_ntrace, fake_orig_chain2;
+void fake_trace_add(char c) { if (fake_ntrace < 63) { fake_trace[fake_ntrace++] = c; fake_trace[fake_ntrace] = 0; } }
+void Chain_Target(void *self, const void *mi) { fake_trace_add('o'); }
+void Chain2_Target(void *self, const void *mi) { fake_orig_chain2++; }
 
 /* patch target: mov w0, #1 ; ret ; mov w0, #7 ; ret */
 __attribute__((naked)) int Patch_Target(void) { __asm__("mov w0, #1\n ret\n mov w0, #7\n ret"); }
@@ -44,10 +49,12 @@ int fake_load(const char *name) { FIter *it = CLEH_LoadCampaign(NULL, il2cpp_str
 
 static FakeMethod dbs_methods[] = {
     { (void*)DBS_OnEnterSafeFloor, "OnEnterSafeFloor", 0 }, { (void*)DBS_OnEnterNonSafeFloor, "OnEnterNonSafeFloor", 0 },
-    { (void*)DBS_Tick, "Tick", 0 }, { (void*)Foreign_Target, "ForeignTarget", 0 } };
+    { (void*)DBS_Tick, "Tick", 0 }, { (void*)Foreign_Target, "ForeignTarget", 0 },
+    { (void*)Chain_Target, "ChainTarget", 0 }, { (void*)Chain2_Target, "ChainTarget2", 0 },
+    { (void*)Chain_Target, "FoldedTarget", 0 } };                                  /* a second method on one body (folding) */
 static FakeField dbs_fields[] = { { "_floorEnteredMin", 0x80 }, { "_isInSafeFloor", 0x85 } };
 static FakeField hdr_fields[] = { { "CampaignGuid", 0x10 }, { "CombatDifficulty", 0x74 }, { "ManagementDifficulty", 0x78 } };   /* value type: + 0x10 */
-static FakeClass classes[] = { { "Refactor.Runtime", "DungeonBehaviorSimulator", dbs_methods, 4, dbs_fields, 2 },
+static FakeClass classes[] = { { "Refactor.Runtime", "DungeonBehaviorSimulator", dbs_methods, 7, dbs_fields, 2 },
                                { "Refactor.Main.Event", "CampaignLoadingEventHandler", cleh_methods, 3, NULL, 0 },
                                { "Refactor", "CampaignSaveHeader", NULL, 0, hdr_fields, 3 } };
 static int fake_domain, fake_image;
@@ -77,3 +84,5 @@ void fake_transfer(void *sim, int safe) { if (safe) DBS_OnEnterSafeFloor(sim, NU
 void fake_tick(void *sim) { DBS_Tick(sim, NULL); }
 void fake_frame(void) { MainFlow_Update(NULL, NULL); }
 void fake_foreign(void) { Foreign_Target(NULL, NULL); }
+void fake_chain(void) { fake_ntrace = 0; fake_trace[0] = 0; Chain_Target(NULL, NULL); }
+void fake_chain2(void) { Chain2_Target(NULL, NULL); }

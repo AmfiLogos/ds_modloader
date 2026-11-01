@@ -1,32 +1,23 @@
-// Weapon skill slot (mod id weapon-slot): the skill bar gets a sixth slot, between the basic attack and the 4 free
-// slots, that always holds the equipped weapon's skill (the 2nd entry of the weapon's Equipment_ItemDefaultSkills).
-// It follows the weapon, the player cannot change it, no key reaches it (mouse click + the skill's own auto-use).
-// Runtime hooks found by il2cpp name (Mac and Windows), GameAssembly and the game's UI bundle unchanged.
-// Build 25846389 (DS_B.0.4.29). Port of the old binary patch (memory DungeonSettlers_WeaponSlotMod, 2026-10-04).
+// Weapon skill slot (mod id weapon-slot), 0.2.0: CLIENT ONLY (owner 2026-10-17 "Weapon slot mod is a local mod only",
+// 2026-11-01 "it's client only"). The skill bar gets a sixth button, between the basic attack and the 4 free slots, that
+// shows the equipped weapon's skill (Equipment_ItemDefaultSkills[1] of the weapon) and uses it on a click. It follows the
+// weapon. No key reaches it, it cannot be dragged, dropped on or right-clicked.
 //
-// Data: QuickSlotData._quickSlots grows from 4 to 5 IN MEMORY; the weapon skill is quickSlots[4] (WS). Indexes 0..3
-// stay the stock free slots, so keys (UseSkill_1..4 -> UI 1..4), the skill-tree "set slot" menu and the right-click
-// menus of the free slots work unchanged. The stock code is bounded by the array length (never by MAX_SLOT = 4) except:
-//   - the inlined `new string[4]` (QuickSlotData ctor in OnSpawned / container Deserialize, the save copy in
-//     Serialize): arrays are grown after the stock code made them, and Serialize runs on 4-long views;
-//   - the free-slot search (TryRegisterQuickSlot): runs on 4 slots; a weapon skill goes to WS instead;
-//   - the Set handler's duplicate removal and every index write: WS is never written by game events (AddQuickSlotAt /
-//     RemoveQuickSlotAt refuse index 4); only this module writes it (equip, unequip, load);
-//   - skill reset (PlayerUnitDataContainer.ResetSkill clears every slot): WS is kept (the weapon skill stays active);
-//   - unequip: WS is cleared after ProcessUnequip (its IsRegistered check still sees WS, so the skill is removed);
-//   - AI auto-use (DecideSkill takes the first usable skill in slot order): it sees WS first, as in the old mod.
-// Saves (0.1.2): what the stock game writes, so a world saved with the mod loads in the game without mods. Each unit
-// is saved with 4 slots: the free slots, and WS's skill where the stock equip puts it (ItemControlProcessor.ProcessEquip
-// -> OnAddExtraSkill -> TryRegisterQuickSlot: the first empty of the 4 slots). With the 4 free slots full it is in no
-// slot and stays in the unit's skills (ActiveSkills, its AutoUse choice): the stock state after another skill was set
-// on its slot (InputEventHandler.OnEvent(SetQuickSlotRequested) overwrites the slot and keeps the old skill on the
-// unit; only the Unset handler removes it). The in-memory weapon slot does not change. Loading such a save (or any
-// 4-slot save): the weapon skill moves from its free slot to WS, the other skills keep their place; when the load ends,
-// an empty weapon slot gets the equipped weapon's skill as an equip gives it (0.1.1, "fill on load"). Older 5-slot saves
-// (0.1.0 / 0.1.1: WS = index 4; the old binary mod: weapon skill at index 0) are read and written back in stock form.
-// UI: QuickSlotUI._skillSlots gets a 6th SkillSlotUI appended (UI_W = 5 = quickSlots[4]), a runtime copy of the first
-// free slot, placed between the basic attack and the free slots (owner's layout, 2026-10-04: panel 362 -> 430 px).
-// Its key box is hidden, it cannot be dragged from, dropped on or right-clicked.
+// It changes ONLY the local screen. The game's data is never written: the 4 quick slots, the saves, the unit's skills,
+// the AI's auto-use order are the stock game's. So a player without the mod can play with a player who has it.
+//  - view: the bar's views get a NEW 5-long array [the unit's 4 quick slots, its weapon skill] (QuickSlotUI.InitSkillUI /
+//    RefreshSkillUI), and UI slot 5 is refreshed each frame next to the free slots (QuickSlotUI.RefreshSkillSlotUI);
+//  - click: the stock click path (QuickSlotUI.OnSelect_SkillSlot -> UseQuickSlotSkillRequested Index 5 ->
+//    PlayerControlEventHandler: GetSkillAt(unit, Index - 1)). Index 4 does not exist in the game's 4-slot data (stock
+//    throws), so UnitQuickSlotContainer.GetSkillAt(unit, 4) answers the unit's weapon skill. The handler then runs the
+//    game's own checks and aiming; the cast is the game's own order UseSkillTargetRequested, by skill key, which every
+//    multiplayer player applies the same way. Every other index is stock.
+//  - "the unit's weapon skill" = the skill of the weapon in its equipment, only when the unit HAS that skill
+//    (SkillComponent.HasSkill). In the stock game a weapon equipped while the 4 free slots are full does not give the
+//    skill (ProcessEquip adds it only when TryRegisterQuickSlot found a slot): then this slot stays empty.
+// Hooks by il2cpp name (Mac and Windows); GameAssembly and the game's UI bundle unchanged. Build 25846389.
+// 0.1.x (gameplay: a 5-slot data array, its own save handling, weapon skill first in the AI order) is gone; see
+// ~/ds_multiplayer/ext/nvwslot/PLAN.md.
 #include "dsl_sdk.h"
 #include <stdint.h>
 #include <string.h>
@@ -41,8 +32,8 @@ typedef struct { uint64_t lo, hi; } WGuid;              /* System.Guid by value 
 typedef struct { float x, y; } V2;
 #define AT(o, off, T) (*(T *)((char *)(o) + (off)))
 #define CALL(mi, R, ...) ((R (*)(__VA_ARGS__, const void *))(*(void **)(mi)))
-#define WS 4                                            /* the weapon slot in QuickSlotData._quickSlots */
-#define NSLOT 5
+#define WS 4                                            /* GetSkillAt index of the weapon slot (UI index - 1) */
+#define NSLOT 5                                         /* the view's array: 4 quick slots + the weapon skill */
 #define UI_W 5                                          /* its SkillSlotUI index (UI 0 = basic attack, UI i = slot i-1) */
 #define AHDR 0x20                                       /* il2cpp array: klass, monitor, bounds, max_length, items */
 #define OHDR 0x10                                       /* il2cpp object header: value-type field offsets include it */
@@ -68,9 +59,6 @@ static struct {
     Obj (*array_new)(void *, uintptr_t);
     Obj (*string_new)(const char *);
     void (*wbarrier)(Obj, void **, Obj);
-    uintptr_t (*gch_weak)(Obj, uint8_t);                    /* GC handles are pointer-sized in this il2cpp */
-    Obj (*gch_target)(uintptr_t);
-    void (*gch_free)(uintptr_t);
 } I;
 
 /* ------------------------------------------------------------------------------------------------ small helpers */
@@ -91,11 +79,6 @@ static uintptr_t alen(Obj a) { return a ? AT(a, 0x18, uintptr_t) : 0; }
 static Obj aget(Obj a, uintptr_t i) { return ((Obj *)((char *)a + AHDR))[i]; }
 static void aset(Obj a, uintptr_t i, Obj v) { setref(a, (char *)a + AHDR + i * sizeof(Obj), v); }
 static int32_t slen(Obj s) { return s ? AT(s, 0x10, int32_t) : 0; }
-static int str_eq(Obj a, Obj b) {
-    if (a == b) return 1;
-    int32_t n = slen(a);
-    return a && b && n == slen(b) && !memcmp((char *)a + 0x14, (char *)b + 0x14, (size_t)n * 2);
-}
 static void str_c(Obj s, char *out, size_t cap) {
     size_t k = 0; int32_t n = slen(s);
     for (int32_t i = 0; s && i < n && k + 1 < cap; i++) { uint16_t c = ((uint16_t *)((char *)s + 0x14))[i]; out[k++] = c < 0x80 ? (char)c : '?'; }
@@ -107,18 +90,10 @@ static int str_is(Obj s, const char *c) {
     for (int32_t i = 0; i < n; i++) if (((uint16_t *)((char *)s + 0x14))[i] != (uint8_t)c[i]) return 0;
     return 1;
 }
-static void slots_c(Obj a, char *out, size_t cap) {     /* "[a, -, b, ...]" for the log */
-    size_t o = (size_t)snprintf(out, cap, "[");
-    for (uintptr_t i = 0; i < alen(a) && o < cap; i++) {
-        char s[48]; Obj v = aget(a, i); str_c(v, s, sizeof s);
-        o += (size_t)snprintf(out + o, cap - o, "%s%s", i ? ", " : "", slen(v) ? s : "-");
-    }
-    if (o < cap) snprintf(out + o, cap - o, "]");
-}
 static void guid_c(const void *g, char *out) { const uint8_t *b = g; for (int i = 0; i < 4; i++) sprintf(out + 2 * i, "%02x", b[3 - i]); }
 
 /* Dictionary<K, V> (corefx layout: _entries, _count; entry {hashCode, next, key, value}, free entry hashCode < 0).
-   Layout per dictionary class, from its field types; the classes this module reads are checked at init. */
+   Layout per dictionary class, from its field types; the classes this module reads are checked at init. READ ONLY. */
 typedef struct { void *k; int32_t ents, cnt, esz, hash, key, val; } DL;
 static DL dls[8]; static int ndl;
 static const DL *dict_lk(void *k) {
@@ -150,43 +125,6 @@ static void *ftype_class(void *k, const char *name) { void *f = ffield(k, name);
 static int32_t f_list_items = -1, f_list_size = -1;
 static int list_n(Obj l) { return l ? AT(l, f_list_size, int32_t) : 0; }
 static Obj list_at(Obj l, int i) { Obj it = AT(l, f_list_items, Obj); return it && (uintptr_t)i < alen(it) ? aget(it, (uintptr_t)i) : NULL; }
-
-/* ------------------------------------------------------------------------------------------------ game classes */
-static void *k_string, *k_object;
-static int32_t f_qsd_slots = -1;                        /* QuickSlotData._quickSlots */
-static int32_t f_qsc_dict = -1;                         /* UnitQuickSlotContainer._unitQuickSlot (Dictionary<Guid, QuickSlotData>) */
-static int32_t f_pudc_qsc = -1, f_pudc_skc = -1;        /* PlayerUnitDataContainer._unitQuickSlot / _unitSkillTrees */
-static int32_t f_skc_dict = -1;                         /* UnitSkillContainer._skillTreeDatas (Dictionary<Guid, SkillTreeData>) */
-static int32_t f_std_extra = -1;                        /* SkillTreeData._extraSkills (List<string>) */
-static int32_t f_qssd_slots = -1;                       /* QuickSlotSaveData.QuickSlots inside the struct (0) */
-
-static Obj qsd_of(Obj qsc, const WGuid *g) {            /* the QuickSlotData of a unit, or NULL */
-    Obj d = qsc ? AT(qsc, f_qsc_dict, Obj) : NULL;
-    const DL *L = dict_l(d);
-    DICT_FOR(d, L, e) if (!memcmp(e + L->key, g, 16)) return AT(e, L->val, Obj);
-    return NULL;
-}
-static Obj qsd_grow(Obj q) {                            /* the unit's array, 5 long (the stock code makes 4) */
-    Obj a = q ? AT(q, f_qsd_slots, Obj) : NULL;
-    if (!a || alen(a) >= NSLOT) return a;
-    Obj n = I.array_new(k_string, NSLOT);
-    if (!n) return a;
-    for (uintptr_t i = 0; i < alen(a); i++) aset(n, i, aget(a, i));
-    setref(q, &AT(q, f_qsd_slots, Obj), n);
-    return n;
-}
-static void grow_all(Obj qsc) {
-    Obj d = qsc ? AT(qsc, f_qsc_dict, Obj) : NULL;
-    const DL *L = dict_l(d);
-    DICT_FOR(d, L, e) qsd_grow(AT(e, L->val, Obj));
-}
-/* Where the stock game keeps the weapon skill w in the 4 free slots of a: its slot if it is there, else the first empty
-   one (TryRegisterQuickSlot: String.IsNullOrEmpty), else -1 (no slot). */
-static int stock_index(Obj a, Obj w) {
-    for (int i = 0; i < WS; i++) if (str_eq(aget(a, i), w)) return i;
-    for (int i = 0; i < WS; i++) if (!slen(aget(a, i))) return i;
-    return -1;
-}
 
 /* The skills that are a weapon's own skill: Equipment_ItemDefaultSkills[1] of every item (8 in this build, one per
    weapon type; none of them is in a skill tree). Read once from DataSheetManager._itemTable.tableDatas. */
@@ -231,276 +169,152 @@ static const char *item_weapon_skill(Obj key) {         /* the weapon skill of a
     for (int i = 0; i < nwit; i++) if (str_is(key, wit[i].item)) return wsk[wit[i].w];
     return NULL;
 }
-static int is_weapon_skill(Obj s) {                     /* skill keys are ASCII */
-    if (!slen(s)) return 0;
-    weapon_skills_load();
-    for (int j = 0; j < nwsk; j++) if (str_is(s, wsk[j])) return 1;
+
+/* ------------------------------------------------------------------------------------------------ the unit's weapon skill */
+/* EntityComponent._instance._components: Dictionary<IEntity, ComponentList>; ComponentList._components holds the
+   unit's EquipmentComponent (InventoryComponent._itemSlots: ItemHolder structs, Key) and SkillComponent. Read only. */
+static void *k_unit, *k_skillcomp, *k_equip, *f_ec_inst, *m_has;
+static int32_t f_ec_comps = -1, f_cl_comps = -1, f_unit_guid = -1, f_inv_slots = -1, f_ih_key = -1, ih_size = 0;
+static int is_a(Obj o, void *k) { return o && k && I.class_is_assignable_from(k, I.object_get_class(o)); }
+static Obj comps_dict(void) {
+    Obj ec = NULL;
+    I.field_static_get_value(f_ec_inst, &ec);
+    return ec ? AT(ec, f_ec_comps, Obj) : NULL;
+}
+/* the unit's weapon skill into out (""): the equipped weapon's skill, when the unit has it */
+static int weapon_of_list(Obj cl, char *out, size_t cap) {
+    out[0] = 0;
+    Obj cd = cl ? AT(cl, f_cl_comps, Obj) : NULL, eq = NULL, sc = NULL;
+    const DL *C = dict_l(cd);
+    DICT_FOR(cd, C, ce) { Obj o = AT(ce, C->val, Obj); if (is_a(o, k_equip)) eq = o; else if (is_a(o, k_skillcomp)) sc = o; }
+    Obj slots = eq ? AT(eq, f_inv_slots, Obj) : NULL;
+    const char *wn = NULL;
+    for (uintptr_t i = 0; i < alen(slots) && !wn; i++) wn = item_weapon_skill(AT((char *)slots + AHDR + i * (uintptr_t)ih_size, f_ih_key, Obj));
+    if (!wn || !sc || !CALL(m_has, uint8_t, Obj, Obj)(sc, I.string_new(wn), m_has)) return 0;
+    snprintf(out, cap, "%s", wn);
+    return 1;
+}
+static int weapon_of_entity(Obj ent, char *out, size_t cap) {
+    out[0] = 0;
+    if (!is_a(ent, k_unit)) return 0;
+    Obj comps = comps_dict();
+    const DL *L = dict_l(comps);
+    DICT_FOR(comps, L, e) if (AT(e, L->key, Obj) == ent) return weapon_of_list(AT(e, L->val, Obj), out, cap);
+    return 0;
+}
+static int weapon_of_guid(const WGuid *g, char *out, size_t cap) {
+    out[0] = 0;
+    Obj comps = comps_dict();
+    const DL *L = dict_l(comps);
+    DICT_FOR(comps, L, e) {
+        Obj ent = AT(e, L->key, Obj);
+        if (is_a(ent, k_unit) && !memcmp((char *)ent + f_unit_guid, g, 16)) return weapon_of_list(AT(e, L->val, Obj), out, cap);
+    }
     return 0;
 }
 
-/* ------------------------------------------------------------------------------------------------ load: grow, migrate */
-static uintptr_t skc_h;                                 /* the UnitSkillContainer just deserialized (same load) */
-static void (*o_skc_deser)(Obj, Obj, const void *);
-static void my_skc_deser(Obj self, Obj data, const void *mi) {
-    o_skc_deser(self, data, mi);
-    if (skc_h) I.gch_free(skc_h);
-    skc_h = self ? I.gch_weak(self, 0) : 0;
-}
-static Obj unit_weapon_skill(Obj skc, const void *g) {  /* the unit's extra skill that is a weapon's skill */
-    Obj d = skc ? AT(skc, f_skc_dict, Obj) : NULL;
-    const DL *L = dict_l(d);
-    DICT_FOR(d, L, e) {
-        if (memcmp(e + L->key, g, 16)) continue;
-        Obj std = AT(e, L->val, Obj), ex = std ? AT(std, f_std_extra, Obj) : NULL;
-        for (int i = 0; i < list_n(ex); i++) if (is_weapon_skill(list_at(ex, i))) return list_at(ex, i);
-        return NULL;
+/* Per-frame cache by unit Guid (the bar asks every frame; the lookup walks the entity table): re-read every 30 frames. */
+static void *m_frame;
+static int32_t frame_now(void) { return ((int32_t (*)(const void *))*(void **)m_frame)(m_frame); }
+#define NC 8
+static struct { WGuid g; int32_t frame; char key[64]; int used; } wc[NC];
+static const char *weapon_cached(Obj user) {
+    if (!is_a(user, k_unit)) return "";
+    WGuid g; memcpy(&g, (char *)user + f_unit_guid, sizeof g);
+    int32_t f = frame_now(); int lru = 0;
+    for (int i = 0; i < NC; i++) {
+        if (wc[i].used && !memcmp(&wc[i].g, &g, sizeof g)) {
+            if ((uint32_t)(f - wc[i].frame) >= 30u) { weapon_of_entity(user, wc[i].key, sizeof wc[i].key); wc[i].frame = f; }
+            return wc[i].key;
+        }
+        if (wc[lru].used && (!wc[i].used || wc[i].frame < wc[lru].frame)) lru = i;   /* a free entry first, else the oldest */
     }
+    wc[lru].used = 1; wc[lru].g = g; wc[lru].frame = f;
+    weapon_of_entity(user, wc[lru].key, sizeof wc[lru].key);
+    return wc[lru].key;
+}
+
+/* ------------------------------------------------------------------------------------------------ click: GetSkillAt(unit, 4) */
+static int32_t f_qsc_dict = -1, f_qsd_slots = -1;
+static Obj qsd_slots(Obj qsc, const WGuid *g) {         /* the unit's quick-slot array (read only), or NULL */
+    Obj d = qsc ? AT(qsc, f_qsc_dict, Obj) : NULL;
+    const DL *L = dict_l(d);
+    DICT_FOR(d, L, e) if (!memcmp(e + L->key, g, 16)) { Obj q = AT(e, L->val, Obj); return q ? AT(q, f_qsd_slots, Obj) : NULL; }
     return NULL;
 }
-static Obj saved_slots(Obj data, const void *g) {       /* QuickSlotSaveData.QuickSlots of a unit in the save */
-    const DL *L = dict_l(data);
-    DICT_FOR(data, L, e) if (!memcmp(e + L->key, g, 16)) return AT(e, L->val + f_qssd_slots, Obj);
-    return NULL;
+static int n_click;
+static Obj (*o_skillat)(Obj, WGuid, int32_t, const void *);
+static Obj my_skillat(Obj self, WGuid g, int32_t idx, const void *mi) {
+    if (idx != WS || alen(qsd_slots(self, &g)) > WS) return o_skillat(self, g, idx, mi);
+    char k[64]; weapon_of_guid(&g, k, sizeof k);
+    if (logn(&n_click, 20)) { char gs[9]; guid_c(&g, gs); H->log(ME, "weapon slot used: unit %s -> %s", gs, k[0] ? k : "(none: no weapon skill)"); }
+    return k[0] ? I.string_new(k) : NULL;               /* NULL: the stock handler does nothing (empty slot) */
 }
-static int n_mig;
-static void (*o_qsc_deser)(Obj, Obj, const void *);
-static uintptr_t load_qsc_h, load_skc_h;              /* the containers of the last load, for the fill (weak) */
-static void my_qsc_deser(Obj self, Obj data, const void *mi) {
-    o_qsc_deser(self, data, mi);
-    Obj skc = skc_h ? I.gch_target(skc_h) : NULL;
-    if (load_qsc_h) I.gch_free(load_qsc_h);
-    if (load_skc_h) I.gch_free(load_skc_h);
-    load_qsc_h = self ? I.gch_weak(self, 0) : 0; load_skc_h = skc_h; skc_h = 0;
-    Obj d = self ? AT(self, f_qsc_dict, Obj) : NULL;
-    const DL *L = dict_l(d);
-    int units = 0, from4 = 0, moved = 0, old = 0;
-    DICT_FOR(d, L, e) {
-        Obj q = AT(e, L->val, Obj), a = qsd_grow(q), sv = saved_slots(data, e + L->key);
-        if (alen(a) < NSLOT) continue;
-        units++;
-        uintptr_t sl = alen(sv);
-        if (sl >= NSLOT) aset(a, WS, aget(sv, WS));     /* the stock copy stopped at its own 4-long array */
-        Obj w = (sl < NSLOT || (is_weapon_skill(aget(a, 0)) && !str_eq(aget(a, 0), aget(a, WS)))) ? unit_weapon_skill(skc, e + L->key) : NULL;
-        char gs[9], before[256], after[256]; guid_c(e + L->key, gs); slots_c(a, before, sizeof before);
-        if (sl < NSLOT) {                               /* stock 4-slot save: the weapon skill leaves its free slot */
-            from4++;
-            int had = 0;
-            for (int i = 0; i < WS; i++) if (w && str_eq(aget(a, i), w)) { aset(a, i, NULL); had = 1; }
-            if (had) { aset(a, WS, w); moved++; }
-        } else if (w && str_eq(aget(a, 0), w) && !str_eq(aget(a, WS), w)) {   /* old binary mod: weapon skill at 0 */
-            Obj s4 = aget(a, WS);
-            for (int i = 0; i < WS - 1; i++) aset(a, (uintptr_t)i, aget(a, (uintptr_t)i + 1));
-            aset(a, WS - 1, s4); aset(a, WS, w); old++;
-        } else continue;
-        slots_c(a, after, sizeof after);
-        if (logn(&n_mig, 40)) H->log(ME, "load %s: %s %s -> %s", gs, sl < NSLOT ? "4-slot save" : "old layout", before, after);
+
+/* ------------------------------------------------------------------------------------------------ view: 5-long arrays */
+static int32_t f_qsui_slots = -1, f_ssui_index = -1, f_ssui_interact = -1;
+static int bar6(Obj view) { Obj l = view ? AT(view, f_qsui_slots, Obj) : NULL; return list_n(l) > UI_W; }
+static void *k_string;
+static Obj view_slots(Obj qs, const char *w) {          /* a NEW array for the view: the 4 slots + the weapon skill */
+    Obj v = I.array_new(k_string, NSLOT);
+    if (!v) return qs;
+    for (uintptr_t i = 0; i < WS && i < alen(qs); i++) aset(v, i, aget(qs, i));
+    if (w && w[0]) aset(v, WS, I.string_new(w));
+    return v;
+}
+#define NV 8
+static struct { Obj view; int32_t frame; char shown[64]; } vs[NV];   /* views are only compared, never read through */
+static int vslot(Obj view) {
+    int lru = 0;
+    for (int i = 0; i < NV; i++) { if (vs[i].view == view) return i; if (vs[i].frame < vs[lru].frame) lru = i; }
+    vs[lru].view = view; vs[lru].frame = -1000; vs[lru].shown[0] = 0;
+    return lru;
+}
+static int n_show;
+static void note_shown(Obj view, Obj user, const char *w) {
+    int i = vslot(view);
+    if (strcmp(vs[i].shown, w) && logn(&n_show, 40)) {
+        char gs[9] = "-"; if (is_a(user, k_unit)) guid_c((char *)user + f_unit_guid, gs);
+        H->log(ME, "weapon slot shows %s (unit %s)", w[0] ? w : "nothing", gs);
     }
-    H->log(ME, "load: %d units, %d from 4-slot saves (%d weapon skills moved to the weapon slot), %d from the old layout",
-           units, from4, moved, old);
+    snprintf(vs[i].shown, sizeof vs[i].shown, "%s", w);
 }
-
-/* ------------------------------------------------------------------------------------------------ save: stock form */
-/* The stock save copy (QuickSlotData.Serialize, inlined in the container's Serialize on Windows) writes into a new
-   string[4] and indexes it with the live array's length: a 5-long array throws. It runs on 4-long copies here, then
-   each saved entry with a weapon skill gets a new string[4]: the free slots, and the weapon skill where the stock game
-   keeps it (stock_index; none = not in the bar). The live arrays are kept in a managed holder while the copies are in
-   place (the GC does not see C memory). */
-static int n_ser;
-static Obj (*o_qsc_ser)(Obj, const void *);
-static Obj my_qsc_ser(Obj self, const void *mi) {
-    Obj d = self ? AT(self, f_qsc_dict, Obj) : NULL;
-    const DL *L = dict_l(d);
-    int n = d && L ? AT(d, L->cnt, int32_t) : 0;
-    Obj hold = n > 0 ? I.array_new(k_object, (uintptr_t)n * 2) : NULL;   /* [QuickSlotData, its 5-long array] */
-    int k = 0;
-    DICT_FOR(d, L, e) {
-        Obj q = AT(e, L->val, Obj), a = q ? AT(q, f_qsd_slots, Obj) : NULL;
-        if (!hold || k >= n || alen(a) != NSLOT) continue;
-        Obj v = I.array_new(k_string, WS);
-        if (!v) continue;
-        for (uintptr_t i = 0; i < WS; i++) aset(v, i, aget(a, i));
-        aset(hold, (uintptr_t)k * 2, q); aset(hold, (uintptr_t)k * 2 + 1, a); k++;
-        setref(q, &AT(q, f_qsd_slots, Obj), v);
+static void (*o_initskill)(Obj, Obj, Obj, Obj, const void *);
+static void my_initskill(Obj self, Obj user, Obj qs, Obj inmap, const void *mi) {
+    if (!bar6(self) || !qs) { o_initskill(self, user, qs, inmap, mi); return; }
+    const char *w = weapon_cached(user);
+    note_shown(self, user, w);
+    o_initskill(self, user, view_slots(qs, w), inmap, mi);
+}
+static void (*o_refreshskill)(Obj, Obj, Obj, Obj, const void *);
+static void my_refreshskill(Obj self, Obj user, Obj qs, Obj inmap, const void *mi) {
+    if (!bar6(self) || !qs) { o_refreshskill(self, user, qs, inmap, mi); return; }
+    o_refreshskill(self, user, view_slots(qs, weapon_cached(user)), inmap, mi);
+}
+/* the presenter refreshes every filled free slot each frame (cooldown, usable): UI slot 5 rides along, once a frame.
+   A weapon that left (unequip, swap) empties the slot (SkillSlotUI.SetUI(null)). */
+static void *m_setui;
+static void (*o_slotui)(Obj, int32_t, Obj, Obj, Obj, const void *);
+static void my_slotui(Obj self, int32_t idx, Obj key, Obj user, Obj inmap, const void *mi) {
+    o_slotui(self, idx, key, user, inmap, mi);
+    if (idx < 1 || idx > WS || !bar6(self)) return;
+    int i = vslot(self); int32_t f = frame_now();
+    if (vs[i].frame == f) return;
+    vs[i].frame = f;
+    const char *w = weapon_cached(user);
+    if (strcmp(vs[i].shown, w)) {
+        Obj slot = list_at(AT(self, f_qsui_slots, Obj), UI_W);
+        uint8_t nul[32] = { 0 };                        /* Nullable<Guid> parentTooltip = null (by reference: > 16 bytes) */
+        if (slot) CALL(m_setui, void, Obj, Obj, void *)(slot, w[0] ? I.string_new(w) : NULL, nul, m_setui);
+        note_shown(self, user, w);
     }
-    Obj r = o_qsc_ser(self, mi);
-    for (int i = 0; i < k; i++) { Obj q = aget(hold, (uintptr_t)i * 2); setref(q, &AT(q, f_qsd_slots, Obj), aget(hold, (uintptr_t)i * 2 + 1)); }
-    const DL *R = dict_l(r);
-    int put = 0, out = 0;
-    DICT_FOR(r, R, e) {
-        Obj a = qsd_grow(qsd_of(self, (const WGuid *)(e + R->key))), w = alen(a) == NSLOT ? aget(a, WS) : NULL;
-        if (!slen(w)) continue;
-        Obj s = I.array_new(k_string, WS);
-        if (!s) continue;
-        for (uintptr_t i = 0; i < WS; i++) aset(s, i, aget(a, i));
-        int k = stock_index(a, w);
-        if (k >= 0) { aset(s, (uintptr_t)k, w); put++; } else out++;
-        setref(_ea, e + R->val + f_qssd_slots, s);
-    }
-    if (logn(&n_ser, 5)) H->log(ME, "save: 4 slots per unit (stock); weapon skill in a free slot %d, out of the bar (free slots full) %d", put, out);
-    return r;
-}
-
-/* ------------------------------------------------------------------------------------------------ slot writes */
-/* New unit (recruit, starting unit): its QuickSlotData is made in OnSpawned (inlined into OnPlayerUnitSpawned on
-   Windows) with 4 slots. */
-static void (*o_spawned)(Obj, WGuid, Obj, int32_t, const void *);
-static void my_spawned(Obj self, WGuid g, Obj std, int32_t cost, const void *mi) {
-    o_spawned(self, g, std, cost, mi);
-    if (self) qsd_grow(qsd_of(AT(self, f_pudc_qsc, Obj), &g));
-}
-
-/* TryRegisterQuickSlot(guid, skill) = OnAddExtraSkill's slot step (equip of an item with a default skill, affecter
-   extra skills): a weapon's skill goes to WS (and leaves the free slots), as the old mod's equip cave did; any other
-   skill gets the stock search over the 4 free slots only. */
-static int n_eq;
-static uint8_t (*o_tryreg)(Obj, WGuid, Obj, const void *);
-static uint8_t my_tryreg(Obj self, WGuid g, Obj skill, const void *mi) {
-    Obj q = self ? qsd_of(self, &g) : NULL, a = qsd_grow(q);
-    if (alen(a) != NSLOT) return o_tryreg(self, g, skill, mi);
-    if (is_weapon_skill(skill)) {
-        for (int i = 0; i < WS; i++) if (str_eq(aget(a, i), skill)) aset(a, i, NULL);
-        aset(a, WS, skill);
-        if (logn(&n_eq, 20)) { char gs[9], s[48]; guid_c(&g, gs); str_c(skill, s, sizeof s); H->log(ME, "equip %s: %s -> weapon slot", gs, s); }
-        return 1;                                       /* registered: ProcessEquip then adds the skill to the unit */
-    }
-    if (aget(a, WS)) return o_tryreg(self, g, skill, mi);   /* WS taken: the stock search cannot land there */
-    /* WS empty: the stock search would take it. Search a 4-long view; WS is null, so nothing is hidden from the GC. */
-    AT(a, 0x18, uintptr_t) = WS;
-    uint8_t r = o_tryreg(self, g, skill, mi);
-    AT(a, 0x18, uintptr_t) = NSLOT;
-    return r;
-}
-
-/* Game events never write WS (Set handler duplicate removal, a drop or move onto it, an unset). */
-static int n_ref;
-static void (*o_addat)(Obj, WGuid, int32_t, Obj, const void *);
-static void my_addat(Obj self, WGuid g, int32_t idx, Obj skill, const void *mi) {
-    if (idx == WS) { if (logn(&n_ref, 20)) H->log(ME, "write to the weapon slot refused (add)"); return; }
-    o_addat(self, g, idx, skill, mi);
-}
-static void (*o_remat)(Obj, WGuid, int32_t, const void *);
-static void my_remat(Obj self, WGuid g, int32_t idx, const void *mi) {
-    if (idx == WS) { if (logn(&n_ref, 20)) H->log(ME, "write to the weapon slot refused (remove)"); return; }
-    o_remat(self, g, idx, mi);
-}
-
-/* Skill reset: the stock clears every slot (Array.Clear inlined), then re-adds the equipped weapon's default skills to
-   the unit: the weapon skill stays active, so WS keeps it. */
-static void (*o_resetskill)(Obj, WGuid, const void *);
-static void my_resetskill(Obj self, WGuid g, const void *mi) {
-    Obj a = self ? qsd_grow(qsd_of(AT(self, f_pudc_qsc, Obj), &g)) : NULL;
-    Obj w = alen(a) == NSLOT ? aget(a, WS) : NULL;
-    o_resetskill(self, g, mi);
-    if (w && alen(a) == NSLOT) aset(a, WS, w);
-}
-
-/* Unequip: ProcessUnequip calls OnRemoveExtraSkill(guid, skill), then removes the skill from the unit only if a slot
-   still holds it (IQuickSlotViewer.IsRegistered). WS still holds it then; it is emptied after ProcessUnequip. */
-#define MAXU 8
-static struct { WGuid g; Obj skill; Obj pudc; } unq[MAXU];
-static int nunq, n_uneq;
-static void (*o_remextra)(Obj, WGuid, Obj, const void *);
-static void my_remextra(Obj self, WGuid g, Obj skill, const void *mi) {
-    o_remextra(self, g, skill, mi);
-    if (nunq < MAXU && is_weapon_skill(skill)) { unq[nunq].g = g; unq[nunq].skill = skill; unq[nunq].pudc = self; nunq++; }
-}
-static void (*o_unequip)(Obj, int32_t, Obj, int32_t, Obj, Obj, const void *);
-static void my_unequip(Obj self, int32_t map, Obj ent, int32_t slot, Obj key, Obj tags, const void *mi) {
-    nunq = 0;
-    o_unequip(self, map, ent, slot, key, tags, mi);
-    for (int i = 0; i < nunq; i++) {                    /* item data strings and the container: alive for this call */
-        Obj a = unq[i].pudc ? qsd_grow(qsd_of(AT(unq[i].pudc, f_pudc_qsc, Obj), &unq[i].g)) : NULL;
-        if (alen(a) != NSLOT || !str_eq(aget(a, WS), unq[i].skill)) continue;
-        aset(a, WS, NULL);
-        if (logn(&n_uneq, 20)) { char gs[9], s[48]; guid_c(&unq[i].g, gs); str_c(unq[i].skill, s, sizeof s); H->log(ME, "unequip %s: %s left the weapon slot", gs, s); }
-    }
-    nunq = 0;
-}
-
-/* ------------------------------------------------------------------------------------------------ fill on load */
-/* A world played without the mod, or a unit that equipped its weapon while the 4 free slots were full, loads with an
-   empty weapon slot. When the load ends (CampaignLoadingEventHandler.FinalizeCampaignLoad, before the game speed
-   resumes; every multiplayer player runs it on the same world), each player unit with an empty weapon slot gets the
-   skill of its equipped weapon the way an equip gives it: an extra skill of the unit (SkillTreeData.RegisterExtraSkill,
-   only when missing: the list does not dedupe), the weapon slot (out of the free slots), and SkillComponent.AddSkill
-   when the unit does not have it (AddSkill moves an existing skill to the end of the list). */
-static void *k_unit, *k_skillcomp, *k_equip, *f_ec_inst, *m_has, *m_add, *m_regx;
-static int32_t f_ec_comps = -1, f_cl_comps = -1, f_unit_guid = -1, f_inv_slots = -1, f_ih_key = -1, ih_size = 0;
-static int is_a(Obj o, void *k) { return o && k && I.class_is_assignable_from(k, I.object_get_class(o)); }
-static Obj std_of(Obj skc, const WGuid *g) {             /* the unit's SkillTreeData */
-    Obj d = skc ? AT(skc, f_skc_dict, Obj) : NULL;
-    const DL *L = dict_l(d);
-    DICT_FOR(d, L, e) if (!memcmp(e + L->key, g, 16)) return AT(e, L->val, Obj);
-    return NULL;
-}
-static int n_fill;
-static void fill_all(void) {
-    Obj qsc = load_qsc_h ? I.gch_target(load_qsc_h) : NULL, skc = load_skc_h ? I.gch_target(load_skc_h) : NULL, ec = NULL;
-    I.field_static_get_value(f_ec_inst, &ec);
-    Obj comps = ec ? AT(ec, f_ec_comps, Obj) : NULL;
-    if (!qsc || !comps) { H->log(ME, "load end: no quick slots or entity components (%p %p)", qsc, comps); return; }
-    const DL *L = dict_l(comps);
-    int units = 0, filled = 0, added = 0, reg = 0;
-    DICT_FOR(comps, L, e) {
-        Obj ent = AT(e, L->key, Obj);
-        if (!is_a(ent, k_unit)) continue;
-        WGuid g; memcpy(&g, (char *)ent + f_unit_guid, sizeof g);
-        Obj a = qsd_grow(qsd_of(qsc, &g));
-        if (alen(a) != NSLOT) continue;                 /* not a player unit */
-        units++;
-        if (aget(a, WS)) continue;
-        Obj cl = AT(e, L->val, Obj), cd = cl ? AT(cl, f_cl_comps, Obj) : NULL, eq = NULL, sc = NULL;
-        const DL *C = dict_l(cd);
-        DICT_FOR(cd, C, ce) { Obj o = AT(ce, C->val, Obj); if (is_a(o, k_equip)) eq = o; else if (is_a(o, k_skillcomp)) sc = o; }
-        Obj slots = eq ? AT(eq, f_inv_slots, Obj) : NULL;
-        const char *wn = NULL;
-        for (uintptr_t i = 0; i < alen(slots) && !wn; i++) wn = item_weapon_skill(AT((char *)slots + AHDR + i * (uintptr_t)ih_size, f_ih_key, Obj));
-        if (!wn || !sc) continue;
-        Obj w = I.string_new(wn), std = std_of(skc, &g), ex = std ? AT(std, f_std_extra, Obj) : NULL;
-        int has_x = 0, r = 0, ad = 0;
-        for (int i = 0; i < list_n(ex); i++) if (str_is(list_at(ex, i), wn)) has_x = 1;
-        if (std && !has_x) { CALL(m_regx, void, Obj, Obj)(std, w, m_regx); r = 1; reg++; }
-        for (int i = 0; i < WS; i++) if (str_eq(aget(a, i), w)) aset(a, i, NULL);
-        aset(a, WS, w); filled++;
-        if (!CALL(m_has, uint8_t, Obj, Obj)(sc, w, m_has)) { CALL(m_add, void, Obj, Obj)(sc, w, m_add); ad = 1; added++; }
-        if (logn(&n_fill, 40)) { char gs[9]; guid_c(&g, gs); H->log(ME, "load end %s: %s -> weapon slot%s%s", gs, wn, r ? ", extra skill registered" : "", ad ? ", skill added to the unit" : ""); }
-    }
-    H->log(ME, "load end: %d player units, %d empty weapon slots filled (%d extra skills registered, %d skills added)", units, filled, reg, added);
-}
-static void (*o_finalize)(Obj, int32_t, const void *);
-static void my_finalize(Obj self, int32_t map, const void *mi) {
-    fill_all();
-    o_finalize(self, map, mi);
-}
-
-/* Every reader of a unit's slots (skill bar refresh, AI) asks GetAll: grow there too, in case a path made a 4-long
-   array that the hooks above did not see. Inside DecideSkill (AI auto-use: first usable skill in slot order) the
-   weapon skill comes first, as with the old mod's weapon slot at index 0. */
-static uintptr_t decide_lo; static int decide_on;
-static Obj (*o_getall)(Obj, WGuid, const void *);
-static Obj my_getall(Obj self, WGuid g, const void *mi) {
-    Obj r = o_getall(self, g, mi);
-    if (r && alen(r) < NSLOT) { Obj a = qsd_grow(qsd_of(self, &g)); if (alen(a) == NSLOT) r = a; }
-    uintptr_t ra = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
-    if (decide_on && ra - decide_lo < 0x2000 && alen(r) == NSLOT && aget(r, WS)) {
-        Obj v = I.array_new(k_string, NSLOT);
-        if (v) { aset(v, 0, aget(r, WS)); for (uintptr_t i = 0; i < WS; i++) aset(v, i + 1, aget(r, i)); r = v; }
-    }
-    return r;
-}
-static Obj (*o_decide)(Obj, const void *);
-static Obj my_decide(Obj self, const void *mi) {
-    decide_on = 1;
-    Obj r = o_decide(self, mi);
-    decide_on = 0;
-    return r;
+    if (w[0]) o_slotui(self, UI_W, I.string_new(w), user, inmap, mi);
 }
 
 /* ------------------------------------------------------------------------------------------------ UI: the 6th slot */
 static void *k_transform, *k_go;
 static void *m_inst, *m_set_name, *m_get_tr, *m_get_go, *m_go_active, *m_tr_parent, *m_tr_find, *m_sib_set, *m_implicit,
     *m_pos_get, *m_pos_set, *m_size_get, *m_size_set, *m_amin_set, *m_amax_set, *m_pivot_set;
-static int32_t f_qsui_slots = -1, f_ssui_index = -1, f_ssui_interact = -1;
 
 static void *msig(void *k, const char *name, int argc, const char *sig) {   /* method by name + parameter types */
     for (void *c = k; c; c = I.class_get_parent(c)) {
@@ -578,7 +392,7 @@ static void (*o_ui_init)(Obj, Obj, Obj, Obj, const void *);
 static void my_ui_init(Obj self, Obj ammo, Obj keys, Obj itemkey, const void *mi) {
     Obj list = self ? AT(self, f_qsui_slots, Obj) : NULL;
     if (list && list_n(list) == UI_W) ui_add_slot(self, list);
-    if (list && list_n(list) > UI_W && keys) {          /* a bar copy made from a 6-slot bar has the slot already */
+    if (list && list_n(list) > UI_W && keys) {          /* the weapon slot's key text: "" (no key) */
         void *m_set = I.class_get_method_from_name(I.object_get_class(keys), "set_Item", 2);
         if (m_set) CALL(m_set, void, Obj, int32_t, Obj)(keys, UI_W - 1, I.string_new(""), m_set);
     }
@@ -617,39 +431,29 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     FN(type_get_name, "il2cpp_type_get_name"); FN(il_free, "il2cpp_free");
     FN(class_is_assignable_from, "il2cpp_class_is_assignable_from"); FN(array_new, "il2cpp_array_new");
     FN(string_new, "il2cpp_string_new"); FN(wbarrier, "il2cpp_gc_wbarrier_set_field");
-    FN(gch_weak, "il2cpp_gchandle_new_weakref"); FN(gch_target, "il2cpp_gchandle_get_target"); FN(gch_free, "il2cpp_gchandle_free");
 #undef FN
     for (void **p = (void **)&I; p < (void **)(&I + 1); p++) if (!*p) { H->log(ME, "il2cpp export missing (#%d)", (int)(p - (void **)&I)); return 1; }
 
     const char *M = "Refactor.Main", *UI = "Refactor.UI";
-    void *k_qsd = H->find_class(M, "QuickSlotData"), *k_qsc = H->find_class(M, "UnitQuickSlotContainer");
-    void *k_pudc = H->find_class(M, "PlayerUnitDataContainer"), *k_skc = H->find_class(M, "UnitSkillContainer");
-    void *k_std = H->find_class(M, "SkillTreeData"), *k_qssd = H->find_class(M, "QuickSlotSaveData");
+    void *k_qsd = H->find_class(M, "QuickSlotData"), *k_qsc = H->find_class(M, "UnitQuickSlotContainer"), *k_std = H->find_class(M, "SkillTreeData");
     void *k_qsui = H->find_class(UI, "QuickSlotUI"), *k_ssui = H->find_class(UI, "SkillSlotUI");
-    void *k_rect = H->find_class("UnityEngine", "RectTransform");
-    k_string = H->find_class("System", "String"); k_object = H->find_class("System", "Object");
+    void *k_rect = H->find_class("UnityEngine", "RectTransform"), *k_time = H->find_class("UnityEngine", "Time");
+    k_string = H->find_class("System", "String");
     k_transform = H->find_class("UnityEngine", "Transform"); k_go = H->find_class("UnityEngine", "GameObject");
     void *k_uobj = H->find_class("UnityEngine", "Object"), *k_comp = H->find_class("UnityEngine", "Component");
-    if (!k_qsd || !k_qsc || !k_pudc || !k_skc || !k_std || !k_qssd || !k_qsui || !k_ssui || !k_rect || !k_string
-        || !k_object || !k_transform || !k_go || !k_uobj || !k_comp) { H->log(ME, "a game class was not found"); return 2; }
+    if (!k_qsd || !k_qsc || !k_std || !k_qsui || !k_ssui || !k_rect || !k_time || !k_string || !k_transform || !k_go || !k_uobj || !k_comp) {
+        H->log(ME, "a game class was not found"); return 2;
+    }
     f_qsd_slots = foff(k_qsd, "_quickSlots"); f_qsc_dict = foff(k_qsc, "_unitQuickSlot");
-    f_pudc_qsc = foff(k_pudc, "_unitQuickSlot"); f_pudc_skc = foff(k_pudc, "_unitSkillTrees");
-    f_skc_dict = foff(k_skc, "_skillTreeDatas"); f_std_extra = foff(k_std, "_extraSkills");
-    f_qssd_slots = foff(k_qssd, "QuickSlots") - OHDR;
     void *k_strlist = ftype_class(k_std, "_extraSkills");                    /* List<string>: every List<T> has this layout */
     f_list_items = k_strlist ? foff(k_strlist, "_items") : -1; f_list_size = k_strlist ? foff(k_strlist, "_size") : -1;
     f_qsui_slots = foff(k_qsui, "_skillSlots"); f_ssui_index = foff(k_ssui, "_index"); f_ssui_interact = foff(k_ssui, "_onInteract");
-    H->log(ME, "fields: slots %d dict %d pudc %d/%d skills %d extra %d save %d list %d/%d bar %d index %d interact %d",
-           f_qsd_slots, f_qsc_dict, f_pudc_qsc, f_pudc_skc, f_skc_dict, f_std_extra, f_qssd_slots, f_list_items, f_list_size,
+    H->log(ME, "fields: slots %d dict %d list %d/%d bar %d index %d interact %d", f_qsd_slots, f_qsc_dict, f_list_items, f_list_size,
            f_qsui_slots, f_ssui_index, f_ssui_interact);
-    if (f_qsd_slots <= 0 || f_qsc_dict <= 0 || f_pudc_qsc <= 0 || f_skc_dict <= 0 || f_std_extra <= 0 || f_qssd_slots < 0
-        || f_list_items <= 0 || f_list_size <= 0 || f_qsui_slots <= 0 || f_ssui_index <= 0 || f_ssui_interact <= 0) {
+    if (f_qsd_slots <= 0 || f_qsc_dict <= 0 || f_list_items <= 0 || f_list_size <= 0 || f_qsui_slots <= 0 || f_ssui_index <= 0
+        || f_ssui_interact <= 0 || !dict_lk(ftype_class(k_qsc, "_unitQuickSlot"))) {
         H->log(ME, "a game field was not found"); return 3;
     }
-    /* the three dictionaries read in place: Dictionary<Guid, QuickSlotData>, <Guid, SkillTreeData>, <Guid, QuickSlotSaveData> */
-    void *k_pusd = H->find_class(M, "PlayerUnitsSaveData");
-    if (!dict_lk(ftype_class(k_qsc, "_unitQuickSlot")) || !dict_lk(ftype_class(k_skc, "_skillTreeDatas"))
-        || !k_pusd || !dict_lk(ftype_class(k_pusd, "QuickSlots"))) { H->log(ME, "a dictionary layout was not found"); return 3; }
     m_implicit = msig(k_uobj, "op_Implicit", 1, NULL);
     m_inst = msig(k_uobj, "Instantiate", 2, "UnityEngine.Object,UnityEngine.Transform");
     m_set_name = msig(k_uobj, "set_name", 1, NULL);
@@ -661,11 +465,13 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     m_size_get = msig(k_rect, "get_sizeDelta", 0, NULL); m_size_set = msig(k_rect, "set_sizeDelta", 1, NULL);
     m_amin_set = msig(k_rect, "set_anchorMin", 1, NULL); m_amax_set = msig(k_rect, "set_anchorMax", 1, NULL);
     m_pivot_set = msig(k_rect, "set_pivot", 1, NULL);
+    m_frame = msig(k_time, "get_frameCount", 0, NULL);
+    m_setui = msig(k_ssui, "SetUI", 2, NULL);
     if (!m_implicit || !m_inst || !m_set_name || !m_get_tr || !m_get_go || !m_go_active || !m_tr_parent || !m_tr_find || !m_sib_set
-        || !m_pos_get || !m_pos_set || !m_size_get || !m_size_set || !m_amin_set || !m_amax_set || !m_pivot_set) {
+        || !m_pos_get || !m_pos_set || !m_size_get || !m_size_set || !m_amin_set || !m_amax_set || !m_pivot_set || !m_frame || !m_setui) {
         H->log(ME, "a Unity UI method was not found"); return 4;
     }
-    /* fill on load: entities, their components, the equipped items */
+    /* the unit's weapon skill: entities, their components, the equipped items, SkillComponent.HasSkill */
     void *k_ec = H->find_class(M, "EntityComponent"), *k_cl = H->find_class(M, "ComponentList"), *k_ih = H->find_class("Refactor", "ItemHolder");
     void *k_inv = H->find_class("Refactor", "InventoryComponent");
     k_unit = H->find_class("Refactor", "UnitEntity"); k_skillcomp = H->find_class("Refactor.Component", "SkillComponent");
@@ -674,36 +480,22 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     f_ec_comps = k_ec ? foff(k_ec, "_components") : -1; f_cl_comps = k_cl ? foff(k_cl, "_components") : -1;
     f_unit_guid = k_unit ? foff(k_unit, "<Guid>k__BackingField") : -1; f_inv_slots = k_inv ? foff(k_inv, "_itemSlots") : -1;
     f_ih_key = k_ih ? foff(k_ih, "Key") - OHDR : -1; ih_size = k_ih ? I.class_value_size(k_ih, NULL) : 0;
-    m_has = k_skillcomp ? H->find_method(k_skillcomp, "HasSkill", 1) : NULL; m_add = k_skillcomp ? H->find_method(k_skillcomp, "AddSkill", 1) : NULL;
-    m_regx = H->find_method(k_std, "RegisterExtraSkill", 1);
-    H->log(ME, "load end fields: components %d/%d guid %d slots %d key %d item %d", f_ec_comps, f_cl_comps, f_unit_guid, f_inv_slots, f_ih_key, ih_size);
+    m_has = k_skillcomp ? H->find_method(k_skillcomp, "HasSkill", 1) : NULL;
+    H->log(ME, "unit fields: components %d/%d guid %d slots %d key %d item %d", f_ec_comps, f_cl_comps, f_unit_guid, f_inv_slots, f_ih_key, ih_size);
     if (!k_unit || !k_skillcomp || !k_equip || !f_ec_inst || f_ec_comps <= 0 || f_cl_comps <= 0 || f_unit_guid <= 0 || f_inv_slots <= 0
-        || f_ih_key < 0 || ih_size < f_ih_key + 8 || !m_has || !m_add || !m_regx
-        || !dict_lk(ftype_class(k_ec, "_components")) || !dict_lk(ftype_class(k_cl, "_components"))) { H->log(ME, "load end: a game name was not found"); return 3; }
-    void *dmi = H->find_method(H->find_class("Refactor.Task", "DecidePlayerCombatBehaviour"), "DecideSkill", 0);
-    decide_lo = dmi ? (uintptr_t)H->method_address(dmi) : 0;
-    if (!decide_lo) { H->log(ME, "DecidePlayerCombatBehaviour.DecideSkill not found"); return 5; }
+        || f_ih_key < 0 || ih_size < f_ih_key + 8 || !m_has
+        || !dict_lk(ftype_class(k_ec, "_components")) || !dict_lk(ftype_class(k_cl, "_components"))) { H->log(ME, "a unit name was not found"); return 3; }
 
-    /* the data array and the 6th UI slot must come together (6 UI slots + 4 slots or 5 UI slots + 5 slots throws
-       every frame): any failed hook = the module returns non-zero and the loader removes every hook of it */
-    if (hk(M, "UnitSkillContainer", "Deserialize", 1, (void *)my_skc_deser, (void **)&o_skc_deser)
-        || hk(M, "UnitQuickSlotContainer", "Deserialize", 1, (void *)my_qsc_deser, (void **)&o_qsc_deser)
-        || hk(M, "UnitQuickSlotContainer", "Serialize", 0, (void *)my_qsc_ser, (void **)&o_qsc_ser)
-        || hk(M, "UnitQuickSlotContainer", "TryRegisterQuickSlot", 2, (void *)my_tryreg, (void **)&o_tryreg)
-        || hk(M, "UnitQuickSlotContainer", "AddQuickSlotAt", 3, (void *)my_addat, (void **)&o_addat)
-        || hk(M, "UnitQuickSlotContainer", "RemoveQuickSlotAt", 2, (void *)my_remat, (void **)&o_remat)
-        || hk(M, "UnitQuickSlotContainer", "GetAll", 1, (void *)my_getall, (void **)&o_getall)
-        || hk(M, "PlayerUnitDataContainer", "OnPlayerUnitSpawned", 3, (void *)my_spawned, (void **)&o_spawned)
-        || hk(M, "PlayerUnitDataContainer", "ResetSkill", 1, (void *)my_resetskill, (void **)&o_resetskill)
-        || hk(M, "PlayerUnitDataContainer", "OnRemoveExtraSkill", 2, (void *)my_remextra, (void **)&o_remextra)
-        || hk("Refactor.Main.Processor", "ItemControlProcessor", "ProcessUnequip", 5, (void *)my_unequip, (void **)&o_unequip)
-        || hk(UI, "QuickSlotUI", "Init", 3, (void *)my_ui_init, (void **)&o_ui_init)
+    /* the 6th UI slot and the views' 5-long arrays must come together (6 UI slots + a 4-long array throws in
+       InitSkillUI): any failed hook = the module returns non-zero and the loader removes every hook of it */
+    if (hk(UI, "QuickSlotUI", "Init", 3, (void *)my_ui_init, (void **)&o_ui_init)
+        || hk(UI, "QuickSlotUI", "InitSkillUI", 3, (void *)my_initskill, (void **)&o_initskill)
+        || hk(UI, "QuickSlotUI", "RefreshSkillUI", 3, (void *)my_refreshskill, (void **)&o_refreshskill)
+        || hk(UI, "QuickSlotUI", "RefreshSkillSlotUI", 4, (void *)my_slotui, (void **)&o_slotui)
         || hk(UI, "SkillSlotUI", "GetPayload", 0, (void *)my_payload, (void **)&o_payload)
         || hk(UI, "SkillSlotUI", "CanDrop", 1, (void *)my_candrop, (void **)&o_candrop)
-        || hk("Refactor.Main.Event", "CampaignLoadingEventHandler", "FinalizeCampaignLoad", 1, (void *)my_finalize, (void **)&o_finalize))
+        || hk(M, "UnitQuickSlotContainer", "GetSkillAt", 2, (void *)my_skillat, (void **)&o_skillat))
         return 6;
-    /* AI order only (weapon skill first). Optional: the multiplayer module hooks this method in diagnostic test runs. */
-    int order = !hk("Refactor.Task", "DecidePlayerCombatBehaviour", "DecideSkill", 0, (void *)my_decide, (void **)&o_decide);
-    H->log(ME, "weapon skill slot on (%d hooks; AI auto-use order %s)", 15 + order, order ? "weapon skill first" : "stock (hook taken)");
+    H->log(ME, "weapon skill slot on (client only: 7 hooks, no game data written)");
     return 0;
 }

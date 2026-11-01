@@ -2,12 +2,12 @@
  "id": "weapon-slot",
  "name": "Weapon skill slot",
  "short_name": "Weapon slot",
- "version": "0.1.2",
+ "version": "0.2.0",
  "author": "AmfiLogos",
  "kind": "code",
  "api": 2,
- "scope": "gameplay",
- "sim": true,
+ "scope": "client",
+ "sim": false,
  "save_dependent": false,
  "vanilla_plus": true,
  "default_on": false,
@@ -26,52 +26,52 @@
   "loader>=2.0.0"
  ],
  "conflicts": [],
- "description": "A skill bar slot for the equipped weapon's skill, next to the basic attack. It changes with the weapon. Click it or let auto-use cast it; no key uses it.",
+ "description": "A skill bar button for the equipped weapon's skill, next to the basic attack. It changes with the weapon. Click it to use the skill; no key uses it. Only your screen changes: your saves stay the game's own, and players without this mod can play with you.",
  "i18n": {
   "fr": {
    "name": "Emplacement de compétence d'arme",
    "short_name": "Emplacement d'arme",
-   "description": "Un emplacement de la barre de compétences pour la compétence de l'arme équipée, à côté de l'attaque de base. Il change avec l'arme. Cliquez dessus ou laissez l'utilisation automatique la lancer ; aucune touche ne l'utilise."
+   "description": "Un bouton de la barre de compétences pour la compétence de l'arme équipée, à côté de l'attaque de base. Il change avec l'arme. Cliquez dessus pour utiliser la compétence ; aucune touche ne l'utilise. Seul votre écran change : vos sauvegardes restent celles du jeu, et les joueurs sans ce mod peuvent jouer avec vous."
   },
   "de": {
    "name": "Waffenskill-Platz",
    "short_name": "Waffenplatz",
-   "description": "Ein Platz in der Skillleiste für den Skill der ausgerüsteten Waffe, neben dem Grundangriff. Er wechselt mit der Waffe. Klicke darauf oder lass die automatische Nutzung ihn wirken; keine Taste nutzt ihn."
+   "description": "Eine Schaltfläche in der Skillleiste für den Skill der ausgerüsteten Waffe, neben dem Grundangriff. Sie wechselt mit der Waffe. Klicke darauf, um den Skill zu nutzen; keine Taste nutzt ihn. Nur dein Bildschirm ändert sich: Deine Spielstände bleiben die des Spiels, und Spieler ohne diese Mod können mit dir spielen."
   },
   "es": {
    "name": "Ranura de habilidad de arma",
    "short_name": "Ranura de arma",
-   "description": "Una ranura de la barra de habilidades para la habilidad del arma equipada, junto al ataque básico. Cambia con el arma. Haz clic en ella o deja que el uso automático la lance; ninguna tecla la usa."
+   "description": "Un botón de la barra de habilidades para la habilidad del arma equipada, junto al ataque básico. Cambia con el arma. Haz clic en él para usar la habilidad; ninguna tecla la usa. Solo cambia tu pantalla: tus partidas guardadas siguen siendo las del juego, y los jugadores sin este mod pueden jugar contigo."
   },
   "pt-BR": {
    "name": "Espaço de habilidade da arma",
    "short_name": "Espaço da arma",
-   "description": "Um espaço da barra de habilidades para a habilidade da arma equipada, ao lado do ataque básico. Ele muda com a arma. Clique nele ou deixe o uso automático lançá-la; nenhuma tecla o usa."
+   "description": "Um botão da barra de habilidades para a habilidade da arma equipada, ao lado do ataque básico. Ele muda com a arma. Clique nele para usar a habilidade; nenhuma tecla a usa. Só a sua tela muda: seus saves continuam sendo os do jogo, e jogadores sem este mod podem jogar com você."
   },
   "ru": {
    "name": "Ячейка навыка оружия",
    "short_name": "Ячейка оружия",
-   "description": "Ячейка панели навыков для навыка экипированного оружия, рядом с базовой атакой. Она меняется вместе с оружием. Нажмите на неё или позвольте автоприменению использовать навык; клавиши у неё нет."
+   "description": "Кнопка на панели навыков для навыка экипированного оружия, рядом с базовой атакой. Она меняется вместе с оружием. Нажмите на неё, чтобы использовать навык; клавиши у неё нет. Меняется только ваш экран: сохранения остаются игровыми, и игроки без этого мода могут играть с вами."
   },
   "ja": {
    "name": "武器スキルスロット",
    "short_name": "武器スロット",
-   "description": "装備中の武器のスキル用のスキルバーのスロットを、基本攻撃の隣に追加します。武器に合わせて変わります。クリックするか自動使用で発動します。キーは割り当てられません。"
+   "description": "装備中の武器のスキル用のボタンを、スキルバーの基本攻撃の隣に追加します。武器に合わせて変わります。クリックでスキルを使います。キーは割り当てられません。変わるのはあなたの画面だけです。セーブはゲーム本来のままで、このMODを入れていないプレイヤーとも一緒に遊べます。"
   },
   "ko": {
    "name": "무기 스킬 슬롯",
    "short_name": "무기 슬롯",
-   "description": "장착한 무기의 스킬을 위한 스킬 바 슬롯을 기본 공격 옆에 추가합니다. 무기에 따라 바뀝니다. 클릭하거나 자동 사용으로 시전합니다. 키는 없습니다."
+   "description": "장착한 무기의 스킬을 위한 버튼을 스킬 바의 기본 공격 옆에 추가합니다. 무기에 따라 바뀝니다. 클릭하면 스킬을 사용합니다. 키는 없습니다. 바뀌는 것은 내 화면뿐입니다. 저장 파일은 게임 그대로이며, 이 모드가 없는 플레이어와도 함께 플레이할 수 있습니다."
   },
   "zh-Hans": {
    "name": "武器技能栏位",
    "short_name": "武器栏位",
-   "description": "在基础攻击旁为已装备武器的技能增加一个技能栏位。它随武器变化。点击它或让自动施放来使用；没有按键对应它。"
+   "description": "在技能栏的基础攻击旁增加一个按钮，用于已装备武器的技能。它随武器变化。点击即可使用该技能；没有按键对应它。只改变你自己的画面：存档保持游戏原样，没有此模组的玩家也能和你一起玩。"
   },
   "zh-Hant": {
    "name": "武器技能欄位",
    "short_name": "武器欄位",
-   "description": "在基礎攻擊旁為已裝備武器的技能增加一個技能欄位。它隨武器變化。點擊它或讓自動施放來使用；沒有按鍵對應它。"
+   "description": "在技能列的基礎攻擊旁增加一個按鈕，用於已裝備武器的技能。它隨武器變化。點擊即可使用該技能；沒有按鍵對應它。只改變你自己的畫面：存檔保持遊戲原樣，沒有此模組的玩家也能和你一起玩。"
   }
  }
 }
