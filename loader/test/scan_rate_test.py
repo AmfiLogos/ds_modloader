@@ -59,7 +59,8 @@ def owner_playing():
     return [l.split()[0] for l in out.splitlines() if OWNER_GAME.search(l)]
 
 
-def wait_load(limit=float(os.environ.get('SCAN_LOAD_MAX', 16))):   # SCAN_LOAD_MAX: a busy gate Mac (lead 2026-11-02)
+def wait_load(limit=float(os.environ.get('SCAN_LOAD_MAX', '16'))):   # SCAN_LOAD_MAX (default 16): a higher load slows the copy's frames;
+    # a real poll still goes far over SG_LIMIT 6/min, so a PASS holds; a FAIL at a raised limit is re-run at a normal load
     t0 = time.time()
     while os.getloadavg()[0] > limit:
         if time.time() - t0 > 1200: raise SystemExit(f'load stayed above {limit} for 20 min')
