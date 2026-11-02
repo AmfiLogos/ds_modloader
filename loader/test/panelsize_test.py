@@ -370,6 +370,9 @@ def world_cases():
     j, s = open_panel()
     check('world: the template panel shows in the world', j.get('rc') == 0 and rect(s, 'stdp')[2] > rect(s, 'stdp')[0], (j.get('rc'), rect(s, 'stdp')))
     if j.get('rc') != 0: return
+    for _ in range(6):                                                 # room for one step each way (start 2 left it near 150 %)
+        if size(st()).get('f', 0) <= 1.31: break
+        click('stdp_size.minus')
     s0 = speed(); hover_on(); f0 = size(st()).get('f', 0); n = len(E.dlog())
     ui('key', code=49, ctrl=0); time.sleep(1.2); f1 = size(st()).get('f', 0); s1 = speed(); lg = log_since(n)
     check('world: Space (Bigger) over the panel = 10 % bigger, and the game speed does not change (the game did not get it)',
