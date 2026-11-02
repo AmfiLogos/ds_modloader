@@ -264,7 +264,9 @@ static int move_rect(const float r[4]) { fk_at(r); fk_until = 0x7fffffff; return
 static int wheel_rect(const float r[4], int dy) { fk_at(r); fk_wheel_at = fnow() + 3; fk_wy = (float)dy; fk_until = fk_wheel_at + 20; return 0; }
 static id ns_str(const char *s) { return ((id (*)(Class, SEL, const char *))objc_msgSend)(objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), s); }
 /* the size keys (kit 0.1.30): ctrl 1 = Control goes down (flagsChanged, kVK_Control 59), then kc (if >= 0) down + up with
-   Control held; ctrl 0 and kc < 0 = Control goes up (a later call: Unity reads the held state per frame) */
+   Control held; ctrl 0 and kc < 0 = Control goes up (a later call: Unity reads the held state per frame). hold 1 = kc down
+   only (it stays held), hold 2 = kc up only (a held key from the game's camera: W; lane nvdrag) */
+static int key_hold;
 static int key_ctrl(int kc, int ctrl) {
     id w = game_window(); if (!w) return -1;
     long wn = ((long (*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
@@ -273,7 +275,8 @@ static int key_ctrl(int kc, int ctrl) {
         unsigned long type = st == 0 ? 12 : st == 1 ? 10 : 11; unsigned short code = st == 0 ? 59 : (unsigned short)kc;
         if (st == 0 && kc >= 0 && !ctrl) continue;
         if (st > 0 && kc < 0) break;
-        char one[2] = { st == 0 ? 0 : kc == 27 ? '-' : kc == 24 ? '=' : kc == 78 ? '-' : kc == 69 ? '+' : kc == 40 ? 'k' : 0, 0 };   /* 40 = K (kit 0.1.31: a captured key) */
+        if ((st == 1 && key_hold == 2) || (st == 2 && key_hold == 1)) continue;
+        char one[2] = { st == 0 ? 0 : kc == 27 ? '-' : kc == 24 ? '=' : kc == 78 ? '-' : kc == 69 ? '+' : kc == 40 ? 'k' : kc == 49 ? ' ' : kc == 13 ? 'w' : 0, 0 };   /* 40 = K (kit 0.1.31: a captured key); 49 Space, 13 W (game keys) */
         id ev = ((id (*)(Class, SEL, unsigned long, CGPoint, unsigned long, double, long, id, id, id, BOOL, unsigned short))objc_msgSend)(
             objc_getClass("NSEvent"), sel_registerName("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
             type, CGPointZero, fl, uptime(), wn, nil, ns_str(one), ns_str(one), NO, code);
@@ -396,7 +399,13 @@ static void state(char *out, size_t cap) {
       double sc = w ? ((double (*)(id, SEL))objc_msgSend)(w, sel_registerName("backingScaleFactor")) : 0;
       o += (size_t)snprintf(out + o, cap - o, ",\"win\":[%.0f,%.0f,%.0f,%.0f,%.1f]", f.origin.x, f.origin.y, f.size.width, f.size.height, sc); }
     { typedef struct { float x, y, z; } V3; static V3 (*mp)(const void *); if (!mp) mp = H->find_method_address("UnityEngine", "Input", "get_mousePosition", 0);
-      V3 m = mp ? mp(NULL) : (V3){ 0, 0, 0 }; o += (size_t)snprintf(out + o, cap - o, ",\"mouse\":[%.0f,%.0f]", m.x, m.y); }
+      V3 m = mp ? mp(NULL) : (V3){ 0, 0, 0 }; o += (size_t)snprintf(out + o, cap - o, ",\"mouse\":[%.0f,%.0f]", m.x, m.y);
+      /* the game camera's place (Camera.main): a held camera key (W) moves it (lane nvdrag: a size key kept from the game) */
+      static Obj (*cm)(const void *); static Obj (*ct)(Obj, const void *); static V3 (*tp)(Obj, const void *);
+      if (!cm) { cm = H->find_method_address("UnityEngine", "Camera", "get_main", 0); ct = H->find_method_address("UnityEngine", "Component", "get_transform", 0);
+                 tp = H->find_method_address("UnityEngine", "Transform", "get_position", 0); }
+      Obj c = cm ? cm(NULL) : NULL, ctr = c && ct ? ct(c, NULL) : NULL; V3 cp = ctr && tp ? tp(ctr, NULL) : (V3){ 0, 0, 0 };
+      o += (size_t)snprintf(out + o, cap - o, ",\"cam\":[%.2f,%.2f,%d]", cp.x, cp.y, ctr != NULL); }
     {   /* what the stock input module has under the pointer (PointerInputModule.GetLastPointerEventData(-1).pointerEnter) */
         static Obj (*cur)(const void *), (*mod)(Obj, const void *), (*last)(Obj, int, const void *), (*enter)(Obj, const void *), (*nm)(Obj, const void *), (*press)(Obj, const void *);
         if (!cur) { cur = H->find_method_address("UnityEngine.EventSystems", "EventSystem", "get_current", 0);
@@ -450,7 +459,7 @@ static void handle(const char *j) {
         o += (size_t)snprintf(out + o, sizeof out - o, "\"at\":[%.0f,%.0f,%.0f,%.0f],", r[0], r[1], r[2], r[3]);
     }
     else if (!strcmp(cmd, "via")) via_view = (int)jnum(j, "view", 1);
-    else if (!strcmp(cmd, "key")) rc = jnum(j, "ctrl", -1) >= 0 ? key_ctrl((int)jnum(j, "code", -1), (int)jnum(j, "ctrl", 0)) : key_code((int)jnum(j, "code", 36));
+    else if (!strcmp(cmd, "key")) { key_hold = (int)jnum(j, "hold", 0); rc = jnum(j, "ctrl", -1) >= 0 ? key_ctrl((int)jnum(j, "code", -1), (int)jnum(j, "ctrl", 0)) : key_code((int)jnum(j, "code", 36)); key_hold = 0; }
     else if (!strcmp(cmd, "stock")) { jstr(j, "what", s, sizeof s); rc = stock_call(s); }
     else if (!strcmp(cmd, "type")) { jstr(j, "text", s, sizeof s); rc = t_type(fd, s); }
     else if (!strcmp(cmd, "capture")) { jstr(j, "name", s, sizeof s); rc = capture(s); }

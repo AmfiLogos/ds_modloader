@@ -27,6 +27,12 @@ The template's in-game panel (dsl_window_std DSL_WIN_PANEL + DSL_WIN_SIZE, key u
  start 2 (800x600, the smallest window the tests use, UI Scale 1.4): the panel comes back at 130 % (on top of UI Scale);
           "+" "+" = 150 % and the whole panel is on the screen (its first place, x 1400, runs past a 800x600 window);
           a kit 0.1.30 "Size keys" choice (Ctrl + keypad) shows as the keys Ctrl + Keypad - / +.
+          WORLD (lead 2026-11-02, lane nvdrag: "A captured size key that the game also uses does both actions over a
+          panel"): Bigger = Space (the game's pause), Smaller = W (camera up, held); over the panel each sizes it and
+          the game does not get it (speed / camera unchanged); off every panel the game gets them; a right-drag on the
+          panel in a world moves it.
+ COVERED DRAG (lane nvdrag: "Right-drag still moves a mod panel that the Mods window ... covers"): start 1, the Mods
+          window over the panel: a right-drag there moves nothing.
           FOLD RULE (kit 0.1.30; owner 2026-11-01: "the size of the dps check window changes depending on collapsed
           expanded toggles... It shouldn't"): a UI Scale panel 300 high folded / 900 open keeps its width (scale) both ways.
 Old loaders fail: no "-" / "+" (the holder is missing), nothing is kept; kit 0.1.29: "-" / "+" show without the mouse,
@@ -157,8 +163,12 @@ def key_cases():
     mods_win(); ok, _, t3 = capture('size-key-plus', 24)
     check('keys: the default back by capture (Ctrl + "=")', ok and t3 == 'Ctrl + =', (ok, t3))
     # COVERED (review 2026-11-02): the keys act only on the window on top under the mouse
-    n = len(E.dlog()); hover_on(); f10 = size(st()).get('f', 0); ctrl_key(24); f11 = size(st()).get('f', 0); lg = log_since(n); win('esc'); time.sleep(0.8)
+    n = len(E.dlog()); hover_on(); f10 = size(st()).get('f', 0); ctrl_key(24); f11 = size(st()).get('f', 0); lg = log_since(n)
     check('keys: the Mods window over the panel: Ctrl + "=" does nothing', abs(f11 - f10) < 0.001 and 'is covered by' in lg, (f10, f11, lg[-300:]))
+    # COVERED DRAG (lead 2026-11-02, lane nvdrag: "Right-drag still moves a mod panel that the Mods window ... covers")
+    away(); r0 = rect(st(), 'stdp'); n = len(E.dlog()); ui('rdrag', target='stdp', dx=-80, dy=-40); time.sleep(1.8); away(); r1 = rect(st(), 'stdp'); lg = log_since(n)
+    check('drag: the Mods window over the panel: a right-drag there moves nothing', same(r0, r1) and 'covered there by' in lg, (r0, r1, lg[-300:]))
+    win('esc'); time.sleep(0.8)
     away(); s = st(); pr = rect(s, 'stdp'); j = ui('api', op='kp'); time.sleep(0.8); away(); s = st(); kr = rect(s, 'ovA')
     ix = (max(pr[0], kr[0]), max(pr[1], kr[1]), min(pr[2], kr[2]), min(pr[3], kr[3]))
     if j.get('rc') == 0 and ix[2] - ix[0] > 8 and ix[3] - ix[1] > 8:
@@ -331,6 +341,56 @@ def start2():
     layout_cases('start2')
 
 
+def speed(): return (E.ctl({'cmd': 'status'}, 5) or {}).get('speed')
+
+
+def cam(): return st().get('cam', [0, 0, 0])
+
+
+def moved(a, b): return abs(b[0] - a[0]) + abs(b[1] - a[1])
+
+
+def hold_w(over):                                                     # W held 1.5 s (its own down, then up): camera place + panel size before / after
+    hover_on() if over else away()
+    c0 = cam(); f0 = size(st()).get('f', 0); n = len(E.dlog())
+    ui('key', code=13, ctrl=0, hold=1); time.sleep(1.5); c1 = cam(); ui('key', code=13, ctrl=0, hold=2); time.sleep(0.8)
+    return c0, c1, f0, size(st()).get('f', 0), log_since(n)
+
+
+def world_cases():
+    # KEPT FROM THE GAME (lead 2026-11-02, lane nvdrag: "A captured size key that the game also uses does both actions over
+    # a panel"): Bigger = Space (the game's pause), Smaller = W (the game's camera up, a held key)
+    mods_win(); ok1, _, tb = capture('size-key-plus', 49, ctrl=0); ok2, _, ts = capture('size-key-minus', 13, ctrl=0); win('esc'); time.sleep(0.8)
+    check('world: Bigger = Space and Smaller = W by capture (keys the game binds)', ok1 and ok2 and tb == 'Space' and ts == 'W', (ok1, tb, ok2, ts))
+    a = E.ctl({'cmd': 'load_save', 'name': E.SAVE}, 30)
+    t = wait_for(lambda: (lambda s: s if s.get('scene') == 2 and not s.get('busy') else None)(E.ctl({'cmd': 'status'}, 5)), 180, 1)
+    check('world: the save loads', bool(t), (a, t))
+    if not t: return
+    time.sleep(8)
+    j, s = open_panel()
+    check('world: the template panel shows in the world', j.get('rc') == 0 and rect(s, 'stdp')[2] > rect(s, 'stdp')[0], (j.get('rc'), rect(s, 'stdp')))
+    if j.get('rc') != 0: return
+    s0 = speed(); hover_on(); f0 = size(st()).get('f', 0); n = len(E.dlog())
+    ui('key', code=49, ctrl=0); time.sleep(1.2); f1 = size(st()).get('f', 0); s1 = speed(); lg = log_since(n)
+    check('world: Space (Bigger) over the panel = 10 % bigger, and the game speed does not change (the game did not get it)',
+          abs(f1 - f0 - 0.1) < 0.001 and s0 is not None and s1 == s0 and 'kept from the game' in lg, (f0, f1, s0, s1, lg[-300:]))
+    away(); ui('key', code=49, ctrl=0); time.sleep(1.2); s2 = speed(); f2 = size(st()).get('f', 0)
+    check('world: Space with the mouse off every panel reaches the game (its speed changes), the panel stays', s2 is not None and s2 != s0 and abs(f2 - f1) < 0.001, (s0, s2, f1, f2))
+    if s2 != s0: ui('key', code=49, ctrl=0); time.sleep(1.2)
+    c0, c1, g0, g1, lg = hold_w(True)
+    check('world: W (Smaller) held over the panel = 10 % smaller, and the game camera does not move', abs(g0 - g1 - 0.1) < 0.001 and c0[2] == 1 and moved(c0, c1) < 0.01,
+          (c0, c1, g0, g1, lg[-300:]))
+    c0, c1, g0, g1, _ = hold_w(False)
+    check('world: W held with the mouse off every panel moves the game camera (the key path works), the panel stays', c0[2] == 1 and moved(c0, c1) > 0.05 and abs(g1 - g0) < 0.001,
+          (c0, c1, g0, g1))
+    # COVERED DRAG: nothing of the game covers a kit panel in a world (a right-drag still moves it)
+    away(); s = st(); r0 = rect(s, 'stdp'); sw = s.get('w', {}).get('screen', [800, 600])[0]
+    dx = 60 if (r0[0] + r0[2]) / 2.0 < sw / 2.0 else -60
+    ui('rdrag', target='stdp', dx=dx, dy=30); time.sleep(1.8); away(); r1 = rect(st(), 'stdp')
+    check('world: a right-drag on the panel moves it', rmoved(r0, r1, dx, 30), (r0, r1, dx))
+    ui('api', op='stdpanel_off'); time.sleep(0.4)
+
+
 def run(tag, wh, scale, fresh):
     os.environ['LRIG_SIZE'] = f'{wh[0]}x{wh[1]}'
     orig = r.prepare_data
@@ -356,6 +416,7 @@ def run(tag, wh, scale, fresh):
         ui('api', op='stdpanel_off'); time.sleep(0.4)
         if tag == 'start1': top_cases()
         sec_cases(tag)
+        if tag == 'start2': world_cases()
     except Exception as e:
         check(f'{tag}: run finished', False, repr(e))
     finally:

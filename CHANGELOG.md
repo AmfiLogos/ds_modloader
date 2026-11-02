@@ -13,6 +13,8 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - When a mod cannot start, the mods that need it are now turned off too, and the Mods window says why. Before, they ran without the mod they need.
 - When the mod loader turns a mod off because the game closed while that mod was starting, a message at the title now names the mod, with a button to the Mods window.
 - If the game closes twice in a row while starting with mods (after the mods started, before the title), the next start runs without mods, tells you why and opens the Mods window, so you can turn off the mod that causes it.
+- A right-click drag no longer moves a mod window that the Mods window or another window covers at that spot. Only the window you see under the mouse moves.
+- When a size key that the game also uses (for example Space or W) makes a mod window under the mouse smaller or bigger, the game no longer also acts on that key press. With the mouse away from mod windows, the key works in the game as before.
 
 ### 0.1.31 (2026-11-02)
 

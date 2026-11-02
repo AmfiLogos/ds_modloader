@@ -612,10 +612,10 @@
      "rva": "0xa67620"
     }
    },
-   "active": "always (the kit's Escape: KeyCode.Escape kept from the game while one of our windows takes it)",
-   "label": "loader ui Escape (KeyInputDispatcher key-down reader)",
+   "active": "always (the kit's Escape: KeyCode.Escape kept from the game while one of our windows takes it; a size key kept from the game while it sizes a panel)",
+   "label": "loader ui Escape + size keys (KeyInputDispatcher key-down reader)",
    "source": "ds_modloader:loader/src/dsl_ui.c",
-   "key": "loader|dsl_ui.c|h_kd_next|loader ui Escape (KeyInputDispatcher key-down reader)"
+   "key": "loader|dsl_ui.c|h_kd_next|loader ui Escape + size keys (KeyInputDispatcher key-down reader)"
   },
   {
    "owner": "loader",
@@ -635,6 +635,25 @@
    "label": "loader ui EventSystem.Update",
    "source": "ds_modloader:loader/src/dsl_ui.c",
    "key": "loader|dsl_ui.c|h_es_update|loader ui EventSystem.Update"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.Main.InputModule.KeyInputDispatcher.<GetInputOnKeyPressed>d__19$$MoveNext",
+   "platforms": {
+    "mac-arm64": {
+     "rvas": null,
+     "rva": "0xd436d4"
+    },
+    "win-x64": {
+     "rvas": null,
+     "rva": "0xa67850"
+    }
+   },
+   "active": "always (the kit's size keys: a size key that sized a panel kept from the game's held-key reader until it is let go)",
+   "label": "loader ui size keys (KeyInputDispatcher held-key reader)",
+   "source": "ds_modloader:loader/src/dsl_ui.c",
+   "key": "loader|dsl_ui.c|h_kp_next|loader ui size keys (KeyInputDispatcher held-key reader)"
   },
   {
    "owner": "loader",

@@ -1791,13 +1791,20 @@ static void esc_tick(void) {
     }
     hset(&esc_foc, esc_focused());                                   /* after: a field this press left is free now */
 }
-/* the game's key-down reader: KeyCode.Escape skipped while ours takes it (one log line per press) */
-static bool (*o_kd_next)(Obj, const void *);
-static int32_t off_kd_cur = -1, esc_kept = -1;
+/* the game's key-down reader: KeyCode.Escape skipped while ours takes it (one log line per press); a size key skipped
+   while it sizes a panel (szk_keeps, SIZE KEYS below). The held-key reader (<GetInputOnKeyPressed>d__N: the camera's
+   W A S D) skips a size key from the press that sized a panel until it is let go. */
+static int szk_keeps(int32_t key);
+static bool (*o_kd_next)(Obj, const void *), (*o_kp_next)(Obj, const void *);
+static int32_t off_kd_cur = -1, off_kp_cur = -1, esc_kept = -1;
+static bool h_kp_next(Obj it, const void *mi) {
+    for (;;) { bool r = o_kp_next(it, mi); if (!r || !szk_keeps(AT(it, off_kp_cur, int32_t))) return r; }
+}
 static bool h_kd_next(Obj it, const void *mi) {
     for (;;) {
         bool r = o_kd_next(it, mi);
-        if (!r || AT(it, off_kd_cur, int32_t) != 27) return r;
+        if (!r) return r;
+        if (AT(it, off_kd_cur, int32_t) != 27) { if (szk_keeps(AT(it, off_kd_cur, int32_t))) continue; return r; }
         int32_t fc = esc_frame();
         if (!(esc_used == fc && fc >= 0) && !esc_top()) return r;
         if (esc_kept != fc) { esc_kept = fc; dsl_log("ui: Escape kept from the game (one of our windows takes it)"); }
@@ -1807,17 +1814,23 @@ static void esc_install(void) {
     void *(*nested)(void *, void **) = (void *(*)(void *, void **))dsl_il2cpp_fn("il2cpp_class_get_nested_types");
     const char *(*cname)(void *) = (const char *(*)(void *))dsl_il2cpp_fn("il2cpp_class_get_name");
     *(void **)&x_weak = dsl_il2cpp_fn("il2cpp_gchandle_new_weakref");
-    void *k = dsl_find_class("Refactor.Main.InputModule", "KeyInputDispatcher"), *it = NULL, *nk, *mi = NULL;
-    while (k && nested && cname && (nk = nested(k, &it)))
-        if (!strncmp(cname(nk), "<GetInputOnKeyDown>d__", 22)) { mi = mi_sig(nk, "MoveNext", 0, NULL); off_kd_cur = dsl_field_offset(nk, "<>2__current"); break; }
+    void *k = dsl_find_class("Refactor.Main.InputModule", "KeyInputDispatcher"), *it = NULL, *nk, *mi = NULL, *mp = NULL;
+    while (k && nested && cname && (nk = nested(k, &it))) {
+        if (!mi && !strncmp(cname(nk), "<GetInputOnKeyDown>d__", 22)) { mi = mi_sig(nk, "MoveNext", 0, NULL); off_kd_cur = dsl_field_offset(nk, "<>2__current"); }
+        else if (!mp && !strncmp(cname(nk), "<GetInputOnKeyPressed>d__", 25)) { mp = mi_sig(nk, "MoveNext", 0, NULL); off_kp_cur = dsl_field_offset(nk, "<>2__current"); }
+    }
+    if (!mp || !*(void **)mp || off_kp_cur < 0)
+        dsl_log("ui: size keys: the game's held-key reader not found (MoveNext %p, current %d): a held game key used as a size key also reaches the game", mp, off_kp_cur);
+    else if (dsl_hook(DSL_OWNER_LOADER, *(void **)mp, (void *)h_kp_next, (void **)&o_kp_next, "loader ui size keys (KeyInputDispatcher held-key reader)"))
+        dsl_log("ui: size keys: held-key reader hook refused: a held game key used as a size key also reaches the game");
     void *kES = dsl_find_class("UnityEngine.EventSystems", "EventSystem");
     m_es_cur = kES ? mi_sig(kES, "get_current", 0, NULL) : NULL; m_es_selgo = kES ? mi_sig(kES, "get_currentSelectedGameObject", 0, NULL) : NULL;
     m_es_setsel = kES ? mi_sig(kES, "SetSelectedGameObject", 1, NULL) : NULL;
     m_nv_okclick = K.Notice ? mi_sig(K.Notice, "OnClick_Confirm", 0, NULL) : NULL; m_nv_cancelclick = K.Notice ? mi_sig(K.Notice, "OnClick_Cancle", 0, NULL) : NULL;
     if (!mi || !*(void **)mi || off_kd_cur < 0)
         dsl_log("ui: Escape: the game's key reader not found (MoveNext %p, current %d): an Escape that closes our window also reaches the game", mi, off_kd_cur);
-    else if (dsl_hook(DSL_OWNER_LOADER, *(void **)mi, (void *)h_kd_next, (void **)&o_kd_next, "loader ui Escape (KeyInputDispatcher key-down reader)"))
-        dsl_log("ui: Escape: key reader hook refused: an Escape that closes our window also reaches the game");
+    else if (dsl_hook(DSL_OWNER_LOADER, *(void **)mi, (void *)h_kd_next, (void **)&o_kd_next, "loader ui Escape + size keys (KeyInputDispatcher key-down reader)"))
+        dsl_log("ui: Escape: key reader hook refused: an Escape that closes our window (or a size key on a panel) also reaches the game");
     dsl_log("ui: Escape for our windows ready (fields %s, notice buttons %s)", m_es_cur && m_es_selgo ? "on" : "OFF", m_nv_okclick && m_nv_cancelclick ? "on" : "OFF");
 }
 /* a module that reads Escape itself (multiplayer's title pages, its in-game boxes) leaves the press alone while the kit
@@ -2045,6 +2058,10 @@ static int ord_cmp(const OrdKey *a, const OrdKey *b) {               /* > 0: a i
     return a->n - b->n;                                              /* a child is drawn above its parent */
 }
 static int mv_own_drag; static int64_t mv_pick_at = -1;
+static Obj ui_cover_at(Obj o, float x, float y);
+/* COVERED (lead task 2026-11-02, lane nvdrag; open point of the size keys' review): the top panel under the mouse takes the
+   right press only when nothing else covers it there (ui_cover_at: what a left click would reach, the Mods window and its
+   backdrop, a game popup, a plain kit window). Covered = no panel moves, and drag_owner says none (own drag code too). */
 static void mv_pick(void) {                                          /* once a frame: who takes this right press */
     int64_t f = m_time_frame ? CALL0(m_time_frame, int)(m_time_frame) : frames;   /* the game's frame: a caller before the kit's frame tick sees the same pick */
     if (mv_pick_at == f) return;
@@ -2062,6 +2079,8 @@ static void mv_pick(void) {                                          /* once a f
         if (c > 0 || (c == 0 && mvs[i].seq > mvs[best].seq)) { best = i; kb = ki; }
     }
     if (best < 0) return;
+    Obj cv = ui_cover_at(hget(mvs[best].h), m.x, m.y);
+    if (cv) { char by[96] = ""; obj_name(go_of(cv), by, sizeof by); dsl_log("ui: move: right press on %s: covered there by %s: no panel moves", mvs[best].key, by[0] ? by : "?"); return; }
     mv_id = mvs[best].id; mv_on = 0; mv_own_drag = mvs[best].own; mv_x0 = mv_lx = m.x; mv_y0 = mv_ly = m.y;
     if (under > 1) dsl_log("ui: move: right press on %d panels: %s (the top one) takes it", under, mvs[best].key);
 }
@@ -2309,7 +2328,7 @@ int dsl_ui_layout_reset(void) {
 #define SZK_CTRL 1
 #define SZK_SHIFT 2
 #define SZK_ALT 4
-static struct { int key, mods; } szk[2]; static int szk_loaded, szk_cap = -1, szk_serial; static int64_t szk_cap_at;
+static struct { int key, mods; } szk[2]; static int szk_loaded, szk_cap = -1, szk_serial; static int64_t szk_cap_at; static int32_t szk_cap_fc = -1;
 static const char *const szk_rowkey[2] = { "kit@size_key_minus", "kit@size_key_plus" };
 static void szk_load(void) {
     if (szk_loaded) return;
@@ -2347,7 +2366,7 @@ void dsl_ui_size_key_set(int which, int key, int mods) {
     dsl_log("ui: size keys: %s = key %d mods %d", which ? "bigger" : "smaller", key, mods);
 }
 void dsl_ui_size_key_capture(int which) {
-    int was = szk_cap; szk_cap = which == 0 || which == 1 ? which : -1; szk_cap_at = frames;
+    int was = szk_cap; szk_cap = which == 0 || which == 1 ? which : -1; szk_cap_at = frames; szk_cap_fc = esc_frame();
     if (was != szk_cap) { szk_serial++; dsl_log("ui: size keys: %s", szk_cap < 0 ? "capture off" : szk_cap ? "press a key for bigger" : "press a key for smaller"); }
 }
 int dsl_ui_size_key_capturing(void) { return szk_cap; }
@@ -2433,17 +2452,49 @@ static int sz_under_mouse(char *by, size_t n) {                     /* the panel
     if (cv) { if (by && n) obj_name(go_of(cv), by, n); if (by && n && !by[0]) snprintf(by, n, "?"); return -1; }
     return best;
 }
-static void sz_keys_frame(void) {
-    if (!nsz || szk_cap >= 0 || frames <= szk_cap_at || !m_input_keydown || !m_input_key) return;   /* not the frame a capture took its key */
+/* KEPT FROM THE GAME (lead task 2026-11-02, lane nvdrag: "a captured size key that the game also uses does both actions
+   over a panel"): ONE decision per game frame (szk_decide, Time.frameCount), asked by the kit tick (it sizes the panel)
+   and by the game's key readers (h_kd_next / h_kp_next skip the key), so the frame order of the two does not matter, as
+   for Escape. A press that sized a panel stays the kit's until the key is let go (szk_eat: a held camera key never starts
+   the camera mid-press). Keys the game reads outside KeyInputDispatcher still reach it (Space in the story intro, Shift
+   held for unit shortcuts, the Mac F1 / F2 monitor): the row's hover text keeps saying to pick a key the game does not use. */
+static int32_t szk_dec_fc = -2, szk_eat_fc = -1, szk_said_fc = -1; static int szk_dec_w = -1, szk_dec_done, szk_eat; static DSLObj szk_dec_id;
+static void szk_decide(void) {
+    int32_t fc = esc_frame(); if (fc < 0) fc = (int32_t)frames;      /* no frame clock: one decision per kit tick */
+    if (fc == szk_dec_fc) return;
+    szk_dec_fc = fc; szk_dec_id = NULL; szk_dec_w = -1; szk_dec_done = 0;
+    if (!m_input_keydown || !m_input_key) return;
+    if (szk_eat && !CALL(m_input_key, bool, int)(szk_eat, m_input_key)) szk_eat = 0;   /* let go */
+    if (!nsz || szk_cap >= 0 || fc == szk_cap_fc) return;            /* not the frame a capture took its key */
     szk_load();
-    int w = -1;
-    for (int q = 0; q < 2 && w < 0; q++) if (szk[q].key && CALL(m_input_keydown, bool, int)(szk[q].key, m_input_keydown)) w = q;
-    if (w < 0 || szk_mods_now() != szk[w].mods) return;
+    int w = -1, mods = -1;
+    for (int q = 0; q < 2; q++) {
+        if (!szk[q].key || !CALL(m_input_keydown, bool, int)(szk[q].key, m_input_keydown)) continue;
+        if (szk_eat == szk[q].key) szk_eat = 0;                      /* a new press of it: decided again */
+        if (mods < 0) mods = szk_mods_now();
+        if (w < 0 && mods == szk[q].mods) w = q;
+    }
+    if (w < 0) return;
     if (esc_focused()) { dsl_log("ui: size keys: a text field has the keyboard: not used"); return; }
     char by[96]; int i = sz_under_mouse(by, sizeof by);
     if (i < 0) { if (by[0]) dsl_log("ui: size keys: the panel under the mouse is covered by %s: not used", by); else dsl_log("ui: size keys: no panel with \"-\" / \"+\" under the mouse"); return; }
-    dsl_log("ui: size keys: %s on %s", w ? "bigger" : "smaller", szs[i].key);
-    sz_step(i, w ? szs[i].plus : szs[i].minus);
+    szk_dec_id = szs[i].id; szk_dec_w = w; szk_eat = szk[w].key; szk_eat_fc = fc;
+}
+static void sz_keys_frame(void) {
+    szk_decide();
+    if (!szk_dec_id || szk_dec_done) return;
+    szk_dec_done = 1;
+    int i = sz_find(szk_dec_id); if (i < 0) return;
+    dsl_log("ui: size keys: %s on %s", szk_dec_w ? "bigger" : "smaller", szs[i].key);
+    sz_step(i, szk_dec_w ? szs[i].plus : szs[i].minus);
+}
+static int szk_keeps(int32_t key) {                                  /* the game's key readers: 1 = this key is the kit's now */
+    if (key <= 0 || esc_frame() < 0) return 0;                       /* no frame clock: the game gets it, as before */
+    if (key != szk_eat && (!szk_loaded || (key != szk[0].key && key != szk[1].key))) return 0;
+    szk_decide();
+    if (key != szk_eat) return 0;
+    if (szk_said_fc != szk_eat_fc) { szk_said_fc = szk_eat_fc; dsl_log("ui: size keys: key %d kept from the game (it sizes a panel; until it is let go)", key); }
+    return 1;
 }
 /* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
    rules / pattern to keep applying everywhere"). window_std: a window or an in-game panel with every owner rule on by

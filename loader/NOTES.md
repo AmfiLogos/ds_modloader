@@ -1356,10 +1356,25 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   ui_cover_at = the EventSystem's own RaycastAll at the mouse (fresh PointerEventData + List<RaycastResult>, element 0's
   m_GameObject) = what a left click there reaches; not inside the panel and not drawn below it (ord_cmp, the TOP RULE's
   order: a see-through part of the panel over the game) = covered (the Mods window, a game popup, a plain kit window).
-  No raycast in a build: the old rule (the top panel_size panel under the mouse). The right-drag (mv_pick) does not
-  use it (not asked).
+  No raycast in a build: the old rule (the top panel_size panel under the mouse). The right-drag (mv_pick) uses it too
+  (kit 0.1.32, lane nvdrag; TOP RULE below).
   Free keys checked 2026-11-01: the game's KeySettingData binds no Minus 45 / Equals 61 / Keypad 269 / 270; Ctrl alone is
-  its EntityHover hold (stays). A captured key the game also binds does both (the row's hover text says to pick a free key).
+  its EntityHover hold (stays).
+  KEPT FROM THE GAME (kit 0.1.32, lane nvdrag; lead 2026-11-02: "A captured size key that the game also uses does both
+  actions over a panel"): when a size key sizes a panel, the game does not get that press. ONE decision per game frame
+  (szk_decide, keyed on Time.frameCount) is asked by the kit tick (sz_keys_frame sizes the panel) and by the game's two key
+  readers (the Escape rule's hook on KeyInputDispatcher.<GetInputOnKeyDown>d__N.MoveNext and a second one on
+  <GetInputOnKeyPressed>d__N.MoveNext, the held keys: camera W A S D); szk_keeps(key) skips the key there. So the frame
+  order of the game's input and the kit tick does not matter (as for Escape). A press that sized a panel stays the kit's
+  until the key is let go (szk_eat: a held camera key never starts the camera mid-press, also after the mouse left the
+  panel). Off every panel (or covered, or a text field has the keyboard) the game gets the key as before. Why there: the
+  game's bindings (KeySettingData.Bindings: KeyCode + IsKeyDown + ModifierKey) are all read by those two iterators
+  (dump 25846389: KeyInputDispatcher.UpdateKeyStream = AddRange over both + CheckModifierAvailable); multiplayer's
+  IsTextInputFocused hook stops ALL keys (wrong tool for one key). NOT kept (read outside the dispatcher): Space in the
+  story intro (NarrativeIntroView), Shift held for unit shortcuts (PlayerUnitShortCutView), Escape in the research panel
+  (never a size key), the Mac F1 / F2 native monitor (MacFunctionKeyInputSource). The row's hover text still says to pick
+  a key the game does not use (off a panel the game gets it). No frame clock (Time.frameCount missing): the game gets it.
+  Guard: panelsize_test.py world_cases (Bigger = Space, Smaller = W).
   Guard: panelsize_test.py key_cases (real AppKit events: uikit-demo "key" ctrl 1 = flagsChanged Control + key, code 40 =
   K; ctrl 0 code -1 = Control up): default keys one step each way, button < 2 px; mouse off every panel: nothing; a
   focused text field: nothing; capture Ctrl + K resizes, old key nothing; Escape keeps the key and the window; Clear =
@@ -1412,7 +1427,12 @@ Units Laboratory's dps_test checks the meter and the chat in a DPS Check world (
   above); same order on different canvases = the newest registered (as before). It was "the newest registered", which is
   wrong once a window is raised. A panel with its OWN drag code joins the choice with `dsl_movable_own(ui, panel, key)`
   (the kit never moves or keeps it) and arms its drag only while `dsl_drag_owner(ui) == panel` (callable any time in the
-  frame; the pick is keyed on Time.frameCount, so a caller before the kit's frame tick sees the same pick). NOT done yet:
+  frame; the pick is keyed on Time.frameCount, so a caller before the kit's frame tick sees the same pick).
+  COVERED (kit 0.1.32, lane nvdrag; lead 2026-11-02: "Right-drag still moves a mod panel that the Mods window or a game
+  popup covers"): the top registered panel takes the press only when ui_cover_at (SIZE KEYS: the EventSystem raycast + this
+  order) finds nothing over it at the mouse; covered = no panel moves and dsl_drag_owner says none (log "ui: move: right
+  press on <key>: covered there by <name>"). One raycast per right press, not per frame. Guard: panelsize_test.py key_cases
+  (the Mods window over the panel: a right-drag moves nothing) + world_cases (a right-drag in a world still moves it). NOT done yet:
   the multiplayer chat (mpmenu.c) and Players panel (ui_game.c plist_mouse) have their own right-drag code and still move
   under a kit window until they call these two.
 - SECTION RULE (owner, Units Laboratory test window: "otherwise they just take a lot of space for no reason"): new
