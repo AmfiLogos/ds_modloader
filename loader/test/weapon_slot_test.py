@@ -9,10 +9,14 @@ The owner's saves and backups are only READ (copied into <out>/save_in first).
   env WS_COPY=<letter>                the test copy (default X)
 
 Real breaks it catches: a save that is not the game's own (the mod wrote game data: quick slots, skills, auto-use, items),
-a weapon button that shows or uses the wrong skill (or a skill the unit does not have), an exception that stops the bar.
+a weapon button that shows or uses the wrong skill (or uses a skill the unit does not have), a unit without its weapon's
+skill whose button is not greyed with the "free a quick slot" hover card, the setting "hide_copy" (local, live) that does
+not draw the weapon skill's free slot empty / back, or that changes the game's quick slots or what that slot's key uses,
+an exception that stops the bar.
 World: a 4-slot world made from the 2026-10-11 backup (make_fill_fixture): units with the weapon skill out of the bar but
 still theirs (60c78b46, 477ad25a), units without it (acd20405, 92be08ca: the stock state after an equip with a full bar),
-units with free slots. 477ad25a gets one free slot so that a weapon swap gives the new weapon's skill (stock rule)."""
+units with free slots. 477ad25a gets one free slot so that a weapon swap gives the new weapon's skill (stock rule): then
+the skill sits in a free slot AND on the weapon button (the copy that hide_copy hides on this screen only)."""
 import json, os, re, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import lrig as r
@@ -61,10 +65,15 @@ def units_of(save):
                   'skills': {k: c.get(8, {}).get(k) for k in ('BasicSkills', 'ActiveSkills', 'PassiveSkills', 'AutoUse')},
                   'equip': [s.get('Key') for s in c.get(6, {}).get('ItemSlots', [])], 'inv': [s.get('Key') for s in c.get(5, {}).get('ItemSlots', [])]}
     return out
+def equipped_skill(u): return next((ITEM_W[k] for k in u['equip'] if k in ITEM_W), None)
 def weapon_skill(u):
-    """what the weapon button must show: the equipped weapon's skill when the unit has it, else nothing"""
-    w = next((ITEM_W[k] for k in u['equip'] if k in ITEM_W), None)
+    """what the weapon button must USE: the equipped weapon's skill when the unit has it, else nothing"""
+    w = equipped_skill(u)
     return w if w and w in (u['skills']['ActiveSkills'] or []) else None
+def grey_text():
+    """the greyed button's hover card in English (T_NOSKILL[0] of the module)"""
+    t = open(os.path.join(LB, 'modules', 'weapon-slot', 'weapon_slot.c'), encoding='utf-8').read()
+    return re.search(r'T_NOSKILL\[10\] = \{\s*"([^"]+)"', t).group(1)
 
 
 def make_fill_fixture(dst, free_eq=False):
@@ -138,8 +147,8 @@ def up(out, enabled):
     if r.alive(r.read_pid(X)): raise SystemExit('copy %s already running' % X)
     md, prof = mods_dir(out, enabled)
     for p in ('mp.json', 'dsload.log', 'player.log', 'multibar_probe_req.txt', os.path.join('data', 'SaveHeaderCache.json'),
-              os.path.join('data', 'Mods', 'worlds.json'), os.path.join('data', 'Mods', 'save_backups')):
-        aside(os.path.join(I, p), out)
+              os.path.join('data', 'Mods', 'worlds.json'), os.path.join('data', 'Mods', 'save_backups'), os.path.join('data', 'Mods', 'settings.json')):
+        aside(os.path.join(I, p), out)                # settings.json: every mod setting at its default (hide_copy off)
     os.makedirs(os.path.join(I, 'data', 'Saves'), exist_ok=True)
     for k in ('DSML_ROOT', 'DSML_APP', 'DSML_SESSION', 'DSML_GAME_SAVES', 'DSRIG_DIAG'): os.environ.pop(k, None)
     os.environ.update({'LRIG_DYLIB': os.path.join(LB, 'build', 'dsload.dylib'), 'DSL_MODS_DIR': md, 'DSL_PROFILE': prof,
@@ -185,9 +194,13 @@ def probe(line, want, limit=20):
     return []
 
 
+WBTN = {}                                         # the real bar's weapon button at the last real_bar(): act, hover, type, tip
 def real_bar():
     """the real skill bar: (shown unit, slot count, shown keys: 0 = basic, 1..4 free slots, 5 = the weapon button)"""
     L = probe('state', 'multibar-probe: state: ')
+    WBTN.clear()
+    for m in re.findall(r'wbtn \[(\S+) act=(-?\d+) hover=(\d) type=(-?\d+) tip=(.*)\]', '\n'.join(L)):
+        if not m[0].startswith('QuickSlotUI_Multi'): WBTN.update(act=int(m[1]), hover=int(m[2]), type=int(m[3]), tip=m[4])
     for m in re.findall(r'bar \[(\S+) active=(\d) slots=(\d+) unit=(\S+) keys=(\S*)\]', '\n'.join(L)):
         if not m[0].startswith('QuickSlotUI_Multi'): return m[3], int(m[2]), m[4].split(',')
     return None, 0, []
@@ -204,10 +217,28 @@ def show(g, mp):
     return real_bar()[1:]
 
 
-def use_button(g):
-    """bar slot 5 (UseQuickSlotSkillRequested Index 5, the stock click path): the skills AddUseSkill got for unit g"""
+def request(o):                                   # loader test request (DSL_SOFT_TEST=1): a Mods settings page value
+    d = os.path.join(I, 'softrestart'); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, 'reg_request.json.tmp'), 'w').write(json.dumps(o)); os.replace(os.path.join(d, 'reg_request.json.tmp'), os.path.join(d, 'reg_request.json'))
+def hide_copy(on):
+    """the setting hide_copy, set as on the Mods settings page (local: live, no restart); True when the module took it"""
+    dm = len(dlog()); request({'cmd': 'setting', 'mod': 'weapon-slot', 'id': 'hide_copy', 'value': bool(on)})
+    t0 = time.time()
+    while time.time() - t0 < 15:
+        if 'setting hide_copy: %s' % ('on' if on else 'off') in dlog()[dm:]: time.sleep(1); return True
+        time.sleep(0.5)
+    return False
+def shot(name):                                   # env WS_SHOTS=<dir>: a picture of the screen for the lead (not a check)
+    if os.environ.get('WS_SHOTS'):
+        os.makedirs(os.environ['WS_SHOTS'], exist_ok=True)
+        log('shot', name, cmd({'cmd': 'ui_capture', 'path': os.path.join(os.environ['WS_SHOTS'], name)}).get('ok'))
+
+
+def use_button(g, i=5):
+    """bar slot i (UseQuickSlotSkillRequested Index i, the stock click / key path; 5 = the weapon button): the skills
+    AddUseSkill got for unit g"""
     dm = len(dlog())
-    inject('UseQuickSlotSkillRequested', i32_16=5); time.sleep(2)
+    inject('UseQuickSlotSkillRequested', i32_16=i); time.sleep(2)
     adds = [l.split('AddUseSkill ', 1)[1].split()[:2] for l in dlog()[dm:].splitlines() if 'multibar-probe: AddUseSkill ' in l]
     cmd({'cmd': 'ord_inject', 'ev': 'BaseControlModeRequested'})   # leave the aiming mode
     return [a[1] for a in adds if a[0] == g], adds
@@ -219,7 +250,7 @@ def run(out):
     before = units_of(src)
     mark = up(out, ['multiplayer', 'weapon-slot'])
     L = dlog()
-    check('module on: client only, 7 hooks', 'weapon skill slot on (client only: 7 hooks, no game data written)' in L,
+    check('module on: client only, 7 hooks', 'weapon skill slot on (client only: 7 hooks, no game data written; hide the copy: off)' in L,
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
     if not checks[-1]['ok']: raise SystemExit('module not on: stop')
     load(src, out)
@@ -231,10 +262,21 @@ def run(out):
     check('the test world has units WITH the weapon skill out of the bar and units WITHOUT it',
           any(w and w not in before[g]['quick'] for g, w in exp.items()) and any(not w for g, w in exp.items() if any(k in ITEM_W for k in before[g]['equip'])),
           {g[:8]: (before[g]['quick'], w) for g, w in exp.items()})
+    grey = grey_text()
     for g, w in exp.items():
         n, keys = show(g, mp)
         shown = keys[5] if len(keys) > 5 and keys[5] != '-' else None
-        check('unit %s: the bar has 6 slots, the weapon button shows %s' % (g[:8], w or 'nothing'), n == 6 and shown == w, (n, keys))
+        eq = equipped_skill(before[g])
+        if w or not eq:
+            check('unit %s: the bar has 6 slots, the weapon button shows %s' % (g[:8], w or 'nothing'),
+                  n == 6 and shown == w and not (w and WBTN.get('tip')), (n, keys, WBTN))
+        else:                                     # (b) the unit does not have its weapon's skill (stock: equipped with a full bar)
+            check('unit %s: the weapon button shows %s GREYED with the "free a quick slot" hover card' % (g[:8], eq),
+                  n == 6 and shown == eq and WBTN.get('act') == 0 and WBTN.get('hover') == 1 and WBTN.get('tip') == grey, (n, keys, WBTN))
+            if not any(c['name'].startswith('hover card shown') for c in checks):
+                dm = len(dlog()); probe('hoverw 1', 'hoverw 1:'); time.sleep(1.5); shot('ws_b_greyed_hover.png')
+                check('hover card shown on the greyed button (TooltipFeedback.OnInteractStart)', 'hoverw 1: done' in dlog()[dm:], dlog()[dm:][-300:])
+                probe('hoverw 0', 'hoverw 0:')
         used, adds = use_button(g)
         check('unit %s: the weapon button uses %s' % (g[:8], w or 'nothing'), used == ([w] if w else []), adds)
     if wl: log(wl[0])
@@ -253,6 +295,23 @@ def run(out):
         check('swap: the weapon button shows %s' % EQ_SKILL, n == 6 and len(keys) > 5 and keys[5] == EQ_SKILL, keys)
         used, adds = use_button(EQ_UNIT)
         check('swap: the weapon button uses %s' % EQ_SKILL, used == [EQ_SKILL], adds)
+        # (a) hide_copy: EQ_SKILL now sits in free slot 4 (UI 4) AND on the weapon button. View only: slot 4 drawn empty,
+        # the game's quick slots unchanged, slot 4's key still uses the skill; switched off, the slot is drawn again
+        check('hide_copy on: the module takes the Mods page value at once', hide_copy(True))
+        _, n, keys = real_bar()
+        q2 = cmd({'cmd': 'ord_read', 'guid': EQ_UNIT}).get('quick')
+        check('hide_copy on: free slot 4 drawn empty, the weapon button shows %s, the game\'s quick slots unchanged' % EQ_SKILL,
+              len(keys) > 5 and keys[4] == '-' and keys[5] == EQ_SKILL and q2 == q, (keys, q2))
+        shot('ws_a_hide_copy_on.png')
+        used, adds = use_button(EQ_UNIT, 4)
+        check('hide_copy on: the key of free slot 4 still uses %s (game data)' % EQ_SKILL, used == [EQ_SKILL], adds)
+        other = next((g for g in exp if g != EQ_UNIT), None)
+        if other: show(other, mp)
+        n, keys = show(EQ_UNIT, mp)
+        check('hide_copy on: still hidden after the bar is rebuilt (select another unit and back)', len(keys) > 5 and keys[4] == '-' and keys[5] == EQ_SKILL, keys)
+        check('hide_copy off: the module takes it at once', hide_copy(False))
+        _, n, keys = real_bar()
+        check('hide_copy off: free slot 4 shows %s again' % EQ_SKILL, len(keys) > 5 and keys[4] == EQ_SKILL and keys[5] == EQ_SKILL, keys)
     else:
         check('swap unit %s on the map with %s in its bag' % (EQ_UNIT[:8], EQ_ITEM), False, (EQ_UNIT in exp, idx))
     check('no exception', not errors(mark), errors(mark)[:5])

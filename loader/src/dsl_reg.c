@@ -18,6 +18,7 @@
 #include "dsl_ml.h"
 #include "dsl_deps.h"
 #include "dsl_bugrep.h"
+#include "dsl_modtag_rule.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -770,8 +771,9 @@ int dsl_world_is_modded(const char *guid) {
     for (int i = 0; i < n; i++) {
         if (dsl_mod_is_feature(ids[i])) continue;
         const DSLModInfo *m = mod_by_id(ids[i]);
-        if (m && (m->fix || m->vanilla_plus)) continue;               /* a fix for a bug of the game (owner 2026-10-24), Vanilla+ (10-25) */
-        if (!m || strcmp(m->scope, "client")) return 1;
+        /* the one tag rule (dsl_modtag_rule.h, also the Mods window's icons): fixes (owner 2026-10-24), Vanilla+ (10-25)
+           and client mods keep a world Vanilla & Vanilla+; a mod that is not installed counts as gameplay */
+        if (!m || dsl_modtag_kind(m->fix, m->vanilla_plus, m->scope) != DSL_KIND_VANILLA) return 1;
     }
     return 0;
 }
@@ -1190,7 +1192,8 @@ static void world_frame(void) {
 /* ------------------------------------------------------------------ test only (DSL_SOFT_TEST=1, never in a player's start) */
 /* <log dir>/softrestart/reg_request.json: {"cmd":"k_ok"} = the "Load it with them?" box answered Load; {"cmd":"apply",
    "ids":[..]} = Mods tab Apply; {"cmd":"mods"} = the title "Mods" click; {"cmd":"world_set","guid":..,"ids":[..]};
-   {"cmd":"warn_load"} / {"cmd":"warn_cancel"} = the game-save warning (dsl_saves.c) answered */
+   {"cmd":"warn_load"} / {"cmd":"warn_cancel"} = the game-save warning (dsl_saves.c) answered;
+   {"cmd":"setting","mod":..,"id":..,"value":..} = that value set on the Mods settings page (dsl_settings_set) */
 /* v13 checks: {"cmd":"title"} logs the title column; {"cmd":"hover","what":"title:<label>" | "row:<i>" | "win:<control>" |
    "pn:<k>" (the Load list's filter box k)}
    hovers that element (no mouse) and logs the hover card's rect and its panel's rect 20 frames later */
@@ -1268,6 +1271,12 @@ static void test_frame(void) {
     if (c && !strcmp(c, "k_ok")) k_ok(NULL, NULL);
     else if (c && !strcmp(c, "apply")) { char why[300] = ""; if (dsl_apply_mods(ids, n, why, sizeof why)) dsl_log("reg test: apply refused: %s", why); }
     else if (c && !strcmp(c, "mods")) on_title_mods(NULL);
+    else if (c && !strcmp(c, "setting")) {                             /* a value set on the Mods settings page (local: live) */
+        const char *m = json_str(j, "mod"), *id = json_str(j, "id"); JNode *v = json_get(j, "value"); int k = -1;
+        for (int i = 0; m && id && i < dsl_settings_count(m) && k < 0; i++) if (!strcmp(dsl_settings_at(m, i)->id, id)) k = i;
+        int r = k >= 0 && v ? dsl_settings_set(m, k, v->t == JN_BOOL ? v->b : (int)v->num) : -1;
+        dsl_log("reg test: setting %s/%s: %s", m ? m : "?", id ? id : "?", r ? "FAILED" : "ok");
+    }
     else if (c && !strcmp(c, "tipsweep")) { sw_n = dsl_ui_test_tip_targets(sw_t, 96); sw_i = 0; sw_wait = 1; dsl_log("reg test: tipsweep of %d hover card(s)", sw_n); }
     else if (c && !strcmp(c, "shot")) dsl_log("reg test: shot %s: %s", json_str(j, "path"), dsl_soft_shot(json_str(j, "path")) ? "FAILED" : "ok");
     else if (c && !strcmp(c, "toggles")) { void dsl_rows_test_toggles(int); JNode *o = json_get(j, "on"); dsl_rows_test_toggles(o && o->t == JN_BOOL ? o->b : 1); }

@@ -38,3 +38,26 @@ not in this lane. Logged in MORNING_QUESTIONS.md.
   one more free slot, a weapon skill for a unit that equipped with a full bar.
 - Tests: loader/test/weapon_slot_test.py (single player), loader/test/weapon_slot_pair.py --mod host|guest (pair, mixed).
   The 0.1 tests above are in tests/old/.
+
+## 2026-11-02 (lane nvwslot3): greyed button, "hide the copy", the 0.2.0 hold
+- Stock facts (hidden copy, build 25846389): a unit HAS its weapon skill only while the skill sits in one of its 4 free
+  slots. Equip with a full bar: no skill (ProcessEquip adds it only when TryRegisterQuickSlot found a slot). The stock
+  "Remove from Quick Slot" (right-click menu; UnsetQuickSlotRequested, ord_events_gen.h order 34) also removes the skill
+  (InputEventHandler 0xD9789C: SkillComponent.RemoveSkill when the key is in no other slot): auto-use ends, the skill window
+  keeps it (extra skills). So the 0.2.0 button is always a copy of a free slot, and sending the stock Remove for the
+  "duplicate" would also empty the button: not built.
+- The unit does not have its weapon's skill: the button shows the skill greyed (SkillSlotUI.SetActivate(false)), no
+  auto-use mark, and the game's simple hover card (TooltipFeedback.SetSimpleText, the locked-slots pattern): "Free a quick
+  slot, then equip the weapon again" (10 languages). A click does nothing (GetSkillAt answers null).
+- Setting "hide_copy" (mod.json settings, scope local, default off: owner 2026-11-02): the free slot that holds the
+  weapon skill is drawn empty on this screen (the view array gets null there; its per-frame refresh goes to the weapon
+  button). Game data unchanged: that slot's key still casts it, auto-use is the same, a dropped skill replaces it (stock).
+  Live: dsl_on_setting_change. Test request {"cmd":"setting",...} (loader/src/dsl_reg.c, DSL_SOFT_TEST only) sets it as
+  the Mods page does.
+- The bar now re-reads the unit at each bar rebuild (InitSkillUI / RefreshSkillUI), so the button no longer keeps a
+  removed skill's icon for up to 30 frames.
+- The 0.2.0 hold of v0.1.30 lived only in the release folder (rebuild script: the published 0.1.2 zip copied over
+  build/mods_all/{mac,win}/weapon-slot; publish script: weapon-slot in its "same as before" list). The repo always had
+  0.2.0. A release lane must not copy that overlay: the next kit ships the 0.2.0 built from this tree.
+- Tests: weapon_slot_test.py (22 checks: greyed + hover text, hide_copy on/off live, slot key still casts, save is the
+  game's own); weapon_slot_pair.py with WS_HIDE_COPY=1 (the player with the mod hides the copy; the pair stays in sync).

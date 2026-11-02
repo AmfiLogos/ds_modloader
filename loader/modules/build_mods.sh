@@ -6,7 +6,10 @@
 #
 #   build_mods.sh                 build all (Mac part through ../build.sh; Windows with ~/tools/llvm-mingw)
 #   build_mods.sh --check [dir]   check a built set (default build/mods_all): every module lists mac-arm64 + win-x64,
-#                                 entry files exist, listed sha256s match, both copies have the same mod.json. Exit 1 = bad.
+#                                 entry files exist, listed sha256s match, both copies have the same mod.json, and no
+#                                 module is OLDER than its source here (loader/modules/<id>/mod.json "version"): a release
+#                                 that copies an old published package over the build (the v0.1.30 weapon-slot hold) must
+#                                 say so with env HOLD_MODS="<id> ..." (printed as HELD). Exit 1 = bad.
 # Env: MP_PIN (default ../mp_pin.txt) = the ds_multiplayer commit for multiplayer (and the headers Custom Modes uses);
 #      CM_PIN (default ../cm_pin.txt) = the ds_custommodes commit for custom-modes on both platforms, CM_REPO its clone;
 #      MP_WIN_TREE = a ds_multiplayer checkout to build the Windows multiplayer from instead of the pin
@@ -16,9 +19,11 @@ set -e; cd "${0:A:h}"; MD=$PWD; L=${MD:h}
 OUT=$L/build/mods_all
 
 check() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "$MD" <<'PY'
 import hashlib, json, os, sys
 root = sys.argv[1]; bad = []
+held = set(os.environ.get("HOLD_MODS", "").replace(",", " ").split())
+vt = lambda v: tuple(int(x) if x.isdigit() else 0 for x in str(v).split("."))
 mac, win = os.path.join(root, "mac"), os.path.join(root, "win")
 ids = sorted(set(os.listdir(mac) if os.path.isdir(mac) else []) | set(os.listdir(win) if os.path.isdir(win) else []))
 if not ids: bad.append(f"no modules under {root}")
@@ -51,6 +56,12 @@ for i in ids:
         for b, t in (m.get("tables") or {}).items():
             if t.get(key) and not os.path.exists(os.path.join(d, i, t[key])): bad.append(f"{i}: {side} table {t[key]} missing")
     if len(mj) == 2 and mj["mac"] != mj["win"]: bad.append(f"{i}: mac and win mod.json differ")
+    src = os.path.join(sys.argv[2], i, "mod.json")
+    if mj and os.path.exists(src):                # an old package copied over the build ships an old mod by mistake
+        bv, sv = json.loads(next(iter(mj.values()))).get("version"), json.load(open(src, encoding="utf-8")).get("version")
+        if vt(bv) < vt(sv):
+            if i in held: print(f"HELD: {i} {bv} ships instead of the source {sv} (HOLD_MODS)")
+            else: bad.append(f"{i}: built {bv} is older than the source {sv} (an old package over the build? HOLD_MODS={i} if on purpose)")
 for b in bad: print("CHECK FAIL:", b)
 print(f"check {root}: {len(ids)} modules ({', '.join(ids)}): {'OK' if not bad else str(len(bad)) + ' problem(s)'}")
 sys.exit(1 if bad else 0)

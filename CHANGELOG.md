@@ -6,6 +6,17 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ### Unreleased (0.1.31)
 
+- You now pick the size keys yourself: in the Mods window ("Global settings"), click the key next to "Smaller" or "Bigger", then press the key you want (hold Ctrl, Shift or Alt with it if you like). Escape keeps the old key, and "Clear" turns that key off. The default stays Ctrl and "-" / Ctrl and "=". If you had picked the keypad keys or Off before, that choice is kept.
+- The size keys now change only the mod window you see under the mouse. When the Mods window, a game window or another mod window covers it there, nothing changes size.
+- "Save current layout" now keeps only the size of each mod window. "Reset all" puts those sizes back and leaves every window where you put it.
+- Fixed a rare crash when a mod starts to change a game function at the moment the game uses it.
+- On Windows, the mod loader again refuses a second mod on the same piece of game code when one of the two mods names that code only by its address (there, several game functions can share one piece of code). This is the 0.1.29 rule; the log names both mods.
+- Weapon skill slot 0.2.0 now changes only your own screen. Its button next to the basic attack shows the skill of your unit's weapon and uses it with a click. Friends in your multiplayer game no longer need the mod, and your saves stay the game's own. In the game, a unit has its weapon's skill only while that skill sits in one of its 4 skill slots, so the skill now also stays there. A new setting of the mod, "Hide the copy in the skill bar" (off by default), shows that slot empty on your screen; its key still uses the skill. If a unit got its weapon while its 4 skill slots were full, the game did not give it the skill: the button then shows the skill greyed out, and its hover card says to free a quick slot and equip the weapon again. The mod no longer puts the weapon skill first for automatic use. <!-- roadmap: weapon-slot-local -->
+- The Mods window now shows two small tags on each mod. The first says what the mod changes: the game's Mud Slogel for a
+  mod that keeps the game Vanilla & Vanilla+ (a fix, a small helper, a change to what you see), the game's Abyss Mud
+  Slogel for a mod that changes how the game is played. The second says who needs it: one person if only your game uses
+  it, the game's population icon if every player in a multiplayer game needs it. Point at a tag to see what it means; the
+  top of the list explains the four tags.
 - For mod makers: mods can now let the mod loader tell them when something happens in the game (a new frame on the
   title or in a world, the title or a world opening, a game window opening or closing, the language changing),
   instead of each mod checking for it every frame. Mod loader SDK version 7: `dsl_on_event` (see loader/NOTES.md

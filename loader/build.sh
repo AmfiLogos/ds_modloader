@@ -141,3 +141,7 @@ F=build/mods/floor-logger; mkdir -p $F
 cp ~/DungeonSettlersMods/mods/floor-logger/floor-logger.dylib $F/floor-logger.dylib.tmp; mv -f $F/floor-logger.dylib.tmp $F/floor-logger.dylib
 cp ~/DungeonSettlersMods/mods/floor-logger/mod.json $F/
 echo "copied $F"
+
+# mod tags gate (owner 2026-11-02, PLAN_v013 item 33): every kit mod.json gives a tag the loader reads (scope, category,
+# vanilla_plus); a typo ("Client", "true") would show the wrong tags and the wrong world kind without a word
+python3 test/modtags_test.py --static modules build/mods >/dev/null || { python3 test/modtags_test.py --static modules build/mods; echo "mod tag gate: fix the mod.json above" >&2; exit 1; }

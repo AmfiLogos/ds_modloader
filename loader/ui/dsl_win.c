@@ -14,6 +14,7 @@
 #include "../src/dsl_internal.h"
 #include "../src/dsl_menu.h"
 #include "dsl_win_assets.h"
+#include "dsl_modtags.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -363,17 +364,55 @@ static void folder_click(void *ud, DSLObj w) {
 }
 /* crash reports (owner 2026-10-18, src/dsl_crash.c): the switch changes the answer of the first-start question */
 static void crash_change(void *ud, DSLObj w) { (void)ud; dsl_crash_set_consent(U->toggle_get(w) != 0); }
-static void sizekeys_change(void *ud, DSLObj w) { (void)ud; dsl_ui_size_keys_set(U->value_get(w)); }
-/* Global settings (owner 2026-11-01: "add a global settings + save current options + reset all"): the mod windows' places
-   and "-" / "+" sizes, saved as the player's own layout, and a reset back to it (or to each mod's own place and 100 %) */
+/* Size keys (owner 2026-11-02: "No, just do press any key to capture."): a "Smaller" and a "Bigger" row; a click on the
+   key = "Press a key...", the kit takes the next key press with the Ctrl / Shift / Alt held (Escape cancels), "Clear" =
+   off. The kit holds the keys and the capture (dsl_ui_size_key_*); this window only shows them. */
+static DSLObj m_szk_btn[2]; static int m_szk_shown = -1;
+static void key_text(int k, int mods, char *out, size_t n) {         /* "Ctrl + -", "Shift + F5", "Ctrl + Keypad +" */
+    char key[80];
+    static const char *const kp[] = { ".", "/", "*", "-", "+", "", "=" };
+    const char *nm = k == 32 ? TR("Space") : k == 8 ? TR("Backspace") : k == 9 ? TR("Tab") : k == 13 ? TR("Enter") : k == 19 ? TR("Pause")
+                   : k == 127 ? TR("Delete") : k == 273 ? TR("Up arrow") : k == 274 ? TR("Down arrow") : k == 275 ? TR("Right arrow")
+                   : k == 276 ? TR("Left arrow") : k == 277 ? TR("Insert") : k == 278 ? TR("Home") : k == 279 ? TR("End")
+                   : k == 280 ? TR("Page Up") : k == 281 ? TR("Page Down") : NULL;
+    if (k >= 97 && k <= 122) snprintf(key, sizeof key, "%c", k - 32);
+    else if ((k >= 33 && k <= 64) || (k >= 91 && k <= 96) || (k >= 123 && k <= 126)) snprintf(key, sizeof key, "%c", k);
+    else if (k >= 256 && k <= 265) snprintf(key, sizeof key, "%s %d", TR("Keypad"), k - 256);
+    else if (k >= 266 && k <= 272) snprintf(key, sizeof key, "%s %s", TR("Keypad"), k == 271 ? TR("Enter") : kp[k - 266]);
+    else if (k >= 282 && k <= 296) snprintf(key, sizeof key, "F%d", k - 281);
+    else if (nm) snprintf(key, sizeof key, "%s", nm);
+    else snprintf(key, sizeof key, "#%d", k);
+#ifdef __APPLE__
+    const char *alt = TR("Option");
+#else
+    const char *alt = TR("Alt");
+#endif
+    snprintf(out, n, "%s%s%s%s%s%s%s", mods & 1 ? TR("Ctrl") : "", mods & 1 ? " + " : "", mods & 2 ? TR("Shift") : "", mods & 2 ? " + " : "",
+             mods & 4 ? alt : "", mods & 4 ? " + " : "", key);
+}
+static void szk_label(int w, char *out, size_t n) {
+    int mods = 0, k = dsl_ui_size_key(w, &mods);
+    if (dsl_ui_size_key_capturing() == w) snprintf(out, n, "%s", TR("Press a key..."));
+    else if (!k) snprintf(out, n, "%s", TR("Off"));
+    else key_text(k, mods, out, n);
+}
+static void szk_relabel(void) {                                        /* the window shows what the kit holds */
+    m_szk_shown = dsl_ui_size_key_serial();
+    for (int w = 0; w < 2; w++) if (m_szk_btn[w]) { char t[120]; szk_label(w, t, sizeof t); set_text(m_szk_btn[w], t); }
+}
+static void szk_click(void *ud, DSLObj w) { (void)w; dsl_ui_size_key_capture((int)(intptr_t)ud); szk_relabel(); }
+static void szk_clear(void *ud, DSLObj w) { (void)w; dsl_ui_size_key_capture(-1); dsl_ui_size_key_set((int)(intptr_t)ud, 0, 0); szk_relabel(); }
+/* Global settings (owner 2026-11-01: "add a global settings + save current options + reset all"; 2026-11-02, item 27: the
+   saved layout = the "-" / "+" SIZES only, "Sizes only"): save the mod windows' sizes as the player's own layout; reset =
+   back to those sizes (places stay), or with none saved to each mod's own place and 100 % */
 static void lay_save_click(void *ud, DSLObj w) {
     (void)ud; (void)w; int n = dsl_ui_layout_save();
-    U->notice(n < 0 ? TR("The layout could not be saved.") : TR("Layout saved. \"Reset all\" now puts the mod windows back here."), TR("OK"), NULL, NULL, NULL, NULL);
+    U->notice(n < 0 ? TR("The layout could not be saved.") : TR("Sizes saved. \"Reset all\" now puts every mod window back to these sizes."), TR("OK"), NULL, NULL, NULL, NULL);
 }
 static void lay_reset_ok(void *ud, DSLObj w) { (void)ud; (void)w; dsl_ui_layout_reset(); }
 static void lay_reset_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
-    U->notice(dsl_ui_layout_saved() ? TR("Put every mod window back to the place and size of your saved layout?")
+    U->notice(dsl_ui_layout_saved() ? TR("Put every mod window back to the size of your saved layout? The windows stay where they are.")
                                     : TR("Put every mod window back to its first place and size?"),
               TR("Reset all"), TR("Cancel"), lay_reset_ok, NULL, NULL);
 }
@@ -479,8 +518,17 @@ static void subtabs_show(void) {
 }
 static void settings_click(void *ud, DSLObj w);
 static float mod_row(DSLObj list, int i, float y);
+/* the mod tags' legend (owner 2026-11-02 item 33; template dsl_modtags.h) at the list's top: what the row badges mean */
+static float tags_legend(DSLObj list, float y) {
+    DSLObj lg[DSL_TAG_N] = { 0 };
+    float h = dsl_modtags_legend(U, list, 12, y, m_lw - 56, lg);
+    static const char *const ln[DSL_TAG_N] = { "legend:slogel", "legend:abyss", "legend:one", "legend:all" };
+    for (int t = 0; t < DSL_TAG_N; t++) if (lg[t]) named(lg[t], 3, ln[t], NULL, NULL, ln[t] + 7);
+    return h + 8;
+}
 static void diff_click(void *ud, DSLObj w) { (void)ud; U->toggle_set(w, 1); }   /* greyed; a click never turns it off */
 static void mods_open(DSLObj root, float w, float h) {
+    m_szk_btn[0] = m_szk_btn[1] = NULL;
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
     read_only = dsl_reg_scene() == 2;
     snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0;
@@ -537,9 +585,11 @@ static void mods_open(DSLObj root, float w, float h) {
     int shown = 0;
     if (!world_mode) {                                                 /* the open tab's mods; another tab's rows stay NULL */
         for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == m_tab) shown++;
-        if (shown) y = tab_desc(list, m_tab);
+        if (shown) { y = tab_desc(list, m_tab); y += tags_legend(list, y); }
         for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == m_tab) y += mod_row(list, i, y);
     } else {                                                           /* "Fixes", then "Mods"; only the ones on (at the opening) */
+        int any = 0; for (int i = 0; i < nmods; i++) any += !active_only() || mods[i].on;
+        if (any) y = 6 + tags_legend(list, 6);
         for (int sec = 1; sec >= 0; sec--) {
             int n = 0; for (int i = 0; i < nmods; i++) n += tab_of(mods[i].m) == sec && (!active_only() || mods[i].on);
             if (!n) continue;
@@ -567,20 +617,30 @@ static void mods_open(DSLObj root, float w, float h) {
     m_gnone = U->text(root, m_rx + 10, 100, m_rw - 20, 60, TR("No groups yet. Set the switches, then save them as a group."), 15, DSL_TXT_LEFT | DSL_TXT_WRAP, SUB);
     int crash = !world_mode && dsl_crash_consent() > -2;               /* crash reports: the switch the column's width, Privacy under it
                                                                           (side by side, ru / fr wrapped the switch's label on its frame) */
-    float kh = world_mode ? 0 : 136;                                   /* Global settings (kit 0.1.30): above the crash switch */
+    float kh = world_mode ? 0 : 182;                                   /* Global settings (kit 0.1.30): above the crash switch */
     m_glist = U->scroll(root, m_rx, 92, m_rw, h - 92 - 76 - tb - (crash ? 98 : 0) - kh);
     groups_build();
-    if (kh) {   /* owner 2026-11-01: the size keys ("configurable keys" for the "-" / "+" resize), save + reset of the layout */
-        float y0 = h - 76 - tb - (crash ? 98 : 0) - kh, bw = (m_rw - 8) / 2;
+    if (kh) {   /* the size keys (owner 2026-11-02: "press any key to capture"), save + reset of the layout (sizes only) */
+        float y0 = h - 76 - tb - (crash ? 98 : 0) - kh, bw = (m_rw - 8) / 2, lw = 100, cw = 76, kw = m_rw - lw - cw - 12;
         U->text(root, m_rx, y0 + 4, m_rw, 28, TR("Global settings"), 18, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
-        static const char *kv[3]; kv[0] = TR("Ctrl + - / Ctrl + ="); kv[1] = TR("Ctrl + keypad - / +"); kv[2] = TR("Off");
-        DSLObj kr = named(U->value_row(root, m_rx, y0 + 36, m_rw, TR("Size keys"), kv, 3, dsl_ui_size_keys(), sizekeys_change, NULL), 4,
-                          "size-keys", sizekeys_change, NULL, kv[dsl_ui_size_keys()]);
-        U->tooltip(kr, TR("Size keys"), TR("With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger."));
-        DSLObj sb = named(U->button(root, m_rx, y0 + 90, bw, 40, TR("Save current layout"), lay_save_click, NULL), 0, "layout-save", lay_save_click, NULL, TR("Save current layout"));
-        U->tooltip(sb, TR("Save current layout"), TR("Keep the place and size of every mod window as your own layout. \"Reset all\" puts them back here."));
-        DSLObj rb = named(U->button(root, m_rx + bw + 8, y0 + 90, bw, 40, TR("Reset all"), lay_reset_click, NULL), 0, "layout-reset", lay_reset_click, NULL, TR("Reset all"));
-        U->tooltip(rb, TR("Reset all"), TR("Put every mod window back to your saved layout, or to its first place and size when none is saved."));
+        const char *tip = TR("With the mouse over a mod window that has the \"-\" and \"+\" size buttons, these keys make it smaller or bigger. "
+                             "Click a key, then press the new one (with Ctrl, Shift or Alt if you want). Escape cancels. Pick a key the game does not use.");
+        for (int w = 0; w < 2; w++) {
+            float y = y0 + 36 + 46 * w; char t[120]; szk_label(w, t, sizeof t);
+            const char *lb = w ? TR("Bigger") : TR("Smaller");
+            U->text(root, m_rx, y, lw, 40, lb, 16, DSL_TXT_LEFT, 0);
+            m_szk_btn[w] = named(U->button(root, m_rx + lw + 6, y, kw, 40, t, szk_click, (void *)(intptr_t)w), 0, w ? "size-key-plus" : "size-key-minus",
+                                 szk_click, (void *)(intptr_t)w, t);
+            U->tooltip(m_szk_btn[w], TR("Size keys"), tip);
+            DSLObj cb = named(U->button(root, m_rx + m_rw - cw, y, cw, 40, TR("Clear"), szk_clear, (void *)(intptr_t)w), 0, w ? "size-key-plus-clear" : "size-key-minus-clear",
+                              szk_clear, (void *)(intptr_t)w, TR("Clear"));
+            U->tooltip(cb, TR("Clear"), TR("No key for this: it is off until you pick one."));
+        }
+        m_szk_shown = dsl_ui_size_key_serial();
+        DSLObj sb = named(U->button(root, m_rx, y0 + 128, bw, 40, TR("Save current layout"), lay_save_click, NULL), 0, "layout-save", lay_save_click, NULL, TR("Save current layout"));
+        U->tooltip(sb, TR("Save current layout"), TR("Keep the size of every mod window as your own layout. \"Reset all\" puts them back to these sizes; the windows stay where you put them."));
+        DSLObj rb = named(U->button(root, m_rx + bw + 8, y0 + 128, bw, 40, TR("Reset all"), lay_reset_click, NULL), 0, "layout-reset", lay_reset_click, NULL, TR("Reset all"));
+        U->tooltip(rb, TR("Reset all"), TR("Put every mod window back to the sizes of your saved layout, or to its first place and size when none is saved."));
     }
     if (crash) {
         DSLObj ct = named(U->toggle(root, m_rx, h - 162, m_rw, TR("Send crash reports"), dsl_crash_consent() == 1, crash_change, NULL), 1,
@@ -600,11 +660,20 @@ static float mod_row(DSLObj list, int i, float y) {
     snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
     int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
     int diff = dsl_mod_is_difficulty(m->id);
+    /* the mod's tags (owner 2026-11-02 item 33: what it changes, who needs it): two badges right of the switch */
+    float tgx = m_lw - 32 - (has_set ? 132 : 0) - DSL_MODTAGS_W + DSL_MODTAG_GAP;
     if (diff) {                                                        /* custom difficulty: on and greyed, its line says why */
-        DSLObj t = U->toggle(list, 0, y, m_lw - 32, lb, 1, diff_click, NULL); U->set_enabled(t, 0);
+        DSLObj t = U->toggle(list, 0, y, tgx - DSL_MODTAG_GAP, lb, 1, diff_click, NULL); U->set_enabled(t, 0);
         snprintf(nm, sizeof nm, "mod:%s", m->id); named(t, 3, nm, NULL, NULL, "always");
     } else
-    mods[i].row = U->toggle(list, 0, y, m_lw - 32 - (has_set ? 132 : 0), lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+    mods[i].row = U->toggle(list, 0, y, tgx - DSL_MODTAG_GAP, lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+    {
+        DSLObj tk = NULL, ts = NULL;
+        dsl_modtags_row(U, list, tgx, y + 2, m, &tk, &ts);
+        int k = dsl_modtag_kind(m->fix, m->vanilla_plus, m->scope), sd = dsl_modtag_side(m->scope);
+        if (tk) { snprintf(nm, sizeof nm, "tag-kind:%s", m->id); named(tk, 3, nm, NULL, NULL, dsl_modtags_kind_id(k)); }
+        if (ts) { snprintf(nm, sizeof nm, "tag-side:%s", m->id); named(ts, 3, nm, NULL, NULL, dsl_modtags_side_id(sd)); }
+    }
     if (has_set) {
         DSLObj sb = U->button(list, m_lw - 32 - 124, y, 124, 36, TR("Settings"), settings_click, (void *)(intptr_t)i);
         snprintf(nm, sizeof nm, "settings:%s", m->id); named(sb, 0, nm, settings_click, (void *)(intptr_t)i, TR("Settings"));
@@ -849,6 +918,7 @@ static void mods_update(void) {
     static const char *busy_last = (const char *)1;
     const char *b = dsl_busy_reason();
     if (b != busy_last) { busy_last = b; mods_sync(); }
+    if ((m_szk_btn[0] || m_szk_btn[1]) && dsl_ui_size_key_serial() != m_szk_shown) szk_relabel();   /* a key captured / cancelled */
 }
 /* after Apply the window is closed; this process only lives on if the soft restart failed: say so in the window */
 static void apply_watch(void) {
@@ -874,6 +944,7 @@ static void tab_close(void); static void tab_select(int t);
 static void mods_tab_reload(void) { tab_close(); tab_select(0); }
 static const DSLTab *tab_at(int t) { return t > 0 ? dsl_tab_at(t - 1) : NULL; }     /* 0 = Mods, 1.. = module tabs */
 static void tab_close(void) {
+    m_szk_btn[0] = m_szk_btn[1] = NULL; dsl_ui_size_key_capture(-1);   /* the size key rows go with the body; a capture ends */
     if (cur < 0) return;
     if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->close) t->close(t->ud); }
     U->destroy(w_body); w_body = NULL;

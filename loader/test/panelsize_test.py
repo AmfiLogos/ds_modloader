@@ -16,12 +16,17 @@ The template's in-game panel (dsl_window_std DSL_WIN_PANEL + DSL_WIN_SIZE, key u
  start 1 (960x540, UI Scale 1.0): it shows "-" and "+" in the game's font; ANCHOR (kit 0.1.30; owner 2026-11-01: "the - +
           should stay in the same place so i can click multiple time"): "+" 3 times and "-" 3 times, each at one fixed screen
           point, all size the panel and the button's centre moves < 2 px, the new place is kept; SIZE KEYS: Ctrl + "=" /
-          "-" over the panel = one step each way (button < 2 px), nothing with the mouse off it or with "Size keys" Off
-          in the Mods window; "+" = 110 %, "-" "-" = 90 %, the size stops at
+          "-" over the panel = one step each way (button < 2 px), nothing with the mouse off it or while a text field
+          has the keyboard; key capture in the Mods window (kit 0.1.31; owner 2026-11-02: "No, just do press any key to
+          capture."): "Bigger" = Ctrl + K resizes and the old key does not, Escape keeps the key and the window open,
+          "Clear" = off; covered (review 2026-11-02): the Mods window or a kit window over the panel blocks the keys;
+          LAYOUT (item 27, "Sizes only"): the saved layout holds sizes only, "Reset all" puts the size back and leaves
+          every place; "+" = 110 %, "-" "-" = 90 %, the size stops at
           60 % (one more "-" does nothing), each size kept in ui_places.tsv; left at 130 %. Made in a hidden panel (as the
           chat's closed box), the buttons still show "-" and "+" once it shows (their labels were empty: blank buttons).
  start 2 (800x600, the smallest window the tests use, UI Scale 1.4): the panel comes back at 130 % (on top of UI Scale);
-          "+" "+" = 150 % and the whole panel is on the screen (its first place, x 1400, runs past a 800x600 window).
+          "+" "+" = 150 % and the whole panel is on the screen (its first place, x 1400, runs past a 800x600 window);
+          a kit 0.1.30 "Size keys" choice (Ctrl + keypad) shows as the keys Ctrl + Keypad - / +.
           FOLD RULE (kit 0.1.30; owner 2026-11-01: "the size of the dps check window changes depending on collapsed
           expanded toggles... It shouldn't"): a UI Scale panel 300 high folded / 900 open keeps its width (scale) both ways.
 Old loaders fail: no "-" / "+" (the holder is missing), nothing is kept; kit 0.1.29: "-" / "+" show without the mouse,
@@ -106,9 +111,22 @@ def ctrl_key(code):                                                   # real App
     ui('key', code=code, ctrl=1); time.sleep(0.5); ui('key', code=-1, ctrl=0); time.sleep(0.8)
 
 
-def keys_choice(v):                                                   # the Mods window's "Size keys" row (0 Ctrl + - / =, 2 Off)
+def mods_win():                                                        # the Mods window (title screen: its Global settings block shows)
     win('open'); wait_for(lambda: (lambda j: j if j.get('open') else None)(win('state')), 10); time.sleep(0.5)
-    j = win('value', target='size-keys', value=v); win('esc'); time.sleep(0.8); return j
+
+
+def wtext(name):                                                      # a named control's text in the Mods window
+    return next((c.get('text') for c in win('state').get('controls', []) if c.get('name') == name), None)
+
+
+def capture(row, code, ctrl=1):                                       # click the row's key (Mods window open), then press the key
+    j = win('click', target=row); time.sleep(0.5); t = wtext(row)
+    if code == 'esc': ui('key', code=53); time.sleep(0.8)
+    else: ui('key', code=code, ctrl=ctrl); time.sleep(0.5); ui('key', code=-1, ctrl=0); time.sleep(0.8)
+    return j.get('ok'), t, wtext(row)
+
+
+def log_since(n): return E.dlog()[n:]
 
 
 def key_cases():
@@ -120,9 +138,36 @@ def key_cases():
     check('keys: Ctrl + "-" = 10 % smaller, its "-" stays put (< 2 px)', abs(f2 - f1 + 0.1) < 0.001 and abs(mc[0] - mb[0]) < 2 and abs(mc[1] - mb[1]) < 2, (f1, f2, mb, mc))
     away(); ctrl_key(24); f3 = size(st()).get('f', 0)
     check('keys: with the mouse off every panel, Ctrl + "=" changes nothing', abs(f3 - f2) < 0.001, (f2, f3))
-    j = keys_choice(2); hover_on(); ctrl_key(24); f4 = size(st()).get('f', 0)
-    check('keys: "Size keys" set to Off in the Mods window: Ctrl + "=" over the panel changes nothing', j.get('ok') and abs(f4 - f2) < 0.001, (j, f2, f4))
-    keys_choice(0); away()
+    # TEXT FIELD: nothing while a text field has the keyboard (the demo panel's field)
+    ui('api', op='open'); time.sleep(0.8); ui('click', target='field'); time.sleep(1.2); typing = st().get('typing')
+    n = len(E.dlog()); hover_on(); ctrl_key(24); f4 = size(st()).get('f', 0); lg = log_since(n)
+    check('keys: a text field has the keyboard: Ctrl + "=" over the panel changes nothing', typing == 1 and abs(f4 - f2) < 0.001 and 'a text field has the keyboard' in lg,
+          (typing, f2, f4, lg[-300:]))
+    ui('api', op='destroy', target='panel'); time.sleep(0.6)
+    # CAPTURE (owner 2026-11-02: "No, just do press any key to capture."): "Bigger" = Ctrl + K
+    mods_win(); ok, t0, t1 = capture('size-key-plus', 40)
+    check('keys: the "Bigger" key shows "Press a key...", then the pressed Ctrl + K', ok and t0 == 'Press a key...' and t1 == 'Ctrl + K', (ok, t0, t1))
+    win('esc'); time.sleep(0.8); hover_on(); f5 = size(st()).get('f', 0); ctrl_key(40); f6 = size(st()).get('f', 0); ctrl_key(24); f7 = size(st()).get('f', 0)
+    check('keys: Ctrl + K over the panel = 10 % bigger; the old Ctrl + "=" does nothing now', abs(f6 - f5 - 0.1) < 0.001 and abs(f7 - f6) < 0.001, (f5, f6, f7))
+    mods_win(); ok, t0, t1 = capture('size-key-plus', 'esc'); still = win('state').get('open')
+    check('keys: Escape while it waits for a key: the key stays Ctrl + K and the Mods window stays open', ok and t0 == 'Press a key...' and t1 == 'Ctrl + K' and still == 1, (ok, t0, t1, still))
+    j = win('click', target='size-key-plus-clear'); time.sleep(0.5); t2 = wtext('size-key-plus'); win('esc'); time.sleep(0.8)
+    hover_on(); f8 = size(st()).get('f', 0); ctrl_key(40); f9 = size(st()).get('f', 0)
+    check('keys: "Clear" = Off: Ctrl + K over the panel does nothing', j.get('ok') and t2 == 'Off' and abs(f9 - f8) < 0.001, (j, t2, f8, f9))
+    mods_win(); ok, _, t3 = capture('size-key-plus', 24)
+    check('keys: the default back by capture (Ctrl + "=")', ok and t3 == 'Ctrl + =', (ok, t3))
+    # COVERED (review 2026-11-02): the keys act only on the window on top under the mouse
+    n = len(E.dlog()); hover_on(); f10 = size(st()).get('f', 0); ctrl_key(24); f11 = size(st()).get('f', 0); lg = log_since(n); win('esc'); time.sleep(0.8)
+    check('keys: the Mods window over the panel: Ctrl + "=" does nothing', abs(f11 - f10) < 0.001 and 'is covered by' in lg, (f10, f11, lg[-300:]))
+    away(); s = st(); pr = rect(s, 'stdp'); j = ui('api', op='kp'); time.sleep(0.8); away(); s = st(); kr = rect(s, 'ovA')
+    ix = (max(pr[0], kr[0]), max(pr[1], kr[1]), min(pr[2], kr[2]), min(pr[3], kr[3]))
+    if j.get('rc') == 0 and ix[2] - ix[0] > 8 and ix[3] - ix[1] > 8:
+        n = len(E.dlog()); ui('api', op='move_xy', x=(ix[0] + ix[2]) / 2, y=(ix[1] + ix[3]) / 2); time.sleep(0.6)
+        f12 = size(st()).get('f', 0); ctrl_key(24); f13 = size(st()).get('f', 0); lg = log_since(n)
+        check('keys: a kit window over the panel: Ctrl + "=" there does nothing', abs(f13 - f12) < 0.001 and 'is covered by' in lg, (f12, f13, lg[-300:]))
+    else:
+        check('keys: a kit window over the panel (it must overlap the panel)', False, (j, pr, kr))
+    ui('api', op='ov_off'); time.sleep(0.4); hover_on(); ctrl_key(27); away()   # back to 100 % (Ctrl + K made it 110 %) for the cases after
 
 
 def rows(path, pre):                                                  # {key: (x, y)} of a places file, keys starting with pre
@@ -140,7 +185,8 @@ def layout(op):                                                       # the Mods
 
 
 def layout_cases(tag):
-    # LAYOUT (owner 2026-11-01: "add a global settings + save current options + reset all")
+    # LAYOUT (owner 2026-11-01: "add a global settings + save current options + reset all"; 2026-11-02, item 27: the saved
+    # layout = the SIZES only, "Sizes only": "Reset all" puts the saved sizes back, every window stays where the player put it)
     dd = os.path.join(r.idir(E.X), 'data', 'Mods'); saved, places = os.path.join(dd, 'ui_layout_saved.tsv'), os.path.join(dd, 'ui_places.tsv')
     if tag == 'start1':                                                # stdp (open) + ovB (opened, moved, closed: a panel not open at the reset)
         away(); s = st(); s1, f1 = rect(s, 'stdp'), size(s).get('f', 0); ui('api', op='stdpanel_off'); time.sleep(0.4)
@@ -148,24 +194,24 @@ def layout_cases(tag):
             ui('api', op='ov', a=1); time.sleep(0.8); away(); ui('rdrag', target='ovB', dx=dx, dy=dy); time.sleep(1.8); away()
             b = rect(st(), 'ovB'); ui('api', op='ov_off'); time.sleep(0.4); return b
         b1 = ov_b(20, 15); open_panel(); ok = layout('save')
-        sv = rows(saved, 'uikit-demo.')
-        check('layout: "Save current layout" writes ui_layout_saved.tsv (both panels\' places + the 130 % size)',
-              ok and 'uikit-demo.ovB' in sv and 'uikit-demo.stdpanel' in sv and abs(sv.get('uikit-demo.stdpanel@size', (0, 0))[0] - f1) < 0.001, (ok, sv, f1))
+        sv = rows(saved, '')
+        check('layout: "Save current layout" writes the sizes only (the 130 % size row, no place row)',
+              ok and abs(sv.get('uikit-demo.stdpanel@size', (0, 0))[0] - f1) < 0.001 and all(k.endswith('@size') for k in sv), (ok, sv, f1))
         away(); ui('rdrag', target='stdp', dx=-50, dy=-30); time.sleep(1.8); click('stdp_size.minus'); click('stdp_size.minus'); away(); s = st()
         s2, f2 = rect(s, 'stdp'), size(s).get('f', 0); ui('api', op='stdpanel_off'); time.sleep(0.4)
         b2 = ov_b(-30, 20); open_panel()
         moved = not near(s1, s2) and abs(f2 - (f1 - 0.2)) < 0.001 and not near(b1, b2)
         ok = layout('reset'); away(); s = st(); s3, f3 = rect(s, 'stdp'), size(s).get('f', 0)
         ui('api', op='ov', a=1); time.sleep(0.8); away(); b3 = rect(st(), 'ovB'); ui('api', op='ov_off'); time.sleep(0.4)
-        check('layout: moved + resized, then "Reset all" (confirmed): the open panel and the closed one back at the saved place and size',
-              moved and ok and near(s1, s3) and abs(f3 - f1) < 0.001 and near(b1, b3), (moved, ok, s1, s2, s3, f1, f2, f3, b1, b2, b3))
+        check('layout: moved + resized, then "Reset all" (confirmed): the saved 130 % size is back, both panels stay where they were moved',
+              moved and ok and abs(f3 - f1) < 0.001 and abs(width(s3) - width(s1)) <= 2 and not near(s1, s3) and near(b2, b3), (moved, ok, s1, s2, s3, f1, f2, f3, b1, b2, b3))
         return
     # start 2 (a game restart): the saved file is still there and still used
     sv = rows(saved, 'uikit-demo.')
     j, s = open_panel(); click('stdp_size.minus'); away(); ui('rdrag', target='stdp', dx=-30, dy=-20); time.sleep(1.8)
     ok = layout('reset'); away(); s = st(); kp = rows(places, 'uikit-demo.stdpanel')
-    check('layout: after a restart the saved layout is still there; "Reset all" = its size (130 %) and its kept place',
-          sv and ok and abs(size(s).get('f', 0) - 1.3) < 0.001 and kp == {k: v for k, v in sv.items() if k.startswith('uikit-demo.stdpanel')}, (sv, ok, kp, size(s)))
+    check('layout: after a restart the saved sizes are still there; "Reset all" = 130 %, the panel keeps a place of its own',
+          sv and ok and abs(size(s).get('f', 0) - 1.3) < 0.001 and 'uikit-demo.stdpanel' in kp, (sv, ok, kp, size(s)))
     os.makedirs(os.path.join(OUT, 'old'), exist_ok=True); os.replace(saved, os.path.join(OUT, 'old', 'ui_layout_saved.%d.tsv' % time.time()))
     ok = layout('reset'); away(); s = st(); r_reset, kp = rect(s, 'stdp'), rows(places, 'uikit-demo.stdpanel')
     ui('api', op='stdpanel_off'); time.sleep(0.4); j, s = open_panel(); away(); s = st(); r_new = rect(s, 'stdp')
@@ -267,6 +313,9 @@ def fold_cases():
 
 
 def start2():
+    mods_win(); km, kpl = wtext('size-key-minus'), wtext('size-key-plus'); win('esc'); time.sleep(0.8)
+    check('start 2: the kit 0.1.30 choice "Ctrl + keypad" is kept: the rows show Ctrl + Keypad - / Ctrl + Keypad +',
+          km == 'Ctrl + Keypad -' and kpl == 'Ctrl + Keypad +', (km, kpl))
     j, s = open_panel()
     sw, sh = s.get('w', {}).get('screen', [0, 0]); u = s.get('w', {}).get('ui_scale', 0)
     check('start 2: the window is 800x600 at UI Scale 1.4', (sw, sh) == (800, 600) and abs(u - 1.4) < 0.01, (sw, sh, u))
@@ -294,6 +343,9 @@ def run(tag, wh, scale, fresh):
     places = os.path.join(r.idir(E.X), 'data', 'Mods', 'ui_places.tsv')
     for f in ((places, os.path.join(os.path.dirname(places), 'ui_layout_saved.tsv')) if fresh else ()):
         if os.path.exists(f): os.makedirs(os.path.join(OUT, 'old'), exist_ok=True); os.replace(f, os.path.join(OUT, 'old', '%s.%d' % (os.path.basename(f), time.time())))
+    if tag == 'start2' and os.path.exists(places):                       # a kit 0.1.30 player's file: "Size keys" = Ctrl + keypad, no key rows
+        keep = [l for l in open(places) if not l.startswith('kit@size_key')]
+        open(places + '.tmp', 'w').write(''.join(keep) + 'kit@size_keys\t1.0\t0.0\n'); os.replace(places + '.tmp', places)
     try:
         E.start()
         wait_for(lambda: (lambda s: s if s.get('scene') == 1 and not s.get('busy') else None)(E.ctl({'cmd': 'status'}, 5)), 240, 1)
