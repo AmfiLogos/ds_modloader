@@ -7,6 +7,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 ### Unreleased (0.1.32)
 
 - A mod that does not fit your game version is now turned off when the game starts, instead of breaking in the middle of a world. The Mods window says it was not made for this game version, and the log names the missing piece of the game. Mod makers: look up the game names your mod needs with the new dsl_need_ helpers.
+- For mod makers: the mod loader's log (dsload.log) now shows how long each mod took to start and names the slowest one.
 
 ### 0.1.31 (2026-11-02)
 
