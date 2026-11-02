@@ -66,7 +66,7 @@ def shown_used(w, g, mp):
 
 def phase(w, out):
     L = w.text(W.PROF + r'\dsload.log') or ''
-    check('module on: client only, 7 hooks', 'weapon skill slot on (client only: 7 hooks, no game data written)' in L,
+    check('module on: client only, 7 hooks', 'weapon skill slot on (client only: 7 hooks, no game data written; hide the copy: off)' in L,   # abdd129 line
           [l for l in L.splitlines() if 'weapon-slot' in l][-6:])
     src = os.path.join(out, 'ws_world.json'); T.make_fill_fixture(src, free_eq=True)
     before = T.units_of(src)
@@ -76,7 +76,9 @@ def phase(w, out):
     exp = {g: T.weapon_skill(before[g]) for g in on_map}
     for g, x in exp.items():
         got = shown_used(w, g, mp)
-        check('unit %s: the weapon button uses %s' % (g[:8], x or 'nothing'), got == (x or '(none: no weapon skill)'), got)
+        eq = T.equipped_skill(before[g])             # abdd129: a unit without its weapon's skill logs "(none: the unit does not have <skill>)"
+        check('unit %s: the weapon button uses %s' % (g[:8], x or 'nothing'),
+              got == (x or ('(none: the unit does not have %s)' % eq if eq else '(none: no weapon skill)')), got)
     after = T.units_of(save_now(w, out, 'ws_vm_round'))
     diff = {g[:8]: [k for k in ('quick', 'tree', 'skills', 'equip', 'inv') if after.get(g, {}).get(k) != u[k]] for g, u in before.items()}
     diff = {g: d for g, d in diff.items() if d}
