@@ -50,7 +50,7 @@ def hdr(): return c(H_, cmd='ui_scale_probe')               # the Players panel 
 def kit_rect(): return E.st().get('w', {}).get('ovA', {}).get('r', [0, 0, 0, 0])
 def delta(a, b): return (b[0] - a[0], b[1] - a[1])
 def still(a, b): return all(abs(b[i] - a[i]) <= 2 for i in range(4))
-def moved(a, b): d = delta(a, b); return d[0] >= DX / 3 and d[1] < 0   # followed the drag (right, down; edge clamps and the panel's scale shorten it)
+def moved(a, b): d = delta(a, b); return d[0] >= DX / 3 and d[1] <= 0   # followed the drag (right, down; edge clamps and the panel's scale shorten it: a panel at the bottom edge moves right only)
 DX, DY = 60, -20                                            # the drag: right and down (the panel's top edge is clamped at the screen top)
 
 
