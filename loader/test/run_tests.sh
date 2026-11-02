@@ -53,6 +53,11 @@ st=$($CC -O0 -I"$L/src" stub_test.c -o "$OUT/stub_test" && "$OUT/stub_test"); sr
 print -r -- "$st" | sed 's/^/     /'
 check "stub rule: the shared 'ret' stubs are refused, normal method starts are not" '[[ $src -eq 0 && "$st" != *FAIL* ]]'
 
+print "== T0c hook chain rules without a game (src/dsl_chain.h; review 2026-11-02): *orig before the hook is reachable; Windows rule built in"
+ct=$({ $CC -O0 -Wall -DCH_FOLD_RISK=1 -I"$L/src" chain_test.c -o "$OUT/chain_win" && "$OUT/chain_win" && $CC -O0 -Wall -I"$L/src" chain_test.c -o "$OUT/chain_mac" && "$OUT/chain_mac"; } 2>&1); crc=$?
+print -r -- "$ct" | sed 's/^/     /'
+check "chain rules: orig set first, Windows refuses a mod hook without a method name on a hooked body, loader hooks stay chainable" '[[ $crc -eq 0 && "$ct" != *FAIL* && "$ct" == *"same method by name = chained"* && "$ct" == *"still chain"* ]]'
+
 print "== T1 all modules, our loader first, a foreign loader second (with its own detour)"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib:$FW/foreign.dylib" FOREIGN_HOOK=1)
 print -r -- "$r" | sed 's/^/     /'

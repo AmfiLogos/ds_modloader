@@ -273,7 +273,7 @@ static int key_ctrl(int kc, int ctrl) {
         unsigned long type = st == 0 ? 12 : st == 1 ? 10 : 11; unsigned short code = st == 0 ? 59 : (unsigned short)kc;
         if (st == 0 && kc >= 0 && !ctrl) continue;
         if (st > 0 && kc < 0) break;
-        char one[2] = { st == 0 ? 0 : kc == 27 ? '-' : kc == 24 ? '=' : kc == 78 ? '-' : kc == 69 ? '+' : 0, 0 };
+        char one[2] = { st == 0 ? 0 : kc == 27 ? '-' : kc == 24 ? '=' : kc == 78 ? '-' : kc == 69 ? '+' : kc == 40 ? 'k' : 0, 0 };   /* 40 = K (kit 0.1.31: a captured key) */
         id ev = ((id (*)(Class, SEL, unsigned long, CGPoint, unsigned long, double, long, id, id, id, BOOL, unsigned short))objc_msgSend)(
             objc_getClass("NSEvent"), sel_registerName("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
             type, CGPointZero, fl, uptime(), wn, nil, ns_str(one), ns_str(one), NO, code);

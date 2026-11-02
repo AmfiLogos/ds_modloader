@@ -187,9 +187,8 @@ static int hook_locked(int owner, void *target, void *repl, void **orig, const c
     code[4] = insn;                                                                                           /* displaced */
     code[5] = enc_b(stub + 20, site + 4);                                                                     /* b site+4 */
     if (write_stub(stub, code, sizeof code)) { dsl_log("%s: hook %#lx failed: stub write", who, (unsigned long)rva); return -1; }
-    *(void* volatile*)slot = repl;
-    uint32_t br = enc_b(site, stub);
-    if (write_ga(site, &br, 4)) { *(void* volatile*)slot = NULL; dsl_log("%s: hook %#lx failed: site write", who, (unsigned long)rva); return -1; }
+    uint32_t br = enc_b(site, stub);                  /* the slot stays empty (cbz: the original runs) until ch_add below has */
+    if (write_ga(site, &br, 4)) { dsl_log("%s: hook %#lx failed: site write", who, (unsigned long)rva); return -1; }   /* written *orig */
     Hook *n = &H[nh++];
     memset(n, 0, sizeof *n);
     n->site = site; n->stub = stub; n->slot = slot; n->insn = insn;

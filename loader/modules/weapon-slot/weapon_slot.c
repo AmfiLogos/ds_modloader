@@ -6,18 +6,26 @@
 // It changes ONLY the local screen. The game's data is never written: the 4 quick slots, the saves, the unit's skills,
 // the AI's auto-use order are the stock game's. So a player without the mod can play with a player who has it.
 //  - view: the bar's views get a NEW 5-long array [the unit's 4 quick slots, its weapon skill] (QuickSlotUI.InitSkillUI /
-//    RefreshSkillUI), and UI slot 5 is refreshed each frame next to the free slots (QuickSlotUI.RefreshSkillSlotUI);
+//    RefreshSkillUI, event-driven: a fresh look at the unit each time), and UI slot 5 is refreshed each frame next to the
+//    free slots (QuickSlotUI.RefreshSkillSlotUI);
 //  - click: the stock click path (QuickSlotUI.OnSelect_SkillSlot -> UseQuickSlotSkillRequested Index 5 ->
 //    PlayerControlEventHandler: GetSkillAt(unit, Index - 1)). Index 4 does not exist in the game's 4-slot data (stock
 //    throws), so UnitQuickSlotContainer.GetSkillAt(unit, 4) answers the unit's weapon skill. The handler then runs the
 //    game's own checks and aiming; the cast is the game's own order UseSkillTargetRequested, by skill key, which every
 //    multiplayer player applies the same way. Every other index is stock.
-//  - "the unit's weapon skill" = the skill of the weapon in its equipment, only when the unit HAS that skill
-//    (SkillComponent.HasSkill). In the stock game a weapon equipped while the 4 free slots are full does not give the
-//    skill (ProcessEquip adds it only when TryRegisterQuickSlot found a slot): then this slot stays empty.
+//  - "the unit's weapon skill" = the skill of the weapon in its equipment. The button USES it only when the unit HAS that
+//    skill (SkillComponent.HasSkill). In the stock game a unit has its weapon skill only while it sits in one of the 4 free
+//    slots: a weapon equipped while they are full does not give it (ProcessEquip adds it only when TryRegisterQuickSlot
+//    found a slot), and the stock "Remove from Quick Slot" (UnsetQuickSlotRequested) also removes the skill
+//    (SkillComponent.RemoveSkill). Then the button shows the weapon's skill GREYED (the stock "cannot use now" look,
+//    SkillSlotUI.SetActivate(false)) with the game's simple hover card "free a quick slot, then equip the weapon again"
+//    (its own TooltipFeedback.SetSimpleText, the locked-slots pattern); a click does nothing (GetSkillAt answers null).
+//  - setting "hide_copy" (local, default off: owner 2026-11-02): the weapon skill's own free
+//    slot is drawn EMPTY on this screen (the view array gets null there) and its per-frame refresh goes to the weapon button.
+//    The game's data still has it there: that slot's key still uses it, auto-use is unchanged. View only.
 // Hooks by il2cpp name (Mac and Windows); GameAssembly and the game's UI bundle unchanged. Build 25846389.
 // 0.1.x (gameplay: a 5-slot data array, its own save handling, weapon skill first in the AI order) is gone; see
-// ~/ds_multiplayer/ext/nvwslot/PLAN.md.
+// ~/ds_multiplayer/ext/nvwslot/PLAN.md and ext/nvwslot3/PLAN.md.
 #include "dsl_sdk.h"
 #include <stdint.h>
 #include <string.h>
@@ -175,63 +183,65 @@ static const char *item_weapon_skill(Obj key) {         /* the weapon skill of a
    unit's EquipmentComponent (InventoryComponent._itemSlots: ItemHolder structs, Key) and SkillComponent. Read only. */
 static void *k_unit, *k_skillcomp, *k_equip, *f_ec_inst, *m_has;
 static int32_t f_ec_comps = -1, f_cl_comps = -1, f_unit_guid = -1, f_inv_slots = -1, f_ih_key = -1, ih_size = 0;
-static int is_a(Obj o, void *k) { return o && k && I.class_is_assignable_from(k, I.object_get_class(o)); }
+static int is_a(Obj o, void *k) { return o && k && (I.class_is_assignable_from(k, I.object_get_class(o)) & 1); }
 static Obj comps_dict(void) {
     Obj ec = NULL;
     I.field_static_get_value(f_ec_inst, &ec);
     return ec ? AT(ec, f_ec_comps, Obj) : NULL;
 }
-/* the unit's weapon skill into out (""): the equipped weapon's skill, when the unit has it */
-static int weapon_of_list(Obj cl, char *out, size_t cap) {
-    out[0] = 0;
+/* key: the equipped weapon's skill ("" = none); owned: the unit HAS it (only then the button uses it) */
+typedef struct { char key[64]; uint8_t owned; } WInfo;
+static void weapon_of_list(Obj cl, WInfo *w) {
+    w->key[0] = 0; w->owned = 0;
     Obj cd = cl ? AT(cl, f_cl_comps, Obj) : NULL, eq = NULL, sc = NULL;
     const DL *C = dict_l(cd);
     DICT_FOR(cd, C, ce) { Obj o = AT(ce, C->val, Obj); if (is_a(o, k_equip)) eq = o; else if (is_a(o, k_skillcomp)) sc = o; }
     Obj slots = eq ? AT(eq, f_inv_slots, Obj) : NULL;
     const char *wn = NULL;
     for (uintptr_t i = 0; i < alen(slots) && !wn; i++) wn = item_weapon_skill(AT((char *)slots + AHDR + i * (uintptr_t)ih_size, f_ih_key, Obj));
-    if (!wn || !sc || !CALL(m_has, uint8_t, Obj, Obj)(sc, I.string_new(wn), m_has)) return 0;
-    snprintf(out, cap, "%s", wn);
-    return 1;
+    if (!wn) return;
+    snprintf(w->key, sizeof w->key, "%s", wn);
+    w->owned = sc && (CALL(m_has, uint8_t, Obj, Obj)(sc, I.string_new(wn), m_has) & 1);   /* C# bool: low byte (Windows) */
 }
-static int weapon_of_entity(Obj ent, char *out, size_t cap) {
-    out[0] = 0;
-    if (!is_a(ent, k_unit)) return 0;
+static void weapon_of_entity(Obj ent, WInfo *w) {
+    w->key[0] = 0; w->owned = 0;
+    if (!is_a(ent, k_unit)) return;
     Obj comps = comps_dict();
     const DL *L = dict_l(comps);
-    DICT_FOR(comps, L, e) if (AT(e, L->key, Obj) == ent) return weapon_of_list(AT(e, L->val, Obj), out, cap);
-    return 0;
+    DICT_FOR(comps, L, e) if (AT(e, L->key, Obj) == ent) { weapon_of_list(AT(e, L->val, Obj), w); return; }
 }
-static int weapon_of_guid(const WGuid *g, char *out, size_t cap) {
-    out[0] = 0;
+static void weapon_of_guid(const WGuid *g, WInfo *w) {
+    w->key[0] = 0; w->owned = 0;
     Obj comps = comps_dict();
     const DL *L = dict_l(comps);
     DICT_FOR(comps, L, e) {
         Obj ent = AT(e, L->key, Obj);
-        if (is_a(ent, k_unit) && !memcmp((char *)ent + f_unit_guid, g, 16)) return weapon_of_list(AT(e, L->val, Obj), out, cap);
+        if (is_a(ent, k_unit) && !memcmp((char *)ent + f_unit_guid, g, 16)) { weapon_of_list(AT(e, L->val, Obj), w); return; }
     }
-    return 0;
 }
 
-/* Per-frame cache by unit Guid (the bar asks every frame; the lookup walks the entity table): re-read every 30 frames. */
+/* Per-frame cache by unit Guid (the bar asks every frame; the lookup walks the entity table): re-read every 30 frames,
+   and at once (at most once a frame) when the bar is rebuilt (InitSkillUI / RefreshSkillUI run on the game's events:
+   select, skill or equipment change, "Remove from Quick Slot"). */
 static void *m_frame;
 static int32_t frame_now(void) { return ((int32_t (*)(const void *))*(void **)m_frame)(m_frame); }
 #define NC 8
-static struct { WGuid g; int32_t frame; char key[64]; int used; } wc[NC];
-static const char *weapon_cached(Obj user) {
-    if (!is_a(user, k_unit)) return "";
+static struct { WGuid g; int32_t frame; WInfo w; int used; } wc[NC];
+static const WInfo *weapon_cached(Obj user, int fresh) {
+    static const WInfo none;
+    if (!is_a(user, k_unit)) return &none;
     WGuid g; memcpy(&g, (char *)user + f_unit_guid, sizeof g);
     int32_t f = frame_now(); int lru = 0;
     for (int i = 0; i < NC; i++) {
         if (wc[i].used && !memcmp(&wc[i].g, &g, sizeof g)) {
-            if ((uint32_t)(f - wc[i].frame) >= 30u) { weapon_of_entity(user, wc[i].key, sizeof wc[i].key); wc[i].frame = f; }
-            return wc[i].key;
+            if ((fresh && wc[i].frame != f) || (uint32_t)(f - wc[i].frame) >= 30u) { weapon_of_entity(user, &wc[i].w); wc[i].frame = f; }
+            return &wc[i].w;
         }
         if (wc[lru].used && (!wc[i].used || wc[i].frame < wc[lru].frame)) lru = i;   /* a free entry first, else the oldest */
     }
     wc[lru].used = 1; wc[lru].g = g; wc[lru].frame = f;
-    weapon_of_entity(user, wc[lru].key, sizeof wc[lru].key);
-    return wc[lru].key;
+    weapon_of_entity(user, &wc[lru].w);
+    return &wc[lru].w;
 }
 
 /* ------------------------------------------------------------------------------------------------ click: GetSkillAt(unit, 4) */
@@ -246,69 +256,158 @@ static int n_click;
 static Obj (*o_skillat)(Obj, WGuid, int32_t, const void *);
 static Obj my_skillat(Obj self, WGuid g, int32_t idx, const void *mi) {
     if (idx != WS || alen(qsd_slots(self, &g)) > WS) return o_skillat(self, g, idx, mi);
-    char k[64]; weapon_of_guid(&g, k, sizeof k);
-    if (logn(&n_click, 20)) { char gs[9]; guid_c(&g, gs); H->log(ME, "weapon slot used: unit %s -> %s", gs, k[0] ? k : "(none: no weapon skill)"); }
-    return k[0] ? I.string_new(k) : NULL;               /* NULL: the stock handler does nothing (empty slot) */
+    WInfo w; weapon_of_guid(&g, &w);
+    if (logn(&n_click, 20)) {
+        char gs[9]; guid_c(&g, gs);
+        char why[100]; snprintf(why, sizeof why, w.key[0] ? "(none: the unit does not have %s)" : "(none: no weapon skill)", w.key);
+        H->log(ME, "weapon slot used: unit %s -> %s", gs, w.owned ? w.key : why);
+    }
+    return w.owned ? I.string_new(w.key) : NULL;        /* NULL: the stock handler does nothing (empty slot) */
+}
+
+/* ------------------------------------------------------------------------------------------------ texts */
+/* the greyed button's hover card (game LanguageType order: 0 en, 1 ko, 2 fr, 3 de, 4 ru, 5 zh-Hans, 6 zh-Hant, 7 ja, 8 es,
+   9 pt-BR). "Quick slot" and "equip" are the game's own words in each language ("Remove from Quick Slot", "Equip"). */
+static const char *const T_NOSKILL[10] = {
+    "This unit does not have its weapon's skill. Free a quick slot, then equip the weapon again.",
+    "이 유닛은 무기 스킬을 가지고 있지 않습니다. 퀵 슬롯을 하나 비운 뒤 무기를 다시 장착하세요.",
+    "Cette unité n'a pas la compétence de son arme. Libérez un emplacement rapide, puis équipez de nouveau l'arme.",
+    "Diese Einheit hat den Skill ihrer Waffe nicht. Mach einen Schnellzugriff-Platz frei und rüste die Waffe erneut aus.",
+    "У этого юнита нет навыка его оружия. Освободите быстрый слот и снова экипируйте оружие.",
+    "该单位没有其武器的技能。请在快捷栏中空出一格，然后重新装备该武器。",
+    "該單位沒有其武器的技能。請在快捷欄中空出一格，然後重新裝備該武器。",
+    "このユニットは武器のスキルを持っていません。クイックスロットを1つ空けてから、武器を装備し直してください。",
+    "Esta unidad no tiene la habilidad de su arma. Libera una ranura rápida y vuelve a equipar el arma.",
+    "Esta unidade não tem a habilidade da arma. Libere um espaço rápido e equipe a arma de novo." };
+static void *m_lang;
+static int lang(void) {
+    int v = m_lang ? ((int32_t (*)(const void *))*(void **)m_lang)(m_lang) : 0;
+    return v >= 0 && v < 10 ? v : 0;
 }
 
 /* ------------------------------------------------------------------------------------------------ view: 5-long arrays */
-static int32_t f_qsui_slots = -1, f_ssui_index = -1, f_ssui_interact = -1;
+static int32_t f_qsui_slots = -1, f_ssui_index = -1, f_ssui_interact = -1, f_ssui_auto = -1, f_ssui_iui = -1;
 static int bar6(Obj view) { Obj l = view ? AT(view, f_qsui_slots, Obj) : NULL; return list_n(l) > UI_W; }
 static void *k_string;
-static Obj view_slots(Obj qs, const char *w) {          /* a NEW array for the view: the 4 slots + the weapon skill */
+static int hide_copy;                                   /* setting "hide_copy": the weapon skill's free slot drawn empty */
+/* a NEW array for the view: the 4 slots + the weapon skill (when the unit has it). hide_copy: the free slot(s) holding the
+   weapon skill are null in it (drawn empty); *hidden = those UI indexes as bits. The game's own array is never changed. */
+static Obj view_slots(Obj qs, const WInfo *w, uint8_t *hidden) {
+    *hidden = 0;
     Obj v = I.array_new(k_string, NSLOT);
     if (!v) return qs;
-    for (uintptr_t i = 0; i < WS && i < alen(qs); i++) aset(v, i, aget(qs, i));
-    if (w && w[0]) aset(v, WS, I.string_new(w));
+    for (uintptr_t i = 0; i < WS && i < alen(qs); i++) {
+        Obj s = aget(qs, i);
+        if (hide_copy && w->owned && str_is(s, w->key)) { *hidden |= (uint8_t)(1u << (i + 1)); s = NULL; }
+        aset(v, i, s);
+    }
+    if (w->owned) aset(v, WS, I.string_new(w->key));
     return v;
 }
+/* per view (bar or multi-bar card; only compared, never read through): what the weapon button shows now */
+enum { M_NONE = 0, M_OWNED = 1, M_GREY = 2 };
 #define NV 8
-static struct { Obj view; int32_t frame; char shown[64]; } vs[NV];   /* views are only compared, never read through */
+static struct { Obj view; int32_t frame, wframe; char shown[64]; uint8_t mode, lang, hidden; char lkey[64]; int8_t lmode; } vs[NV];
 static int vslot(Obj view) {
     int lru = 0;
     for (int i = 0; i < NV; i++) { if (vs[i].view == view) return i; if (vs[i].frame < vs[lru].frame) lru = i; }
-    vs[lru].view = view; vs[lru].frame = -1000; vs[lru].shown[0] = 0;
+    memset(&vs[lru], 0, sizeof vs[lru]);
+    vs[lru].view = view; vs[lru].frame = vs[lru].wframe = -1000; vs[lru].lmode = -1;
     return lru;
 }
+static void *m_setui, *m_activate, *m_getfb, *m_simple, *k_tipfb;
+static int fb_tooltip;                                  /* InteractFeedbackType.Tooltip */
+static int alive(Obj o);
+static void set_active(Obj c, int on);
+static void slot_setui(Obj slot, const char *key) {
+    uint8_t nul[32] = { 0 };                            /* Nullable<Guid> parentTooltip = null (by reference: > 16 bytes) */
+    if (slot) CALL(m_setui, void, Obj, Obj, void *)(slot, key && key[0] ? I.string_new(key) : NULL, nul, m_setui);
+}
+/* GREY: the unit does not have its weapon's skill. The stock "cannot use now" look (SetActivate(false): the cooldown cover
+   full), no auto-use mark, and the game's simple hover card with our text (locked-slots pattern). SetUI(key) before it
+   gave the icon and turned the slot's InteractableUI on (hover); SetUI again (another state) sets the card back. */
+static void grey(Obj slot, int l) {
+    CALL(m_activate, void, Obj, uint8_t)(slot, 0, m_activate);
+    Obj am = f_ssui_auto > 0 ? AT(slot, f_ssui_auto, Obj) : NULL;
+    if (alive(am)) set_active(am, 0);
+    Obj iu = f_ssui_iui > 0 ? AT(slot, f_ssui_iui, Obj) : NULL;
+    Obj fb = alive(iu) ? CALL(m_getfb, Obj, Obj, int32_t)(iu, fb_tooltip, m_getfb) : NULL;
+    if (alive(fb) && is_a(fb, k_tipfb)) CALL(m_simple, void, Obj, Obj, uint8_t)(fb, I.string_new(T_NOSKILL[l]), 0, m_simple);
+}
 static int n_show;
-static void note_shown(Obj view, Obj user, const char *w) {
-    int i = vslot(view);
-    if (strcmp(vs[i].shown, w) && logn(&n_show, 40)) {
-        char gs[9] = "-"; if (is_a(user, k_unit)) guid_c((char *)user + f_unit_guid, gs);
-        H->log(ME, "weapon slot shows %s (unit %s)", w[0] ? w : "nothing", gs);
+static void note(int i, Obj user, const WInfo *w, int mode) {
+    if (vs[i].lmode == mode && !strcmp(vs[i].lkey, w->key)) return;
+    vs[i].lmode = (int8_t)mode; snprintf(vs[i].lkey, sizeof vs[i].lkey, "%s", w->key);
+    if (!logn(&n_show, 40)) return;
+    char gs[9] = "-"; if (is_a(user, k_unit)) guid_c((char *)user + f_unit_guid, gs);
+    if (mode == M_GREY) H->log(ME, "weapon slot shows %s greyed: the unit does not have it (unit %s)", w->key, gs);
+    else H->log(ME, "weapon slot shows %s (unit %s)", mode ? w->key : "nothing", gs);
+}
+/* the weapon button (UI slot 5) of view i to the unit's state; a change only (or a language change while greyed) */
+static void button_sync(Obj view, int i, Obj user, const WInfo *w) {
+    int mode = !w->key[0] ? M_NONE : w->owned ? M_OWNED : M_GREY, l = lang();
+    if (mode != vs[i].mode || strcmp(vs[i].shown, w->key) || (mode == M_GREY && vs[i].lang != l)) {
+        Obj slot = list_at(AT(view, f_qsui_slots, Obj), UI_W);
+        slot_setui(slot, mode ? w->key : NULL);
+        if (slot && mode == M_GREY) grey(slot, l);
+        vs[i].mode = (uint8_t)mode; vs[i].lang = (uint8_t)l;
+        snprintf(vs[i].shown, sizeof vs[i].shown, "%s", mode ? w->key : "");
     }
-    snprintf(vs[i].shown, sizeof vs[i].shown, "%s", w);
+    note(i, user, w, mode);
+}
+/* after the stock InitSkillUI / RefreshSkillUI drew the 6 slots from our array: slot 5 has the key when owned, else nothing */
+static void after_build(Obj view, Obj user, const WInfo *w, uint8_t hidden) {
+    int i = vslot(view);
+    vs[i].hidden = hidden;
+    vs[i].mode = w->owned ? M_OWNED : M_NONE;
+    snprintf(vs[i].shown, sizeof vs[i].shown, "%s", w->owned ? w->key : "");
+    button_sync(view, i, user, w);
 }
 static void (*o_initskill)(Obj, Obj, Obj, Obj, const void *);
 static void my_initskill(Obj self, Obj user, Obj qs, Obj inmap, const void *mi) {
     if (!bar6(self) || !qs) { o_initskill(self, user, qs, inmap, mi); return; }
-    const char *w = weapon_cached(user);
-    note_shown(self, user, w);
-    o_initskill(self, user, view_slots(qs, w), inmap, mi);
+    const WInfo *w = weapon_cached(user, 1); WInfo c = *w; uint8_t hid;
+    o_initskill(self, user, view_slots(qs, &c, &hid), inmap, mi);
+    after_build(self, user, &c, hid);
 }
 static void (*o_refreshskill)(Obj, Obj, Obj, Obj, const void *);
 static void my_refreshskill(Obj self, Obj user, Obj qs, Obj inmap, const void *mi) {
     if (!bar6(self) || !qs) { o_refreshskill(self, user, qs, inmap, mi); return; }
-    o_refreshskill(self, user, view_slots(qs, weapon_cached(user)), inmap, mi);
+    const WInfo *w = weapon_cached(user, 1); WInfo c = *w; uint8_t hid;
+    o_refreshskill(self, user, view_slots(qs, &c, &hid), inmap, mi);
+    after_build(self, user, &c, hid);
 }
-/* the presenter refreshes every filled free slot each frame (cooldown, usable): UI slot 5 rides along, once a frame.
-   A weapon that left (unequip, swap) empties the slot (SkillSlotUI.SetUI(null)). */
-static void *m_setui;
+/* The presenter refreshes every FILLED free slot each frame (cooldown, usable): once a frame per view the weapon button
+   follows the unit (a weapon that left empties it, a skill the unit lost greys it) and, when the unit has the skill, gets
+   the same refresh. hide_copy: the free slot holding the weapon skill stays drawn empty and its refresh goes to the button. */
+static int n_hide;
 static void (*o_slotui)(Obj, int32_t, Obj, Obj, Obj, const void *);
 static void my_slotui(Obj self, int32_t idx, Obj key, Obj user, Obj inmap, const void *mi) {
-    o_slotui(self, idx, key, user, inmap, mi);
-    if (idx < 1 || idx > WS || !bar6(self)) return;
+    if (idx < 1 || idx > WS || !bar6(self)) { o_slotui(self, idx, key, user, inmap, mi); return; }
     int i = vslot(self); int32_t f = frame_now();
-    if (vs[i].frame == f) return;
-    vs[i].frame = f;
-    const char *w = weapon_cached(user);
-    if (strcmp(vs[i].shown, w)) {
-        Obj slot = list_at(AT(self, f_qsui_slots, Obj), UI_W);
-        uint8_t nul[32] = { 0 };                        /* Nullable<Guid> parentTooltip = null (by reference: > 16 bytes) */
-        if (slot) CALL(m_setui, void, Obj, Obj, void *)(slot, w[0] ? I.string_new(w) : NULL, nul, m_setui);
-        note_shown(self, user, w);
+    const WInfo *w = weapon_cached(user, 0);
+    if (vs[i].frame != f) { vs[i].frame = f; button_sync(self, i, user, w); }
+    if (w->owned && str_is(key, w->key)) {             /* this free slot holds the weapon skill: the copy */
+        uint8_t bit = (uint8_t)(1u << idx);
+        if (!(vs[i].hidden & bit) != !hide_copy) {     /* the setting changed since this view was built */
+            slot_setui(list_at(AT(self, f_qsui_slots, Obj), idx), hide_copy ? NULL : w->key);
+            vs[i].hidden ^= bit;
+            if (logn(&n_hide, 20)) H->log(ME, "quick slot %d (%s): %s", idx, w->key, hide_copy ? "drawn empty (hide the copy)" : "drawn again");
+        }
+        if (hide_copy) {
+            if (vs[i].wframe != f) { vs[i].wframe = f; o_slotui(self, UI_W, key, user, inmap, mi); }
+            return;
+        }
     }
-    if (w[0]) o_slotui(self, UI_W, I.string_new(w), user, inmap, mi);
+    o_slotui(self, idx, key, user, inmap, mi);
+    if (w->owned && vs[i].wframe != f) { vs[i].wframe = f; o_slotui(self, UI_W, I.string_new(w->key), user, inmap, mi); }
+}
+static void on_setting(void *ud, const char *id) {
+    (void)ud;
+    if (id && strcmp(id, "hide_copy")) return;
+    int v = dsl_get_bool(H, ME, "hide_copy", 0);
+    if (v != hide_copy) H->log(ME, "setting hide_copy: %s", v ? "on" : "off");
+    hide_copy = v;
 }
 
 /* ------------------------------------------------------------------------------------------------ UI: the 6th slot */
@@ -467,8 +566,22 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     m_pivot_set = msig(k_rect, "set_pivot", 1, NULL);
     m_frame = msig(k_time, "get_frameCount", 0, NULL);
     m_setui = msig(k_ssui, "SetUI", 2, NULL);
+    /* the greyed button: SetActivate(false), its auto-use mark, its hover card (InteractableUI -> TooltipFeedback) */
+    m_activate = msig(k_ssui, "SetActivate", 1, NULL);
+    f_ssui_auto = foff(k_ssui, "_autoSkill"); f_ssui_iui = foff(k_ssui, "_interactableUI");
+    void *k_iui = H->find_class("Refactor.UI.Util", "InteractableUI"), *k_fbt = H->find_class("Refactor.UI.Util", "InteractFeedbackType");
+    k_tipfb = H->find_class("Refactor.UI.Util", "TooltipFeedback");
+    m_getfb = k_iui ? msig(k_iui, "GetFeedback", 1, NULL) : NULL;
+    m_simple = k_tipfb ? msig(k_tipfb, "SetSimpleText", 2, "System.String,System.Boolean") : NULL;
+    void *f_tt = k_fbt ? I.class_get_field_from_name(k_fbt, "Tooltip") : NULL;
+    if (f_tt) { int32_t v = 0; I.field_static_get_value(f_tt, &v); fb_tooltip = v; }
+    void *k_lang = H->find_class("Refactor.Setting", "LanguageSetting");
+    m_lang = k_lang ? msig(k_lang, "GetCurrentLanguage", 0, NULL) : NULL;
+    H->log(ME, "grey button: activate %d auto %d iui %d feedback %d simple %d tooltip %d (%s) lang %d", m_activate != NULL, f_ssui_auto,
+           f_ssui_iui, m_getfb != NULL, m_simple != NULL, fb_tooltip, f_tt ? "game" : "default", m_lang != NULL);
     if (!m_implicit || !m_inst || !m_set_name || !m_get_tr || !m_get_go || !m_go_active || !m_tr_parent || !m_tr_find || !m_sib_set
-        || !m_pos_get || !m_pos_set || !m_size_get || !m_size_set || !m_amin_set || !m_amax_set || !m_pivot_set || !m_frame || !m_setui) {
+        || !m_pos_get || !m_pos_set || !m_size_get || !m_size_set || !m_amin_set || !m_amax_set || !m_pivot_set || !m_frame || !m_setui
+        || !m_activate || f_ssui_auto <= 0 || f_ssui_iui <= 0 || !m_getfb || !m_simple || !k_tipfb) {
         H->log(ME, "a Unity UI method was not found"); return 4;
     }
     /* the unit's weapon skill: entities, their components, the equipped items, SkillComponent.HasSkill */
@@ -496,6 +609,8 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
         || hk(UI, "SkillSlotUI", "CanDrop", 1, (void *)my_candrop, (void **)&o_candrop)
         || hk(M, "UnitQuickSlotContainer", "GetSkillAt", 2, (void *)my_skillat, (void **)&o_skillat))
         return 6;
-    H->log(ME, "weapon skill slot on (client only: 7 hooks, no game data written)");
+    hide_copy = dsl_get_bool(H, ME, "hide_copy", 0);
+    if (dsl_on_setting_change(H, ME, on_setting, NULL) < 0) H->log(ME, "settings: this loader has no live change (hide_copy read at start only)");
+    H->log(ME, "weapon skill slot on (client only: 7 hooks, no game data written; hide the copy: %s)", hide_copy ? "on" : "off");
     return 0;
 }

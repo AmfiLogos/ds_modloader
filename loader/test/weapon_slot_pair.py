@@ -8,6 +8,8 @@ weapon_slot_test (make_fill_fixture, units in a dungeon with enemies).
   --mod host   the host has weapon-slot, the guest is stock (default); --mod guest = the reverse
   env WS_MODS=<dir>   weapon-slot from <dir>/weapon-slot (the unzipped release package), else ../build/mods
   env WS_HOST / WS_GUEST   the copies (default NWS / NWG)
+  env WS_HIDE_COPY=1  the player with the mod runs its local setting hide_copy on (data/Mods/settings.json): the weapon
+                      skill's free slot is drawn empty on that screen only; the pair must stay in sync with it
 
 Real break caught: a desync (mp desync counters, DESYNC / FULL-STATE / deep lines, det tick errors, fp.log), a guest
 refused because of the mod set (the mod must not be in it), the two players' quick slots differing after the swap and the
@@ -23,6 +25,7 @@ H = os.path.expanduser('~')
 MINUTES = arg('--minutes', 5.0)
 MODP = arg('--mod', 'host')
 log, check = T.log, T.check
+HIDE = os.environ.get('WS_HIDE_COPY') == '1'
 MOD_X = H_ if MODP == 'host' else G_                   # the player with weapon-slot
 STOCK_X = G_ if MODP == 'host' else H_
 
@@ -62,9 +65,12 @@ def prep(x, out, mp, enabled):
     I = r.idir(x)
     if r.alive(r.read_pid(x)): raise SystemExit(f'copy {x} already running')
     for p in ('mp.json', 'dsload.log', 'player.log', 'rig.log', 'fp.log', 'multibar_probe_req.txt', os.path.join('data', 'SaveHeaderCache.json'),
-              os.path.join('data', 'Mods', 'worlds.json'), os.path.join('data', 'Mods', 'save_backups')):
+              os.path.join('data', 'Mods', 'worlds.json'), os.path.join('data', 'Mods', 'save_backups'), os.path.join('data', 'Mods', 'settings.json')):
         T.aside(os.path.join(I, p), out)
     os.makedirs(os.path.join(I, 'data', 'Saves'), exist_ok=True)
+    if HIDE and x == MOD_X:
+        os.makedirs(os.path.join(I, 'data', 'Mods'), exist_ok=True)
+        json.dump({'weapon-slot': {'hide_copy': True}}, open(os.path.join(I, 'data', 'Mods', 'settings.json'), 'w'))
     json.dump(mp, open(os.path.join(I, 'mp.json'), 'w'))
     md, prof = T.mods_dir(os.path.join(out, x), enabled)
     return {'DSL_MODS_DIR': md, 'DSL_PROFILE': prof, 'DSML_DATA': os.path.join(I, 'data')}
@@ -91,7 +97,7 @@ owner_runs = lambda: not OWNER_OK and r.owner_game_running()
 
 def main():
     out = os.path.abspath(next((a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--') and sys.argv[i - 1] not in ('--minutes', '--mod')),
-                               os.path.join(T.LB, 'test_env', 'weapon_slot_pair_' + MODP)))
+                               os.path.join(T.LB, 'test_env', 'weapon_slot_pair_' + MODP + ('_hide' if HIDE else ''))))
     os.makedirs(out, exist_ok=True); T.OUT = out
     if owner_runs(): raise SystemExit('refused: the owner\'s game runs (this test needs 2 copies)')
     lane, pair = T.lease()
@@ -126,7 +132,8 @@ def main():
         if not joined: raise SystemExit('guest did not join: stop')
         time.sleep(5)
         check('players: no extra player at the start', *r.rigports.players_guard(r.send, [H_, G_], 2, 'start'))
-        check('the player with the mod runs it (client only, 7 hooks)', 'weapon skill slot on (client only: 7 hooks' in flog(MOD_X, 'dsload.log'),
+        check('the player with the mod runs it (client only, 7 hooks; hide the copy %s)' % ('on' if HIDE else 'off'),
+              'weapon skill slot on (client only: 7 hooks, no game data written; hide the copy: %s)' % ('on' if HIDE else 'off') in flog(MOD_X, 'dsload.log'),
               [l for l in flog(MOD_X, 'dsload.log').splitlines() if 'weapon-slot' in l][-4:])
         check('the player without the mod does not run it', 'weapon skill slot on' not in flog(STOCK_X, 'dsload.log'))
         mine = [u for u in c(H_, cmd='list_units')['units'] if u.get('faction') == 1 and not u.get('dead') and 'cell' in u]

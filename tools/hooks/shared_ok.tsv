@@ -9,7 +9,7 @@ multiplayer|rig_det.c|h_settarget|CombatInfoComponent.SetCombatTarget	a setter s
 multiplayer|rig_det.c|h_tgtdata|CombatTargetApplyData..ctor	a 2-field constructor shared with 136 on Windows; to be confirmed by the multiplayer lane
 multiplayer|rig_det.c|h_rri|Random.RandomRangeInt	Random.Range(int) is the same function (Windows only)
 multiplayer|rig_det.c|h_rangei|Random.Range(int)	Random.RandomRangeInt is the same function (Windows only)
-multiplayer|rig_det.c|h_hc_seed|System.HashCode.GenerateGlobalSeed	System.Random.GenerateGlobalSeed is the same function (Windows only)
+multiplayer|rig_det.c|h_hc_seed|System.HashCode.GenerateGlobalSeed	System.Random.GenerateGlobalSeed is the same function (Windows only): not installed on Windows since ds_multiplayer item 23 (rig_main_win.c WIN_SKIP_SHARED; hashcode_seed_fix pins HashCode's seed); one function on the Mac
 multiplayer|ui_game.c|hk_clan_cur|ui ClanDataContainer.get_CurrentPopulation	a 4-byte getter shared with 64 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
 multiplayer|ui_game.c|hk_clan_max|ui ClanDataContainer.get_MaxPopulation	a 4-byte getter shared with 28 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
 multiplayer|ui_game.c|hk_uo_sethud|ui UnitObject.SetHUD	a setter shared with 157 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
