@@ -38,6 +38,15 @@ def decode(code):
     return raw.decode('utf-8').split('\n') if '%08x' % zlib.crc32(raw) == m.group(2) else None
 
 
+def focus_game(w):
+    """the game window gets the keyboard (a real key goes to the foreground window in the guest): one click on its title
+    bar, which touches no game control (r2 2026-11-02: after a fresh install the Escape went elsewhere, no kit line at all)"""
+    win = next((x for p in w.procs() if p['pid'] == w.pid for x in p.get('windows', []) if x.get('w', 0) > 600), None)
+    if not win: log('focus: no game window'); return False
+    w.a('click', x=int(win['x'] + win['w'] / 2), y=int(win['y'] + 12)); time.sleep(0.5)
+    return True
+
+
 def kit_ids(w):
     """the installed kit mods (ROOT\\mods\\<id>\\mod.json), hidden ones left out"""
     ids = []
@@ -86,7 +95,7 @@ def main():
         tail = L[w.marks.get('dsload.log', 0):] if len(L) >= w.marks.get('dsload.log', 0) else L
         check('Import window: no UI-RULE / ESC-MISSING line (kit window template)', not re.search(r'UI-RULE|ESC-MISSING', tail),
               re.findall(r'(?:UI-RULE|ESC-MISSING)[^\n]*', tail)[:3])
-        w.a('key', vk=VK_ESCAPE); time.sleep(1.5)
+        focus_game(w); w.a('key', vk=VK_ESCAPE); time.sleep(1.5)
         s = w.ui({'op': 'state'}); c = {x['name']: x for x in s.get('controls', [])}
         check('a real Escape closes the Import window first (the Mods window stays)', 'pack-code' not in c and s.get('open') == 1,
               {'open': s.get('open'), 'pack controls': sorted(n for n in c if n.startswith('pack'))[:4]})

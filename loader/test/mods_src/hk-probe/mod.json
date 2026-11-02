@@ -1,0 +1,12 @@
+{
+ "id": "hk-probe",
+ "name": "Held key probe (test only)",
+ "version": "0.1.0",
+ "kind": "code",
+ "api": 7,
+ "scope": "client",
+ "game_builds": ["*"],
+ "platforms": { "win-x64": { "entry": "hk-probe.dll" } },
+ "requires": ["loader>=2.0.0"],
+ "description": "Test module for loader/test/win/heldkey_vm.py: one kit panel with the size keys in a world, and the camera / mouse / panel size in a state file. Never shipped."
+}
