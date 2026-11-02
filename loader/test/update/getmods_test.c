@@ -5,9 +5,14 @@
 //   getmods_test get <host lines file> <env line>      runs the fix (frames until done) and prints STATE / WHY / APPLY
 //   getmods_test check                                 the auto-update check (DSL_UPDATE unset; signed_test.sh): prints
 //                                                      ROOT/update/ready.txt once written, "(none)" after 5 s
+//   getmods_test packcode <name> <id> [<id>...]        mod pack code of these mods: CODE <code> | CODE -1 <why>
+//   getmods_test packplan <code file>                  RET <n> + the pack plan JSON (waits for the names, as the window does)
+//   getmods_test packget <code file>                   IMPORT <r> <why>, frames until saved / failed: STATE / WHY; the
+//                                                      group stub prints GROUP <name>|<ids>|<settings, ';' between>
 // Env: DSML_ROOT (ROOT), DSL_UPDATE_API (relserver.py), HM_ON / HM_EN (",a,b," running / enabled ids), HM_APPLY_REFUSE=1,
 // HM_MYSET (mod settings lines), HM_FAIL (",a," enabled but not running: off by the crash guard), HM_DEP (",a," a missing
-// requirement is the reason).
+// requirement is the reason), HM_GROUP_REFUSE=1 (group save fails), HM_GROUPS ("<name>|<id,id>|<set;set>": one group the
+// player already has).
 #include "dsl_internal.h"
 #include "dsl_menu.h"
 #include <dirent.h>
@@ -62,6 +67,41 @@ int dsl_settings_lines(const char *mod, char *out, size_t cap) {
         if (!strncmp(t, mod, ml) && t[ml] == '/') { k += (size_t)snprintf(out + k, cap - k, "%s%s", c++ ? "\n" : "", t); }
     return c;
 }
+int dsl_settings_lines_edit(const char *mod, char *out, size_t cap) { return dsl_settings_lines(mod, out, cap); }   /* the next Apply's values */
+int dsl_mod_is_difficulty(const char *id) { (void)id; return 0; }
+int dsl_win_is_open(void) { return 0; }                    /* no Mods window: dsl_hostmods_frame ends a pack import */
+/* groups: an in-memory list (HM_GROUPS = one the player already has); save_ex prints the saved group */
+static struct { char name[80], ids[64][64], set[2048]; int n; } G[8]; static int ng, gloaded;
+static void groups_load(void) {
+    if (gloaded) return; gloaded = 1;
+    const char *e = getenv("HM_GROUPS"); if (!e || !*e) return;
+    char b[2400]; snprintf(b, sizeof b, "%s", e); char *a = strchr(b, '|'), *c = a ? strchr(a + 1, '|') : NULL; if (!c) return;
+    *a = 0; *c = 0; snprintf(G[0].name, sizeof G[0].name, "%s", b); G[0].n = 0;
+    for (char *sv = NULL, *t = strtok_r(a + 1, ",", &sv); t && G[0].n < 64; t = strtok_r(NULL, ",", &sv)) snprintf(G[0].ids[G[0].n++], 64, "%s", t);
+    snprintf(G[0].set, sizeof G[0].set, "%s", c + 1); for (char *x = G[0].set; *x; x++) if (*x == ';') *x = '\n';
+    ng = 1;
+}
+int dsl_groups_count(void) { groups_load(); return ng; }
+const char *dsl_group_name(int i) { groups_load(); return i >= 0 && i < ng ? G[i].name : ""; }
+const char *dsl_group_settings(int i) { groups_load(); return i >= 0 && i < ng ? G[i].set : ""; }
+int dsl_group_mods(int i, const char **ids, int max) {
+    groups_load(); int n = 0; if (i < 0 || i >= ng) return 0;
+    for (; n < G[i].n && n < max; n++) ids[n] = G[i].ids[n];
+    return n;
+}
+int dsl_group_save_ex(const char *name, const char *const *ids, int n, const char *settings) {
+    groups_load();
+    if (getenv("HM_GROUP_REFUSE") && !strcmp(getenv("HM_GROUP_REFUSE"), "1")) return -1;
+    int g = 0; while (g < ng && strcmp(G[g].name, name)) g++;
+    if (g == ng) { if (ng >= 8) return -1; ng++; }
+    snprintf(G[g].name, sizeof G[g].name, "%s", name); G[g].n = 0;
+    for (int i = 0; i < n && i < 64; i++) snprintf(G[g].ids[G[g].n++], 64, "%s", ids[i]);
+    snprintf(G[g].set, sizeof G[g].set, "%s", settings ? settings : "");
+    printf("\nGROUP %s|", name);
+    for (int i = 0; i < n; i++) printf("%s%s", i ? "," : "", ids[i]);
+    printf("|"); for (const char *x = settings ? settings : ""; *x; x++) putchar(*x == '\n' ? ';' : *x);
+    printf("\n"); return 0;
+}
 int dsl_settings_take_lines(const char *lines) {
     printf("TAKE "); for (const char *c = lines; *c; c++) putchar(*c == '\n' ? '|' : *c); printf(" ");
     return 1;
@@ -110,6 +150,34 @@ int main(int argc, char **argv) {
         char p[1200], *b = NULL; snprintf(p, sizeof p, "%s/update/ready.txt", getenv("DSML_ROOT"));
         for (int i = 0; i < 100 && !(b = slurp(p)); i++) usleep(50000);
         printf("READY\n%s", b ? b : "(none)\n"); return 0;
+    }
+    if (argc >= 3 && !strcmp(argv[1], "packcode")) {
+        static char code[32768]; char why[600] = ""; const char *ids[64]; int n = 0;
+        for (int i = 3; i < argc && n < 64; i++) ids[n++] = argv[i];
+        int r = dsl_pack_code(ids, n, argv[2], code, sizeof code, why, sizeof why);
+        if (r < 0) printf("CODE -1 %s\n", why); else printf("CODE %s\n", code);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "packplan")) {
+        char *code = slurp(argv[2]); if (!code) return 2;
+        static char out[65536]; int r = dsl_pack_plan(code, out, sizeof out);
+        for (int i = 0; i < 100 && strstr(out, "\"names_pending\":1"); i++) { usleep(100000); r = dsl_pack_plan(code, out, sizeof out); }
+        printf("RET %d\n%s\n", r, out); return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "packget")) {
+        char *code = slurp(argv[2]); if (!code) return 2;
+        char why[700] = "", grp[100] = ""; int r = dsl_pack_import(code, why, sizeof why);
+        printf("IMPORT %d %s\n", r, why);
+        if (r) return 0;
+        int s = 0, pct = 0;
+        for (int i = 0; i < 3000; i++) {                          /* <= 30 s */
+            dsl_hostmods_frame();
+            s = dsl_pack_state(&pct, why, sizeof why, grp, sizeof grp);
+            if (s == -1 || s == 4) break;
+            usleep(10000);
+        }
+        printf("\nSTATE %d\nWHY %s\n", s, why);
+        return 0;
     }
     char *host = argc >= 4 ? slurp(argv[2]) : NULL; if (!host) return 2;
     if (!strcmp(argv[1], "plan")) {

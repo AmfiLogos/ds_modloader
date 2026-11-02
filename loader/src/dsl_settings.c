@@ -274,17 +274,37 @@ void dsl_settings_host(DSLHost *h) {
 /* ------------------------------------------------------------------ multiplayer mod-set lines */
 /* "<mod>/<setting>@<value>" of every gameplay setting of mod `id` (the running values), '\n' between lines.
    Returns how many. dsl_reg.c set_lines adds them to modset_lines (and so to the HELLO hash). */
-int dsl_settings_lines(const char *id, char *out, size_t cap) {
+static int lines_of(const char *id, char *out, size_t cap, int edit) {
     if (!inited) dsl_settings_init();
     Mod *m = mod_of(id); size_t o = 0; int c = 0; if (cap) out[0] = 0;
     for (int k = 0; m && k < m->n; k++) {
         Set *s = &m->s[k]; if (!s->gameplay) continue;
-        char v[64]; value_text(s, s->run, 0, v, sizeof v);
+        char v[64]; value_text(s, edit ? s->edit : s->run, 0, v, sizeof v);
         int w = snprintf(out + o, o < cap ? cap - o : 0, "%s%s/%s@%s", c ? "\n" : "", m->id, s->id, v);
         if (w > 0) o += (size_t)w;
         c++;
     }
     return c;
+}
+int dsl_settings_lines(const char *id, char *out, size_t cap) { return lines_of(id, out, cap, 0); }
+/* the same with the values the next Apply uses (the page's drafts): a mod pack's settings (dsl_hostmods.c dsl_pack_code) */
+int dsl_settings_lines_edit(const char *id, char *out, size_t cap) { return lines_of(id, out, cap, 1); }
+/* 1 = every "<mod>/<setting>@<value>" line of `lines` is the value the next Apply uses (a setting this copy does not
+   have counts as equal: it cannot be set here). The Mods window's "this group is the switches now" mark. */
+int dsl_settings_lines_match(const char *lines) {
+    if (!inited) dsl_settings_init();
+    for (const char *l = lines; l && *l; ) {
+        const char *e = strchr(l, '\n'); size_t n = e ? (size_t)(e - l) : strlen(l);
+        char ln[300]; if (n >= sizeof ln) n = sizeof ln - 1; memcpy(ln, l, n); ln[n] = 0;
+        l = e ? e + 1 : NULL;
+        char *sl = strchr(ln, '/'), *at = sl ? strchr(sl, '@') : NULL;
+        if (!sl || !at) continue;
+        *sl = 0; *at = 0;
+        Set *s = set_of(mod_of(ln), sl + 1); if (!s || !s->gameplay) continue;
+        char v[64]; value_text(s, s->edit, 0, v, sizeof v);
+        if (strcmp(v, at + 1)) return 0;
+    }
+    return 1;
 }
 /* the host's lines (multiplayer "Get the host's mods"): its gameplay values become this game's draft, so the next
    Apply starts with them. Lines that are not setting lines are skipped. Returns how many values were taken. */

@@ -336,6 +336,42 @@ void dsl_deps_for_set(const char *const *ids, int n, int *ok) {
     for (int i = 0; i < nk; i++) json_free(keep[i]);
 }
 
+/* the Mods window's switch rule (dsl_deps.h dsl_deps_turn_on / _off) over the installed mods: on_ids = the switches
+   after the click (a mod that is not a switch, hidden or a custom difficulty, counts as on). out = the ids to switch too
+   (on: to turn on; off: on mods that need it); missing = required entries no installed mod answers. Returns how many ids. */
+int dsl_deps_switch(const char *id, const char *const *on_ids, int n_on, char (*out)[64], int max, char (*missing)[96], int *nmiss, int maxmiss) {
+    static DslDep D[MAXD]; int nd = 0, na = 0, on_click = 0;
+    JNode *keep[MAXD]; int nk = 0;
+    if (nmiss) *nmiss = 0;
+    DIR *d = opendir(modsdir);
+    static char names[MAXD][256]; int nn = 0;
+    struct dirent *e;
+    while (d && (e = readdir(d)) && nn < MAXD) if (e->d_name[0] != '.') snprintf(names[nn++], 256, "%s", e->d_name);
+    if (d) closedir(d);
+    qsort(names, (size_t)nn, 256, (int (*)(const void*, const void*))strcmp);
+    for (int k = 0; k < nn && nk < MAXD; k++) {
+        char mp[1400]; snprintf(mp, sizeof mp, "%s/%s/mod.json", modsdir, names[k]);
+        char *t = read_file(mp, 1 << 20); JNode *m = t ? json_parse(t) : NULL; free(t);
+        const char *mid = json_str(m, "id");
+        DslDep *x = mid && !strcmp(mid, names[k]) ? dsl_dep_add(D, &nd, MAXD, mid, m, NULL, NULL, k) : NULL;
+        if (!x) { json_free(m); continue; }
+        keep[nk++] = m;
+        x->on = dsl_mf_difficulty(m) != 0;
+        for (int i = 0; i < n_on; i++) if (!strcmp(on_ids[i], mid)) x->on = 1;
+    }
+    for (int i = 0; i < ndeps; i++) if (DEPS[i].fixed) { DslDep *x = dsl_dep_add(D, &nd, MAXD, DEPS[i].id, NULL, NULL, NULL, 0); if (x) x->fixed = x->on = 1; }
+    for (int i = 0; i < nprovided; i++) { DslDep *x = dsl_dep_add(D, &nd, MAXD, provided[i], NULL, NULL, NULL, 0); if (x) x->fixed = x->on = 1; }
+    DslDep *me = dsl_dep_find(D, nd, id);
+    if (me) {
+        static int add[MAXD]; on_click = me->on;
+        int c = on_click ? dsl_deps_turn_on(D, nd, (int)(me - D), add, missing, nmiss, maxmiss) : dsl_deps_turn_off(D, nd, (int)(me - D), add);
+        for (int k = 0; k < nd && c > 0 && na < max; k++) if (add[k]) snprintf(out[na++], 64, "%s", D[k].id);
+    }
+    dsl_log("deps: %s %s: %d other switch(es)%s", id, on_click ? "on" : "off", na, nmiss && *nmiss ? ", something required is not installed" : "");
+    for (int i = 0; i < nk; i++) json_free(keep[i]);
+    return na;
+}
+
 static int str_in(const JNode *arr, const char *s) {
     if (!arr) return -1;
     if (arr->t == JN_STR) return !strcmp(arr->str, s) || !strcmp(arr->str, "*");
