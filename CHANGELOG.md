@@ -4,7 +4,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
-### Unreleased (0.1.31)
+### 0.1.31 (2026-11-02)
 
 - You now pick the size keys yourself: in the Mods window ("Global settings"), click the key next to "Smaller" or "Bigger", then press the key you want (hold Ctrl, Shift or Alt with it if you like). Escape keeps the old key, and "Clear" turns that key off. The default stays Ctrl and "-" / Ctrl and "=". If you had picked the keypad keys or Off before, that choice is kept.
 - The size keys now change only the mod window you see under the mouse. When the Mods window, a game window or another mod window covers it there, nothing changes size.
@@ -21,6 +21,8 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
   title or in a world, the title or a world opening, a game window opening or closing, the language changing),
   instead of each mod checking for it every frame. Mod loader SDK version 7: `dsl_on_event` (see loader/NOTES.md
   "Loader events"). Mods made for older versions work as before.
+- Units Laboratory 0.1.49: Test Fights shows a card for each unit of the squad (portrait, in-game look, name, level). "Bring Buffs and Effects from the Save" is on by default. A new Advanced switch, "Start Next to the Scarecrow", puts each unit next to the scarecrow in a DPS Check. The DPS meter keeps every unit and monster apart in big fights.
+- Multiplayer 0.1.30: the chat's newest line keeps its height and text size when the chat opens and closes. Windows: random rolls that do not use a world's seed start from a random seed again.
 
 ### 0.1.30 (2026-11-02)
 
@@ -416,6 +418,10 @@ Fixes:
 - First release: select 2 to 4 of your units and each one gets its own card at the bottom of the screen, with its portrait, name, mood and status bars, behaviour buttons (F/G/H), status effects, item slot and its full skill bar.
 
 ## Weapon skill slot (weapon-slot)
+
+### 0.2.0 (2026-11-02)
+
+- The mod now changes only your own screen. Its button next to the basic attack shows the skill of your unit's weapon and uses it with a click. Friends in your multiplayer game no longer need the mod, and your saves stay the game's own. In the game, a unit has its weapon's skill only while that skill sits in one of its 4 skill slots, so the skill now also stays there. A new setting of the mod, "Hide the copy in the skill bar" (off by default), shows that slot empty on your screen; its key still uses the skill. If a unit got its weapon while its 4 skill slots were full, the game did not give it the skill: the button then shows the skill greyed out, and its hover card says to free a quick slot and equip the weapon again. The mod no longer puts the weapon skill first for automatic use.
 
 ### 0.1.2 (2026-10-25)
 
