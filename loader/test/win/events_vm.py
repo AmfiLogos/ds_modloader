@@ -38,7 +38,7 @@ def check(name, ok, detail=''):
 def build(out):
     d = os.path.join(out, 'ev-probe'); os.makedirs(d, exist_ok=True)
     subprocess.run(['nice', '-n', '19', CC, '-ffile-prefix-map=' + os.path.expanduser('~') + '=/src', '-O2', '-Wall', '-I' + SDK,
-                    '-shared', '-o', os.path.join(d, 'ev-probe.dll'), os.path.join(SRC, 'ev_probe.c'), '-static', '-static-libgcc'], check=True)
+                    '-shared', '-o', os.path.join(d, 'ev-probe.dll'), os.path.join(SRC, 'ev_probe.c'), '-static', '-static-libgcc', '-lpthread'], check=True)   # clock_gettime (ev-probe slow knob, 2209f33) is in winpthread
     m = json.load(open(os.path.join(SRC, 'mod.json'))); json.dump(m, open(os.path.join(d, 'mod.json'), 'w'), indent=1)
     return d
 
