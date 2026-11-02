@@ -12,8 +12,7 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 ## Now
 
-- **Share mod packs.** A short code of your game mods, their versions and settings that friends paste into their Mods window to get the same mods as a group. <!-- id: mod-packs -->
-- **Needed mods switch on together.** Switching a mod on also switches on the mods it needs; switching one off asks about the mods that need it. <!-- id: deps-auto-switch -->
+- Nothing is being built right now. New items come here when work starts.
 
 ## Next
 
@@ -29,6 +28,7 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 ## Done
 
+- **v0.1.32 (2026-11-02).** Share your mods with friends: a short code they import as a group, with the missing mods downloaded from the official releases. Switching a mod on also switches on the mods it needs. A mod made for another game version, or one whose needed mod cannot start, is turned off at the start and the Mods window says why. Two failed starts in a row open the Mods window by itself. Units Laboratory 0.1.50 and Multiplayer 0.1.31.
 - **v0.1.31 (2026-11-02).** You pick the size keys yourself, and they size only the mod window on top under the mouse. "Save current layout" keeps the sizes only. The Mods window shows what each mod changes and who needs it. Weapon skill slot 0.2.0 changes only your own screen. Mods can let the loader tell them when something happens in the game.
 - **v0.1.30 (2026-11-02).** The "-" and "+" size buttons show only while the mouse is over the window, stay under the mouse when you click them, and have keys (Ctrl and "-" / "="). "Global settings" in the Mods window saves or resets where every mod window is. A right-drag moves only the window on top. Folding a section no longer resizes a window. Load Campaign shows your solo worlds first. Two mods can change the same game function. Hover cards open next to what you point at. Units Laboratory can open your units in the wiki's Character Builder.
 - **v0.1.29 (2026-10-26).** Smoother game on the title screen, on the loading screen and in your worlds. VSync stays off when you turn it off. Mods can give their panels "-" and "+" size buttons. Worlds that mods make for themselves stay out of the Load list and the Steam Cloud backup.

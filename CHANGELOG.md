@@ -4,7 +4,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
-### Unreleased (0.1.32)
+### 0.1.32 (2026-11-02)
 
 - Share your mods with friends. In the Mods window, "Share" (next to Groups) copies a short code of the game mods that are on, with their exact versions and settings. Paste it in a chat. Your friend clicks "Import", pastes the code and sees what will change. One click downloads the missing mods from the official releases and saves them as a group; if anything fails, nothing changes. Then pick the group and click Apply to play with the same mods. To share a group, pick it first, then click Share. <!-- roadmap: mod-packs -->
 - Switching a mod on in the Mods window now also switches on the mods it needs. If a needed mod is not installed, the window says which one. Switching a mod off asks if you also want to switch off the mods that need it. <!-- roadmap: deps-auto-switch -->
@@ -18,6 +18,8 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - A right-click drag no longer moves a mod window that the Mods window or another window covers at that spot. Only the window you see under the mouse moves.
 - When a size key that the game also uses (for example Space or W) makes a mod window under the mouse smaller or bigger, the game no longer also acts on that key press. With the mouse away from mod windows, the key works in the game as before.
 - Windows: a mod that crashed the game at start is now turned off for real; before, it ran again at every start.
+- Units Laboratory 0.1.50: unit and team names with quotes, accented letters or emoji now show as written in My Units, on the Test Fights squad cards and in Bring Units, also when another tool saved them as codes.
+- Multiplayer 0.1.31: your friends' units stay theirs after you play a multiplayer world alone; before, every claimed, lent and reserved unit was reset.
 
 ### 0.1.31 (2026-11-02)
 
