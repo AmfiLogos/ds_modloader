@@ -10,6 +10,9 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - Switching a mod on in the Mods window now also switches on the mods it needs. If a needed mod is not installed, the window says which one. Switching a mod off asks if you also want to switch off the mods that need it. <!-- roadmap: deps-auto-switch -->
 - A mod that does not fit your game version is now turned off when the game starts, instead of breaking in the middle of a world. The Mods window says it was not made for this game version, and the log names the missing piece of the game. Mod makers: look up the game names your mod needs with the new dsl_need_ helpers.
 - For mod makers: the mod loader's log (dsload.log) now shows how long each mod took to start and names the slowest one.
+- When a mod cannot start, the mods that need it are now turned off too, and the Mods window says why. Before, they ran without the mod they need.
+- When the mod loader turns a mod off because the game closed while that mod was starting, a message at the title now names the mod, with a button to the Mods window.
+- If the game closes twice in a row while starting with mods (after the mods started, before the title), the next start runs without mods, tells you why and opens the Mods window, so you can turn off the mod that causes it.
 
 ### 0.1.31 (2026-11-02)
 
