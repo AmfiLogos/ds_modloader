@@ -167,6 +167,8 @@ def tf_part1(w, d):
         return None
     k0 = kept(d)
     check('[tf] fresh settings: Time of Day starts on Day', k0.get('tod') == 'day', k0)
+    if 'fights:r.tod' not in controls(d):                           # 0.1.48 (7c25a4a): Time of Day is in the folded "Advanced"
+        d.click('fights:sec.advanced', 1.5)
     cmf(d, cmd='set', name='fights:r.tod', index=1); time.sleep(0.6)
     cmf(d, cmd='set', name='fights:r.combat', index=2); time.sleep(0.8)
     cmf(d, cmd='click', name='fights:r.kit0'); time.sleep(0.8)
