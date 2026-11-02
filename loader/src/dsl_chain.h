@@ -15,7 +15,12 @@
 //   - Skip guard: a link whose own veneer count does not move while N calls came into it never called `orig`;
 //     every older mod on that function did not run. Logged once per link (not blocked: a mod may skip on purpose).
 // Refused (logged): the same module twice on one function; two different methods (both names known, hook_method)
-// that share one body (Windows MSVC identical-code folding: one mod's code would run for the other method).
+// that share one body (Windows MSVC identical-code folding: one mod's code would run for the other method). On Windows
+// (CH_FOLD_RISK) also a second hook when one of the two links has no method name (hook / hook_rva / tables) and neither
+// is the loader's own: the loader cannot tell whether both mean the same method (v0.1.29 refused every second hook;
+// review 2026-11-02: ~660 Windows methods share a body with a multiplayer hook). The loader's own hooks stay chainable:
+// tools/hooks/hooklist.py check fails the build on a loader hook whose body other methods share (shared_ok.tsv).
+// *orig is written BEFORE the slot or a veneer points at the new link: another thread may call it at once.
 //
 // The including engine defines, BEFORE including this file:
 //   static int ch_veneer(uintptr_t *code, volatile uint64_t **cnt, void *volatile **next);   0 = ok
@@ -29,6 +34,16 @@
 #define CH_MAXL 2048          /* links in the process (every hook is one) */
 #define CH_PER_SITE 8         /* links listed per site (inactive ones without a veneer are dropped when full) */
 #define CH_SKIP_N 50          /* calls into a link with none passed down = "did not call the original" */
+#ifndef CH_FOLD_RISK          /* two methods may share one body (MSVC identical-code folding): Windows */
+#ifdef _WIN32
+#define CH_FOLD_RISK 1
+#else
+#define CH_FOLD_RISK 0
+#endif
+#endif
+#ifndef CH_ON_STORE           /* test seam (loader/test/chain_test.c): sees every slot / veneer store */
+#define CH_ON_STORE(p, v) ((void)0)
+#endif
 
 typedef struct {
     void *repl; int owner; int active; char name[48]; char method[96];
@@ -46,7 +61,7 @@ static ChainLink CL[CH_MAXL];
 static int ncl;
 static int ch_chained_sites;                                          /* sites with an entry veneer (skip checks run) */
 
-static void ch_store(void *volatile *p, void *v) { __atomic_store_n((void **)p, v, __ATOMIC_RELEASE); }
+static void ch_store(void *volatile *p, void *v) { CH_ON_STORE(p, v); __atomic_store_n((void **)p, v, __ATOMIC_RELEASE); }
 static uint64_t ch_load_cnt(volatile uint64_t *c) { return c ? __atomic_load_n((uint64_t *)c, __ATOMIC_RELAXED) : 0; }
 
 static int ch_top(const ChainSite *cs) { for (int i = cs->nlk - 1; i >= 0; i--) if (CL[cs->lk[i]].active) return i; return -1; }
@@ -104,6 +119,13 @@ static int ch_add(ChainSite *cs, int owner, void *repl, const char *method, cons
                     method, dsl_owner_name(l->owner), l->name, l->method);
             return -1;
         }
+        if (CH_FOLD_RISK && (!method || !*method || !l->method[0]) && owner != DSL_OWNER_LOADER && l->owner != DSL_OWNER_LOADER) {
+            dsl_log("%s: hook refused: %#lx is already hooked by %s (%s) and %s has no method name: on Windows two methods can "
+                    "share one body (identical-code folding), so chaining could run one mod's code for the other method. "
+                    "Hook both by hook_method", who, (unsigned long)cs->rva, dsl_owner_name(l->owner), l->name,
+                    !l->method[0] ? "that hook" : "this one");
+            return -1;
+        }
     }
     int last = cs->nlk - 1;
     if (last >= 0 && !CL[cs->lk[last]].active && CL[cs->lk[last]].owner == owner) {   /* the newest link, off: re-arm in place */
@@ -139,8 +161,8 @@ static int ch_add(ChainSite *cs, int owner, void *repl, const char *method, cons
     snprintf(l->name, sizeof l->name, "%s", who);
     snprintf(l->method, sizeof l->method, "%s", method ? method : "");
     cs->lk[cs->nlk++] = ncl++;
+    if (orig) *orig = v ? (void *)v : cs->orig_code;                 /* before the slot points at repl (review 2026-11-02) */
     ch_relink(cs);
-    if (orig) *orig = v ? (void *)v : cs->orig_code;
     if (under) { char o[256]; dsl_log("%s: %#lx chained over %s: runs %s", who, (unsigned long)cs->rva, dsl_owner_name(CL[cs->lk[prev]].owner), ch_order(cs, o, sizeof o)); }
     return 0;
 }

@@ -2243,36 +2243,40 @@ static void sz_frame(void) {
         }
     }
 }
-/* LAYOUT (kit 0.1.30; owner 2026-11-01: "add a global settings + save current options + reset all"; the Mods window's
-   Global settings block): save = every kept place and "-" / "+" size row of ui_places.tsv (not section folds, not kit@
-   settings) copied to ui_layout_saved.tsv next to it; reset = those rows replaced by the saved ones (none saved: removed,
-   so every panel comes back at its mod's own place and 100 %), and the panels that show now are put there at once.
-   Panels that place themselves (movable_own: the multiplayer chat's place) keep their place; their size is reset. */
+/* LAYOUT (kit 0.1.30; owner 2026-11-01: "add a global settings + save current options + reset all"; kit 0.1.31, owner
+   2026-11-02, PLAN_v013 item 27: "just make it only the size", his pick "Sizes only"): the Mods window's Global settings
+   block. Save = every "-" / "+" size row ("<key>@size") of ui_places.tsv copied to ui_layout_saved.tsv next to it; no
+   place, no section fold, no kit@ setting. Reset with a saved layout = the size rows replaced by the saved ones (a panel
+   not in it: 100 %), the sizes of the panels that show now set at once; every place stays where the player put it.
+   Reset with none saved (unchanged): every place and size row removed, the panels that show now go back to their mod's
+   own place and 100 % at once. Panels that place themselves (movable_own: the multiplayer chat) keep their place; their
+   size is reset. A kit 0.1.30 saved file with place rows: those rows are not used. */
 static const char *lay_file(void) { static char p[1200]; if (!p[0]) snprintf(p, sizeof p, "%s/ui_layout_saved.tsv", dsl_reg_data_dir()); return p; }
 static int lay_row(const char *key) { return !strstr(key, "@fold") && strncmp(key, "kit@", 4) != 0; }
+static int lay_size_row(const char *key) { size_t n = strlen(key); return lay_row(key) && n > 5 && !strcmp(key + n - 5, "@size"); }
 int dsl_ui_layout_saved(void) { FILE *f = fopen(lay_file(), "r"); if (f) fclose(f); return f != NULL; }
 int dsl_ui_layout_save(void) {
     mvp_load();
     char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", lay_file());
     FILE *f = fopen(tmp, "w"); if (!f) { dsl_log("ui: layout: %s cannot be written", lay_file()); return -1; }
     int n = 0;
-    for (int i = 0; i < nmvp; i++) if (lay_row(mvp[i].key)) { fprintf(f, "%s\t%.1f\t%.1f\n", mvp[i].key, mvp[i].x, mvp[i].y); n++; }
+    for (int i = 0; i < nmvp; i++) if (lay_size_row(mvp[i].key)) { fprintf(f, "%s\t%.1f\t%.1f\n", mvp[i].key, mvp[i].x, mvp[i].y); n++; }
     if (fclose(f) != 0 || dsl_os_replace(tmp, lay_file()) != 0) { dsl_log("ui: layout: not saved"); return -1; }
-    dsl_log("ui: layout: saved %d place / size rows", n);
+    dsl_log("ui: layout: saved %d size rows (places are not part of it)", n);
     return n;
 }
 int dsl_ui_layout_reset(void) {
     mvp_load();
     static struct { char key[64]; float x, y; } sv[MVP_MAX]; int ns = 0;
-    FILE *f = fopen(lay_file(), "r");
+    FILE *f = fopen(lay_file(), "r"); int saved = f != NULL;
     if (f) { char line[256];
              while (ns < MVP_MAX && fgets(line, sizeof line, f)) {
                  char *t1 = strchr(line, '\t'), *t2 = t1 ? strchr(t1 + 1, '\t') : NULL; if (!t2 || t1 - line >= 64 || t1 == line) continue;
-                 *t1 = 0; if (!lay_row(line)) continue;
+                 *t1 = 0; if (!lay_size_row(line)) continue;
                  snprintf(sv[ns].key, sizeof sv[ns].key, "%s", line); sv[ns].x = strtof(t1 + 1, NULL); sv[ns].y = strtof(t2 + 1, NULL); ns++;
              }
              fclose(f); }
-    int n = 0; for (int i = 0; i < nmvp; i++) if (!lay_row(mvp[i].key)) mvp[n++] = mvp[i];
+    int n = 0; for (int i = 0; i < nmvp; i++) if (saved ? !lay_size_row(mvp[i].key) : !lay_row(mvp[i].key)) mvp[n++] = mvp[i];   /* saved: the places stay */
     nmvp = n;
     for (int i = 0; i < ns && nmvp < MVP_MAX; i++) { snprintf(mvp[nmvp].key, sizeof mvp[nmvp].key, "%s", sv[i].key); mvp[nmvp].x = sv[i].x; mvp[nmvp].y = sv[i].y; nmvp++; }
     mvp_save();
@@ -2283,60 +2287,163 @@ int dsl_ui_layout_reset(void) {
         szs[i].abtn = NULL; szs[i].sh_on = 0;
         if (st != szs[i].step) { szs[i].step = st; sz_apply(i); sz_look(i); }
     }
-    for (int k = 0; k < nmv; k++) {
+    for (int k = 0; !saved && k < nmv; k++) {                        /* none saved: each mod's own place */
         Obj o = hget(mvs[k].h); if (!o || mvs[k].own || !m_rt_pos) continue;
-        int j = 0; while (j < ns && strcmp(sv[j].key, mvs[k].key)) j++;
-        if (j < ns) CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ sv[j].x, sv[j].y }, m_rt_pos);
-        else if (mvs[k].has_df) CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ mvs[k].dfx, mvs[k].dfy }, m_rt_pos);
+        if (mvs[k].has_df) CALL(m_rt_pos, void, Obj, V2)(tr_of(o), (V2){ mvs[k].dfx, mvs[k].dfy }, m_rt_pos);
         mv_clamp(o);
     }
-    dsl_log("ui: layout: reset to %s (%d rows)", ns ? "the saved layout" : "the defaults", ns);
+    dsl_log("ui: layout: reset to %s (%d size rows)", saved ? "the saved sizes, places kept" : "the defaults", ns);
     return ns;
 }
-/* SIZE KEYS (kit 0.1.30; owner 2026-11-01: "configurable keys" for the "-" / "+" resize): with Ctrl held, "-" / "=" (or
-   keypad "-" / "+", or none: the Mods window's "Size keys" row) make the panel UNDER THE MOUSE (the one drawn on top) one
-   step smaller / bigger: the same step, limits, kept size and ANCHOR as a click on its "-" / "+". Nothing while a text
-   field has the keyboard or no panel with "-" / "+" is under the mouse. Free keys (2026-11-01): the game binds none of
-   them (KeySettingData); Ctrl alone is its EntityHover hold, which stays. Kept as the row "kit@size_keys" (x = choice). */
-static const struct { int minus, plus; } SZK[] = { { 45, 61 }, { 269, 270 }, { 0, 0 } };   /* Minus / Equals, Keypad - / +, off */
-#define SZK_N 3
-static int szk_sel = -1;
-int dsl_ui_size_keys(void) {
-    if (szk_sel < 0) { szk_sel = 0; mvp_load(); for (int n = 0; n < nmvp; n++) if (!strcmp(mvp[n].key, "kit@size_keys")) { int v = (int)(mvp[n].x + 0.5f); szk_sel = v >= 0 && v < SZK_N ? v : 0; break; } }
-    return szk_sel;
+/* SIZE KEYS (kit 0.1.30; owner 2026-11-01: "configurable keys" for the "-" / "+" resize; kit 0.1.31, owner 2026-11-02:
+   "No, just do press any key to capture."): a "Smaller" key and a "Bigger" key (Unity KeyCode + the Ctrl / Shift / Alt
+   held with it; default Ctrl + "-" / Ctrl + "=") make the panel UNDER THE MOUSE one step smaller / bigger: the same step,
+   limits, kept size and ANCHOR as a click on its "-" / "+". Nothing while a text field has the keyboard, while a key is
+   being captured, when no panel with "-" / "+" is under the mouse, or when another window covers it there (review
+   2026-11-02: the Mods window, a game popup, a plain kit window; ui_cover_at). The Mods window's Global settings rows set
+   them by capture (dsl_ui_size_key_capture): a click, then the next key press (Escape cancels and never reaches the
+   window or the game; a mouse press cancels). Kept as the rows "kit@size_key_minus" / "kit@size_key_plus" of
+   ui_places.tsv (x = KeyCode, 0 = off; y = mods); a kit 0.1.30 choice "kit@size_keys" (0 Ctrl + - / =, 1 Ctrl + keypad,
+   2 off) is read when they are missing. The game binds none of the defaults (KeySettingData, 2026-11-01); a key the
+   player picks may also be one of the game's (the row's hover text says so). */
+#define SZK_CTRL 1
+#define SZK_SHIFT 2
+#define SZK_ALT 4
+static struct { int key, mods; } szk[2]; static int szk_loaded, szk_cap = -1, szk_serial; static int64_t szk_cap_at;
+static const char *const szk_rowkey[2] = { "kit@size_key_minus", "kit@size_key_plus" };
+static void szk_load(void) {
+    if (szk_loaded) return;
+    szk_loaded = 1; mvp_load();
+    szk[0].key = 45; szk[1].key = 61; szk[0].mods = szk[1].mods = SZK_CTRL;   /* Ctrl + "-" / Ctrl + "=" */
+    int got = 0, old = -1;
+    for (int n = 0; n < nmvp; n++) {
+        for (int w = 0; w < 2; w++) if (!strcmp(mvp[n].key, szk_rowkey[w])) {
+            int k = (int)(mvp[n].x + 0.5f), m = (int)(mvp[n].y + 0.5f);
+            if (k >= 0 && k < 512 && m >= 0 && m < 8) { szk[w].key = k; szk[w].mods = m; got = 1; }
+        }
+        if (!strcmp(mvp[n].key, "kit@size_keys")) old = (int)(mvp[n].x + 0.5f);
+    }
+    if (!got && old == 1) { szk[0].key = 269; szk[1].key = 270; }    /* kit 0.1.30 "Ctrl + keypad - / +" */
+    else if (!got && old == 2) szk[0].key = szk[1].key = szk[0].mods = szk[1].mods = 0;   /* kit 0.1.30 "Off" */
+    if (!got && old >= 0) dsl_log("ui: size keys: the kit 0.1.30 choice %d kept (%d / %d)", old, szk[0].key, szk[1].key);
 }
-void dsl_ui_size_keys_set(int v) {
-    if (v < 0 || v >= SZK_N) return;
-    szk_sel = v; mvp_load();
-    int n = 0; while (n < nmvp && strcmp(mvp[n].key, "kit@size_keys")) n++;
-    if (n == nmvp) { if (nmvp == MVP_MAX) return; nmvp++; }
-    snprintf(mvp[n].key, sizeof mvp[n].key, "kit@size_keys"); mvp[n].x = (float)v; mvp[n].y = 0; mvp_save();
-    dsl_log("ui: size keys: choice %d (%s)", v, v == 0 ? "Ctrl + - / =" : v == 1 ? "Ctrl + keypad - / +" : "off");
+int dsl_ui_size_key(int which, int *mods) {
+    szk_load(); if (which < 0 || which > 1) return 0;
+    if (mods) *mods = szk[which].mods;
+    return szk[which].key;
 }
-static int sz_under_mouse(void) {                                    /* the panel with "-" / "+" drawn on top under the mouse, -1 none */
+void dsl_ui_size_key_set(int which, int key, int mods) {
+    if (which < 0 || which > 1 || key < 0 || key >= 512) return;
+    szk_load(); mods = key ? mods & 7 : 0;
+    szk[which].key = key; szk[which].mods = mods;
+    if (key && szk[!which].key == key && szk[!which].mods == mods) {   /* one key, one action: the other row lets go of it */
+        szk[!which].key = szk[!which].mods = 0; dsl_log("ui: size keys: %s had that key: now off", which ? "smaller" : "bigger"); }
+    for (int w = 0; w < 2; w++) {
+        int n = 0; while (n < nmvp && strcmp(mvp[n].key, szk_rowkey[w])) n++;
+        if (n == nmvp) { if (nmvp == MVP_MAX) continue; nmvp++; }
+        snprintf(mvp[n].key, sizeof mvp[n].key, "%s", szk_rowkey[w]); mvp[n].x = (float)szk[w].key; mvp[n].y = (float)szk[w].mods;
+    }
+    mvp_save(); szk_serial++;
+    dsl_log("ui: size keys: %s = key %d mods %d", which ? "bigger" : "smaller", key, mods);
+}
+void dsl_ui_size_key_capture(int which) {
+    int was = szk_cap; szk_cap = which == 0 || which == 1 ? which : -1; szk_cap_at = frames;
+    if (was != szk_cap) { szk_serial++; dsl_log("ui: size keys: %s", szk_cap < 0 ? "capture off" : szk_cap ? "press a key for bigger" : "press a key for smaller"); }
+}
+int dsl_ui_size_key_capturing(void) { return szk_cap; }
+int dsl_ui_size_key_serial(void) { return szk_serial; }
+static int key_held(int a, int b) { return CALL(m_input_key, bool, int)(a, m_input_key) || CALL(m_input_key, bool, int)(b, m_input_key); }
+static int szk_mods_now(void) { return (key_held(305, 306) ? SZK_CTRL : 0) | (key_held(303, 304) ? SZK_SHIFT : 0) | (key_held(307, 308) ? SZK_ALT : 0); }
+static int szk_capturable(int k) {                                   /* KeyCodes Unity defines; not Escape, modifiers, locks, mouse */
+    return k == 8 || k == 9 || k == 13 || k == 19 || (k >= 32 && k <= 64) || (k >= 91 && k <= 127) || (k >= 256 && k <= 296);
+}
+/* runs in the tick BEFORE esc_tick: its Escape is used here (the Mods window stays open, the game never sees it) */
+static void szk_capture_frame(void) {
+    if (szk_cap < 0) return;
+    if (!m_input_keydown || !m_input_key) { dsl_ui_size_key_capture(-1); return; }
+    if (frames <= szk_cap_at) return;                                /* not in the frame of the click that started it */
+    if (CALL(m_input_keydown, bool, int)(27, m_input_keydown)) { esc_used = esc_frame(); dsl_log("ui: size keys: Escape: the key stays"); dsl_ui_size_key_capture(-1); return; }
+    if (m_input_mbd && (CALL(m_input_mbd, bool, int)(0, m_input_mbd) || CALL(m_input_mbd, bool, int)(1, m_input_mbd))) { dsl_ui_size_key_capture(-1); return; }
+    if (key_held(309, 310) || key_held(311, 312)) return;            /* Command / Windows held: the system's shortcut, not ours */
+    for (int k = 8; k <= 296; k++) if (szk_capturable(k) && CALL(m_input_keydown, bool, int)(k, m_input_keydown)) {
+        int w = szk_cap; dsl_ui_size_key_capture(-1); dsl_ui_size_key_set(w, k, szk_mods_now()); return;
+    }
+}
+/* TOP UNDER THE MOUSE (review 2026-11-02 on the size keys; the TOP RULE): ui_hit_at = the object a left click at screen
+   point (x, y) reaches first: the EventSystem's own raycast over every canvas (kit windows, the Mods window, the game's
+   popups), NULL = nothing there or no raycast in this build. Fresh objects each call (a PointerEventData, a
+   List<RaycastResult>): it runs on a key press, not every frame. ui_cover_at = what covers panel o at (x, y): the first
+   hit when it is not inside o and is not drawn below o (a see-through part of o over the game: the TOP RULE's order). */
+static void *k_ped, *m_ped_ctor, *m_ped_pos, *m_es_raycast, *k_rrlist, *m_rrlist_ctor; static int32_t f_rrl_items = -1, f_rrl_size = -1, f_rr_go = -1;
+static int hit_state;                                                /* 0 not looked up, 1 ready, -1 missing */
+static int hit_init(void) {
+    if (hit_state) return hit_state > 0;
+    hit_state = -1;
+    void *kES = dsl_find_class("UnityEngine.EventSystems", "EventSystem"), *kRR = dsl_find_class("UnityEngine.EventSystems", "RaycastResult");
+    void *(*from_type)(void *) = (void *(*)(void *))dsl_il2cpp_fn("il2cpp_class_from_type");
+    void (*cinit)(void *) = (void (*)(void *))dsl_il2cpp_fn("il2cpp_runtime_class_init");
+    k_ped = dsl_find_class("UnityEngine.EventSystems", "PointerEventData");
+    m_ped_ctor = k_ped ? mi_sig(k_ped, ".ctor", 1, NULL) : NULL; m_ped_pos = k_ped ? mi_sig(k_ped, "set_position", 1, NULL) : NULL;
+    m_es_raycast = kES ? mi_sig(kES, "RaycastAll", 2, NULL) : NULL;
+    k_rrlist = m_es_raycast && from_type ? from_type(I.method_get_param(m_es_raycast, 1)) : NULL;   /* List<RaycastResult> */
+    if (k_rrlist && cinit) cinit(k_rrlist);
+    m_rrlist_ctor = k_rrlist ? mi_sig(k_rrlist, ".ctor", 0, NULL) : NULL;
+    f_rrl_items = k_rrlist ? dsl_field_offset(k_rrlist, "_items") : -1; f_rrl_size = k_rrlist ? dsl_field_offset(k_rrlist, "_size") : -1;
+    { int32_t o = kRR ? dsl_field_offset(kRR, "m_GameObject") : -1; f_rr_go = o >= 0x10 ? o - 0x10 : -1; }   /* value type: minus the object header */
+    if (!m_es_cur || !m_ped_ctor || !*(void **)m_ped_ctor || !m_ped_pos || !m_es_raycast || !m_rrlist_ctor || !*(void **)m_rrlist_ctor || f_rrl_items < 0 || f_rrl_size < 0 || f_rr_go < 0) {
+        dsl_log("ui: top under the mouse: no UI raycast (%p %p %p %p %d %d %d): a covering window is not seen", m_ped_ctor, m_es_raycast, k_rrlist, m_rrlist_ctor, f_rrl_items, f_rrl_size, f_rr_go);
+        return 0;
+    }
+    hit_state = 1; return 1;
+}
+static Obj ui_hit_at(float x, float y) {
+    if (!hit_init()) return NULL;
+    Obj es = CALL0(m_es_cur, Obj)(m_es_cur); if (!alive(es)) return NULL;
+    Obj ped = I.object_new(k_ped), list = I.object_new(k_rrlist); if (!ped || !list) return NULL;
+    CALL(m_ped_ctor, void, Obj, Obj)(ped, es, m_ped_ctor);
+    CALL(m_ped_pos, void, Obj, V2)(ped, (V2){ x, y }, m_ped_pos);
+    CALL(m_rrlist_ctor, void, Obj)(list, m_rrlist_ctor);
+    CALL(m_es_raycast, void, Obj, Obj, Obj)(es, ped, list, m_es_raycast);
+    Obj items = AT(list, f_rrl_items, Obj);
+    if (AT(list, f_rrl_size, int32_t) <= 0 || !items) return NULL;
+    Obj go = AT((char *)items + 0x20, f_rr_go, Obj);                 /* element 0 (sorted: the top one) */
+    return alive(go) ? go : NULL;
+}
+static int ui_inside(Obj o, Obj root) { Obj r = tr_of(root); for (Obj t = tr_of(o); t && r; t = tr_parent(t)) if (t == r) return 1; return 0; }
+static Obj ui_cover_at(Obj o, float x, float y) {
+    Obj hit = ui_hit_at(x, y);
+    if (!hit || ui_inside(hit, o)) return NULL;
+    OrdKey a, b; ord_key(hit, &a); ord_key(o, &b);
+    return ord_cmp(&a, &b) < 0 ? NULL : hit;
+}
+static int sz_under_mouse(char *by, size_t n) {                     /* the panel with "-" / "+" on top under the mouse, -1 none / covered */
+    if (by && n) by[0] = 0;
     if (!m_input_mouse) return -1;
     V3 m = CALL0(m_input_mouse, V3)(m_input_mouse); int best = -1; OrdKey bk, k;
     for (int i = 0; i < nsz; i++) {
         Obj o = hget(szs[i].h), hd = hget(szs[i].h_hold); float r[4]; int in = 0;
         if (!o || !on_tree(o)) continue;
-        for (int n = 0; n < 2 && !in; n++) { Obj x = n ? hd : o; in = x && rect_screen(x, r) && m.x >= r[0] && m.x <= r[2] && m.y >= r[1] && m.y <= r[3]; }
+        for (int q = 0; q < 2 && !in; q++) { Obj x = q ? hd : o; in = x && rect_screen(x, r) && m.x >= r[0] && m.x <= r[2] && m.y >= r[1] && m.y <= r[3]; }
         if (!in) continue;
         ord_key(o, &k);
         if (best < 0 || ord_cmp(&k, &bk) > 0) { best = i; bk = k; }
     }
+    if (best < 0) return -1;
+    Obj cv = ui_cover_at(hget(szs[best].h), m.x, m.y);
+    if (cv) { if (by && n) obj_name(go_of(cv), by, n); if (by && n && !by[0]) snprintf(by, n, "?"); return -1; }
     return best;
 }
 static void sz_keys_frame(void) {
-    if (!nsz || !m_input_keydown || !m_input_key) return;
-    int c = dsl_ui_size_keys(); if (!SZK[c].minus) return;
-    int dn = CALL(m_input_keydown, bool, int)(SZK[c].minus, m_input_keydown), up = CALL(m_input_keydown, bool, int)(SZK[c].plus, m_input_keydown);
-    if (!dn && !up) return;
-    if (!CALL(m_input_key, bool, int)(306, m_input_key) && !CALL(m_input_key, bool, int)(305, m_input_key)) return;   /* Left / Right Control */
+    if (!nsz || szk_cap >= 0 || frames <= szk_cap_at || !m_input_keydown || !m_input_key) return;   /* not the frame a capture took its key */
+    szk_load();
+    int w = -1;
+    for (int q = 0; q < 2 && w < 0; q++) if (szk[q].key && CALL(m_input_keydown, bool, int)(szk[q].key, m_input_keydown)) w = q;
+    if (w < 0 || szk_mods_now() != szk[w].mods) return;
     if (esc_focused()) { dsl_log("ui: size keys: a text field has the keyboard: not used"); return; }
-    int i = sz_under_mouse();
-    if (i < 0) { dsl_log("ui: size keys: no panel with \"-\" / \"+\" under the mouse"); return; }
-    dsl_log("ui: size keys: Ctrl + %s on %s", up ? "plus" : "minus", szs[i].key);
-    sz_step(i, up ? szs[i].plus : szs[i].minus);
+    char by[96]; int i = sz_under_mouse(by, sizeof by);
+    if (i < 0) { if (by[0]) dsl_log("ui: size keys: the panel under the mouse is covered by %s: not used", by); else dsl_log("ui: size keys: no panel with \"-\" / \"+\" under the mouse"); return; }
+    dsl_log("ui: size keys: %s on %s", w ? "bigger" : "smaller", szs[i].key);
+    sz_step(i, w ? szs[i].plus : szs[i].minus);
 }
 /* ------------------------------------------------------------------ the templates (kit 0.1.28; owner 2026-10-25: "templated
    rules / pattern to keep applying everywhere"). window_std: a window or an in-game panel with every owner rule on by
@@ -3179,6 +3286,7 @@ static void tick(void) {
     if (!o_cur_perform) brand_frame();                              /* else right before the UI is drawn (h_cur_perform) */
     run_queue();
     fields_frame();
+    szk_capture_frame();                                            /* before esc_tick: a key capture takes its Escape */
     esc_tick();
     esc_guard_frame();
     card_guard_frame();
