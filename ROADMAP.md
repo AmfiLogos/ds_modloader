@@ -12,9 +12,7 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 ## Now
 
-These are being built for the next version.
-
-- **Weapon skill slot for your screen only.** The weapon skill slot will change only your own screen: a button that uses your unit's weapon skill. Friends in your game will not need the mod. <!-- id: weapon-slot-local -->
+- Nothing is being built right now. New items come here when work starts.
 
 ## Next
 
@@ -23,7 +21,6 @@ These are being built for the next version.
 ## Later / ideas
 
 - **Pick your game version.** A list of game versions that the mods work with, so you can choose which version to play.
-- **Mods that react to game events.** The loader tells mods when the game opens or closes one of its windows, so mods need less of their own code to find them.
 - **A "Local" tag on mods.** The loader finds out by itself if a mod only changes your screen ("Local", never blocks joining a friend) or if every player needs it.
 - **Save tags.** "Vanilla+" for mods after which the plain game can still play your save, and "Mod-dependent save" for mods that the save needs. Before you first load a save with a mod of the second kind, the loader makes a backup copy.
 - **A tidier Load list.** Your worlds, multiplayer copies, PvP and Expedition maps and plain game saves in clear groups.
@@ -31,6 +28,7 @@ These are being built for the next version.
 
 ## Done
 
+- **v0.1.31 (2026-11-02).** You pick the size keys yourself, and they size only the mod window on top under the mouse. "Save current layout" keeps the sizes only. The Mods window shows what each mod changes and who needs it. Weapon skill slot 0.2.0 changes only your own screen. Mods can let the loader tell them when something happens in the game.
 - **v0.1.30 (2026-11-02).** The "-" and "+" size buttons show only while the mouse is over the window, stay under the mouse when you click them, and have keys (Ctrl and "-" / "="). "Global settings" in the Mods window saves or resets where every mod window is. A right-drag moves only the window on top. Folding a section no longer resizes a window. Load Campaign shows your solo worlds first. Two mods can change the same game function. Hover cards open next to what you point at. Units Laboratory can open your units in the wiki's Character Builder.
 - **v0.1.29 (2026-10-26).** Smoother game on the title screen, on the loading screen and in your worlds. VSync stays off when you turn it off. Mods can give their panels "-" and "+" size buttons. Worlds that mods make for themselves stay out of the Load list and the Steam Cloud backup.
 - **v0.1.28 (2026-10-25).** Escape and the game's red X close the mod windows, and they follow the game's UI Scale. Load Campaign filters have a Solo box and two groups. New fix: Live building HP. After an update, a "What's new" window shows once.
@@ -54,4 +52,3 @@ Have you tried one of these? Please open an issue and tell us what happened.
 - **Mac asks you to allow the app the first time.** The app is not signed with an Apple developer ID, so you need to right-click it and click Open, or click "Open Anyway" in System Settings.
 - **BepInEx mods and MelonLoader mods cannot be on together.** Both start .NET inside the game. If you try, the Mods window refuses the second kind and tells you why.
 - **Extended Hotbar refuses to start on Mac.** That mod runs its own check, and we leave it as it is.
-- **Weapon skill slot: every player in a game needs it.** Today it adds a real slot to the skill bar, which changes the game for everyone. The Now list makes it a mod for your own screen only.
