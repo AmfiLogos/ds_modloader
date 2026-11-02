@@ -17,6 +17,7 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - A world on Hell difficulty that the mod loader has no record of (for example, saves copied from another computer) no longer loads when Hell difficulty does not run. The game offers to load it with Hell difficulty, as for your other Hell worlds.
 - A right-click drag no longer moves a mod window that the Mods window or another window covers at that spot. Only the window you see under the mouse moves.
 - When a size key that the game also uses (for example Space or W) makes a mod window under the mouse smaller or bigger, the game no longer also acts on that key press. With the mouse away from mod windows, the key works in the game as before.
+- Windows: a mod that crashed the game at start is now turned off for real; before, it ran again at every start.
 
 ### 0.1.31 (2026-11-02)
 

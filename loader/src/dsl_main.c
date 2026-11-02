@@ -94,7 +94,7 @@ static char *read_file(const char *path, size_t max) {
 }
 static int write_file(const char *path, const char *text) {
     char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "w"); if (!f) return -1;
+    FILE *f = fopen(tmp, "wb"); if (!f) return -1;   /* "wb": text mode on Windows writes CRLF and read_file ("rb") then never matched a crash guard signature */
     fputs(text, f); fflush(f); fsync(fileno(f)); fclose(f);
     return rename(tmp, path);
 }
