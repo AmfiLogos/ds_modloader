@@ -35,6 +35,8 @@ mod failpatch 6 '{"id":"failpatch","version":"1.0.0","kind":"code","api":2,"game
 # a launcher feature that is a code mod with scope gameplay (Units Laboratory 0.1.10's mod.json): never in the HELLO
 # mod set. Break caught: a guest refused with "Units Laboratory: same version, different files" (player report 2026-10-20).
 mod lab-code 3 '{"id":"lab-code","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"scope":"gameplay","category":"feature"}'
+# cascade (idea 3a): requires clash, which fails in dsl_plugin_init. Break caught: a mod runs half-broken without the mod it needs.
+mod needs-clash 3 '{"id":"needs-clash","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["clash"]}'
 mod data-mod none '{"id":"data-mod","version":"1.0.0","type":"data","game_build":"test"}'
 # dependencies with BepInEx plugins (dsl_deps.h): bie-core 0.4.0 is too old for the three mods below
 mod bie-core none '{"id":"bie-core","version":"0.4.0","kind":"bepinex"}'
@@ -43,7 +45,7 @@ mod needs-bie none '{"id":"needs-bie","version":"1.0.0","kind":"code","api":2,"g
 mod opt-old none '{"id":"opt-old","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"optional":["bie-core>=0.5.0"]}'
 mkdir -p "$M/floor-logger"; cp ~/DungeonSettlersMods/mods/floor-logger/floor-logger.dylib "$M/floor-logger/"
 sed 's/"game_build": "25846389"/"game_build": "test"/' ~/DungeonSettlersMods/mods/floor-logger/mod.json > "$M/floor-logger/mod.json"
-print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch","bie-core","bie-needs","needs-bie","opt-old","lab-code"],"provided":["notch-fix"]}' > "$M/profile.json"
+print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflicter","needs-missing","other-build","no-table","data-mod","patcher","failpatch","bie-core","bie-needs","needs-bie","opt-old","lab-code","needs-clash"],"provided":["notch-fix"]}' > "$M/profile.json"
 
 run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_NO_ALERT=1 DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
 EXPECT="orig_init=1 orig_safe=2 orig_normal=1 orig_tick=1 orig_update=2"
@@ -92,6 +94,7 @@ check "launcher feature (code, scope gameplay) runs but is not in the gameplay m
 check "world check off without a session" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "world check: off"'
 check "build status for the launcher: active on the pinned build" 'grep -q "\"active\":true,\"reason\":\"ok\"" "$LOGD/dsload_status.json"'
 check "codepatch guard cleared" '[[ ! -e "$LOGD/dsload_state/_codepatch.pending" ]]'
+check "cascade: a mod that requires a mod failing in dsl_plugin_init is off too (idea 3a)" 'log | grep -q "needs-clash: OFF this session: it requires clash, which did not start" && ! log | grep -q "needs-clash 1.0.0: loaded" && ! log | grep -q "plain module needs-clash up"'
 
 # hook chaining (owner 2026-10-24: "allow multiple mods modifying similar functions"). Breaks caught: a second mod on a
 # function refused or run in the wrong order; after one mod unhooks (middle or oldest) the others or the game stop
@@ -208,11 +211,15 @@ DSL_PLUGIN();
 DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) { if (!getenv("CRASHER_FIXED")) abort(); return 0; }
 C
 $CC -O0 -I"$L/sdk" -dynamiclib -o "$M/crasher/crasher.dylib" "$OUT/crash.c" && codesign -f -s - "$M/crasher/crasher.dylib" 2>/dev/null
-print '{"enabled":["floor-logger","crasher"],"provided":["notch-fix"]}' > "$M/profile.json"
+# cascade (idea 3a): needs-crasher requires crasher, opt-crasher only lists it as optional
+mod needs-crasher 3 '{"id":"needs-crasher","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"requires":["crasher"]}'
+mod opt-crasher 3 '{"id":"opt-crasher","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"optional":["crasher"]}'
+print '{"enabled":["floor-logger","crasher","needs-crasher","opt-crasher"],"provided":["notch-fix"]}' > "$M/profile.json"
 run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" >/dev/null; rc=$?
 check "crash leaves the pending marker" '[[ $rc -ne 0 && -f "$LOGD/dsload_state/crasher.pending" ]]'
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "next start: crasher OFF, floor-logger loads, game runs" '[[ "$r" == *"orig_safe=2"* ]] && log | grep -q "CRASH GUARD: the game stopped last time while module crasher ran (dsl_plugin_init)" && log | grep -q "floor-logger 1.0.0: loaded"'
+check "cascade: the crash guard's mod takes its requiring mod off, an optional user still loads (idea 3a)" 'log | grep -q "needs-crasher: OFF this session: it requires crasher, which did not start" && ! log | grep -q "needs-crasher 1.0.0: loaded" && log | grep -q "opt-crasher 1.0.0: loaded"'
 
 print "== T6 future build guard: the launcher pinned another build than this copy's"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=99999999)
