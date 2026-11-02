@@ -11,6 +11,7 @@
 // Crash guard per module and phase: <state dir>/<id>.pending left over at the next start = it crashed there.
 #define DSI_IMPLEMENTATION                    /* ds_i18n.h: the string tables live in this file (one per binary) */
 #include "dsl_internal.h"
+#include "dsl_menu.h"
 #include "dsl_stub.h"
 #include "dsl_os.h"
 #include "../sdk/dsl_sdk.h"
@@ -49,6 +50,7 @@ struct DSLPlugin {
     int fit;                              /* loadable here (build, platform, files, table) before the dependency rule */
     int crash_off;                        /* state 3 by the crash guard (it stopped the game while starting last time) */
     char dep_off[64];                     /* state 3: it requires this mod, which did not start (cascade, idea 3a) */
+    int boot_off;                         /* state 3 by the boot guard: this start runs with mods off (idea 4) */
     void *h;
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
@@ -133,6 +135,49 @@ static char loader_sig[64];
 void dsl_mark_codepatch(void) {
     if (codepatch_marked) return;
     codepatch_marked = 1; guard_enter("_codepatch", "runtime code patching (hook stubs)");
+}
+
+/* ------------------------------------------------------------------ boot guard (tModLoader study idea 4)
+   Two starts in a row that died AFTER the modules started and BEFORE the title (a mod's hook crashes the boot; the
+   per-module guard above covers only the load / early / init calls): the next start runs with mods off, says why at the
+   title and opens the Mods window. dsload_state/_boot.pending = the modules started in this process; removed at the
+   first idle title and at a normal quit (atexit). A start that finds it adds one to _boot.count; the title resets the
+   count. Off in test copies (-batchmode, DSRIG_CTL / DSRIG_PORT) and in a soft restart B (a prewarmed B that A drops
+   dies on purpose); DSL_BOOTGUARD=1 forces it on, =0 off. */
+static int boot_hatch, boot_marked;
+static int boot_guard_on(void) {
+    const char *e = getenv("DSL_BOOTGUARD");
+    if (e && *e) return strcmp(e, "0") != 0;
+    return !dsl_os_batchmode() && !getenv("DSRIG_CTL") && !getenv("DSRIG_PORT") && !dsl_soft_wanted();
+}
+static void boot_clear(int title) {
+    char p[1200];
+    if (boot_marked) { guard_path(p, sizeof p, "_boot", "pending"); unlink(p); boot_marked = 0; }
+    if (title) { guard_path(p, sizeof p, "_boot", "count"); unlink(p); }
+}
+static void boot_at_exit(void) { boot_clear(0); }
+static void boot_check(void) {
+    if (!boot_guard_on()) return;
+    char pend[1200], cnt[1200]; guard_path(pend, sizeof pend, "_boot", "pending"); guard_path(cnt, sizeof cnt, "_boot", "count");
+    char *c = read_file(cnt, 64); int n = c ? atoi(c) : 0; free(c);
+    char *p = read_file(pend, 256);
+    if (p) {
+        free(p); unlink(pend); n++;
+        char b[16]; snprintf(b, sizeof b, "%d\n", n); write_file(cnt, b);
+        dsl_log("BOOT GUARD: the last start ended after the mods started and before the title (%d start(s) in a row)", n);
+    }
+    if (n < 2) return;
+    boot_hatch = 1; unlink(cnt);
+    dsl_log("BOOT GUARD: %d starts in a row ended before the title: this start runs with mods off; the Mods window opens at the title", n);
+}
+/* the modules started: from here to the title, a death counts */
+static void boot_mark(void) {
+    if (boot_hatch || boot_marked || !boot_guard_on()) return;
+    int any = 0; for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) any = 1;
+    if (!any) return;
+    char p[1200]; guard_path(p, sizeof p, "_boot", "pending");
+    if (write_file(p, "modules started, title not reached\n")) return;
+    boot_marked = 1; atexit(boot_at_exit);
 }
 
 /* ------------------------------------------------------------------ build guard */
@@ -301,6 +346,7 @@ int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
 int dsl_mod_state(const char *id, const char **why) {
     struct DSLPlugin *p = find_mod_early(id);
     if (why) *why = !p ? TR_NOOP("not loaded: not made for this game version or this computer") : p->state == 2 ? TR_NOOP("it crashed while starting")
+                  : p->state == 3 && p->boot_off ? TR_NOOP("off for this start: the game closed twice in a row while starting with mods")
                   : p->state == 3 && p->crash_off ? TR_NOOP("it stopped the game while starting last time, so it stays off until it is updated")
                   : p->state == 3 ? TR_NOOP("not loaded: it needs another mod, clashes with one, or crashed last time") : "";   /* keys: the Mods window translates */
     return p ? p->state : 0;
@@ -736,6 +782,7 @@ static void on_il2cpp_ready(const char *via) {
     dsl_cloud_install(&host);                                        /* modded-only saves: Steam Cloud backup */
     dsl_events_install();                                            /* loader events: view hooks before the modules listen */
     run_init();
+    boot_mark();
     dsl_reg_after_init();
     write_modset();
     world_install();
@@ -773,6 +820,7 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
     for (int i = 0; i < norder; i++) if (ORDER[i]->state == 1) { any = 1; if (ORDER[i]->init) want_init = 1; }
     if (getenv("DSML_SESSION") || getenv("DSL_PROFILE")) want_init = any = 1;   /* world check, Mods window: after il2cpp_init */
     if (dsl_soft_wanted()) any = 1;                                  /* B of a soft restart, even with no code mod */
+    if (boot_hatch) any = 1;                                         /* boot guard: no module, but the Mods window at the title */
     if (any) want_init = 1;                                          /* soft restart (dsl_soft.c) needs il2cpp names */
     if (!any) return 0;
     if (guard_check("_codepatch", loader_sig, "runtime code patching")) {
@@ -806,8 +854,44 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
         dsl_log("%s: early start done (%d hook(s))", p->id, dsl_hook_count(p->idx));
     }
     dsl_engine_batch(0);
-    if (!want_init) { guard_leave("_codepatch"); run_init(); write_modset(); dsl_engine_set_late(); }
+    if (!want_init) { guard_leave("_codepatch"); run_init(); boot_mark(); write_modset(); dsl_engine_set_late(); }
     return 0;
+}
+
+/* At the first idle title (dsl_reg.c frame list, main thread): the title resets the boot guard; then ONE notice, when no
+   other notice or window shows: the boot guard's mods-off start (button: the Mods window; it opens on any answer), or
+   the mods the crash guard turned off at this start (tModLoader study idea 3b; button "Mods" opens the Mods window).
+   Log line SAFETY-NOTICE <kind> for tests; batchmode / DSL_NO_ALERT: log only. */
+int dsl_ui_title_shown(void);
+int dsl_ui_notice_shown(void);
+static void open_mods_cb(void *ud, DSLObj w) { (void)ud; (void)w; if (dsl_win_open) dsl_win_open(NULL); }
+void dsl_safety_frame(void) {
+    static int titled, done; static struct timeval since;
+    if (done) return;
+    if (!(dsl_reg_scene() == 1 && dsl_soft_title_idle() && dsl_ui_title_shown())) { since.tv_sec = 0; return; }
+    if (!titled) { titled = 1; boot_clear(1); }
+    struct timeval now; gettimeofday(&now, NULL);
+    if (!since.tv_sec) { since = now; return; }
+    if ((now.tv_sec - since.tv_sec) * 1000 + (now.tv_usec - since.tv_usec) / 1000 < 1000) return;
+    if (dsl_ui_notice_shown() || (dsl_win_is_open && dsl_win_is_open())) return;   /* one box at a time */
+    done = 1;
+    char names[600] = ""; int nc = 0;
+    for (int i = 0; i < np; i++) if (P[i].crash_off) {
+        const char *nm = dsl_mod_name_of(P[i].id);
+        if (nc++) strlcat(names, ", ", sizeof names);
+        strlcat(names, nm && *nm ? nm : P[i].id, sizeof names);
+    }
+    if (!boot_hatch && !nc) return;
+    char t[1400];
+    if (boot_hatch) snprintf(t, sizeof t, "%s", TR("The game closed twice in a row after the mods started, before the title. This start runs "
+                                                   "without mods. In the Mods window, turn off the mod that causes it, then press Apply."));
+    else snprintf(t, sizeof t, TR("%s stopped the game while it was starting last time. It stays off until it is updated."), names);
+    dsi_utf8_fix_end(t);
+    dsl_log("SAFETY-NOTICE %s: %s", boot_hatch ? "boot-guard" : "crash-guard", boot_hatch ? "mods off this start" : names);
+    if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) { if (boot_hatch) open_mods_cb(NULL, NULL); return; }
+    const DSLUi *u = dsl_ui_kit(); if (!u || !u->notice) return;
+    if (boot_hatch) u->notice(t, TR("Mods"), NULL, open_mods_cb, open_mods_cb, NULL);
+    else u->notice(t, TR("Mods"), TR("OK"), open_mods_cb, NULL, NULL);
 }
 
 /* The mapped GameAssembly is not the file the build came from (start part's check): mods stay off. */
@@ -926,6 +1010,8 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     dsl_moddata_host(&host);                                         /* data folder per mod (API 6) */
     dsl_events_host(&host);                                          /* loader events (API 7) */
     scan_mods(dsl_build_id);
+    boot_check();
+    if (boot_hatch) for (int i = 0; i < norder; i++) if (ORDER[i]->state == 0) { ORDER[i]->state = 3; ORDER[i]->boot_off = 1; }
     if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();
     return 0;

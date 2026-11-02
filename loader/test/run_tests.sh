@@ -221,6 +221,20 @@ r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "next start: crasher OFF, floor-logger loads, game runs" '[[ "$r" == *"orig_safe=2"* ]] && log | grep -q "CRASH GUARD: the game stopped last time while module crasher ran (dsl_plugin_init)" && log | grep -q "floor-logger 1.0.0: loaded"'
 check "cascade: the crash guard's mod takes its requiring mod off, an optional user still loads (idea 3a)" 'log | grep -q "needs-crasher: OFF this session: it requires crasher, which did not start" && ! log | grep -q "needs-crasher 1.0.0: loaded" && log | grep -q "opt-crasher 1.0.0: loaded"'
 
+# boot guard (tModLoader study idea 4). Breaks caught: a mod hook that crashes every start after init leaves the player in
+# a crash loop (no mods-off start); or a single dead start (or a normal one) turns the mods off for nothing.
+print "== T11 boot guard: two starts in a row that die after the modules started -> the next start runs with mods off"
+print '{"enabled":["floor-logger"],"provided":["notch-fix"]}' > "$M/profile.json"
+SD="$LOGD/dsload_state"; mkdir -p "$OUT/bootaside"; for f in "$SD"/_boot.*(N); do mv "$f" "$OUT/bootaside/"; done
+run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" HOST_DIE_AFTER_INIT=1 >/dev/null; rc1=$?
+check "a death after init leaves the boot marker" '[[ $rc1 -ne 0 && -f "$SD/_boot.pending" ]]'
+run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" HOST_DIE_AFTER_INIT=1 >/dev/null
+check "one dead start: counted, the mods still start" 'log | grep -q "BOOT GUARD: the last start ended after the mods started and before the title (1 start(s) in a row)" && log | grep -q "floor-logger 1.0.0: loaded"'
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
+check "two dead starts in a row: this start runs with mods off, game runs, says why" '[[ "$r" == *"orig_safe=2"* ]] && log | grep -q "BOOT GUARD: 2 starts in a row ended before the title: this start runs with mods off" && ! log | grep -q "floor-logger 1.0.0: loaded" && [[ ! -e "$SD/_boot.pending" && ! -e "$SD/_boot.count" ]]'
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
+check "the start after it: mods on again, a normal end leaves no marker" 'log | grep -q "floor-logger 1.0.0: loaded" && ! log | grep -q "BOOT GUARD" && [[ ! -e "$SD/_boot.pending" ]]'
+
 print "== T6 future build guard: the launcher pinned another build than this copy's"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=99999999)
 check "env pin differs: no module, no hook, game runs, clear reason" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: This game is build test, but the launcher started this world for build 99999999"* ]] && log | grep -q "GAME BUILD CHECK FAILED (not_pinned_build)" && ! log | grep -q "hooked" && ! log | grep -q "loaded (" && grep -q "\"active\":false,\"reason\":\"not_pinned_build\"" "$LOGD/dsload_status.json"'

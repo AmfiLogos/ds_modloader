@@ -10,6 +10,7 @@ extern int Patch_Target(void), fake_load(const char *), fake_cancel_calls; exter
 extern void fake_transfer(void *sim, int safe), fake_tick(void *sim), fake_frame(void), fake_foreign(void);
 int main(void) {
     int r = il2cpp_init("IL2CPP Root Domain");
+    if (getenv("HOST_DIE_AFTER_INIT")) abort();         /* boot guard test: the game dies after the modules started, before the title */
     uint8_t *sim = calloc(1, 0x100);
     fake_transfer(sim, 1); fake_transfer(sim, 1); fake_transfer(sim, 0); fake_tick(sim); fake_frame(); fake_frame(); fake_foreign();
     const char *e = getenv("DYLD_INSERT_LIBRARIES");

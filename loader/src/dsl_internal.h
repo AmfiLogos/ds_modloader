@@ -70,6 +70,7 @@ void dsl_whatsnew_frame(void);               /* dsl_whatsnew.c, every frame: the
 void dsl_crash_boot(void);                   /* start part, after dsl_soft_snapshot: the previous session's end */
 void dsl_crash_start(void);                  /* after the modules' init: the quit mark */
 void dsl_crash_frame(void);                  /* every frame (consent notice, desync / join scan, sending) */
+void dsl_safety_frame(void);                 /* dsl_main.c, every frame: boot guard reset at the title, crash / boot guard notice */
 /* signed updates (dsl_sig.c): sig_b64 = a .sig file's text; the trusted key's index, -1 = not a valid signature */
 int dsl_sig_check(const void *msg, size_t n, const char *sig_b64);
 int dsl_sig_dev(void);                             /* 1 = a test build that trusts the public dev key */
