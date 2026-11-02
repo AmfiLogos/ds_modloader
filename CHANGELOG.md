@@ -4,19 +4,20 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
-### Unreleased (0.1.30)
+### 0.1.30 (2026-11-02)
 
 - Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->
-- Weapon skill slot 0.2.0 now changes only your own screen. Its button next to the basic attack shows the skill of your unit's weapon and uses it with a click, the same as the game's own skill slots. Friends in your multiplayer game no longer need the mod, and your saves stay the game's own. What it no longer does: it does not put the weapon skill first for automatic use, and the weapon skill also stays in its normal skill slot. If a unit got its weapon while its 4 skill slots were full, the game did not give it the skill, so the button stays empty. <!-- roadmap: weapon-slot-local -->
 - The small "-" and "+" size buttons of a panel (multiplayer chat, DPS meter, DPS log) now show only while your mouse is over that panel. They stay clickable: move the mouse onto the panel and they appear. <!-- roadmap: size-buttons-on-hover -->
 - When you click the small "-" or "+" size button of a panel, the button now stays where it is and the panel grows or shrinks around it, so you can click again and again without moving the mouse. If the panel would go off the screen, it is moved back onto the screen. The panel keeps its new place. This works for the DPS Check panels, the multiplayer chat and any mod window with these buttons.
 - On Windows, the mod loader now refuses a mod hook on a tiny piece of game code that thousands of game functions share (the hook would run for all of them and slow down or break the game). The log names the mod and the function.
 - New "Global settings" in the Mods window: "Save current layout" keeps where every mod window is and how big it is, and "Reset all" puts them all back there (or back to where each mod first put it, at normal size, if you never saved one). It asks before it resets.
 - New size keys: with the mouse over a mod window that has the "-" and "+" size buttons, press Ctrl and "-" to make it smaller or Ctrl and "=" to make it bigger. You can switch them to the keypad keys or turn them off in the Mods window ("Size keys" in "Global settings", under the groups).
 - Folding or opening a section of a mod window (for example in Units Laboratory) no longer makes the whole window smaller or bigger. Only its height changes.
-- A right-click drag where mod windows overlap now moves only the window on top (for example the DPS meter over the DPS log). Before, a window below could move instead. The multiplayer chat and Players panel get this in a later update. <!-- roadmap: right-drag-top-window -->
+- A right-click drag where mod windows overlap now moves only the window on top (for example the DPS meter over the DPS log). Before, a window below could move instead. The multiplayer chat and the Players panel do the same. <!-- roadmap: right-drag-top-window -->
 - Two or more mods can now change the same game function. Before, the second mod was refused ("already hooked") and did not work. Now both run, the mod loaded last first. If one mod is turned off or fails, the others keep working. <!-- roadmap: hook-chaining -->
 - A mod window's hover card now opens next to what you point at. Before, in a big window (Units Laboratory Test Fights) it could open at the far side of the window. When there is no room beside the window, the card goes over another column of that window, never over the list you are using.
+- Units Laboratory 0.1.48: Test Fights keep all your choices, also after a restart, and every section folds. A new Advanced section: Time of Day, Weather (clear by default) and a DPS Meter switch for Custom and Boss fights. Test units start with Auto Skill off. New "Open in Wiki Builder" button in World Units. The DPS meter shows a row for every unit, keeps its size when you fold it, and in a DPS Check every unit first walks next to the scarecrow.
+- Multiplayer 0.1.29: the chat's "-" and "+" buttons stay under your mouse, and a right-click drag on the chat or the Players panel moves only the window on top.
 
 ### 0.1.29 (2026-10-26)
 

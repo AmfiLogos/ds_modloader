@@ -2,7 +2,7 @@
 
 What we are working on, what comes next, and where you can help.
 
-Updated: 2026-11-01
+Updated: 2026-11-02
 
 Dungeon Settlers Modded is made of three repos. Each item below is listed once, in the repo that does the work:
 
@@ -14,16 +14,11 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 These are being built for the next version.
 
-- **The "-" and "+" size buttons show only while the mouse is over the window.** If you do not want to change the size, they stay out of the way. This works in every window that has them: the chat, the DPS Check panels and the Units Laboratory windows. <!-- id: size-buttons-on-hover -->
-- **A right-drag moves only the top window.** Today, when two of our windows overlap, a right-drag moves every window under the mouse at the same time. Soon only the window on top moves. <!-- id: right-drag-top-window -->
 - **Weapon skill slot for your screen only.** The weapon skill slot will change only your own screen: a button that uses your unit's weapon skill. Friends in your game will not need the mod. <!-- id: weapon-slot-local -->
-- **Load Campaign shows your solo worlds first.** In single player, the Load list will show only single-player worlds by default, with a box to also show your multiplayer worlds. <!-- id: load-solo-default -->
-- **Two mods can change the same part of the game.** Today the loader refuses a second mod that changes a game function another mod already changes. Soon both can run, and turning one off keeps the other. <!-- id: hook-chaining -->
-- **Export your units to the wiki.** A button opens the wiki's Character Builder with the units of your world loaded. There you can edit them, and they show in the Build Gallery like other builds, with a switch to keep them private. <!-- id: export-team-wiki -->
 
 ## Next
 
-- Nothing else is planned for the next version. The Now list comes first.
+- Nothing is planned yet.
 
 ## Later / ideas
 
@@ -36,6 +31,7 @@ These are being built for the next version.
 
 ## Done
 
+- **v0.1.30 (2026-11-02).** The "-" and "+" size buttons show only while the mouse is over the window, stay under the mouse when you click them, and have keys (Ctrl and "-" / "="). "Global settings" in the Mods window saves or resets where every mod window is. A right-drag moves only the window on top. Folding a section no longer resizes a window. Load Campaign shows your solo worlds first. Two mods can change the same game function. Hover cards open next to what you point at. Units Laboratory can open your units in the wiki's Character Builder.
 - **v0.1.29 (2026-10-26).** Smoother game on the title screen, on the loading screen and in your worlds. VSync stays off when you turn it off. Mods can give their panels "-" and "+" size buttons. Worlds that mods make for themselves stay out of the Load list and the Steam Cloud backup.
 - **v0.1.28 (2026-10-25).** Escape and the game's red X close the mod windows, and they follow the game's UI Scale. Load Campaign filters have a Solo box and two groups. New fix: Live building HP. After an update, a "What's new" window shows once.
 - **v0.1.27 (2026-10-25).** Load Campaign is one list in the game's own order. Hell difficulty is always loaded, with no restart. New mod: Locked Slots.
