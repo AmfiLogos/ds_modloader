@@ -14,8 +14,12 @@ const char *dsl_tab_owner(int i);               /* module id that added it */
 const DSLUi *dsl_ui_kit(void);                  /* NULL before il2cpp_init returned */
 void dsl_ui_field_number(DSLObj f, int max_chars);   /* a kit field takes digits only (TMP IntegerNumber), max_chars long */
 int dsl_ui_field_focused(DSLObj f);                 /* the kit field has the keyboard */
-int dsl_ui_size_keys(void);                          /* the size keys choice: 0 Ctrl + - / =, 1 Ctrl + keypad - / +, 2 off */
-void dsl_ui_size_keys_set(int v);
+/* SIZE KEYS (kit 0.1.31): which 0 = smaller, 1 = bigger; key = Unity KeyCode (0 = off); mods = 1 Ctrl | 2 Shift | 4 Alt */
+int dsl_ui_size_key(int which, int *mods);
+void dsl_ui_size_key_set(int which, int key, int mods);   /* the other row lets go of the same key */
+void dsl_ui_size_key_capture(int which);             /* the next key press becomes that row's key; -1 = stop */
+int dsl_ui_size_key_capturing(void);                 /* the row waiting for a key, -1 none */
+int dsl_ui_size_key_serial(void);                    /* changes with a key or the capture state (the window relabels) */
 int dsl_ui_layout_save(void);                         /* LAYOUT: the kept places + sizes -> ui_layout_saved.tsv; rows or -1 */
 int dsl_ui_layout_reset(void);                        /* back to the saved layout (rows) or the defaults (0) */
 int dsl_ui_layout_saved(void);

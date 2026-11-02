@@ -4,6 +4,14 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.31)
+
+- You now pick the size keys yourself: in the Mods window ("Global settings"), click the key next to "Smaller" or "Bigger", then press the key you want (hold Ctrl, Shift or Alt with it if you like). Escape keeps the old key, and "Clear" turns that key off. The default stays Ctrl and "-" / Ctrl and "=". If you had picked the keypad keys or Off before, that choice is kept.
+- The size keys now change only the mod window you see under the mouse. When the Mods window, a game window or another mod window covers it there, nothing changes size.
+- "Save current layout" now keeps only the size of each mod window. "Reset all" puts those sizes back and leaves every window where you put it.
+- Fixed a rare crash when a mod starts to change a game function at the moment the game uses it.
+- On Windows, the mod loader again refuses a second mod on the same piece of game code when one of the two mods names that code only by its address (there, several game functions can share one piece of code). This is the 0.1.29 rule; the log names both mods.
+
 ### 0.1.30 (2026-11-02)
 
 - Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->

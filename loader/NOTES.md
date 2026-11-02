@@ -66,11 +66,19 @@ modifying the mods ?". Before, the engine refused a second hook on a function ("
 - GUARD (skip): `chain <rva>: <mod> (<hook>) did not call the original in N calls: <mods> below it did not run`, once
   per link, N >= 50 calls (checked every 2 s while a chained site exists, at each unhook, at exit). Not blocked.
 - Still refused: the same module twice on one function; two different methods with one body (identical-code
-  folding; only when both came by `hook_method`, which passes `ns.Class.Method/argc`); `hook_rva` / raw hooks have no
-  method name and are chained.
+  folding; only when both came by `hook_method`, which passes `ns.Class.Method/argc`). Mac: `hook_rva` / raw hooks have
+  no method name and are chained (no folded bodies). WINDOWS (kit 0.1.31, review 2026-11-02 finding 6; CH_FOLD_RISK):
+  a second mod's hook on a body another mod already hooks is refused when either link has no method name (MSVC folds
+  ~660 bodies that a multiplayer hook_rva shares with other methods: one mod's code would run for another method), as
+  v0.1.29 did. The loader's own links are exempt (checked for shared bodies at build time: hooklist check +
+  tools/hooks/shared_ok.tsv; test/win/chain_vm.py chains a mod over the loader's nameless EventSystem.Update hook).
+- ORDER (review 2026-11-02 finding 4): `*orig` is written BEFORE anything points at the new hook (Mac first link: the
+  slot stays NULL = the stub runs the original until ch_add has set `*orig`; a link over another and a re-armed link:
+  `*orig` before ch_relink). Else a thread entering the hook at once calls a NULL orig.
 - docs/hooks.json: a site may list several owners (6 sites have two today, all guarded by platform / env / the other
   mod's presence, e.g. custom-modes hooks the wheel only without multiplayer).
-- Tests: `test/run_tests.sh` T1h (three test mods on one function: order B > M > A > game, middle then oldest unhook,
+- Tests: `test/run_tests.sh` T0c (`test/chain_test.c`, no game: the ORDER on all three paths, built twice: the Windows
+  rule compiled in on the Mac and the Mac default), T1h (three test mods on one function: order B > M > A > game, middle then oldest unhook,
   skip logged, same mod twice and folded method refused) and T1 (a failing module chained over floor-logger is taken
   off, floor-logger and the game keep running). Real game (2026-11-01, Mac hidden copy NVC): `test/chainprobe`
   chained over the loader's EventSystem.Update, 600 frames, unhooked itself, the loader's tick kept running.
@@ -1253,24 +1261,44 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   (DSL_SIZE_OWN: the DPS meter's auto-fit) follow the rule in their own code (Units Laboratory, lane nvulmeter).
   Guard: panelsize_test.py fold_cases (start 2, UI Scale 1.4: uikit-demo api secfit, 300 high folded / 900 open; width
   < 1 % both ways).
-- SIZE KEYS (kit 0.1.30, lane nvanchor; owner 2026-11-01 "configurable keys" for the "-" / "+" resize): Ctrl + "-" /
-  Ctrl + "=" (or Ctrl + keypad "-" / "+", or Off) size the panel_size panel drawn on top under the mouse, through the same
-  sz_step as a click (step, limits, kept size, ANCHOR on the matching button). Not while a text field has the keyboard
-  (esc_focused). Choice = the Mods window's "Size keys" row (right column, above Send crash reports; dsl_win.c
-  "size-keys"), kept as the row "kit@size_keys" of ui_places.tsv (dsl_ui_size_keys / _set). Free keys checked 2026-11-01:
-  the game's KeySettingData binds no Minus 45 / Equals 61 / Keypad 269 / 270; Ctrl alone is its EntityHover hold (stays).
-  Guard: panelsize_test.py key_cases (real AppKit events: uikit-demo "key" ctrl 1 = flagsChanged Control + key; ctrl 0
-  code -1 = Control up): over the panel one step each way, button < 2 px; mouse off every panel: nothing; Off: nothing.
-- LAYOUT (kit 0.1.30, lane nvanchor; owner 2026-11-01 "add a global settings + save current options + reset all"): the
-  Mods window's "Global settings" block (right column, title page only): Size keys row + "Save current layout" + "Reset
-  all" (confirm notice). Save = every place row and "<key>@size" row of ui_places.tsv (not "@fold", not "kit@") copied to
-  ui_layout_saved.tsv next to it. Reset = those rows replaced by the saved ones (none saved: removed), then every open
-  panel at once: size step, then place (saved, else the place the mod gave it before a kept one: mvs[].dfx/dfy, read in
-  mv_reg), then mv_clamp. movable_own panels (the chat) keep their place, their size is reset.
-  Owner question (asleep at 23:08): the lead's reading was used (key row + save layout + reset all in one block); folds
-  of sections and the size keys choice are not part of the layout.
-  Guard: panelsize_test.py layout_cases (start 1 save / move + resize / reset; start 2 after a restart: the saved file
-  is used; file moved away: reset = mod place + 100 %).
+- SIZE KEYS (kit 0.1.30, lane nvanchor; owner 2026-11-01 "configurable keys" for the "-" / "+" resize; kit 0.1.31, lane
+  nvkit2, owner 2026-11-02 "No, just do press any key to capture."): a "Smaller" key and a "Bigger" key (Unity KeyCode +
+  Ctrl 1 | Shift 2 | Alt 4; default Ctrl + "-" 45 / Ctrl + "=" 61) size the panel_size panel drawn on top under the
+  mouse, through the same sz_step as a click (step, limits, kept size, ANCHOR on the matching button). The held modifiers
+  must match exactly. Not while a text field has the keyboard (esc_focused) or while a key is being captured.
+  Kept as the rows "kit@size_key_minus" / "kit@size_key_plus" of ui_places.tsv (x = KeyCode, 0 = off; y = mods); a kit
+  0.1.30 row "kit@size_keys" (0 Ctrl + - / =, 1 Ctrl + keypad 269 / 270, 2 off) is read when they are missing.
+  CAPTURE (dsl_ui_size_key_capture, dsl_menu.h): the Mods window's Global settings rows "Smaller" / "Bigger" (dsl_win.c
+  "size-key-minus" / "size-key-plus" + "...-clear"): a click = "Press a key...", szk_capture_frame (kit tick, BEFORE
+  esc_tick) takes the next KeyCode 8..296 (not Escape, modifiers, locks, mouse) with the Ctrl / Shift / Alt held;
+  Escape cancels and is marked used (the Mods window stays open, the game never sees it); a mouse press cancels;
+  Command held = ignored. One key, one action: the other row lets go of the same key. "Clear" = off. The window only
+  shows the kit's state (dsl_ui_size_key_serial, relabel in mods_update).
+  TOP UNDER THE MOUSE (review 2026-11-02, finding 3): the keys act only when nothing covers the panel there:
+  ui_cover_at = the EventSystem's own RaycastAll at the mouse (fresh PointerEventData + List<RaycastResult>, element 0's
+  m_GameObject) = what a left click there reaches; not inside the panel and not drawn below it (ord_cmp, the TOP RULE's
+  order: a see-through part of the panel over the game) = covered (the Mods window, a game popup, a plain kit window).
+  No raycast in a build: the old rule (the top panel_size panel under the mouse). The right-drag (mv_pick) does not
+  use it (not asked).
+  Free keys checked 2026-11-01: the game's KeySettingData binds no Minus 45 / Equals 61 / Keypad 269 / 270; Ctrl alone is
+  its EntityHover hold (stays). A captured key the game also binds does both (the row's hover text says to pick a free key).
+  Guard: panelsize_test.py key_cases (real AppKit events: uikit-demo "key" ctrl 1 = flagsChanged Control + key, code 40 =
+  K; ctrl 0 code -1 = Control up): default keys one step each way, button < 2 px; mouse off every panel: nothing; a
+  focused text field: nothing; capture Ctrl + K resizes, old key nothing; Escape keeps the key and the window; Clear =
+  off; the Mods window / a kit window ("kp") over the panel: nothing ("is covered by" in dsload.log); start 2: an old
+  "kit@size_keys" 1 shows "Ctrl + Keypad -" / "Ctrl + Keypad +".
+- LAYOUT (kit 0.1.30, lane nvanchor; owner 2026-11-01 "add a global settings + save current options + reset all"; kit
+  0.1.31, lane nvkit2, PLAN_v013 item 27, owner's pick "Sizes only"): the Mods window's "Global settings" block (right
+  column, title page only): the two size key rows + "Save current layout" + "Reset all" (confirm notice). Save = every
+  "<key>@size" row of ui_places.tsv copied to ui_layout_saved.tsv next to it: no place, no "@fold", no "kit@" row.
+  Reset with a saved file = the size rows replaced by the saved ones (a panel not in it: 100 %), every open panel's size
+  set at once; every place stays where the player put it (place rows of a kit 0.1.30 saved file are not used). Reset
+  with none saved (unchanged): every place and size row removed, every open panel back to 100 % and the place the mod
+  gave it before a kept one (mvs[].dfx/dfy, read in mv_reg), then mv_clamp. movable_own panels (the chat) keep their
+  place, their size is reset.
+  Guard: panelsize_test.py layout_cases (start 1: the saved file holds only @size rows; move + resize + reset = the
+  saved size, the open and the closed panel stay where they were moved; start 2 after a restart: the saved file is
+  used; file moved away: reset = mod place + 100 %).
 - SHARED STUB RULE (kit 0.1.30, lane nvanchor; lead 2026-11-02 after nvrel found Units Laboratory's hook on
   DefaultMode.ActivateMode = Windows rva 0x50d900 "ret 0", the code of 8696 methods): on Windows a mod's hook_method
   refuses a target whose code is a <= 4-byte "ret" stub (src/dsl_stub.h dsl_x64_ret_stub; refused in dsl_main.c
