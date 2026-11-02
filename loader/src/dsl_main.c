@@ -48,6 +48,7 @@ struct DSLPlugin {
     int api, order_key, ordered, gameplay;
     int fit;                              /* loadable here (build, platform, files, table) before the dependency rule */
     int crash_off;                        /* state 3 by the crash guard (it stopped the game while starting last time) */
+    char dep_off[64];                     /* state 3: it requires this mod, which did not start (cascade, idea 3a) */
     void *h;
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
@@ -281,6 +282,12 @@ __attribute__((weak)) const char *dsl_mod_name_of(const char *id) { (void)id; re
 /* the dependency reason (dsl_deps.h text, current language) of a switched-on mod this process does not run; 0 = none.
    UX L6: the needed mod by its name in the list ("Locked Slots", "Gesperrte Plätze"), not its folder id; turned off: what to do */
 int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
+    struct DSLPlugin *cp = find_mod_early(id);
+    if (cp && cp->state == 3 && cp->dep_off[0]) {                    /* cascade (idea 3a): its required mod did not start */
+        const char *nm = dsl_mod_name_of(cp->dep_off);
+        snprintf(out, cap, TR("needs %s, which cannot run"), nm && *nm ? nm : cp->dep_off); dsi_utf8_fix_end(out);
+        return 1;
+    }
     DslDep *x = dsl_dep_find(DEPS, ndeps, id);
     if (!x || !x->on || x->ok || x->why == DSL_DEP_OK) return 0;
     DslDep y = *x; size_t n = strcspn(x->arg, "<>=! ");
@@ -483,21 +490,45 @@ static void scan_mods(const char *build) {
 }
 
 /* ------------------------------------------------------------------ phases */
+/* CASCADE (tModLoader study idea 3a; tML ModLoader.cs CollectEnabledDependents with includeWeak false): a code mod that
+   did not start (failed load / early / init, no binary, the crash guard) takes every code mod that REQUIRES it off too,
+   recursively; one already opened loses its hooks like a failed one. "optional" never cascades. ORDER has the needed
+   mods first, so a dependent is off before its own phase runs. */
+static int requires_id(const struct DSLPlugin *q, const char *id) {
+    JNode *rq = json_get(q->mf, "requires");
+    if (rq && rq->t == JN_ARR) for (JNode *c = rq->child; c; c = c->next) {
+        char rid[64], op[3], ver[32]; if (c->t != JN_STR) continue; split_req(c->str, rid, sizeof rid, op, ver);
+        if (!strcmp(rid, id)) return 1;
+    }
+    return 0;
+}
+static void cascade_off(const struct DSLPlugin *p) {
+    for (int i = 0; i < norder; i++) {
+        struct DSLPlugin *q = ORDER[i];
+        if (q == p || (q->state != 0 && q->state != 1) || !requires_id(q, p->id)) continue;
+        int n = q->state == 1 ? dsl_unhook_owner(q->idx) : 0;
+        q->state = 3; snprintf(q->dep_off, sizeof q->dep_off, "%s", p->id);
+        dsl_log("%s: OFF this session: it requires %s, which did not start; %d hook(s) removed", q->id, p->id, n);
+        cascade_off(q);
+    }
+}
 static int fail(struct DSLPlugin *p, const char *phase, int r) {
     int n = dsl_unhook_owner(p->idx); p->state = 2;
     dsl_log("%s: FAILED: %s returned %d; %d hook(s) removed; off for this session", p->id, phase, r, n);
+    cascade_off(p);
     return -1;
 }
 
 static void open_modules(void) {
     for (int i = 0; i < norder; i++) {
         struct DSLPlugin *p = ORDER[i];
+        if (p->state) continue;                                       /* off by the cascade (a mod it requires did not start) */
         file_sig(p->file, p->sig, sizeof p->sig);
         char what[128]; snprintf(what, sizeof what, "module %s", p->id);
-        if (guard_check(p->id, p->sig, what)) { p->state = 3; p->crash_off = 1; continue; }
+        if (guard_check(p->id, p->sig, what)) { p->state = 3; p->crash_off = 1; cascade_off(p); continue; }
         guard_enter(p->id, "loading the dylib");
         p->h = dsl_os_dlopen(p->file);
-        if (!p->h) { guard_leave(p->id); p->state = 2; dsl_log("%s: FAILED to load: %s", p->id, dsl_os_dlerror()); continue; }
+        if (!p->h) { guard_leave(p->id); p->state = 2; dsl_log("%s: FAILED to load: %s", p->id, dsl_os_dlerror()); cascade_off(p); continue; }
         const uint32_t *api = dsl_os_dlsym(p->h, "dsl_plugin_api_version");
         p->load = (dsl_module_load_fn)dsl_os_dlsym(p->h, "dsl_module_load");
         p->early = (dsl_module_early_fn)dsl_os_dlsym(p->h, "dsl_module_early");
@@ -506,6 +537,7 @@ static void open_modules(void) {
             guard_leave(p->id); p->state = 2;
             dsl_log("%s: FAILED: %s (loader API %d)", p->id, !api ? "no dsl_plugin_api_version (DSL_PLUGIN() missing)" :
                     (*api < 1 || *api > DSL_API_VERSION) ? "API version not supported" : "no entry point", DSL_API_VERSION);
+            cascade_off(p);
             continue;
         }
         p->state = 1;
