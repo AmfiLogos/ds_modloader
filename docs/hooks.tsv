@@ -258,8 +258,8 @@ custom-modes	detour	Refactor.Main.InputModule.InputDispatcher$$Update	0xd3b550	0
 custom-modes	detour	Refactor.FX.AffecterFX_SelfRepair$$OnFXCall	0x9c20b0	0x71f5d0	always (module loaded)	custom-modes AffecterFX_SelfRepair.OnFXCall	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.AffecterSimulator$$Simulate	0x94a380	0x6b3d20	always (module loaded)	custom-modes AffecterSimulator.Simulate	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.CombatUtility$$GetClosestSingleEnemy	0x8af164	0x6120d0	always (module loaded)	custom-modes CombatUtility.GetClosestSingleEnemy	ds_custommodes:fights/tf_dps.c
+custom-modes	detour	Refactor.Main.Processor.ControlModeProcessor$$SwitchMode	0xd450ac	0xa49ad0	always (module loaded)	custom-modes ControlModeProcessor.SwitchMode	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.DamageSimulator$$Simulate	0x94ae24	0x6b62b0	always (module loaded)	custom-modes DamageSimulator.Simulate	ds_custommodes:fights/tf_dps.c
-custom-modes	detour	Refactor.Control.DefaultMode$$ActivateMode	0xc07fdc	0x50d900	always (module loaded)	custom-modes DefaultMode.ActivateMode	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.UI.EntitySummaryUIView$$UpdateBuildingEntityUI	0xed4464	0xbd84c0	always (module loaded)	custom-modes EntitySummaryUIView.UpdateBuildingEntityUI	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	Refactor.Combat.ExecutionProcess.HealSimulator$$Simulate	0x94d83c	0x6b73b0	always (module loaded)	custom-modes HealSimulator.Simulate	ds_custommodes:fights/tf_dps.c
 custom-modes	detour	UnityEngine.Input$$get_mouseScrollDelta	0x51ad584	0x3a0ea20	always (module loaded)	custom-modes Input.get_mouseScrollDelta	ds_custommodes:fights/tf_dps.c
