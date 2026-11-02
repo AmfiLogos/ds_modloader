@@ -4,6 +4,10 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.32)
+
+- A mod that does not fit your game version is now turned off when the game starts, instead of breaking in the middle of a world. The Mods window says it was not made for this game version, and the log names the missing piece of the game. Mod makers: look up the game names your mod needs with the new dsl_need_ helpers.
+
 ### 0.1.31 (2026-11-02)
 
 - You now pick the size keys yourself: in the Mods window ("Global settings"), click the key next to "Smaller" or "Bigger", then press the key you want (hold Ctrl, Shift or Alt with it if you like). Escape keeps the old key, and "Clear" turns that key off. The default stays Ctrl and "-" / Ctrl and "=". If you had picked the keypad keys or Off before, that choice is kept.
