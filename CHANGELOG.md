@@ -4,6 +4,14 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.31)
+
+- The Mods window now shows two small tags on each mod. The first says what the mod changes: the game's Mud Slogel for a
+  mod that keeps the game Vanilla & Vanilla+ (a fix, a small helper, a change to what you see), the game's Abyss Mud
+  Slogel for a mod that changes how the game is played. The second says who needs it: one person if only your game uses
+  it, the game's population icon if every player in a multiplayer game needs it. Point at a tag to see what it means; the
+  top of the list explains the four tags.
+
 ### 0.1.30 (2026-11-02)
 
 - Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->

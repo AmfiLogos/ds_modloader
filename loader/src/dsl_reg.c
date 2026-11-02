@@ -18,6 +18,7 @@
 #include "dsl_ml.h"
 #include "dsl_deps.h"
 #include "dsl_bugrep.h"
+#include "dsl_modtag_rule.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -770,8 +771,9 @@ int dsl_world_is_modded(const char *guid) {
     for (int i = 0; i < n; i++) {
         if (dsl_mod_is_feature(ids[i])) continue;
         const DSLModInfo *m = mod_by_id(ids[i]);
-        if (m && (m->fix || m->vanilla_plus)) continue;               /* a fix for a bug of the game (owner 2026-10-24), Vanilla+ (10-25) */
-        if (!m || strcmp(m->scope, "client")) return 1;
+        /* the one tag rule (dsl_modtag_rule.h, also the Mods window's icons): fixes (owner 2026-10-24), Vanilla+ (10-25)
+           and client mods keep a world Vanilla & Vanilla+; a mod that is not installed counts as gameplay */
+        if (!m || dsl_modtag_kind(m->fix, m->vanilla_plus, m->scope) != DSL_KIND_VANILLA) return 1;
     }
     return 0;
 }

@@ -278,6 +278,13 @@
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "이 Dungeon Settlers Modded 사본은 불완전합니다(모드 로더가 없습니다). 다시 내려받으십시오.",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "이 게임은 빌드 %s이지만 런처는 이 월드를 빌드 %s용으로 시작했습니다. 모드는 꺼진 상태로 유지됩니다. 런처에서 월드를 다시 시작하십시오.",
  "This mod has no settings.": "이 모드에는 설정이 없습니다.",
+ "Changes the gameplay": "게임플레이 변경",
+ "Only your game": "내 게임만",
+ "Every player needs it": "모든 플레이어에게 필요",
+ "This mod does not change how the game is played.": "이 모드는 게임 플레이 방식을 바꾸지 않습니다.",
+ "This mod changes how the game is played.": "이 모드는 게임 플레이 방식을 바꿉니다.",
+ "Only your game uses this mod. Other players in a multiplayer game do not need it.": "이 모드는 내 게임에서만 쓰입니다. 멀티플레이의 다른 플레이어에게는 필요 없습니다.",
+ "In a multiplayer game, every player needs this mod.": "멀티플레이에서는 모든 플레이어에게 이 모드가 필요합니다.",
  "This save is also used by Dungeon Settlers without mods. Delete it there too?": "이 세이브는 모드 없는 Dungeon Settlers에서도 사용됩니다. 그곳에서도 삭제할까요?",
  "This world is one of your game saves.": "이 월드는 일반 세이브입니다.",
  "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s": [

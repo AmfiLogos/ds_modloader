@@ -14,6 +14,7 @@
 #include "../src/dsl_internal.h"
 #include "../src/dsl_menu.h"
 #include "dsl_win_assets.h"
+#include "dsl_modtags.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -479,6 +480,14 @@ static void subtabs_show(void) {
 }
 static void settings_click(void *ud, DSLObj w);
 static float mod_row(DSLObj list, int i, float y);
+/* the mod tags' legend (owner 2026-11-02 item 33; template dsl_modtags.h) at the list's top: what the row badges mean */
+static float tags_legend(DSLObj list, float y) {
+    DSLObj lg[DSL_TAG_N] = { 0 };
+    float h = dsl_modtags_legend(U, list, 12, y, m_lw - 56, lg);
+    static const char *const ln[DSL_TAG_N] = { "legend:slogel", "legend:abyss", "legend:one", "legend:all" };
+    for (int t = 0; t < DSL_TAG_N; t++) if (lg[t]) named(lg[t], 3, ln[t], NULL, NULL, ln[t] + 7);
+    return h + 8;
+}
 static void diff_click(void *ud, DSLObj w) { (void)ud; U->toggle_set(w, 1); }   /* greyed; a click never turns it off */
 static void mods_open(DSLObj root, float w, float h) {
     nmods = 0; naming = 0; ng_rows = 0; m_gmark = m_gnone = NULL;
@@ -537,9 +546,11 @@ static void mods_open(DSLObj root, float w, float h) {
     int shown = 0;
     if (!world_mode) {                                                 /* the open tab's mods; another tab's rows stay NULL */
         for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == m_tab) shown++;
-        if (shown) y = tab_desc(list, m_tab);
+        if (shown) { y = tab_desc(list, m_tab); y += tags_legend(list, y); }
         for (int i = 0; i < nmods; i++) if (tab_of(mods[i].m) == m_tab) y += mod_row(list, i, y);
     } else {                                                           /* "Fixes", then "Mods"; only the ones on (at the opening) */
+        int any = 0; for (int i = 0; i < nmods; i++) any += !active_only() || mods[i].on;
+        if (any) y = 6 + tags_legend(list, 6);
         for (int sec = 1; sec >= 0; sec--) {
             int n = 0; for (int i = 0; i < nmods; i++) n += tab_of(mods[i].m) == sec && (!active_only() || mods[i].on);
             if (!n) continue;
@@ -600,11 +611,20 @@ static float mod_row(DSLObj list, int i, float y) {
     snprintf(lb, sizeof lb, m->version && m->version[0] ? "%s  (v%s)" : "%s", m->name, m->version);
     int has_set = !world_mode && dsl_settings_count(m->id) > 0;      /* mod.json "settings": a Settings button (owner 2026-10-18) */
     int diff = dsl_mod_is_difficulty(m->id);
+    /* the mod's tags (owner 2026-11-02 item 33: what it changes, who needs it): two badges right of the switch */
+    float tgx = m_lw - 32 - (has_set ? 132 : 0) - DSL_MODTAGS_W + DSL_MODTAG_GAP;
     if (diff) {                                                        /* custom difficulty: on and greyed, its line says why */
-        DSLObj t = U->toggle(list, 0, y, m_lw - 32, lb, 1, diff_click, NULL); U->set_enabled(t, 0);
+        DSLObj t = U->toggle(list, 0, y, tgx - DSL_MODTAG_GAP, lb, 1, diff_click, NULL); U->set_enabled(t, 0);
         snprintf(nm, sizeof nm, "mod:%s", m->id); named(t, 3, nm, NULL, NULL, "always");
     } else
-    mods[i].row = U->toggle(list, 0, y, m_lw - 32 - (has_set ? 132 : 0), lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+    mods[i].row = U->toggle(list, 0, y, tgx - DSL_MODTAG_GAP, lb, mods[i].on, mod_change, (void *)(intptr_t)i);
+    {
+        DSLObj tk = NULL, ts = NULL;
+        dsl_modtags_row(U, list, tgx, y + 2, m, &tk, &ts);
+        int k = dsl_modtag_kind(m->fix, m->vanilla_plus, m->scope), sd = dsl_modtag_side(m->scope);
+        if (tk) { snprintf(nm, sizeof nm, "tag-kind:%s", m->id); named(tk, 3, nm, NULL, NULL, dsl_modtags_kind_id(k)); }
+        if (ts) { snprintf(nm, sizeof nm, "tag-side:%s", m->id); named(ts, 3, nm, NULL, NULL, dsl_modtags_side_id(sd)); }
+    }
     if (has_set) {
         DSLObj sb = U->button(list, m_lw - 32 - 124, y, 124, 36, TR("Settings"), settings_click, (void *)(intptr_t)i);
         snprintf(nm, sizeof nm, "settings:%s", m->id); named(sb, 0, nm, settings_click, (void *)(intptr_t)i, TR("Settings"));

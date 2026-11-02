@@ -88,6 +88,18 @@ modifying the mods ?". Before, the engine refused a second hook on a function ("
   `provided` (data / patch) ids. Modules read the same JSON with `host->gameplay_mods()`, for example for the HELLO
   join check. It is compared with the launcher's `modset_lines` from `DSML_SESSION` (recipe `core/src/join.rs`
   `modset_lines`: `<id>@<version>:<sorted file sha256s>[:<patch hash>]`). A difference is logged. It does not stop the game.
+- **Mod tags** (owner 2026-11-02, PLAN_v013 item 33: "icons depending on if a mod is client only ... a regular slogel
+  for vanilla and vanilla plus mods ... an Abyss slogel" for gameplay changes). RULE: a mod row in any loader mod list
+  shows its tags with the template `ui/dsl_modtags.h` (`dsl_modtags_row`, once per list `dsl_modtags_legend`), never
+  icons of its own. The rule is `src/dsl_modtag_rule.h`: kind = Vanilla & Vanilla+ (the game's Mud Slogel) for a fix,
+  `vanilla_plus` or scope client, else Changes the gameplay (the game's Abyss Mud Slogel); side = Only your game (one
+  person) for scope client, else Every player needs it (the game's population icon). The Load list's world kind
+  (`dsl_world_is_modded`) uses the same rule. Icons are made at run time from the game's own sprites by name
+  (`ResourceLoader.LoadUnitObject("UNIT_MudSlogel")`, `LoadAbyssObject("UNIT_AbyssMudSlogel")` through its material's
+  values, loaded sprites `Icon_Population` and `PortraitNone`), read back through a RenderTexture, written to
+  `<profile dir>/.cache/modtag_*.png`; no game file ships. Guards: `test/modtags_test.py --static` in `build.sh` (a
+  mod.json tag the loader cannot read fails the build) and its game run (every row has both tags, the legend, "modtags:
+  4 of 4 icons", no `MODTAG-MISSING`: a game update that renames a sprite or prefab fails it).
 - **World check** (`src/dsl_world.c`, contract with the launcherbuild lane). It is on only when `DSML_SESSION` is set.
   It hooks `CampaignLoadingEventHandler.LoadCampaign(string)` 0xD6C900 by name. Load, Continue (QuickLoadWithNotice),
   rig loads and MP loads all go through it (checked by BL scan). It reads the guid with the game's

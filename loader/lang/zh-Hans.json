@@ -278,6 +278,13 @@
  "This copy of Dungeon Settlers Modded is incomplete (no mod loader inside). Download it again.": "此 Dungeon Settlers Modded 副本不完整（内部没有模组加载器）。请重新下载。",
  "This game is build %s, but the launcher started this world for build %s. Mods stay off. Start the world from the launcher again.": "此游戏的构建版本为 %s，但启动器是按构建版本 %s 启动此世界的。模组保持关闭。请从启动器重新启动此世界。",
  "This mod has no settings.": "此模组没有设置。",
+ "Changes the gameplay": "改变玩法",
+ "Only your game": "仅你的游戏",
+ "Every player needs it": "所有玩家都需要",
+ "This mod does not change how the game is played.": "此模组不会改变游戏的玩法。",
+ "This mod changes how the game is played.": "此模组会改变游戏的玩法。",
+ "Only your game uses this mod. Other players in a multiplayer game do not need it.": "只有你的游戏使用此模组。多人游戏中的其他玩家不需要它。",
+ "In a multiplayer game, every player needs this mod.": "多人游戏中，所有玩家都需要此模组。",
  "This save is also used by Dungeon Settlers without mods. Delete it there too?": "无模组的 Dungeon Settlers 也在使用此存档。也在那里删除吗？",
  "This world is one of your game saves.": "此世界是你的游戏存档之一。",
  "This world is one of your game saves. This mod changes what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s||This world is one of your game saves. These mods change what it saves: %s. It may break later in the game without the mod loader.\n\nLoad first keeps a copy of its save files in:\n%s": [
