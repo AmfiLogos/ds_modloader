@@ -176,7 +176,11 @@ def main():
         L = since(mark)
         check('world: load with other mods refused, no "Load it with them?"', 'world check: REFUSED' in L and 'This world uses:' not in L, L[-400:])
         T.shot('7_world_refused')
-        check('world: still in the world, no new process', set(T.game_pids()) == pids0 and T.status().get('scene') == 2)
+        pids1 = set(T.game_pids())
+        try: st1 = T.status() or {}
+        except Exception as e: st1 = {'status_error': repr(e)}
+        check('world: still in the world, no new process', pids1 == pids0 and st1.get('scene') == 2,
+              {'pids0': sorted(pids0), 'pids_now': sorted(pids1), 'scene': st1.get('scene'), 'busy': st1.get('busy'), 'err': st1.get('status_error')})
     except Exception as e:
         check('run finished', False, repr(e))
     finally:
