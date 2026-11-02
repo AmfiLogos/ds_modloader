@@ -20,7 +20,7 @@ the meter not on, no "modtime: title" line naming ev-probe, no "start times:" li
 --slow: one run (hooks) with ev-probe made slow on purpose (EVPROBE_SLOW=3000 us a frame, EVPROBE_SLOW_START=2500 ms):
 FAILS unless the meter names it (SLOW-MOD ev-probe ... title and ... start). The proof that the guard sees a slow mod.
 
-Usage: events_test.py <out> [--copy NVE] [--dsload PATH] [--only hooks|records] [--slow] [--parse <dsload.log> hooks|records|slow]
+Usage: events_test.py <out> [--copy NVE] [--dsload PATH] [--only hooks|records] [--slow] [--lane NAME] [--parse <dsload.log> hooks|records|slow]
   --dsload: default this tree's loader/build/dsload.dylib (zsh loader/build.sh, LOADER_ONLY=1). About 5 minutes.
 Last line: RESULT events PASS|FAIL <failed checks>"""
 import json, os, re, shutil, subprocess, sys, time, uuid
@@ -47,7 +47,7 @@ def owner_playing():
     return [x for x in p if x]
 
 
-def wait_load(limit=16.0):
+def wait_load(limit=float(os.environ.get('EVENTS_LOAD_MAX', 16))):   # EVENTS_LOAD_MAX: a busy gate Mac (lead 2026-11-02, as SCAN_LOAD_MAX)
     t0 = time.time()
     while os.getloadavg()[0] > limit:
         if time.time() - t0 > 1200: raise SystemExit(f'load stayed above {limit} for 20 min')
@@ -240,7 +240,8 @@ def main():
         i = a.index('--parse'); f = report(a[i + 2] if len(a) > i + 2 else 'hooks', open(a[i + 1], errors='replace').read(), None, None)
         print(f'RESULT events {"PASS" if not f else "FAIL"} {len(f)}'); sys.exit(1 if f else 0)
     rig = os.path.expanduser('~/ds_multiplayer/rig/rig.py')
-    lp = subprocess.run([sys.executable, rig, 'lease', 'nvevents', '--pid', str(os.getpid())], capture_output=True, text=True)
+    lane = opt('--lane', 'nvevents')
+    lp = subprocess.run([sys.executable, rig, 'lease', lane, '--pid', str(os.getpid())], capture_output=True, text=True)
     pair = lp.stdout.strip()
     if lp.returncode or not pair: raise SystemExit('no lease: ' + (lp.stderr.strip() or 'no free pair'))
     log('lease', pair)
@@ -252,7 +253,7 @@ def main():
             p = os.path.join(rdir, 'dsload.log')
             fails += report(mode, open(p, errors='replace').read() if os.path.exists(p) else '', guid, steps)
     finally:
-        subprocess.run([sys.executable, rig, 'release', pair, 'nvevents'], capture_output=True)
+        subprocess.run([sys.executable, rig, 'release', pair, lane], capture_output=True)
     json.dump({'ok': not fails, 'failed': fails}, open(os.path.join(OUT, 'result.json'), 'w'), indent=1)
     print(f'RESULT events {"PASS" if not fails else "FAIL"} {len(fails)}')
     sys.exit(1 if fails else 0)
