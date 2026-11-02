@@ -1,0 +1,16 @@
+# Hooks whose code start is shared with other methods (docs/hooks.json shared_with / methods), accepted by
+# tools/hooks/hooklist.py check. One line: key TAB why it is safe. SHARED STUB RULE: loader/src/dsl_stub.h.
+# The lines below were in the list when the gate came in (2026-11-02, kit 0.1.30); their owners should confirm the reason.
+loader|dsl_view.c|sg_fn[i]|	Resources.FindObjectsOfTypeAll and Object.FindObjectsOfTypeAll are the same function (Windows only)
+multiplayer|mp_fog.c|h_set_half|FogOfWarView.SetHalfVisible	shared with FogOfWarView.LoadVisible on Windows only; to be confirmed by the multiplayer lane
+multiplayer|mp_game.c|h_quit_ctor|QuitToTitleSceneRequested..ctor	empty event constructor shared with 17 on Windows; to be confirmed by the multiplayer lane
+multiplayer|mp_game.c|h_stabilize|WaitUntilGameStabilizes.MoveNext	the same coroutine in 3 services on Windows; to be confirmed by the multiplayer lane
+multiplayer|rig_det.c|h_settarget|CombatInfoComponent.SetCombatTarget	a setter shared with 252 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
+multiplayer|rig_det.c|h_tgtdata|CombatTargetApplyData..ctor	a 2-field constructor shared with 136 on Windows; to be confirmed by the multiplayer lane
+multiplayer|rig_det.c|h_rri|Random.RandomRangeInt	Random.Range(int) is the same function (Windows only)
+multiplayer|rig_det.c|h_rangei|Random.Range(int)	Random.RandomRangeInt is the same function (Windows only)
+multiplayer|rig_det.c|h_hc_seed|System.HashCode.GenerateGlobalSeed	System.Random.GenerateGlobalSeed is the same function (Windows only)
+multiplayer|ui_game.c|hk_clan_cur|ui ClanDataContainer.get_CurrentPopulation	a 4-byte getter shared with 64 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
+multiplayer|ui_game.c|hk_clan_max|ui ClanDataContainer.get_MaxPopulation	a 4-byte getter shared with 28 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
+multiplayer|ui_game.c|hk_uo_sethud|ui UnitObject.SetHUD	a setter shared with 157 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
+multi-bar|multi_bar.c|hk_itemsel|	shared with SubUI_PolicyRow.OnPressSetAll on Windows; to be confirmed by the multi-bar owner

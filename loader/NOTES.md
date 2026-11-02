@@ -1271,6 +1271,14 @@ after rules_own; wrappers give NULL / 1 with an older kit = no buttons, size 100
   of sections and the size keys choice are not part of the layout.
   Guard: panelsize_test.py layout_cases (start 1 save / move + resize / reset; start 2 after a restart: the saved file
   is used; file moved away: reset = mod place + 100 %).
+- SHARED STUB RULE (kit 0.1.30, lane nvanchor; lead 2026-11-02 after nvrel found Units Laboratory's hook on
+  DefaultMode.ActivateMode = Windows rva 0x50d900 "ret 0", the code of 8696 methods): on Windows a mod's hook_method
+  refuses a target whose code is a <= 4-byte "ret" stub (src/dsl_stub.h dsl_x64_ret_stub; refused in dsl_main.c
+  h_hook_method, log "[mod] hook Class.Method refused: on Windows its code is a N-byte stub ..."). Hook a method that
+  calls it instead. tools/hooks/hooklist.py check fails on any listed hook whose code start is shared with other methods
+  (hooks.json shared_with / methods) unless tools/hooks/shared_ok.tsv names its key with why it is safe; the 13 shared
+  hooks of 2026-11-02 (loader 1, multiplayer 11, multi-bar 1) are listed there, to be confirmed by their owners.
+  Guards: test/stub_test.c (run_tests T0s, real dll bytes); hooklist check (fails on custom-modes b74bcdf: ActivateMode).
 - window_std: `DSL_WIN_SIZE` (DSLWinStd.flags, DSL_WIN_PANEL) puts them left of the red X, key = move_key; the title then
   keeps 120 units free on each side (76 without a red X).
 - Users: multiplayer chat (`multiplayer.chat`, DSL_SIZE_OWN: the chat's root at its bottom-left corner is drawn at the size,

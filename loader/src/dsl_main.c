@@ -11,6 +11,7 @@
 // Crash guard per module and phase: <state dir>/<id>.pending left over at the next start = it crashed there.
 #define DSI_IMPLEMENTATION                    /* ds_i18n.h: the string tables live in this file (one per binary) */
 #include "dsl_internal.h"
+#include "dsl_stub.h"
 #include "dsl_os.h"
 #include "../sdk/dsl_sdk.h"
 #include "dsl_bie.h"
@@ -216,6 +217,15 @@ static int h_hook_method(DSLPlugin *self, const char *ns, const char *k, const c
     if (!a) { dsl_log("[%s] hook %s.%s refused: method not found", self->id, k, m); return -1; }
     char who[160], key[200]; snprintf(who, sizeof who, "%s %s.%s", self->id, k, m);
     snprintf(key, sizeof key, "%s.%s.%s/%d", ns ? ns : "", k, m, argc);
+#ifdef _WIN32
+    int stub = dsl_x64_ret_stub((const uint8_t *)a);                 /* SHARED STUB RULE (dsl_stub.h) */
+    if (stub) {
+        dsl_log("[%s] hook %s.%s refused: on Windows its code is a %d-byte stub (\"ret\") that many other methods share (rva %#llx); "
+                "the hook would run for all of them. Hook a method that calls it instead.", self->id, k, m, stub,
+                (unsigned long long)((uintptr_t)a - dsl_ga_base));
+        return -1;
+    }
+#endif
     return mod_hook(self, a, r, o, who, key);
 }
 static int h_unhook(DSLPlugin *self, void *t) { return self ? dsl_unhook(self->idx, t, self->id) : -1; }

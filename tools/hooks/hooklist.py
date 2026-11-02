@@ -895,7 +895,24 @@ def main():
         if have.get("cm_pin") and cms != "tree" and have["cm_pin"] != cm.sha: print(f"hooklist check: docs/hooks.json is for ds_custommodes {have['cm_pin'][:7]}, the pin is {cm.sha[:7]}", file=sys.stderr); missing.append("pin")
         extra = sorted(listed - {key_of(s) for s in sites})
         for k in extra: print(f"hooklist check: warning: docs/hooks.json lists {k!r}, the sources no longer hook it (run tools/hooks/hooklist.py gen)", file=sys.stderr)
-        if not missing: print(f"hooklist check: ok ({len({key_of(s) for s in sites})} hook sites, all listed)")
+        # SHARED STUB RULE (loader/src/dsl_stub.h): a hook whose code start is shared with other methods runs for all of
+        # them. Every listed hook with shared_with / methods must be in shared_ok.tsv (key TAB why it is safe).
+        ok_keys = {}
+        okp = os.path.join(HERE, "shared_ok.tsv")
+        if os.path.exists(okp):
+            for ln in open(okp):
+                if ln.strip() and not ln.startswith("#") and "\t" in ln: k, why = ln.rstrip("\n").split("\t", 1); ok_keys[k] = why
+        live = {key_of(s) for s in sites}
+        for h in have["hooks"]:
+            if h["key"] not in live: continue
+            for plat, e in sorted(h["platforms"].items()):
+                n = len(e.get("shared_with") or []) + max(0, len(e.get("methods") or []) - 1)
+                if n and h["key"] not in ok_keys:
+                    print(f"hooklist check: {h['owner']} hooks {h['method']} on {plat} at {e.get('rva')}, code shared with {n} other method(s) "
+                          f"(the hook runs for all of them): hook a method with its own code, or add the key to tools/hooks/shared_ok.tsv "
+                          f"with why it is safe: {h['key']}", file=sys.stderr)
+                    missing.append("shared")
+        if not missing: print(f"hooklist check: ok ({len(live)} hook sites, all listed, no unreviewed shared code)")
         return 1 if missing else 0
     win_dump = a.win_dump or os.environ.get("DS_WIN_DUMP") or os.path.join(os.environ.get("MP_REPO", os.path.join(HOME, "ds_multiplayer")), "win", BUILD, "dump")
     dumps = {"mac": Dump(a.mac_dump), "win": Dump(win_dump)}

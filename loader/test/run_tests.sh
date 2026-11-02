@@ -48,6 +48,11 @@ print '{"enabled":["floor-logger","plain","early-mod","clash","bad-sha","conflic
 run() { env -i HOME="$OUT" PATH=/usr/bin:/bin DSL_NO_ALERT=1 DSL_LOG_DIR="$LOGD" DSL_MODS_DIR="$M" DSL_GA_PATH="$FW/GameAssembly.dylib" FOREIGN_OUT="$OUT/foreign.txt" "$@" "$OUT/host" 2>&1; }
 EXPECT="orig_init=1 orig_safe=2 orig_normal=1 orig_tick=1 orig_update=2"
 
+print "== T0s Windows hook_method refuses a shared 'ret' stub (src/dsl_stub.h, real bytes of build 25846389)"
+st=$($CC -O0 -I"$L/src" stub_test.c -o "$OUT/stub_test" && "$OUT/stub_test"); src=$?
+print -r -- "$st" | sed 's/^/     /'
+check "stub rule: the shared 'ret' stubs are refused, normal method starts are not" '[[ $src -eq 0 && "$st" != *FAIL* ]]'
+
 print "== T1 all modules, our loader first, a foreign loader second (with its own detour)"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib:$FW/foreign.dylib" FOREIGN_HOOK=1)
 print -r -- "$r" | sed 's/^/     /'
