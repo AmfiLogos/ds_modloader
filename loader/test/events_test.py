@@ -14,9 +14,13 @@ switches the game's language static to German and back (hooks run only); Load li
 save loaded under a fresh world id; the Esc menu (SystemMenu popup) open + closed.
 Each run FAILS on: a missing EVPROBE line (scene 1 and 2, world loaded with the save's guid, view created / shown /
 hidden of TitleMenuView, SaveLoadView, SystemMenuView, shown of TooltipUI and QuickSlotUI, title and world frames,
-language 3 then back), any EVENT-RULE line (hooks run), any SCAN-RULE line, a probe that is not subscribed.
+language 3 then back), any EVENT-RULE line (hooks run), any SCAN-RULE line, a probe that is not subscribed, any SLOW-MOD
+line (the loader's time meter: a mod whose event callbacks take over 20 ms per second, or whose start takes over 2 s),
+the meter not on, no "modtime: title" line naming ev-probe, no "start times:" line naming ev-probe.
+--slow: one run (hooks) with ev-probe made slow on purpose (EVPROBE_SLOW=3000 us a frame, EVPROBE_SLOW_START=2500 ms):
+FAILS unless the meter names it (SLOW-MOD ev-probe ... title and ... start). The proof that the guard sees a slow mod.
 
-Usage: events_test.py <out> [--copy NVE] [--dsload PATH] [--only hooks|records] [--parse <dsload.log> hooks|records]
+Usage: events_test.py <out> [--copy NVE] [--dsload PATH] [--only hooks|records] [--slow] [--parse <dsload.log> hooks|records|slow]
   --dsload: default this tree's loader/build/dsload.dylib (zsh loader/build.sh, LOADER_ONLY=1). About 5 minutes.
 Last line: RESULT events PASS|FAIL <failed checks>"""
 import json, os, re, shutil, subprocess, sys, time, uuid
@@ -107,7 +111,7 @@ def parse(text, mode, guid=None):
     sub = [l for l in L if 'EVPROBE subscribed' in l]
     chk('probe subscribed, duplicate refused', sub and 'subscribed ok; duplicate refused' in sub[-1], sub[-1].strip() if sub else 'no line')
     hk = [l for l in L if 'events: view hooks:' in l or 'DSL_EV_NOHOOK=1' in l]
-    if mode == 'hooks': chk('view hooks all on', hk and 'created on, shown on, hidden on, scene clear on / on' in hk[-1], hk[-1].strip() if hk else 'no line')
+    if mode in ('hooks', 'slow'): chk('view hooks all on', hk and 'created on, shown on, hidden on, scene clear on / on' in hk[-1], hk[-1].strip() if hk else 'no line')
     else: chk('no view hooks (records mode)', hk and 'DSL_EV_NOHOOK=1' in hk[-1], hk[-1].strip() if hk else 'no line')
     sc = [(int(m.group(1)), int(m.group(2))) for l in L for m in [re.search(r'EVPROBE scene (-?\d+) -> (-?\d+)', l)] if m]
     chk('scene events: the title, then a world', any(s == 1 for _, s in sc) and any(s == 2 for _, s in sc), str(sc))
@@ -127,13 +131,24 @@ def parse(text, mode, guid=None):
         s = seen('view-shown', cls); chk(f'{cls}: shown (static)', s and all(e[2] == 'static' for e in s), f'shown {len(s)}')
     ids = {e[1]: e[3] for e in ev if e[2] == 'popup'}
     chk('popup ids: SaveLoadView 5, SystemMenuView 1', ids.get('SaveLoadView') == '5' and ids.get('SystemMenuView') == '1', str({k: ids.get(k) for k in ('SaveLoadView', 'SystemMenuView')}))
-    if mode == 'hooks':
+    if mode in ('hooks', 'slow'):
         lg = [l.split('EVPROBE lang ')[1].strip() for l in L if 'EVPROBE lang ' in l]
         chk('language events: German, then back', len(lg) >= 2 and lg[0].startswith('3 de') and not lg[-1].startswith('3 '), str(lg))
         rules = [l.strip() for l in L if 'EVENT-RULE' in l]
         chk('no EVENT-RULE line (every window came from its hook)', not rules, '; '.join(rules[:3]))
     scan = [l.strip() for l in L if 'SCAN-RULE' in l]
     chk('no SCAN-RULE line', not scan, '; '.join(scan[:3]))
+    chk('time meter on (test copy)', any('modtime: meter on' in l for l in L), '')
+    mt = [l.strip() for l in L if 'modtime: title ' in l]
+    chk('modtime: title line names ev-probe (its callbacks were timed)', any(' ev-probe ' in l for l in mt), mt[0][:160] if mt else 'no line')
+    st = [l.strip() for l in L if 'start times: ' in l]
+    chk('start times line names ev-probe', any('ev-probe ' in l for l in st), st[-1][:200] if st else 'no line')
+    slow = [l.strip() for l in L if 'SLOW-MOD ' in l]
+    if mode == 'slow':
+        chk('SLOW-MOD names the slow probe at the title', any('SLOW-MOD ev-probe ' in l and ' title (' in l for l in slow), '; '.join(slow[:3]))
+        chk('SLOW-MOD names the slow probe\'s start', any('SLOW-MOD ev-probe ' in l and ' start (' in l for l in slow), '; '.join(slow[:3]))
+    else:
+        chk('no SLOW-MOD line (no slow mod)', not slow, '; '.join(slow[:3]))
     others = sorted({(e[1], e[2]) for e in ev} - {('TitleMenuView', 'static'), ('SaveLoadView', 'popup'), ('SystemMenuView', 'popup'), ('TooltipUI', 'static'), ('QuickSlotUI', 'static')})
     chk('(info) other windows reported', True, ', '.join(f'{c} {k}' for c, k in others))
     return out
@@ -173,8 +188,9 @@ def run(mode, rdir):
     cloud = os.path.join(rdir, 'fake_cloud'); os.makedirs(cloud, exist_ok=True)
     env = {'SCAN_DRV_DIR': pd, 'DSL_MODS_DIR': mods, 'DSL_PROFILE': prof, 'DSML_ROOT': root, 'DSL_UPDATE': '0',
            'DSML_DSLOAD': DSLOAD, 'DSML_DATA': home_data, 'DSL_CLOUD_API': fake, 'FAKE_CLOUD_DIR': cloud, 'DSRIG_LIVE': '1'}
-    if mode == 'hooks': env['EVPROBE_LANG'] = '1'
+    if mode in ('hooks', 'slow'): env['EVPROBE_LANG'] = '1'
     else: env['DSL_EV_NOHOOK'] = '1'
+    if mode == 'slow': env['EVPROBE_SLOW'] = '3000'; env['EVPROBE_SLOW_START'] = '2500'
     for k in [k for k in os.environ if k.startswith(('DSL_', 'DSML_', 'DSRIG_', 'FAKE_', 'LRIG_', 'EVPROBE_'))]: os.environ.pop(k)
     os.environ['LRIG_DYLIB'] = DSLOAD; os.environ['LRIG_EXTRA_INSERT'] = drv
     orig = r.ctl_env
@@ -193,7 +209,7 @@ def run(mode, rdir):
     try:
         D.wait(lambda s: s.get('swapped') not in (None, '0'), 'pointer swap', 120)
         D.wait(lambda s: s.get('scene') == '1' and s.get('boot') == '1' and s.get('busy') == '0', 'title ready', 400)
-        log('title ready'); time.sleep(8 if mode == 'hooks' else 3)
+        log('title ready'); time.sleep({'hooks': 8, 'slow': 20}.get(mode, 3))   # slow: the meter's 5 s warm-up + one 10 s window
         steps['openload'] = D.cmd('openload'); time.sleep(3)
         steps['close_list'] = D.cmd('unpopup 5'); time.sleep(2)
         steps['load'] = D.cmd(f'load {stem}')
@@ -230,7 +246,7 @@ def main():
     log('lease', pair)
     fails = []
     try:
-        for mode in ([opt('--only')] if opt('--only') else ['hooks', 'records']):
+        for mode in (['slow'] if '--slow' in a else [opt('--only')] if opt('--only') else ['hooks', 'records']):
             rdir = os.path.join(OUT, mode)
             steps, guid = run(mode, rdir)
             p = os.path.join(rdir, 'dsload.log')

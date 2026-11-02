@@ -499,9 +499,9 @@ static void start_times_log(void) {
     for (int i = 1; i < n; i++) for (int j = i; j > 0 && own_ms(s[j]) > own_ms(s[j - 1]); j--) { struct DSLPlugin *t = s[j]; s[j] = s[j - 1]; s[j - 1] = t; }
     char b[1600]; size_t o = 0; b[0] = 0;
     for (int i = 0; i < n && o + 120 < sizeof b; i++)
-        o += (size_t)snprintf(b + o, sizeof b - o, "%s%s %.0f ms (open %.0f, load %.0f, early %.0f, init %.0f)", i ? ", " : "", s[i]->id,
+        o += (size_t)snprintf(b + o, sizeof b - o, "%s%s %.1f ms (open %.1f, load %.1f, early %.1f, init %.1f)", i ? ", " : "", s[i]->id,
                               own_ms(s[i]), s[i]->ms_open, s[i]->ms_load, s[i]->ms_early, s[i]->ms_init);
-    dsl_log("start times: %s; slowest %s %.0f ms; modules %.0f ms in all (open included)", b, s[0]->id, own_ms(s[0]), all);
+    dsl_log("start times: %s; slowest %s %.1f ms; modules %.1f ms in all (open included)", b, s[0]->id, own_ms(s[0]), all);
 }
 void dsl_start_times_check(void) {
     for (int i = 0; i < norder; i++) {

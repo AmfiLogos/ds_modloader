@@ -61,7 +61,7 @@ check "chain rules: orig set first, Windows refuses a mod hook without a method 
 print "== T0e loader events: the registry (src/dsl_evreg.h, SDK API 7)"
 et=$($CC -O0 -Wall -I"$L/src" events/ev_test.c -o "$OUT/ev_test" && "$OUT/ev_test"); erc=$?
 print -r -- "$et" | grep -v "^ok " | sed 's/^/     /'
-check "events: order, failed modules skipped, (un)subscribe during a send, frame / class filters" '[[ $erc -eq 0 && "$et" == *PASS* ]]'
+check "events: order, failed modules skipped, (un)subscribe during a send, frame / class filters, time meter (SLOW-MOD)" '[[ $erc -eq 0 && "$et" == *PASS* ]]'
 
 print "== T1 all modules, our loader first, a foreign loader second (with its own detour)"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib:$FW/foreign.dylib" FOREIGN_HOOK=1)
