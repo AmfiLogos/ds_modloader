@@ -198,6 +198,16 @@ void dsl_moddata_start(void);                            /* dsl_core_start: an u
 void dsl_moddata_after_init(void);                       /* mods known: folders + moddata.json */
 void dsl_moddata_rescan(void);                           /* mods folder changed */
 const char *dsl_moddata_root(void);                      /* <data>/ModData (UTF-8) */
+/* dsl_events.c: the loader's events (SDK API 7: on_event / off_event / view_shown; registry dsl_evreg.h) */
+void dsl_events_host(struct DSLHost *h);                 /* constructor: fills the API 7 host fields */
+void dsl_events_install(void);                           /* il2cpp ready, after dsl_reg_ready, before the modules' init */
+void dsl_events_frame(void);                             /* the kit tick (end of dsl_frame_hook): frame, scene, world, language */
+int dsl_plugin_running(struct DSLPlugin *self);          /* dsl_main.c: 1 = the module runs (not failed, not turned off) */
+int dsl_reg_scene(void);                                 /* dsl_reg.c: MainFlow's scene (1 title, 2 world, 9 loading), -1 = none */
+int dsl_reg_world_guid(char out[40]);                    /* dsl_reg.c: the open world's guid; 0 = none */
+int dsl_soft_loading(void);                              /* dsl_soft.c: a scene or a map loads now */
+int dsl_view_records(int which, void **views, int *keys, int cap);   /* dsl_view.c: 0 popups / 1 static views shown; -1 = unreadable */
+void dsl_view_note(void *obj);                           /* dsl_view.c: a live view for dsl_view_find's cache */
 int dsl_moddata_fingerprint(char out[65]);               /* data fingerprint of this copy; returns the sync mod count */
 const char *dsl_moddata_fp_start(void);                 /* that fingerprint after the modules' init ("" = not computed) */
 #define MAXP_REG 32

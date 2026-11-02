@@ -938,6 +938,7 @@ static void a_boot_screen_tick(void) {
     }
 }
 /* the title screen is idle and on screen: title scene, boot done, nothing loading, no loading screen / fade over it */
+int dsl_soft_loading(void) { return dsl_ready && mf ? busy() : 1; }   /* dsl_events.c: world loaded = nothing loads */
 int dsl_soft_title_idle(void) {
     if (!dsl_ready || !mf || scene() != 1 || !boot_ready() || busy() || (role_b && b_state != B_DONE)) return 0;
     Obj fv = fade; if (fv && ((fade_loading && fade_loading(fv, NULL)) || (fade_done && fade_done(fv, NULL)))) return 0;

@@ -1,0 +1,12 @@
+# Hooks on a game Update / LateUpdate / FixedUpdate method, accepted by tools/hooks/hooklist.py check (FRAME RULE,
+# loader/NOTES.md "Loader events"; kit 0.1.31). A mod that needs a frame tick, a scene / world / language change or a
+# game window shown / hidden listens with dsl_on_event (SDK API 7) instead. One line: key TAB why an event cannot do it.
+loader|dsl_ui.c|h_es_update|loader ui EventSystem.Update	the kit tick itself: the loader's frame work and the source of DSL_EV_FRAME
+multiplayer|mp_module.c|my_update|MainFlow.Update	lockstep: the session step must run before the game's own MainFlow.Update in the same frame (an event comes after it)
+multiplayer|rig_main_win.c|my_update|MainFlow.Update	lockstep (Windows): the same as mp_module.c my_update
+multiplayer|rig_det.c|h_ep|EventProcessor.Update	lockstep: gates the game's event step by the session tick (wraps the game's call)
+multiplayer|rig_det.c|h_eq|EventQueue.Update	lockstep: gates the game's event queue by the session tick (wraps the game's call)
+multiplayer|rig_det.c|h_obs|ObserverDriven.Update	lockstep: gates the game's observer step by the session tick (wraps the game's call)
+multiplayer|rig_det.c|h_tf|TickFlow.Update	lockstep: gates the simulation tick (wraps the game's call)
+multiplayer|rig_det.c|h_time|TimeHandler.Update	lockstep: gates the game time by the session tick (wraps the game's call)
+custom-modes|cm_win.c|h_disp_update|	to move to DSL_EV_FRAME (ext/nvevents/PLAN.md "later"): the Units Laboratory windows' input tick

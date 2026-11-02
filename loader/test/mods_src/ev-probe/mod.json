@@ -1,0 +1,12 @@
+{
+ "id": "ev-probe",
+ "name": "Loader events probe (test only)",
+ "version": "0.1.0",
+ "kind": "code",
+ "api": 3,
+ "scope": "client",
+ "game_builds": ["*"],
+ "platforms": { "mac-arm64": { "entry": "ev-probe.dylib" }, "win-x64": { "entry": "ev-probe.dll" } },
+ "requires": ["loader>=2.0.0"],
+ "description": "Test module for events_test.py and the Windows VM run: listens to every loader event (SDK API 7) and logs EVPROBE lines."
+}

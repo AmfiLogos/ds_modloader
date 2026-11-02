@@ -13,7 +13,7 @@ $CC -O0 -dynamiclib -install_name @rpath/GameAssembly.dylib -o "$FW/GameAssembly
 UUID=$(otool -l "$FW/GameAssembly.dylib" | awk '/uuid/{print $2; exit}')
 print "    { \"$UUID\", \"test\" }," > "$OUT/gen/test_builds.inc"
 $CC -O2 -Wall -DDSL_TEST -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -install_name @rpath/dsload.dylib -o "$FW/dsload.dylib" \
-  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_view,dsl_update,dsl_whatsnew,dsl_sig,dsl_sig_mc,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_moddata,dsl_crash,dsl_bugrep,dsl_bugrep_fmt,dsl_scrub,dsl_scrub_names}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_update_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_quiet_mac.c "$L"/start/mac/dsl_bie_mac.c "$L"/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang || exit 1
+  "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_view,dsl_update,dsl_whatsnew,dsl_sig,dsl_sig_mc,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_moddata,dsl_events,dsl_crash,dsl_bugrep,dsl_bugrep_fmt,dsl_scrub,dsl_scrub_names}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_update_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_quiet_mac.c "$L"/start/mac/dsl_bie_mac.c "$L"/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang || exit 1
 $CC -O0 -dynamiclib -o "$FW/foreign.dylib" foreign.c || exit 1
 $CC -O0 host.c -o "$OUT/host" "$FW/GameAssembly.dylib" -Wl,-rpath,"$FW" || exit 1
 for f in "$FW"/*.dylib "$OUT/host"; do codesign -f -s - "$f" 2>/dev/null; done
@@ -52,6 +52,11 @@ print "== T0s Windows hook_method refuses a shared 'ret' stub (src/dsl_stub.h, r
 st=$($CC -O0 -I"$L/src" stub_test.c -o "$OUT/stub_test" && "$OUT/stub_test"); src=$?
 print -r -- "$st" | sed 's/^/     /'
 check "stub rule: the shared 'ret' stubs are refused, normal method starts are not" '[[ $src -eq 0 && "$st" != *FAIL* ]]'
+
+print "== T0e loader events: the registry (src/dsl_evreg.h, SDK API 7)"
+et=$($CC -O0 -Wall -I"$L/src" events/ev_test.c -o "$OUT/ev_test" && "$OUT/ev_test"); erc=$?
+print -r -- "$et" | grep -v "^ok " | sed 's/^/     /'
+check "events: order, failed modules skipped, (un)subscribe during a send, frame / class filters" '[[ $erc -eq 0 && "$et" == *PASS* ]]'
 
 print "== T1 all modules, our loader first, a foreign loader second (with its own detour)"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib:$FW/foreign.dylib" FOREIGN_HOOK=1)
@@ -233,7 +238,7 @@ assert d[\"ItemObtainedSaveData\"][\"ObtainedItems\"]==[\"ITEM_Y\",\"ITEM_\\\"q\
 
 print "== T5 unknown build: loader inactive"
 print "" > "$OUT/gen/test_builds.inc"
-$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_view,dsl_update,dsl_whatsnew,dsl_sig,dsl_sig_mc,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_moddata,dsl_crash,dsl_bugrep,dsl_bugrep_fmt,dsl_scrub,dsl_scrub_names}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_update_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_quiet_mac.c "$L"/start/mac/dsl_bie_mac.c "$L"/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
+$CC -O2 -I"$OUT/gen" -I"$L/src" -dynamiclib -framework CoreFoundation -framework CoreGraphics -lobjc -o "$FW/dsload.dylib" "$L"/src/{dsl_main,dsl_engine,dsl_il2cpp,dsl_json,dsl_world,dsl_saves,dsl_cloud,dsl_soft,dsl_ui,dsl_reg,dsl_rows,dsl_view,dsl_update,dsl_whatsnew,dsl_sig,dsl_sig_mc,dsl_hostmods,dsl_fastboot,dsl_settings,dsl_moddata,dsl_events,dsl_crash,dsl_bugrep,dsl_bugrep_fmt,dsl_scrub,dsl_scrub_names}.c "$L"/start/mac/dsl_start_mac.c "$L"/start/mac/dsl_update_mac.c "$L"/start/mac/dsl_soft_mac.c "$L"/start/mac/dsl_quiet_mac.c "$L"/start/mac/dsl_bie_mac.c "$L"/start/mac/dsl_notch_mac.m -fobjc-arc -framework AppKit -Wl,-U,_dsl_win_init -Wl,-U,_dsl_win_open -Wl,-U,_dsl_win_close -Wl,-U,_dsl_win_is_open -Wl,-U,_dsl_win_frame -Wl,-U,_dsl_win_open_world -Wl,-U,_dsl_win_relang && codesign -f -s - "$FW/dsload.dylib" 2>/dev/null
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
 check "nothing hooked, game runs, says why" '[[ "$r" == *"orig_safe=2"* && "$r" == *"dsload: The game was updated"* ]] && log | grep -q "unknown GameAssembly build" && ! log | grep -q hooked && grep -q "\"active\":false,\"reason\":\"unknown_build\"" "$LOGD/dsload_status.json"'
 

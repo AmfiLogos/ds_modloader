@@ -3,6 +3,11 @@ owner	kind	method	mac_arm64_rva	win_x64_rva	active	label	source
 loader	detour	Refactor.UI.SystemMenuView$$OnReportBugPressed	0xf2efd8	0xc37ea0	always	loader bug report Esc menu button	ds_modloader:loader/src/dsl_bugrep.c
 loader	detour	Refactor.UI.TitleMenuView$$OnBugReportPressed	0xe711e8	0xb70800	always	loader bug report title button	ds_modloader:loader/src/dsl_bugrep.c
 loader	detour	UnityEngine.Application$$Internal_ApplicationQuit	0x507dba0	0x38e8a30	crash report on: started by the launcher (DSML_ROOT) or DSL_CRASHREP=1, not DSL_CRASHREP=0	loader crash quit mark	ds_modloader:loader/src/dsl_crash.c
+loader	detour	Refactor.UI.PopUpViewContainer$$ClearOnSceneMove	0xf62dc8	0xc81350	always	loader events PopUpViewContainer.ClearOnSceneMove	ds_modloader:loader/src/dsl_events.c
+loader	detour	Refactor.UI.StaticViewContainer$$ClearOnSceneMove	0xf63668	0xc83900	always	loader events StaticViewContainer.ClearOnSceneMove	ds_modloader:loader/src/dsl_events.c
+loader	detour	Refactor.UI.UI_Base$$Activate	0xf5aaa0	0xc6e930	always	loader events UI_Base.Activate	ds_modloader:loader/src/dsl_events.c
+loader	detour	Refactor.UI.UI_Base$$Deactivate	0xf5aaac	0xc6e950	always	loader events UI_Base.Deactivate	ds_modloader:loader/src/dsl_events.c
+loader	detour	Refactor.UI.UI_Base$$InitOnCreateUI	0xf5aa20	0xc6e970	always	loader events UI_Base.InitOnCreateUI	ds_modloader:loader/src/dsl_events.c
 loader	detour	UnityEngine.AssetBundle$$LoadFromFileAsync	0x50661bc	0x38e11b0	fast boot on (platform default; DSL_FB_CRC / DSL_FASTBOOT)	loader fastboot AssetBundle.LoadFromFileAsync	ds_modloader:loader/src/dsl_fastboot.c
 loader	detour	export il2cpp_init	0x6f8a6c	0x49dac0	always (the loader's start: dsl_plugin_init runs after il2cpp_init)	loader il2cpp_init	ds_modloader:loader/src/dsl_main.c
 loader	detour	export il2cpp_init_utf16	0x6f8aa0	0x49daf0	always (the loader's start)	loader il2cpp_init_utf16	ds_modloader:loader/src/dsl_main.c

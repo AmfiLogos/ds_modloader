@@ -1,4 +1,8 @@
-// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 6.
+// dsl_sdk.h - module SDK for the Dungeon Settlers mod loader (dsload.dylib), API version 7.
+// API 7 = API 6 + loader EVENTS (appended to DSLHost, kit 0.1.31): on_event / off_event / view_shown. The loader owns one
+// game hook per event and calls every module that listens: a frame tick (title / world / any), the scene changed, a
+// world loaded / closed, a game window created / shown / hidden, the language changed. Wrappers dsl_on_event,
+// dsl_off_event, dsl_view_shown (-1 / 0 from an older loader: keep the old path there). See the block above DSLHost.
 // API 6 = API 5 + mod_data_dir (appended to DSLHost): <game data>/ModData/<mod id>/, a folder of this mod that a mod
 // update or a disable / enable never touches (the mod's own folder is replaced by an update). mod.json "sync" lists
 // the files there that are gameplay: a multiplayer guest gets the host's copy of them for the session (../NOTES.md
@@ -60,7 +64,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define DSL_API_VERSION 6
+#define DSL_API_VERSION 7
 
 #ifdef __cplusplus
 extern "C" {
@@ -292,6 +296,55 @@ typedef struct DSLWinStd {
 typedef struct DSLWinParts { DSLObj win, backdrop, close_x, title; float body_y; } DSLWinParts;
 enum { DSL_ESC_EDIT = 1, DSL_ESC_HUD = 2 };   /* esc_push flags (DSL_ESC_HUD: close may be NULL) */
 
+/* ---- loader EVENTS (API 7, kit 0.1.31; owner 2026-11-02, PLAN_v013 items 3 + 32: the tModLoader study's idea 1).
+   EVENT RULE (../NOTES.md "Loader events"): a mod that needs a frame tick, a scene / world / language change or a game
+   window shown / hidden LISTENS with dsl_on_event; it never hooks a game Update method for a tick (FRAME RULE: the hook
+   list check fails on a new one, tools/hooks/frame_ok.tsv) and never polls for these. The loader owns one game hook
+   per event and calls every module that listens, in load order; two mods can share an event.
+   Types (on_event `type`):
+     DSL_EV_FRAME          every frame, main thread, from the kit tick (EventSystem.Update, after the loader's own frame
+                           work). flags DSL_EVF_TITLE = only while the scene is the title and nothing loads, DSL_EVF_WORLD =
+                           only in a world and nothing loads, both = either, 0 = every frame. ev->scene, ev->loading, ev->frame.
+     DSL_EV_SCENE          MainFlow's scene changed: ev->scene, ev->prev_scene (DSL_SCENE_*: 1 title, 2 world, 0 / -1 the
+                           boot; 9 Loading is in the game's enum, not seen in the 2026-11-02 runs). Sent at the kit tick of the first frame of the new scene. Note: a load from the title
+                           starts about a second before the scene says world (ev->loading is 1 from the start).
+     DSL_EV_WORLD_LOADED   a world is open and done loading (scene 2, nothing loading, its guid known): ev->guid.
+     DSL_EV_WORLD_CLOSED   that world closed (the scene left it, or another world opened): ev->guid = the closed one.
+     DSL_EV_VIEW_CREATED   a game window (Refactor.UI.UI_Base: every PopUpUI_Base / StaticUI_Base) is seen for the first
+                           time in this scene (its InitOnCreateUI ran in the same call); then DSL_EV_VIEW_SHOWN follows.
+     DSL_EV_VIEW_SHOWN     a popup was activated (SystemMenuView = the Esc menu, SaveLoadView, ...), or a static view was
+                           made active in its scene (TitleMenuView, TooltipUI, QuickSlotUI, CommonNoticeView: they stay
+                           active for the whole scene and open / close their own panels inside).
+     DSL_EV_VIEW_HIDDEN    a popup was deactivated (the game keeps it for the next time), or the scene ends (every view).
+                           View events: ev->view (the live object, valid during the call: never keep it, ask
+                           dsl_view_find later), ev->klass, ev->view_kind (DSL_VIEW_POPUP / DSL_VIEW_STATIC), ev->view_id
+                           (the game's PopUpType / StaticUIType). `klass` of on_event = only views of that class or a
+                           subclass (NULL = all). They run RIGHT AFTER the game's own call returned (inside it): a mod can
+                           change the window before it is drawn. Keep them short; heavy work: set a flag, do it on a frame.
+                           If a game hook site is refused, the loader reads the game's own window records each frame
+                           instead (the same events, at most one frame later; never a scene search).
+     DSL_EV_LANG           the game's language changed (Options): ev->lang (the game's LanguageType), ev->lang_code ("de").
+   Everything runs on the game's main thread. A module that failed or was turned off gets no more calls. A callback may
+   subscribe, unsubscribe or open a window (nested events are sent at once). Strings and objects in DSLEvent are valid
+   during the call only. */
+enum { DSL_EV_FRAME = 1, DSL_EV_SCENE, DSL_EV_WORLD_LOADED, DSL_EV_WORLD_CLOSED, DSL_EV_VIEW_CREATED, DSL_EV_VIEW_SHOWN,
+       DSL_EV_VIEW_HIDDEN, DSL_EV_LANG, DSL_EV_LAST = DSL_EV_LANG };
+enum { DSL_EVF_TITLE = 1, DSL_EVF_WORLD = 2 };                /* on_event flags for DSL_EV_FRAME */
+enum { DSL_SCENE_BOOT = 0, DSL_SCENE_TITLE = 1, DSL_SCENE_WORLD = 2, DSL_SCENE_LOADING = 9 };   /* the game's SceneType */
+enum { DSL_VIEW_POPUP = 1, DSL_VIEW_STATIC = 2 };             /* DSLEvent.view_kind */
+typedef struct DSLEvent {
+    uint32_t size;                           /* sizeof(DSLEvent) of the loader; fields only get appended */
+    int type;                                /* DSL_EV_* */
+    int scene, prev_scene;                   /* the MainFlow scene now (every event); the one before (DSL_EV_SCENE) */
+    int loading;                             /* 1 = a scene or a map loads now (every event) */
+    uint64_t frame;                          /* the loader's frame count */
+    const char *guid;                        /* world events: the world's guid ("" when unknown) */
+    void *view, *klass;                      /* view events: the game object and its class (il2cpp Il2CppClass*) */
+    int view_kind, view_id;                  /* view events: DSL_VIEW_POPUP / DSL_VIEW_STATIC; PopUpType / StaticUIType */
+    int lang; const char *lang_code;         /* DSL_EV_LANG (and every event: the language now) */
+} DSLEvent;
+typedef void (*dsl_event_cb)(void *ud, const DSLEvent *ev);
+
 typedef struct DSLHost {
     /* ---- API 1 (layout frozen) */
     uint32_t api_version;
@@ -414,6 +467,15 @@ typedef struct DSLHost {
        Application.persistentDataPath + "/ModData"; <game data>/ModData/moddata.json lists the folders and the
        session ("guest" = the host's files are in place). NULL = no folder (bad id). */
     const char *(*mod_data_dir)(DSLPlugin *self);
+
+    /* ---- API 7 (appended, kit 0.1.31): loader EVENTS (the block above DSLHost). on_event: cb(ud, ev) for every event of
+       `type` (flags / klass filter as above); call it in dsl_plugin_init (or later, main thread). 0 = ok, -1 = refused
+       (unknown type, no callback, the same subscription twice). off_event: stops cb (NULL = every subscription of this
+       module to `type`; type 0 = to every type); returns how many. view_shown: 1 = a game window of class `klass` (or a
+       subclass) is shown now (a flag read: no call into the game, no search); 0 = not shown / unknown. */
+    int (*on_event)(DSLPlugin *self, int type, int flags, void *klass, dsl_event_cb cb, void *ud);
+    int (*off_event)(DSLPlugin *self, int type, dsl_event_cb cb, void *ud);
+    int (*view_shown)(void *klass);
 } DSLHost;
 #define DSL_HAS_TITLE_BUTTON_ICON 1               /* this header has title_button_icon (older copies of it do not) */
 
@@ -457,6 +519,12 @@ static inline const char *dsl_get_choice(const DSLHost *h, DSLPlugin *self, cons
 /* API 6 wrapper: NULL when the loader is older than API 6 */
 static inline const char *dsl_mod_data_dir(const DSLHost *h, DSLPlugin *self) {
     return DSL_HAS(h, mod_data_dir) ? h->mod_data_dir(self) : NULL; }
+/* API 7 wrappers (loader events): -1 / 0 when the loader is older than API 7 (keep the module's old path there) */
+static inline int dsl_on_event(const DSLHost *h, DSLPlugin *self, int type, int flags, void *klass, dsl_event_cb cb, void *ud) {
+    return DSL_HAS(h, on_event) ? h->on_event(self, type, flags, klass, cb, ud) : -1; }
+static inline int dsl_off_event(const DSLHost *h, DSLPlugin *self, int type, dsl_event_cb cb, void *ud) {
+    return DSL_HAS(h, off_event) ? h->off_event(self, type, cb, ud) : 0; }
+static inline int dsl_view_shown(const DSLHost *h, void *klass) { return DSL_HAS(h, view_shown) ? h->view_shown(klass) : 0; }
 static inline int dsl_on_setting_change(const DSLHost *h, DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud) {
     return DSL_HAS(h, settings_on_change) ? h->settings_on_change(self, changed, ud) : -1; }
 /* Escape wrappers (kit 0.1.28): -1 / nothing with an older kit, whose Escape does nothing for these windows */

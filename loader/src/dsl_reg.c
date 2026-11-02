@@ -1118,6 +1118,7 @@ static int world_guid(char *out) {                                     /* ClanDa
     return 1;
 }
 static Obj mainflow(void) { return dsl_soft_mainflow(); }
+int dsl_reg_world_guid(char out[40]) { return world_guid(out); }   /* dsl_events.c */
 
 /* flow K: a refused world load -> ask, then soft restart into it with the world's mods */
 static char k_save[512], k_guid[40], k_key[512]; static int k_pending; static int k_frames;
@@ -1364,6 +1365,7 @@ void dsl_frame_hook(void) {
     if (dsl_win_frame) dsl_win_frame();
     dsl_newgame_frame();
     dsl_progress_frame();
+    dsl_events_frame();                                                /* last: modules' frame / scene / world / language events */
 }
 
 /* the game's language changed (dsl_ui.c tick, after the kit renewed its fonts): mod texts, the loader's title button

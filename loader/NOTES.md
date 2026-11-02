@@ -75,6 +75,36 @@ modifying the mods ?". Before, the engine refused a second hook on a function ("
   off, floor-logger and the game keep running). Real game (2026-11-01, Mac hidden copy NVC): `test/chainprobe`
   chained over the loader's EventSystem.Update, 600 frames, unhooked itself, the loader's tick kept running.
 
+## Loader events (SDK API 7, kit 0.1.31, owner 2026-11-02 PLAN_v013 items 3 + 32) - `src/dsl_events.c`, `src/dsl_evreg.h`
+Owner: "the thing that we were supposed to do for [tModLoader] ... Make a good plan ... and then just do it" (the
+tModLoader study's idea 1: the loader owns one hook per event, mods subscribe). Plan: ds_multiplayer ext/nvevents/PLAN.md.
+THE RULE (EVENT RULE / FRAME RULE, every mod now and later; also in the mod skill): a mod that needs a frame tick, a
+scene / world / language change or a game window shown / hidden LISTENS with `dsl_on_event`; it never hooks a game
+Update method for a tick and never polls for these.
+- API (sdk/dsl_sdk.h, the block above DSLHost): `dsl_on_event(host, self, type, flags, klass, cb, ud)`,
+  `dsl_off_event(host, self, type, cb, ud)`, `dsl_view_shown(host, klass)`. Types: DSL_EV_FRAME (flags DSL_EVF_TITLE /
+  DSL_EVF_WORLD: never while a scene or map loads), DSL_EV_SCENE, DSL_EV_WORLD_LOADED / _CLOSED, DSL_EV_VIEW_CREATED /
+  _SHOWN / _HIDDEN (klass filter: that class or a subclass), DSL_EV_LANG. Every event carries scene + loading. Older
+  loader: the wrappers return -1 / 0, keep the old path there.
+- Timing fact (Mac run 2026-11-02): a load from the title starts (SceneLoader busy, ev->loading 1) about 1.2 s before
+  the scene event says world; TitleMenuView is hidden 0.4 s before it. A window that must go the moment a load starts
+  checks ev->loading (or the title check), not the scene event alone.
+- Sources: views from 5 game sites per platform (UI_Base.InitOnCreateUI / Activate / Deactivate, both containers'
+  ClearOnSceneMove; on Windows Activate / Deactivate are folded code: the hook acts only for the one call in
+  PopUpViewContainer.ActivateView / DeactivateView, found at install). Frame / scene / world / language at the kit tick
+  (end of `dsl_frame_hook`). View events run right after the game's call (before the window is drawn): keep them short.
+- Records check (every frame, no search): the game's PopUp / Static ActiveUIs against what was sent; what a hook
+  missed is sent there one frame late. That is also the fallback when a hook is refused (or DSL_EV_NOHOOK=1 in a test
+  copy). GUARD: a test copy logs `EVENT-RULE missed <shown|hidden|created> <class> ...` when a hook that is on missed a
+  window; `test/events_test.py` fails on it.
+- GUARD (FRAME RULE): `tools/hooks/hooklist.py check` fails on a hook of a game `*$$Update / LateUpdate / FixedUpdate`
+  unless `tools/hooks/frame_ok.tsv` names it with why an event cannot do it (multiplayer lockstep steps, the kit tick).
+  A third-party mod's `hook_method` of an Update method logs a hint line (not refused).
+- Not reported: SystemViewContainer views (FX, cursor, fog: no windows). Objects in an event are valid during the call
+  only (ask dsl_view_find later; a shown view primes its cache).
+- Tests: `test/run_tests.sh` T0e (registry), `test/events_test.py` (Mac hidden copy, hook mode + fallback mode),
+  Windows VM run (ext/nvevents/NOTES.md).
+
 ## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).
   The loader has no global mod list: it loads exactly that profile.

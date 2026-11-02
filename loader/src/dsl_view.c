@@ -148,6 +148,22 @@ int dsl_view_popup_shown(void) {
     return last;
 }
 
+/* dsl_events.c (loader events): the game's shown windows from its records, no search. which 0 = popups
+   (PopUpViewContainer.ActiveUIs), 1 = static views (StaticViewContainer.ActiveUIs); up to cap views with their keys
+   (PopUpType / StaticUIType). -1 = the records cannot be read now (no MainFlow or container, a game update): never
+   "none shown" then. */
+int dsl_view_records(int which, void **views, int *keys, int cap) {
+    if (!ok || !recs_ok) return -1;
+    int32_t off = which ? o_sta_act : o_pop_act;
+    Obj d = off >= 0 ? fld(vcont(which ? o_vc_sta : o_vc_pop), off) : NULL;
+    if (!d) return -1;
+    Obj ents; int n = dict_n(d, &ents);
+    if (!n) return o_d_entries > 0 && AT(d, o_d_count, int32_t) <= 0 ? 0 : -1;   /* empty, or not readable */
+    int k = 0;
+    DICT_FOR(d, v) if (k < cap) { views[k] = v; keys[k] = AT((char *)e_ + 0x20 + 24 * i_, 8, int32_t); k++; }
+    return k;
+}
+
 /* ------------------------------------------------------------------ frames, scenes, the search budget (step 3) */
 static uint32_t gen = 1; static int64_t vframe, searched_at = -1; static int scene_now = -1;
 void dsl_view_new_scene(void) { gen++; }
@@ -192,6 +208,12 @@ void *dsl_view_get(void *k, int flags) {
                 : route == 3 ? "the popup container's factory" : "searched, found", scene_now);
     }
     return o;
+}
+/* dsl_events.c: a window the game just made / showed: a lookup of its class that has no live object takes it */
+void dsl_view_note(void *o) {
+    if (!ok || !o) return;
+    void *k = I.obj_class(o);
+    for (int i = 0; i < nslots; i++) if (slots[i].k == k && !slots[i].h) { slots[i].h = I.gc_new(o, false); slots[i].misses = 0; }
 }
 void *dsl_view_all(void *k, int flags) {
     if (!ok || !k || !m_finds || !may_search(flags)) return NULL;

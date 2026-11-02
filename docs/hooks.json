@@ -75,6 +75,103 @@
   {
    "owner": "loader",
    "kind": "detour",
+   "method": "Refactor.UI.PopUpViewContainer$$ClearOnSceneMove",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf62dc8"
+    },
+    "win-x64": {
+     "rva": "0xc81350"
+    }
+   },
+   "active": "always",
+   "label": "loader events PopUpViewContainer.ClearOnSceneMove",
+   "source": "ds_modloader:loader/src/dsl_events.c",
+   "key": "loader|dsl_events.c|h_clr_pop|loader events PopUpViewContainer.ClearOnSceneMove"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.StaticViewContainer$$ClearOnSceneMove",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf63668"
+    },
+    "win-x64": {
+     "rva": "0xc83900"
+    }
+   },
+   "active": "always",
+   "label": "loader events StaticViewContainer.ClearOnSceneMove",
+   "source": "ds_modloader:loader/src/dsl_events.c",
+   "key": "loader|dsl_events.c|h_clr_sta|loader events StaticViewContainer.ClearOnSceneMove"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.UI_Base$$Activate",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf5aaa0"
+    },
+    "win-x64": {
+     "rva": "0xc6e930",
+     "shared_with": [
+      "System.Type$$InternalGetNameIfAvailable",
+      "System.Delegate$$get_Method",
+      "System.Xml.Ucs4Encoding$$get_WebName",
+      "System.ComponentModel.Component$$get_CanRaiseEventsInternal",
+      "UnityEngine.Networking.DownloadHandler$$get_text"
+     ]
+    }
+   },
+   "active": "always",
+   "label": "loader events UI_Base.Activate",
+   "source": "ds_modloader:loader/src/dsl_events.c",
+   "key": "loader|dsl_events.c|h_activate|loader events UI_Base.Activate"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.UI_Base$$Deactivate",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf5aaac"
+    },
+    "win-x64": {
+     "rva": "0xc6e950",
+     "shared_with": [
+      "System.RuntimeType$$get_ReflectedType",
+      "UnityEngine.UIElements.CollectionViewController$$GetItemsMinCount",
+      "System.Data.DataRelation$$ToString"
+     ]
+    }
+   },
+   "active": "always",
+   "label": "loader events UI_Base.Deactivate",
+   "source": "ds_modloader:loader/src/dsl_events.c",
+   "key": "loader|dsl_events.c|h_deactivate|loader events UI_Base.Deactivate"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
+   "method": "Refactor.UI.UI_Base$$InitOnCreateUI",
+   "platforms": {
+    "mac-arm64": {
+     "rva": "0xf5aa20"
+    },
+    "win-x64": {
+     "rva": "0xc6e970"
+    }
+   },
+   "active": "always",
+   "label": "loader events UI_Base.InitOnCreateUI",
+   "source": "ds_modloader:loader/src/dsl_events.c",
+   "key": "loader|dsl_events.c|h_init|loader events UI_Base.InitOnCreateUI"
+  },
+  {
+   "owner": "loader",
+   "kind": "detour",
    "method": "UnityEngine.AssetBundle$$LoadFromFileAsync",
    "platforms": {
     "mac-arm64": {

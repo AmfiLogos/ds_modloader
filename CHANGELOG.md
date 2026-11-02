@@ -4,6 +4,13 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.31)
+
+- For mod makers: mods can now let the mod loader tell them when something happens in the game (a new frame on the
+  title or in a world, the title or a world opening, a game window opening or closing, the language changing),
+  instead of each mod checking for it every frame. Mod loader SDK version 7: `dsl_on_event` (see loader/NOTES.md
+  "Loader events"). Mods made for older versions work as before.
+
 ### 0.1.30 (2026-11-02)
 
 - Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->

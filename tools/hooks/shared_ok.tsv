@@ -14,3 +14,5 @@ multiplayer|ui_game.c|hk_clan_cur|ui ClanDataContainer.get_CurrentPopulation	a 4
 multiplayer|ui_game.c|hk_clan_max|ui ClanDataContainer.get_MaxPopulation	a 4-byte getter shared with 28 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
 multiplayer|ui_game.c|hk_uo_sethud|ui UnitObject.SetHUD	a setter shared with 157 on Windows; to be confirmed by the multiplayer lane (does the hook check the object type?)
 multi-bar|multi_bar.c|hk_itemsel|	shared with SubUI_PolicyRow.OnPressSetAll on Windows; to be confirmed by the multi-bar owner
+loader|dsl_events.c|h_activate|loader events UI_Base.Activate	Windows only (folded with 5 methods): the hook acts only when its return address is the one call in PopUpViewContainer.ActivateView (found at install, else not hooked); every other caller tail-jumps on with all registers untouched (src/dsl_events.c)
+loader|dsl_events.c|h_deactivate|loader events UI_Base.Deactivate	Windows only (folded with 3 methods): the same return-address rule, the call in PopUpViewContainer.DeactivateView (src/dsl_events.c)

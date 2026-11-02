@@ -217,6 +217,8 @@ static int h_hook_method(DSLPlugin *self, const char *ns, const char *k, const c
     if (!a) { dsl_log("[%s] hook %s.%s refused: method not found", self->id, k, m); return -1; }
     char who[160], key[200]; snprintf(who, sizeof who, "%s %s.%s", self->id, k, m);
     snprintf(key, sizeof key, "%s.%s.%s/%d", ns ? ns : "", k, m, argc);
+    if (m && (!strcmp(m, "Update") || !strcmp(m, "LateUpdate") || !strcmp(m, "FixedUpdate")))   /* FRAME RULE (loader/NOTES.md) */
+        dsl_log("[%s] hooks %s.%s: for a frame tick use dsl_on_event(DSL_EV_FRAME) (loader events, SDK API 7)", self->id, k, m);
 #ifdef _WIN32
     int stub = dsl_x64_ret_stub((const uint8_t *)a);                 /* SHARED STUB RULE (dsl_stub.h) */
     if (stub) {
@@ -273,6 +275,7 @@ const char *dsl_profile_file(void) { return profile_path; }
 const char *dsl_log_dir(void) { return logdir; }
 int dsl_plugin_index(DSLPlugin *self) { return self ? self->idx : -1; }
 const char *dsl_plugin_name(DSLPlugin *self) { return self ? self->id : "loader"; }
+int dsl_plugin_running(DSLPlugin *self) { return self && self->state == 1; }
 /* dsl_reg.c: an installed mod's name as the Mods window shows it (current language), NULL = not installed / not read yet */
 __attribute__((weak)) const char *dsl_mod_name_of(const char *id) { (void)id; return NULL; }
 /* the dependency reason (dsl_deps.h text, current language) of a switched-on mod this process does not run; 0 = none.
@@ -699,6 +702,7 @@ static void on_il2cpp_ready(const char *via) {
     dsl_reg_ready(&host);                                            /* kit, rows, title "Mods": before the modules' init */
     dsl_saves_install();                                             /* the game's own saves in the Load list, played in place */
     dsl_cloud_install(&host);                                        /* modded-only saves: Steam Cloud backup */
+    dsl_events_install();                                            /* loader events: view hooks before the modules listen */
     run_init();
     dsl_reg_after_init();
     write_modset();
@@ -888,6 +892,7 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     dsl_reg_host(&host);
     dsl_settings_host(&host); dsl_settings_init();                    /* mod settings: readable from dsl_module_load on */
     dsl_moddata_host(&host);                                         /* data folder per mod (API 6) */
+    dsl_events_host(&host);                                          /* loader events (API 7) */
     scan_mods(dsl_build_id);
     if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();

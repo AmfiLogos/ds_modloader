@@ -200,6 +200,7 @@ def compiled(cf, off, defs):
 # at addr..addr+3), "patch" (rva + old/new bytes). who None = the module id only.
 PRIMS = {
     "dsl_hook":    (1, 4, "detour", "ptr"),
+    "dsl_hook_m":  (1, 4, "detour", "ptr"),             # dsl_hook + the method name (src/dsl_chain.h fold refusal)
     "dsl_patch":   (1, 5, "patch", "ptr"),
     "rig_hook":    (0, 3, "detour", "rva"),
     "hook":        (1, None, "detour", "ptr"),            # host->hook(self, target, repl, orig)
@@ -207,7 +208,7 @@ PRIMS = {
     "hook_method": (1, None, "detour", "name"),
     "patch_rva":   (1, 5, "patch", "rva"),
 }
-REPL_ARG = {"dsl_hook": 2, "rig_hook": 1, "hook": 2, "hook_rva": 2, "hook_method": 5, "dsl_patch": 3, "patch_rva": 2}
+REPL_ARG = {"dsl_hook": 2, "dsl_hook_m": 2, "rig_hook": 1, "hook": 2, "hook_rva": 2, "hook_method": 5, "dsl_patch": 3, "patch_rva": 2}
 # the primitives themselves and the host API that implements them (not hook sites)
 IMPL = {("dsl_engine.c", "*"), ("dsl_engine_win.c", "*"), ("dsl_main.c", "mod_hook"), ("dsl_main.c", "h_hook"),
         ("dsl_main.c", "h_hook_method"), ("dsl_main.c", "h_hook_rva"), ("dsl_main.c", "h_patch_rva"),
@@ -912,7 +913,25 @@ def main():
                           f"(the hook runs for all of them): hook a method with its own code, or add the key to tools/hooks/shared_ok.tsv "
                           f"with why it is safe: {h['key']}", file=sys.stderr)
                     missing.append("shared")
-        if not missing: print(f"hooklist check: ok ({len(live)} hook sites, all listed, no unreviewed shared code)")
+        # FRAME RULE (loader/NOTES.md "Loader events", SDK API 7): a frame tick, a scene / world / language change or a
+        # game window shown / hidden comes from dsl_on_event. A hook on a game Update / LateUpdate / FixedUpdate method
+        # must be in frame_ok.tsv (key TAB why an event cannot do it), else the check fails.
+        fok = {}
+        fp = os.path.join(HERE, "frame_ok.tsv")
+        if os.path.exists(fp):
+            for ln in open(fp):
+                if ln.strip() and not ln.startswith("#") and "\t" in ln: k, why = ln.rstrip("\n").split("\t", 1); fok[k] = why
+        upd = re.compile(r"\$\$(Update|LateUpdate|FixedUpdate)$")
+        for h in have["hooks"]:
+            if h["key"] not in live or h["key"] in fok: continue
+            names = [h.get("method") or ""] + [n for e in h["platforms"].values() for n in (e.get("methods") or [])]
+            hit = next((n for n in names if upd.search(n or "")), None)
+            if hit:
+                print(f"hooklist check: FRAME RULE: {h['owner']} hooks {hit} ({h['key']}): use dsl_on_event(DSL_EV_FRAME / DSL_EV_SCENE / "
+                      f"DSL_EV_VIEW_*) (loader/NOTES.md \"Loader events\"), or add the key to tools/hooks/frame_ok.tsv with why an event cannot do it",
+                      file=sys.stderr)
+                missing.append("frame")
+        if not missing: print(f"hooklist check: ok ({len(live)} hook sites, all listed, no unreviewed shared code, no new game Update hook)")
         return 1 if missing else 0
     win_dump = a.win_dump or os.environ.get("DS_WIN_DUMP") or os.path.join(os.environ.get("MP_REPO", os.path.join(HOME, "ds_multiplayer")), "win", BUILD, "dump")
     dumps = {"mac": Dump(a.mac_dump), "win": Dump(win_dump)}
