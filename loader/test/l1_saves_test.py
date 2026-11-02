@@ -20,6 +20,11 @@ Output: ~/ds_launcher/loader/test_env/l1_out/saves (or argv[1]): logs, shots, su
 import json, os, sys, time, glob, shutil, signal, subprocess, threading, hashlib, socket
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import l1_test as T
+
+def _soft_nice(n):                                         # preexec_fn: never fail the launch (runner fault SubprocessError(preexec_fn): a driver already near nice 20, e.g. zsh background jobs at +5 each; lead task 12)
+    try: os.nice(n)
+    except Exception: pass
+
 r = T.r
 X = os.environ.get('DSL_TEST_COPY', 'O')
 T.X = X; T.I = r.idir(X); T.SDIR = os.path.join(T.I, 'softrestart'); T.MODS = os.path.join(T.I, 'data', 'Mods')
@@ -86,7 +91,7 @@ def start_modded(enabled, worlds=None, extra_env=None):
     r.require_windowed(X)
     args = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
-                         stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(19), start_new_session=True)
+                         stderr=subprocess.STDOUT, preexec_fn=lambda: _soft_nice(19), start_new_session=True)
     open(r.pidfile(X), 'w').write(f'{p.pid}\n'); log('modded copy started pid', p.pid, enabled)
     if (extra_env or {}).get('DSML_BUILD'): return p.pid                     # mods off (other build): no title wait by the rig socket
     T.wait(lambda s: s.get('scene') == 1 and not s.get('busy'), 'title'); time.sleep(3)
@@ -121,7 +126,7 @@ def start_normal():
            'DYLD_INSERT_LIBRARIES': DSRIG}
     args = [os.path.join(I, r.EXE_REL), '-batchmode', '-logFile', os.path.join(GROOT, 'player.log')]
     p = subprocess.Popen(args, env=env, cwd=GROOT, stdin=subprocess.DEVNULL, stdout=open(os.path.join(GROOT, 'stdout.log'), 'ab'),
-                         stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(19), start_new_session=True)
+                         stderr=subprocess.STDOUT, preexec_fn=lambda: _soft_nice(19), start_new_session=True)
     log('normal copy started pid', p.pid)
     t0 = time.time(); st = {}
     while time.time() - t0 < 240:

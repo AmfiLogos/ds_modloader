@@ -10,6 +10,11 @@ Tests (default all): on, off, restart, failed, crash, mismatch, dmg, xvol.
 At the end every app bundle of the run is unregistered from LaunchServices (app/test/ls_forget.py)."""
 import glob, hashlib, json, os, plistlib, re, shutil, signal, subprocess, sys, time
 
+def _soft_nice(n):                                         # preexec_fn: never fail the launch (runner fault SubprocessError(preexec_fn): a driver already near nice 20, e.g. zsh background jobs at +5 each; lead task 12)
+    try: os.nice(n)
+    except Exception: pass
+
+
 W, APPS, INST_APP = (os.path.abspath(a) for a in sys.argv[1:4])
 # the stub changes its pinned copy in place (identity, starter: dsml-helper ident): an APFS clone of the instance for
 # this run, so a shared test instance stays as it is
@@ -117,7 +122,7 @@ class Run:
         if dry:
             return subprocess.run(args, env=self.env(True), capture_output=True, text=True, timeout=300).stdout
         p = subprocess.Popen(args, env=self.env(), stdin=subprocess.DEVNULL, stdout=open(os.path.join(self.d, 'stdout.log'), 'ab'),
-                             stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
+                             stderr=subprocess.STDOUT, preexec_fn=lambda: _soft_nice(5), start_new_session=True)
         log('stub started pid', p.pid); self.proc = p
 
     def stublog(self):

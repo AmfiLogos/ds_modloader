@@ -28,6 +28,11 @@ import lrig  # noqa: E402
 RIGDIR = os.path.expanduser('~/ds_multiplayer/rig')
 sys.path.insert(1, RIGDIR)
 import rig as realrig  # noqa: E402  (leases only; its copies are never touched)
+
+def _soft_nice(n):                                         # preexec_fn: never fail the launch (runner fault SubprocessError(preexec_fn): a driver already near nice 20, e.g. zsh background jobs at +5 each; lead task 12)
+    try: os.nice(n)
+    except Exception: pass
+
 rp = lrig.rigports                                              # each run's own TCP port + the EXTRA PLAYER guard (rigports.py)
 
 lrig.INST = os.path.join(L, 'test_env', 'instances')
@@ -156,7 +161,7 @@ def start(x, extra=None):
     rp.note_started(I, x)
     args = [exe(x), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
-                         stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
+                         stderr=subprocess.STDOUT, preexec_fn=lambda: _soft_nice(5), start_new_session=True)
     open(lrig.pidfile(x), 'w').write(f'{p.pid}\n'); log(x, 'started pid', p.pid)
     return p.pid
 

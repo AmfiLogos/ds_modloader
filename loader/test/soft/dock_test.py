@@ -5,6 +5,11 @@ before the swap? Fake handoff from this script (title case); B is killed once it
 import json, os, re, signal, subprocess, sys, time
 sys.path.insert(0, os.path.expanduser('~/ds_launcher/loader/test'))
 import lrig as r
+
+def _soft_nice(n):                                         # preexec_fn: never fail the launch (runner fault SubprocessError(preexec_fn): a driver already near nice 20, e.g. zsh background jobs at +5 each; lead task 12)
+    try: os.nice(n)
+    except Exception: pass
+
 raise SystemExit('dock_test.py is retired: test copies must keep LSBackgroundOnly / LSUIElement (lead 2026-10-15)')
 X = 'T'; I = r.idir(X); SD = os.path.join(I, 'softrestart'); os.makedirs(SD, exist_ok=True)
 r.prepare_data(X)
@@ -20,7 +25,7 @@ env = {'HOME': os.path.join(I, 'home'), 'CFFIXED_USER_HOME': os.path.join(I, 'ho
 args = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
 t0 = time.time()
 p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'), stderr=subprocess.STDOUT,
-                     preexec_fn=lambda: os.nice(5), start_new_session=True)
+                     preexec_fn=lambda: _soft_nice(5), start_new_session=True)
 types = []; bad = []
 while time.time() - t0 < 60 and p.poll() is None:
     out = subprocess.run(['lsappinfo', 'list'], capture_output=True, text=True).stdout

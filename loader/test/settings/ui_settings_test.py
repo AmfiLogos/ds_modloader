@@ -16,6 +16,11 @@ HERE = os.path.dirname(os.path.abspath(__file__)); L = os.path.dirname(os.path.d
 sys.path.insert(0, os.path.join(L, 'test'))
 import lrig as r
 
+def _soft_nice(n):                                         # preexec_fn: never fail the launch (runner fault SubprocessError(preexec_fn): a driver already near nice 20, e.g. zsh background jobs at +5 each; lead task 12)
+    try: os.nice(n)
+    except Exception: pass
+
+
 X = os.environ.get('DSL_TEST_COPY', 'T'); I = r.idir(X)          # DSL_TEST_COPY: another K..Z copy when T is busy
 OUT = os.path.abspath(os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, 'build', 'run')))
 UI = os.path.join(OUT, 'ui'); MODS = os.path.join(I, 'data', 'Mods'); SDIR = os.path.join(I, 'softrestart')
@@ -107,7 +112,7 @@ def start(lang):
     r.require_windowed(X)
     args = [os.path.join(I, r.EXE_REL), '-logFile', os.path.join(I, 'player.log'), '-screen-fullscreen', '0', '-screen-width', '960', '-screen-height', '540']
     p = subprocess.Popen(args, env=env, cwd=I, stdin=subprocess.DEVNULL, stdout=open(os.path.join(I, 'stdout.log'), 'ab'),
-                         stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(5), start_new_session=True)
+                         stderr=subprocess.STDOUT, preexec_fn=lambda: _soft_nice(5), start_new_session=True)
     open(r.pidfile(X), 'w').write(f'{p.pid}\n')
     log('started pid', p.pid, 'language', lang)
     wait_for(lambda: 'win: Mods window ready' in dlog(), 'Mods window ready', 240)

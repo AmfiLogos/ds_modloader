@@ -546,7 +546,7 @@ def guard(x):
         import ctypes
         try:
             os.nice(19 if bg else 5)
-        except OSError:
+        except Exception:                                     # never fail the launch (lead task 12)
             pass                                              # already at nice 19 (driver run under nice): EPERM is harmless
         if bg:
             ctypes.CDLL(None).setpriority(4, 0, 0x1000)      # PRIO_DARWIN_PROCESS, self, PRIO_DARWIN_BG
