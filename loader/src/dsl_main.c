@@ -901,7 +901,9 @@ static void open_mods_cb(void *ud, DSLObj w) { (void)ud; (void)w; if (dsl_win_op
 void dsl_safety_frame(void) {
     static int titled, done; static struct timeval since;
     if (done) return;
-    if (!(dsl_reg_scene() == 1 && dsl_soft_title_idle() && dsl_ui_title_shown())) { since.tv_sec = 0; return; }
+    int sc = dsl_reg_scene();
+    if (!titled && sc == 2) { titled = 1; boot_clear(1); }            /* a world reached (a start straight into a world): the boot is over */
+    if (!(sc == 1 && dsl_soft_title_idle() && dsl_ui_title_shown())) { since.tv_sec = 0; return; }
     if (!titled) { titled = 1; boot_clear(1); }
     struct timeval now; gettimeofday(&now, NULL);
     if (!since.tv_sec) { since = now; return; }
