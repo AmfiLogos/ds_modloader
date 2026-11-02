@@ -54,7 +54,7 @@ static int test_copy;
 static void meter_on(void) {                     /* test copies: the per-mod time meter (dsl_evreg.h) + the start times check */
     if (evr_meter) return;
     evr_meter = 1;
-    dsl_log("modtime: meter on (test copy): event callbacks timed per module; SLOW-MOD over %.0f ms per s (title, world)", EVR_SLOW_MS_S);
+    dsl_log("modtime: meter on (test copy): event callbacks timed per module; limit %.0f ms per s at the title and in a world", EVR_SLOW_MS_S);
 }
 
 static DSLEvent ev_base(int type) {

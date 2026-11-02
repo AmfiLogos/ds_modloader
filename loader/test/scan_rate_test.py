@@ -139,7 +139,7 @@ def report(text):
         print('  %-8s %7s  ' % ('state', 'secs') + '  '.join('%12s' % m for m in mods))
         for st, secs, d in summ: print('  %-8s %7.1f  ' % (st, secs) + '  '.join('%12s' % d.get(m, 0) for m in mods))
     for l in rules: print('RULE', l)
-    L = text.splitlines(); slow = [l.strip() for l in L if 'SLOW-MOD ' in l]
+    L = text.splitlines(); slow = [l.strip() for l in L if re.search(r'SLOW-MOD \S+ \d+ (title|world|start) \(', l)]
     for l in L:
         if 'modtime: ' in l or 'start times: ' in l: print('time', l.strip()[:300])
     for l in slow: print('SLOW', l)

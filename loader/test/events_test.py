@@ -101,6 +101,7 @@ def world_save(path, guid, stem, clan):
 
 
 # ------------------------------------------------------------------ the checks (also --parse)
+SLOW = re.compile(r'SLOW-MOD \S+ \d+ (title|world|start) \(')        # the loader's time meter (dsl_evreg.h, dsl_main.c)
 EV = re.compile(r'EVPROBE (view-created|view-shown|view-hidden) (\S+) kind=(\S+) id=(-?\d+) scene=(-?\d+) obj=(\S+) shown_now=(\d)')
 def parse(text, mode, guid=None):
     """dsload.log -> list of (name, ok, detail)"""
@@ -143,7 +144,7 @@ def parse(text, mode, guid=None):
     chk('modtime: title line names ev-probe (its callbacks were timed)', any(' ev-probe ' in l for l in mt), mt[0][:160] if mt else 'no line')
     st = [l.strip() for l in L if 'start times: ' in l]
     chk('start times line names ev-probe', any('ev-probe ' in l for l in st), st[-1][:200] if st else 'no line')
-    slow = [l.strip() for l in L if 'SLOW-MOD ' in l]
+    slow = [l.strip() for l in L if SLOW.search(l)]
     if mode == 'slow':
         chk('SLOW-MOD names the slow probe at the title', any('SLOW-MOD ev-probe ' in l and ' title (' in l for l in slow), '; '.join(slow[:3]))
         chk('SLOW-MOD names the slow probe\'s start', any('SLOW-MOD ev-probe ' in l and ' start (' in l for l in slow), '; '.join(slow[:3]))
