@@ -1539,7 +1539,9 @@ code, a host or a chat; never a second downloader.
   pack name clash keeps the player's group, foreign id / wrong sha256 / missing release / failed group save change
   nothing and save no group, damaged / cut / DSPACK2 / newer kit / URL codes request nothing; a static check fails when a
   file other than dsl_hostmods.c, dsl_update.c and the starters calls `dsl_update_fetch`, `dsl_update_find_mod_release`
-  or `dsl_uos_mod_install` (27/0).
+  or `dsl_uos_mod_install` (27/0). In the game: `test/pack_test.py` (hidden copy NPK; Share -> code -> Import -> plan ->
+  "Save as a group" -> the group; Escape closes the Import window first; no UI-RULE / ESC-MISSING; the switch rule with
+  two data mods): 16/16 on 2026-11-02.
 
 ## Switch rule: ON turns on what a mod requires, OFF asks about the mods that need it (tModLoader study idea 5; lead 2026-11-02; lane nvpack) - `src/dsl_deps.h` dsl_deps_turn_on / _off
 - Only `requires` (never `optional` / `conflicts`), recursive; `loader` and launcher-provided mods are never switched.

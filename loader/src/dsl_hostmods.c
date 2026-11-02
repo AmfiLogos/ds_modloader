@@ -192,7 +192,7 @@ static int is_gameplay(const DSLModInfo *m) { return m && m->scope && !strcmp(m-
 static HostMod H[HM_MAX]; static Row R[HM_MAX * 2]; static int nh, nr, names_pending;
 /* the rows; returns the number that differ, -1 bad input (the same rows for a host and a mod pack; plan_can_fix and
    get_start judge them for each end) */
-static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
+static int make_plan(const char *host_lines, int vanilla, int fetch_names, int pack) {
     nh = parse_host(host_lines, vanilla, H, HM_MAX); nr = 0; names_pending = 0;
     if (nh < 0) { nh = 0; return -1; }
     int diff = 0;
@@ -232,6 +232,7 @@ static int make_plan(const char *host_lines, int vanilla, int fetch_names) {
     }
     for (int i = 0; i < dsl_mods_count() && nr < HM_MAX * 2; i++) {      /* my running gameplay mods the host does not use */
         const DSLModInfo *m = dsl_mods_at(i); if (!m || m->active != 1 || !is_gameplay(m) || !dsl_mod_in_hello(m->id)) continue;
+        if (pack && dsl_mod_is_difficulty(m->id)) continue;            /* a pack: a custom difficulty is never in a group */
         int in = 0; for (int k = 0; k < nh; k++) in |= !strcmp(H[k].id, m->id);
         if (in) continue;
         Row *r = &R[nr++]; memset(r, 0, sizeof *r);
@@ -286,7 +287,7 @@ static int plan_json(int diff, int pack, const char *tail, char *out, size_t cap
 HM_EXPORT int dsl_hostmods_plan(const char *host_lines, int vanilla, char *out, size_t cap) {
     if (!out || cap < 64) return -1;
     out[0] = 0;
-    int diff = make_plan(host_lines, vanilla, 1);
+    int diff = make_plan(host_lines, vanilla, 1, 0);
     if (diff < 0) { snprintf(out, cap, "{\"rows\":[],\"can_fix\":0,\"downloads\":0}"); dsl_log("hostmods: plan: bad host lines"); return -1; }
     return plan_json(diff, 0, "", out, cap);
 }
@@ -365,14 +366,14 @@ static int get_busy(void) { pthread_mutex_lock(&mu); int s = st; pthread_mutex_u
 /* the shared start (main thread): the plan again, the refusals, the jobs, the download thread. 0 = started */
 static int get_start(const char *host_lines, int vanilla, const char *env_lines, int pack, char *why, size_t cap) {
     if (get_busy()) {
-        snprintf(why, cap, "%s", pack ? TR("Mods are already being installed. Wait until that ends.") : TR("The host's mods are already being installed."));
+        snprintf(why, cap, "%s", pack || gm_pack ? TR("Mods are already being installed. Wait until that ends.") : TR("The host's mods are already being installed."));
         return -1;
     }
     int test = getenv("DSL_HOSTMODS_TEST") && !strcmp(getenv("DSL_HOSTMODS_TEST"), "1");
     const char *busy = dsl_busy_reason();
     if (busy) { snprintf(why, cap, "%s", busy); dsi_utf8_fix_end(why); return -1; }
     if (!test && dsl_reg_scene() != 1) { snprintf(why, cap, "%s", TR("Go back to the title screen to change mods.")); return -1; }
-    int diff = make_plan(host_lines, vanilla, 0);
+    int diff = make_plan(host_lines, vanilla, 0, pack);
     if (diff < 0) { snprintf(why, cap, "%s", pack ? TR("This mod pack code is damaged or cut off. Ask your friend to send it again.") : TR("The host's mod list could not be read.")); return -1; }
     if (diff == 0 && !pack) { snprintf(why, cap, "%s", TR("Your mods already match the host's.")); return -1; }
     for (int i = 0; i < nr; i++) if (!strcmp(R[i].action, "not_official")) {
@@ -801,13 +802,13 @@ int dsl_pack_plan(const char *code, char *out, size_t cap) {
     if (!out || cap < 256) return -1;
     char why[700] = "", e1[1500];
     int r = pack_read(code, &PKP);
-    if (!r && make_plan(PKP.body, 0, 1) < 0) r = PK_DAMAGED;
+    if (!r && make_plan(PKP.body, 0, 1, 1) < 0) r = PK_DAMAGED;
     if (r) {
         pack_why(r, &PKP, why, sizeof why); jesc(e1, sizeof e1, why);
         snprintf(out, cap, "{\"rows\":[],\"can_fix\":0,\"downloads\":0,\"names_pending\":0,\"name\":\"\",\"kit\":\"\",\"group\":\"\",\"error\":\"%s\"}", e1);
         dsl_log("pack: plan refused (%d): %s", r, why); return -1;
     }
-    int diff = make_plan(PKP.body, 0, 1);
+    int diff = make_plan(PKP.body, 0, 1, 1);
     for (int i = 0; i < nr && !why[0]; i++) if (!strcmp(R[i].action, "not_official")) {
         snprintf(why, sizeof why, TR("%s cannot be downloaded here: it is not one of the mod loader's own mods."), R[i].name); dsi_utf8_fix_end(why);
     }
