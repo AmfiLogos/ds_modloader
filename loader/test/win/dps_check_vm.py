@@ -60,6 +60,13 @@ def attack(w, d):
     # the VM's small window can start with the scarecrow off screen (Mac copies show it): pan the game camera with the
     # arrow keys (then W/S) until it is inside the client area; the game window gets the keyboard by a click on its centre
     w.a('click', x=int(left + 864), y=int(bottom - ch / 2)); time.sleep(0.5)
+    # centre the camera on the squad (it stands next to the scarecrow): a double click on the first squad portrait in the
+    # top bar (seen on the VM 2026-11-02 at client ~(1168, 90) in a 1728-wide window); then the unit is selected
+    if not 150 < sc['s'][1] < ch - 150:
+        w.a('click', x=int(left + 1168), y=int(win['y'] + 121), double=True); time.sleep(2.0)
+        sc2, us2 = look()
+        if sc2: sc, us = sc2, us2
+        log('attack: after portrait double click', 'scarecrow', sc.get('s'), 'units', [u.get('s') for u in us])
     for vk_up, vk_dn in ((0x26, 0x28), (0x57, 0x53)):
         for _ in range(60):
             y = sc['s'][1]
@@ -72,9 +79,12 @@ def attack(w, d):
         if 150 < sc['s'][1] < ch - 150: break
     try: w.shot(os.path.join(OUT[0], 'screen_before_order.png'))
     except Exception as e: log('shot:', e)
+    sc, us = look() if look()[0] else (sc, us)
     for u in us:
         w.a('click', x=to(u['s'])[0], y=to(u['s'])[1]); time.sleep(1.0)
+        w.a('click', x=to(sc['s'])[0], y=to(sc['s'])[1] - 2, button='right'); time.sleep(0.3)   # hover, then the order
         w.a('click', x=to(sc['s'])[0], y=to(sc['s'])[1], button='right'); time.sleep(1.0)
+    w.a('click', x=to(sc['s'])[0], y=to(sc['s'])[1]); time.sleep(1.0)            # the scarecrow selected (the Mac flow)
     log('attack: ordered', len(us), 'unit(s); state', {k: call(d, 'tf_dps_test', 'state').get(k) for k in ('hits', 'bpanel_on', 'sr')})
 
 
