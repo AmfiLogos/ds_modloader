@@ -202,6 +202,11 @@ check "Hell installed but not running: never offered to a host" '[[ "$r" == *"OP
 print -r -- "$HSESS" > "$OUT/session_hell.json"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="4,1;2,3")
 check "game without Hell running: worlds not on Hell load, although registered with it" '[[ "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]]'
+# Hell gap (lane nvboot, ext/nvsavekeep/AUDIT.md): a Hell world missing from worlds.json (file lost, saves from another
+# machine) in a start where Hell does not run (boot guard, crash guard). Break caught: it loads into a game that cannot read it.
+print -r -- '{"world":null,"modset":"aaa","rule":"mods","worlds":{}}' > "$OUT/session_hell.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_hell.json" FAKE_LEVELS="5,1;4,1")
+check "game without Hell running: an unregistered world on Hell is refused (flow K asks with Hell), an unregistered level-4 world loads" '[[ "$r" == *"WORLD save1_state=-2 save2_state=0 cancels=1"* ]] && log | grep -q "not registered, on a custom difficulty that does not run here" && log | grep -q "REFUSED save1 (world 11111111-1111-1111-1111-111111111111): the world.s mod set early-mod+hellmod"'
 mv "$OUT/profile.json.keep" "$M/profile.json"; mv "$M/hellmod" "$OUT/hellmod.off"
 
 print "== T1s test copies are silent, the owner's game is not (src/dsl_soft.c silent_install)"
@@ -259,6 +264,24 @@ check "env pin differs: no module, no hook, game runs, clear reason" '[[ "$r" ==
 print -r -- '{"build":"88888888","modset":"aaa","worlds":{}}' > "$OUT/session_pin.json"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_SESSION="$OUT/session_pin.json")
 check "session pin differs: same refusal (world check not installed either)" '[[ "$r" == *"orig_safe=2"* && "$r" == *"WORLD save1_state=0 save2_state=0 cancels=0"* ]] && log | grep -q "this world for build 88888888" && ! log | grep -q "hooked"'
+# mods-off start (here: pin of another build; the same for an unknown build) and the Hell gap (lane nvboot,
+# ext/nvsavekeep/AUDIT.md): no hook can refuse a load in that session, so the start notice warns before. Breaks caught:
+# a Hell world (or a ZET-U world) is not named and gets opened in a game that cannot read it; a world not on Hell named.
+OD="$OUT/offdata"; OM="$OUT/offmods"; mkdir -p "$OD/Saves" "$OD/Mods" "$OM/hellmod" "$OM/zmod" "$OM/plainmod"
+print -r -- '{"id":"hellmod","name":"Hell difficulty","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"save_dependent":true,"difficulty":{"value":5,"name":"Hell"}}' > "$OM/hellmod/mod.json"
+print -r -- '{"id":"zmod","name":"Zed","version":"1.0.0","kind":"code","api":2,"game_builds":["test"],"save_dependent":true}' > "$OM/zmod/mod.json"
+print -r -- '{"id":"plainmod","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}' > "$OM/plainmod/mod.json"
+print -r -- '{"enabled":["zmod","plainmod"]}' > "$OM/profile.json"
+osave() { print -r -- "{\"Units\":[1],\"CampaignSaveHeader\":{\"CampaignGuid\":\"$2\",\"ClanName\":\"$3\",\"SaveTime\":\"x\",\"CombatDifficulty\":$4,\"ManagementDifficulty\":$5}}" > "$OD/Saves/$1.json"; }
+osave "Hellish__AutoSave_aaaaaaaa111122223333444455556666_0" aaaaaaaa-1111-2222-3333-444455556666 'Hell\u00e9 \"Home\"' 5 1
+osave "Hellish__AutoSave_aaaaaaaa111122223333444455556666_1" aaaaaaaa-1111-2222-3333-444455556666 'Hell\u00e9 \"Home\"' 5 1
+osave "Mine" bbbbbbbb-1111-2222-3333-444455556666 "Manager" 2 5
+osave "Four__AutoSave_cccccccc111122223333444455556666_0" cccccccc-1111-2222-3333-444455556666 "Fourth" 4 4
+osave "Zed__AutoSave_dddddddd111122223333444455556666_0" dddddddd-1111-2222-3333-444455556666 "Zedland" 1 1
+osave "Plain__AutoSave_eeeeeeee111122223333444455556666_0" eeeeeeee-1111-2222-3333-444455556666 "Plainland" 1 1
+print -r -- '{"worlds":{"dddddddd-1111-2222-3333-444455556666":"zmod","eeeeeeee-1111-2222-3333-444455556666":"plainmod","cccccccc-1111-2222-3333-444455556666":"hellmod"}}' > "$OD/Mods/worlds.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=99999999 DSML_DATA="$OD" DSL_MODS_DIR="$OM" DSML_SESSION="$OD/Mods/worlds.json")
+check "mods-off start: the notice names the worlds on Hell (combat or management) and the zmod world, in the save warning's words; not the level-4 world registered with Hell, not a world of a mod that is not save_dependent" '[[ "$r" == *"Do not load these worlds until the mods are on again: "* && "$r" == *"Saves made with Hell difficulty and Zed may not work without the mod loader."* && "$r" == *"Hellé \"Home\""* && "$r" == *Manager* && "$r" == *Zedland* && "$r" != *Fourth* && "$r" != *Plainland* ]] && grep -q "Hell difficulty and Zed may not work" "$LOGD/dsload_status.json" && log | grep -q "saves: mods off: 3 listed world(s) a save_dependent mod marks as its own (hellmod+zmod)"'
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib" DSML_BUILD=test)
 check "pin equal to the copy: modules load" 'log | grep -q "floor-logger 1.0.0: loaded" && grep -q "\"pinned_build\":\"test\"" "$LOGD/dsload_status.json"'
 

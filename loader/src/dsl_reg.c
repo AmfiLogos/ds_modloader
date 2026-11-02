@@ -689,6 +689,18 @@ int dsl_world_key_match(const char *guid, const char *eff, const char *mine) {
     char m2[512]; key_diff(guid, mine, 1, m2, sizeof m2);
     return dsl_key_same(eff, m2);
 }
+/* a world NOT in worlds.json (the file lost, saves brought from another machine) on the level of an installed custom
+   difficulty mod that does not run here (boot guard, crash guard, its start failed): the set to load it with = this game's
+   set + those mods, for flow K ("This world uses: ... Load it with them?"); returns how many. The world check refuses it
+   like a registered one (owner item 37 audit, Hell gap, lane nvboot 2026-11-02: never loaded into a game that cannot read it). */
+int dsl_world_diff_missing(const char *guid, const char *mine, char *key, size_t cap) {
+    mods_scan(); int n = 0;
+    char k[512]; key_norm(mine && *mine ? mine : run_key, k, sizeof k);
+    if (!strcmp(k, "vanilla")) k[0] = 0;
+    for (int i = 0; i < nmi; i++) if (MI_diff[i] && MI[i].active != 1 && world_uses_diff(guid, i) == 1) { plus_add(k, sizeof k, MI[i].id); n++; }
+    key_norm(k, key, cap);
+    return n;
+}
 /* the multiplayer set is about this world now ("" = none: the title): worlds.json "modset" / "modset_lines" written again when
    that changes it (a host on a Hell world sends Hell, on any other world not; multiplayer reads them when a session starts) */
 void dsl_world_hello(const char *guid) {
@@ -1239,6 +1251,8 @@ __attribute__((weak)) void dsl_saves_test_answer(int load) { (void)load; }
 __attribute__((weak)) void dsl_saves_frame(void) {}
 /* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one */
 __attribute__((weak)) DSLObj dsl_win_test_control(const char *name) { (void)name; return NULL; }
+/* weak default: builds without loader/ui (host tests) link; ui/dsl_win.c gives the real one (the note on its status line) */
+__attribute__((weak)) void dsl_win_open_note(const char *tab_id, const char *note) { (void)note; if (dsl_win_open) dsl_win_open(tab_id); }
 /* weak defaults: builds without loader/ui (host tests) link; ui/dsl_newgame.c gives the real ones */
 __attribute__((weak)) void dsl_newgame_install(void) {}
 __attribute__((weak)) void dsl_newgame_frame(void) {}
