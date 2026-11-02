@@ -52,6 +52,7 @@ struct DSLPlugin {
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
     dsl_module_load_fn load; dsl_module_early_fn early; dsl_plugin_init_fn init;
+    double ms_open, ms_load, ms_early, ms_init;   /* start times (wall clock, ms): dlopen, dsl_module_load / early / init */
 };
 static struct DSLPlugin P[MAXP];
 static int np;
@@ -482,6 +483,36 @@ static void scan_mods(const char *build) {
     dsl_log("load order: %s", norder ? ol : "(none)");
 }
 
+/* ------------------------------------------------------------------ start times (tModLoader study idea 8)
+   Each module's dlopen, dsl_module_load, dsl_module_early and dsl_plugin_init are timed (wall clock). After the last
+   init one line in EVERY dsload.log (players' bug reports too): "start times: <id> <ms> ms (open a, load b, early c,
+   init d), ... ; slowest <id> <ms> ms; modules <ms> ms in all" (slowest first; the module's own time = load + early +
+   init, dlopen is the system's file checks). Test copies: a module whose own time passes START_SLOW_MS logs
+   "SLOW-MOD <id> <ms> start (...)" (dsl_start_times_check, first event frame); the tests fail on it. */
+#define START_SLOW_MS 2000.0
+static double ms_now(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6; }
+static double own_ms(const struct DSLPlugin *p) { return p->ms_load + p->ms_early + p->ms_init; }
+static void start_times_log(void) {
+    struct DSLPlugin *s[MAXP]; int n = 0; double all = 0;
+    for (int i = 0; i < norder; i++) if (ORDER[i]->h) { s[n++] = ORDER[i]; all += own_ms(ORDER[i]) + ORDER[i]->ms_open; }
+    if (!n) return;
+    for (int i = 1; i < n; i++) for (int j = i; j > 0 && own_ms(s[j]) > own_ms(s[j - 1]); j--) { struct DSLPlugin *t = s[j]; s[j] = s[j - 1]; s[j - 1] = t; }
+    char b[1600]; size_t o = 0; b[0] = 0;
+    for (int i = 0; i < n && o + 120 < sizeof b; i++)
+        o += (size_t)snprintf(b + o, sizeof b - o, "%s%s %.0f ms (open %.0f, load %.0f, early %.0f, init %.0f)", i ? ", " : "", s[i]->id,
+                              own_ms(s[i]), s[i]->ms_open, s[i]->ms_load, s[i]->ms_early, s[i]->ms_init);
+    dsl_log("start times: %s; slowest %s %.0f ms; modules %.0f ms in all (open included)", b, s[0]->id, own_ms(s[0]), all);
+}
+void dsl_start_times_check(void) {
+    for (int i = 0; i < norder; i++) {
+        struct DSLPlugin *p = ORDER[i];
+        if (p->h && own_ms(p) > START_SLOW_MS)
+            dsl_log("SLOW-MOD %s %.0f start (ms of its own start: load %.0f, early %.0f, init %.0f; limit %.0f; dlopen %.0f not counted): "
+                    "a start this slow delays every player's game; do the work later or on another thread",
+                    p->id, own_ms(p), p->ms_load, p->ms_early, p->ms_init, START_SLOW_MS, p->ms_open);
+    }
+}
+
 /* ------------------------------------------------------------------ phases */
 static int fail(struct DSLPlugin *p, const char *phase, int r) {
     int n = dsl_unhook_owner(p->idx); p->state = 2;
@@ -496,7 +527,9 @@ static void open_modules(void) {
         char what[128]; snprintf(what, sizeof what, "module %s", p->id);
         if (guard_check(p->id, p->sig, what)) { p->state = 3; p->crash_off = 1; continue; }
         guard_enter(p->id, "loading the dylib");
+        double t0 = ms_now();
         p->h = dsl_os_dlopen(p->file);
+        p->ms_open = ms_now() - t0;
         if (!p->h) { guard_leave(p->id); p->state = 2; dsl_log("%s: FAILED to load: %s", p->id, dsl_os_dlerror()); continue; }
         const uint32_t *api = dsl_os_dlsym(p->h, "dsl_plugin_api_version");
         p->load = (dsl_module_load_fn)dsl_os_dlsym(p->h, "dsl_module_load");
@@ -511,7 +544,9 @@ static void open_modules(void) {
         p->state = 1;
         if (p->load) {
             guard_enter(p->id, "dsl_module_load");
+            double t1 = ms_now();
             int r = p->load(&host, p);
+            p->ms_load = ms_now() - t1;
             guard_leave(p->id);
             if (r) { fail(p, "dsl_module_load", r); continue; }
         } else guard_leave(p->id);
@@ -527,13 +562,16 @@ static void run_init(void) {
         n++;
         if (p->init) {
             guard_enter(p->id, "dsl_plugin_init");
+            double t1 = ms_now();
             int r = p->init(&host, p);
+            p->ms_init = ms_now() - t1;
             guard_leave(p->id);
             if (r) { fail(p, "dsl_plugin_init", r); continue; }
         }
         ok++; dsl_log("%s %s: loaded (%d hook(s))", p->id, p->version, dsl_hook_count(p->idx));
     }
     dsl_log("modules: %d loaded of %d opened; %d hook(s) active in the process", ok, n, dsl_hook_count(-2));
+    start_times_log();
 }
 
 /* dsload_modset.json: what really runs, for the multiplayer join check (scope gameplay = every player needs it).
@@ -768,7 +806,9 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
         struct DSLPlugin *p = ORDER[i];
         if (p->state != 1 || !p->early) continue;
         guard_enter(p->id, "dsl_module_early");
+        double t1 = ms_now();
         int r = p->early(&host, p);
+        p->ms_early = ms_now() - t1;
         guard_leave(p->id);
         if (r) { fail(p, "dsl_module_early", r); continue; }
         dsl_log("%s: early start done (%d hook(s))", p->id, dsl_hook_count(p->idx));

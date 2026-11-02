@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef void *Obj;
 
@@ -41,6 +42,7 @@ static struct {
 static int evr_running(DSLPlugin *self) { return !self || dsl_plugin_running(self); }
 static int evr_class_is(void *vk, void *want) { return vk && want && I.assignable && I.assignable(want, vk); }
 static const char *evr_name(DSLPlugin *self) { return dsl_plugin_name(self); }
+static uint64_t evr_clock_ns(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec; }
 #define evr_log dsl_log
 #include "dsl_evreg.h"
 
@@ -49,6 +51,11 @@ static uint64_t frame;
 static int scene_last = -1, lang_last = -1;
 static char world[40];                           /* the open world's guid after WORLD_LOADED, "" = none */
 static int test_copy;
+static void meter_on(void) {                     /* test copies: the per-mod time meter (dsl_evreg.h) + the start times check */
+    if (evr_meter) return;
+    evr_meter = 1;
+    dsl_log("modtime: meter on (test copy): event callbacks timed per module; SLOW-MOD over %.0f ms per s (title, world)", EVR_SLOW_MS_S);
+}
 
 static DSLEvent ev_base(int type) {
     DSLEvent e; memset(&e, 0, sizeof e);
@@ -218,6 +225,7 @@ void dsl_events_install(void) {
     dsl_view_install();
     on = 1; lang_last = dsi_lang();
     test_copy = dsl_soft_test_copy() != NULL;
+    if (test_copy) meter_on();
     k_ui = dsl_find_class("Refactor.UI", "UI_Base"); k_static = dsl_find_class("Refactor.UI", "StaticUI_Base");
     mi_popid = k_ui ? dsl_find_method(k_ui, "get_PopUpID", 0) : NULL; mi_staid = k_ui ? dsl_find_method(k_ui, "get_StaticID", 0) : NULL;
     const char *nh = getenv("DSL_EV_NOHOOK");
@@ -249,7 +257,12 @@ void dsl_events_install(void) {
 void dsl_events_frame(void) {
     if (!on) return;
     frame++;
-    if (!test_copy && dsl_soft_test_copy()) test_copy = 1;
+    if (!test_copy && dsl_soft_test_copy()) { test_copy = 1; meter_on(); }
+    if (test_copy) {
+        static int judged; if (!judged) { judged = 1; dsl_start_times_check(); }   /* the modules' start times (dsl_main.c) */
+        int sn = dsl_reg_scene();
+        evr_meter_tick(evr_clock_ns(), dsl_soft_loading() ? 0 : sn == DSL_SCENE_WORLD ? 2 : sn == DSL_SCENE_TITLE ? 1 : 0);
+    }
     records_check();
     int s = dsl_reg_scene();
     char g[40] = ""; int have = s == DSL_SCENE_WORLD && dsl_reg_world_guid(g);

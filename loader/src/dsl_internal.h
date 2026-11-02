@@ -202,6 +202,7 @@ const char *dsl_moddata_root(void);                      /* <data>/ModData (UTF-
 void dsl_events_host(struct DSLHost *h);                 /* constructor: fills the API 7 host fields */
 void dsl_events_install(void);                           /* il2cpp ready, after dsl_reg_ready, before the modules' init */
 void dsl_events_frame(void);                             /* the kit tick (end of dsl_frame_hook): frame, scene, world, language */
+void dsl_start_times_check(void);                       /* dsl_main.c, test copies (first event frame): SLOW-MOD <id> <ms> start */
 int dsl_plugin_running(struct DSLPlugin *self);          /* dsl_main.c: 1 = the module runs (not failed, not turned off) */
 int dsl_reg_scene(void);                                 /* dsl_reg.c: MainFlow's scene (1 title, 2 world, 9 loading), -1 = none */
 int dsl_reg_world_guid(char out[40]);                    /* dsl_reg.c: the open world's guid; 0 = none */
