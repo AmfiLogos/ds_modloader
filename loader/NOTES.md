@@ -1586,3 +1586,22 @@ code, a host or a chat; never a second downloader.
   they do not run). `dsl_main.c dsl_deps_switch` reads every installed mod.json (as `dsl_deps_for_set` does).
 - Guard: `test/run_tests.sh` T0d (`test/deps/switch_test.c`): chain on, missing named, dependents through another mod
   offered, optional / off ones not, cycles end. UI test op `dep_answer {"yes": true|false}` answers the question.
+
+## Mod data when a mod is off, uninstalled or back on (owner 2026-11-02, PLAN_v013 item 37, lane nvsavekeep)
+Owner: "keep a removed or turned-off mod's save data" (tModLoader keeps a missing mod's world data and gives it back when
+the mod returns: `Default/UnloadedSystem.cs`, `IO/WorldIO.cs` SaveModData / LoadModData).
+- RULE: a mod's data for a world comes back when the mod is on again, also after the world was played without it.
+  Keep it OUTSIDE the save, in `dsl_mod_data_dir` (`<data>/ModData/<id>/`), keyed by the world guid; never drop or
+  ignore an entry because the world moved on (more ticks, more saves). Data keyed per SAVE (a world's history): take the
+  newest entry at or before the loaded save, never a later one, never "too old" (template: ds_multiplayer
+  `src/mp_owners_pick.h`). A mod that must write into the save itself sets `save_dependent` (world refused where it does
+  not run; Load warning; `save_backup`).
+- The loader's side: ModData and `Mods/<id>/` are never touched by off / on / update; worlds.json keeps a world's set,
+  fix offs and warnings of mods that are off or missing; settings of mods not installed are kept (dsl_settings.c); a
+  world whose set has a mod that does not run is refused (flow K, "Install the missing mods to load it").
+- Audit of every shipped mod (2026-11-02): ds_multiplayer `ext/nvsavekeep/AUDIT.md`. One loss found and fixed:
+  multiplayer unit claims were reset by any single-player play between two sessions (owner table kept only 1200 ticks);
+  guard `make -C src/mp_test owners` (ds_multiplayer). ZET-U off with 8 units on an expedition: proven fine on a hidden
+  copy (stock result window shows 4 of 8 portraits; all 8 kept).
+- Known gap (not built): the mods-off path (unknown game build) has no world check, and a Units Laboratory test world left
+  by a quit inside a fight shows there; covered by the game-update design (version switch).
