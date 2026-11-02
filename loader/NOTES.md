@@ -844,6 +844,29 @@ One rule, `src/dsl_deps.h` (header only), used by the loader core (`dsl_main.c`)
   loader decides again in the game with the build known (a BepInEx mod already started then keeps running).
 - Host test: `test/run_tests.sh` (bie-core 0.4.0 too old for a BepInEx mod, a code mod, an optional user).
 
+## Start safety: cascade, crash-guard notice, boot guard (kit 0.1.32, lane nvsafety, 2026-11-02; tModLoader study ideas 3 + 4) - `src/dsl_main.c`
+Source: `~/ds_multiplayer/research/tmodloader_study.md` rows 3 + 4 (tML `ModLoader.cs` CollectEnabledDependents with
+includeWeak false; `Core/ModOrganizer.cs` skip load).
+- CASCADE (idea 3a): a code mod that did not start (load / early / init returned non-zero, no binary or entry point,
+  the crash guard turned it off) takes every code mod that REQUIRES it off too, recursively (`cascade_off`). A dependent
+  already opened loses its hooks like a failed one. `optional` never cascades. The Mods window row says "needs <mod>,
+  which cannot run" (`dsl_mod_dep_text`). Log: `<id>: OFF this session: it requires <id>, which did not start`.
+- CRASH-GUARD NOTICE (idea 3b): at the first idle title (`dsl_safety_frame`, dsl_reg.c frame list), when no other notice
+  or window shows, ONE kit notice names the mods the crash guard turned off at this start: buttons "Mods" (opens the
+  Mods window) and "OK" (Escape). Log `SAFETY-NOTICE crash-guard: <names>`.
+- BOOT GUARD (idea 4): `dsload_state/_boot.pending` is written once the modules' init is done (a module runs); the first
+  idle title and a normal quit (atexit) remove it. A start that finds it adds one to `_boot.count`; the title removes the
+  count. At 2 (two starts in a row died after the modules started, before the title) the start runs with every code mod
+  off (state 3, row reason "off for this start: ..."), the loader's own parts (Mods window) still run, the count is
+  reset, and one notice at the title says why; its one button "Mods" (and Escape) opens the Mods window. Log
+  `BOOT GUARD: ...`, `SAFETY-NOTICE boot-guard`. Off in test copies (-batchmode, `DSRIG_CTL`, `DSRIG_PORT`) and in a soft
+  restart B (a prewarmed B that A drops dies on purpose); `DSL_BOOTGUARD=1` forces it on, `=0` off.
+- Not covered: BepInEx / MelonLoader plugins (the OS start part decides them) and deaths inside a module's load / early /
+  init (the per-module crash guard above has those).
+- GUARDS: host test `test/run_tests.sh` T1 (cascade after a failed init), T4 (cascade after the crash guard; an optional
+  user still loads), T11 (boot guard: 1 dead start = counted only, 2 = mods off, then on again); game test
+  `test/safety_test.py` on a hidden copy (boot and crash runs; `RESULT safety PASS|FAIL`).
+
 ## Mod data folder + multiplayer sync (v0.1.16, lane moddata, 2026-10-18)
 Owner: give each mod its own data folder that survives mod updates, and let multiplayer send it to guests on join.
 First user: a BepInEx mod (Delvers) that keeps settings and campaign markers next to the saves.
