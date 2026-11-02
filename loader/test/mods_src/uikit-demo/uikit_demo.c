@@ -400,12 +400,14 @@ static void state(char *out, size_t cap) {
       o += (size_t)snprintf(out + o, cap - o, ",\"win\":[%.0f,%.0f,%.0f,%.0f,%.1f]", f.origin.x, f.origin.y, f.size.width, f.size.height, sc); }
     { typedef struct { float x, y, z; } V3; static V3 (*mp)(const void *); if (!mp) mp = H->find_method_address("UnityEngine", "Input", "get_mousePosition", 0);
       V3 m = mp ? mp(NULL) : (V3){ 0, 0, 0 }; o += (size_t)snprintf(out + o, cap - o, ",\"mouse\":[%.0f,%.0f]", m.x, m.y);
-      /* the game camera's place (Camera.main): a held camera key (W) moves it (lane nvdrag: a size key kept from the game) */
-      static Obj (*cm)(const void *); static Obj (*ct)(Obj, const void *); static V3 (*tp)(Obj, const void *);
-      if (!cm) { cm = H->find_method_address("UnityEngine", "Camera", "get_main", 0); ct = H->find_method_address("UnityEngine", "Component", "get_transform", 0);
-                 tp = H->find_method_address("UnityEngine", "Transform", "get_position", 0); }
-      Obj c = cm ? cm(NULL) : NULL, ctr = c && ct ? ct(c, NULL) : NULL; V3 cp = ctr && tp ? tp(ctr, NULL) : (V3){ 0, 0, 0 };
-      o += (size_t)snprintf(out + o, cap - o, ",\"cam\":[%.2f,%.2f,%d]", cp.x, cp.y, ctr != NULL); }
+      /* the game camera's place (Refactor.MainCamera.CameraWorldPosition, only while its instance lives): a held camera key
+         (W) moves it (lane nvdrag: a size key kept from the game) */
+      static Obj (*ci)(const void *); static V3 (*cw)(const void *);
+      if (!ci) { ci = H->find_method_address("Refactor", "MainCamera", "get_Instance", 0); cw = H->find_method_address("Refactor", "MainCamera", "get_CameraWorldPosition", 0);
+                 void *k = H->find_class("Refactor", "MainCamera"); void (*cinit)(void *) = (void (*)(void *))dlsym(RTLD_DEFAULT, "il2cpp_runtime_class_init");
+                 if (k && cinit) cinit(k); else ci = NULL; }                 /* its statics exist before the first read */
+      int has = ci && cw && ci(NULL) != NULL; V3 cp = has ? cw(NULL) : (V3){ 0, 0, 0 };
+      o += (size_t)snprintf(out + o, cap - o, ",\"cam\":[%.3f,%.3f,%d]", cp.x, cp.y, has); }
     {   /* what the stock input module has under the pointer (PointerInputModule.GetLastPointerEventData(-1).pointerEnter) */
         static Obj (*cur)(const void *), (*mod)(Obj, const void *), (*last)(Obj, int, const void *), (*enter)(Obj, const void *), (*nm)(Obj, const void *), (*press)(Obj, const void *);
         if (!cur) { cur = H->find_method_address("UnityEngine.EventSystems", "EventSystem", "get_current", 0);
