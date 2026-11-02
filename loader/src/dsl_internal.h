@@ -128,6 +128,7 @@ void dsl_saves_loading(const char *save_name, const char *guid);   /* dsl_world.
 int dsl_saves_load_gate(const char *save_name);          /* dsl_world.c: 1 = hold this load (save warning first) */
 void dsl_saves_hidden(int *off, int *unread);            /* dsl_rows.c: game worlds not on the Load list (off / unreadable) */
 void dsl_saves_off_note(int win, char *out, size_t cap); /* dsl_main.c: mods off this session: the worlds not listed, "" = none */
+void dsl_saves_off_marked(int win, char *out, size_t cap); /* ... and the listed worlds a turned-off save_dependent mod marks (Hell) */
 int dsl_saves_hidden_worlds(const char *dir, const char *not_in);   /* worlds of a save folder that are not also in not_in */
 int dsl_module_syms(const char *name, void **out, int max);         /* dsl_main.c: an optional export of each running module */
 void dsl_rows_install(void);                             /* after dsl_ui_install */
@@ -162,6 +163,7 @@ void dsl_world_mismatch(const char *save_name, const char *guid, const char *key
 /* dsl_reg.c, custom difficulty (mod.json "difficulty": Hell): a world uses it only on its level (combat or management) */
 void dsl_world_note_level(const char *guid, int combat, int management);   /* a world's levels (save header, open world) */
 int dsl_world_key_match(const char *guid, const char *eff, const char *mine);   /* the world's set = this game's set, as for it */
+int dsl_world_diff_missing(const char *guid, const char *mine, char *key, size_t cap);   /* dsl_reg.c: an unregistered world on a custom difficulty that does not run here: the set to load it with; count */
 void dsl_world_hello(const char *guid);                  /* the multiplayer set is about this world now ("" = the title) */
 int dsl_mod_is_difficulty(const char *id);               /* mod.json "difficulty": runs whenever installed */
 const char *dsl_mod_difficulty_name(const char *id);     /* its level's name ("Hell") */

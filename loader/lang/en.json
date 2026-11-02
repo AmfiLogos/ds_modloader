@@ -44,6 +44,7 @@
  "%s new version": "%s new version",
  "%s off": "%s off",
  "%s on": "%s on",
+ "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s stopped the game while it was starting last time. It stays off until it is updated.",
  "%s, %s": "%s, %s",
  "%s. Turn it on.": "%s. Turn it on.",
  "%s: %s": "%s: %s",
@@ -101,6 +102,7 @@
  "Delete the group \"%s\"? The mods stay installed.": "Delete the group \"%s\"? The mods stay installed.",
  "Delete this group": "Delete this group",
  "Discord name (optional)": "Discord name (optional)",
+ "Do not load %s until the mods are on again.||Do not load these worlds until the mods are on again: %s.": "Do not load %s until the mods are on again.||Do not load these worlds until the mods are on again: %s.",
  "Done": "Done",
  "Down arrow": "Down arrow",
  "Download and save as a group": "Download and save as a group",
@@ -271,6 +273,7 @@
  "Thanks, your report was sent (id %s).": "Thanks, your report was sent (id %s).",
  "The %s download is damaged. Try again.": "The %s download is damaged. Try again.",
  "The download failed. The game tries again next time.": "The download failed. The game tries again next time.",
+ "The game closed twice in a row while starting with mods, so this start runs without mods. Turn off the mod that causes it, then press Apply.": "The game closed twice in a row while starting with mods, so this start runs without mods. Turn off the mod that causes it, then press Apply.",
  "The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log.": "The game copy could not be made. See ~/Library/Logs/DungeonSettlersModded.log.",
  "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).": "The game could not be started. See starter.log in the Dungeon Settlers Modded folder (profiles\\modded).",
  "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.": "The game could not be started. See ~/Library/Logs/DungeonSettlersModded.log.",
@@ -388,6 +391,7 @@
  "none": "none",
  "not loaded: it needs another mod, clashes with one, or crashed last time": "not loaded: it needs another mod, clashes with one, or crashed last time",
  "not loaded: not made for this game version or this computer": "not loaded: not made for this game version or this computer",
+ "off for this start: the game closed twice in a row while starting with mods": "off for this start: the game closed twice in a row while starting with mods",
  "the %s download could not be unpacked": "the %s download could not be unpacked",
  "the %s download could not start": "the %s download could not start",
  "the %s download is not that mod": "the %s download is not that mod",
@@ -416,8 +420,5 @@
  "this update needs the installer (new game version)": "this update needs the installer (new game version)",
  "this world": "this world",
  "unknown error": "unknown error",
- "works only with %s, but version %s is installed": "works only with %s, but version %s is installed",
- "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s stopped the game while it was starting last time. It stays off until it is updated.",
- "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.": "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.",
- "off for this start: the game closed twice in a row while starting with mods": "off for this start: the game closed twice in a row while starting with mods"
+ "works only with %s, but version %s is installed": "works only with %s, but version %s is installed"
 }

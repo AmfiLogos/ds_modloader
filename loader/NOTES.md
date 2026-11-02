@@ -871,14 +871,19 @@ includeWeak false; `Core/ModOrganizer.cs` skip load).
   idle title and a normal quit (atexit) remove it. A start that finds it adds one to `_boot.count`; the title removes the
   count. At 2 (two starts in a row died after the modules started, before the title) the start runs with every code mod
   off (state 3, row reason "off for this start: ..."), the loader's own parts (Mods window) still run, the count is
-  reset, and one notice at the title says why; its one button "Mods" (and Escape) opens the Mods window. Log
-  `BOOT GUARD: ...`, `SAFETY-NOTICE boot-guard`. Off in test copies (-batchmode, `DSRIG_CTL`, `DSRIG_PORT`) and in a soft
+  reset, and at the title the Mods window OPENS BY ITSELF with the reason as its status line (owner 2026-11-02, "Ok" to
+  "the Mods window should open by itself, with the message shown on it"; lane nvboot): no notice box first, so one
+  Escape closes it. Any loader part opens it with a reason through `dsl_win_open_note(tab, note)` (ui/dsl_win.c; the
+  failed-Apply note's path: carry_note -> status line, kept until the player changes something). Log
+  `BOOT GUARD: ...`, `SAFETY-NOTICE boot-guard`, `win: opens with the note: ...`. Off in test copies (-batchmode, `DSRIG_CTL`, `DSRIG_PORT`) and in a soft
   restart B (a prewarmed B that A drops dies on purpose); `DSL_BOOTGUARD=1` forces it on, `=0` off.
 - Not covered: BepInEx / MelonLoader plugins (the OS start part decides them) and deaths inside a module's load / early /
   init (the per-module crash guard above has those).
 - GUARDS: host test `test/run_tests.sh` T1 (cascade after a failed init), T4 (cascade after the crash guard; an optional
   user still loads), T11 (boot guard: 1 dead start = counted only, 2 = mods off, then on again); game test
-  `test/safety_test.py` on a hidden copy (boot and crash runs; `RESULT safety PASS|FAIL`).
+  `test/safety_test.py` on a hidden copy (boot and crash runs; `RESULT safety PASS|FAIL`; boot fails when the Mods window
+  does not open by itself, when its status line (window test driver DSL_UI_TEST "state") lacks the reason, or when a
+  notice box comes first).
 
 ## Mod data folder + multiplayer sync (v0.1.16, lane moddata, 2026-10-18)
 Owner: give each mod its own data folder that survives mod updates, and let multiplayer send it to guests on join.
@@ -1603,5 +1608,19 @@ the mod returns: `Default/UnloadedSystem.cs`, `IO/WorldIO.cs` SaveModData / Load
   multiplayer unit claims were reset by any single-player play between two sessions (owner table kept only 1200 ticks);
   guard `make -C src/mp_test owners` (ds_multiplayer). ZET-U off with 8 units on an expedition: proven fine on a hidden
   copy (stock result window shows 4 of 8 portraits; all 8 kept).
-- Known gap (not built): the mods-off path (unknown game build) has no world check, and a Units Laboratory test world left
-  by a quit inside a fight shows there; covered by the game-update design (version switch).
+- Hell gap (lane nvboot 2026-11-02; choice: ds_multiplayer ext/nvboot/QUESTION.md, default built = warn):
+  - Mods-off start (unknown game build, the launcher's pin of another build, a failed start condition, the loader's own
+    crash guard): no hook is written in that session, so nothing can refuse a load. The start notice ("Dungeon Settlers:
+    mods are off") warns BEFORE: it names the worlds the game lists now that an installed save_dependent mod marks as its
+    own (a custom difficulty: the world is on its level, from the save header; any other save_dependent mod: the world's
+    set in worlds.json has it), then the mod's own words where it does not run (dsl_save_warning: "Saves made with Hell
+    difficulty may not work without the mod loader."). `dsl_saves_off_marked` (dsl_saves.c, files only), added by
+    hidden_note (dsl_main.c). Log `saves: mods off: N listed world(s) a save_dependent mod marks as its own (<ids>)`.
+  - Boot-guard / crash-guard start (the loader runs, mods off): a Hell world NOT in worlds.json (file lost, saves from
+    another machine) is refused like a registered one (`dsl_world_diff_missing`, dsl_world.c; flow K asks "Load it with
+    them?" with this game's set + Hell).
+  - GUARDS: run_tests.sh T6 (the mods-off notice names worlds on combat or management Hell and the world of a
+    save_dependent mod, not a level-4 world registered with Hell, not a world of a mod that is not save_dependent) and T1f
+    (an unregistered Hell world refused where Hell does not run); both fail on the code before.
+  - Still open: a Units Laboratory test world left by a quit inside a fight shows on the mods-off path; covered by the
+    game-update design (version switch).

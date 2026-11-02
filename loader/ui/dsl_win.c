@@ -155,14 +155,14 @@ static int world_mode; static char world_guid[80], world_name[120];   /* Mods ta
 static DSLObj m_status, m_apply, m_undo, m_save, m_field, m_fsave, m_fcancel, m_glist, m_gmark, m_gnone, m_share, m_import;
 static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applying_seen_busy;
 static double applying_t;
-static char carry_note[300];                                           /* shown when the window opens again (failed Apply) */
+static char carry_note[600];                                           /* shown when the window opens (failed Apply, boot guard) */
 static int slogel_files(void);
 static void destroy_all(void);
 static void keep_switches(void);
 static void mods_tab_reload(void);
 static void settings_values(void);
 static void num_commit_all(int quiet);
-static char m_note[300];                                               /* last refusal / failure, cleared by a change */
+static char m_note[600];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
 static int m_tab;                                                      /* Mods window tab: 0 Game mods, 1 Fixes, 2 Launcher mods (owner 2026-10-20, 2026-10-24) */
@@ -1155,6 +1155,15 @@ static void rebind(int wm) {                                          /* the Mod
     world_mode = wm;
 }
 void dsl_win_open(const char *tab_id) { if (!is_open) { set_page[0] = 0; m_tab = 0; } rebind(0); snprintf(want_tab, sizeof want_tab, "%s", tab_id ? tab_id : "mods"); want_open = 1; }
+/* the window opens with a reason on its status line (the template of the failed Apply above: carry_note -> m_note); the
+   note stays until the player changes something. Boot guard (dsl_main.c dsl_safety_frame, owner 2026-11-02: "the Mods
+   window should open by itself, with the message shown on it"). */
+void dsl_win_open_note(const char *tab_id, const char *note) {
+    snprintf(carry_note, sizeof carry_note, "%s", note ? note : ""); dsi_utf8_fix_end(carry_note);
+    if (is_open && cur == 0 && !world_mode) { snprintf(m_note, sizeof m_note, "%s", carry_note); carry_note[0] = 0; mods_sync(); }   /* open: now (no rebuild) */
+    dsl_log("win: opens with the note: %s", note ? note : "");
+    dsl_win_open(tab_id);
+}
 void dsl_win_open_world(const char *guid, const char *name) {
     if (!guid || !*guid) { dsl_win_open(NULL); return; }
     int same = world_mode && !strcmp(world_guid, guid);

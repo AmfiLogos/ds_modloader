@@ -12,7 +12,9 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 - For mod makers: the mod loader's log (dsload.log) now shows how long each mod took to start and names the slowest one.
 - When a mod cannot start, the mods that need it are now turned off too, and the Mods window says why. Before, they ran without the mod they need.
 - When the mod loader turns a mod off because the game closed while that mod was starting, a message at the title now names the mod, with a button to the Mods window.
-- If the game closes twice in a row while starting with mods (after the mods started, before the title), the next start runs without mods, tells you why and opens the Mods window, so you can turn off the mod that causes it.
+- If the game closes twice in a row while starting with mods (after the mods started, before the title), the next start runs without mods and opens the Mods window by itself, with the reason shown in it, so you can turn off the mod that causes it.
+- When the game was updated and the mods stay off until they are updated, the start message now names your worlds on Hell difficulty (and worlds of other mods that write into your saves) and asks you not to load them until the mods are on again.
+- A world on Hell difficulty that the mod loader has no record of (for example, saves copied from another computer) no longer loads when Hell difficulty does not run. The game offers to load it with Hell difficulty, as for your other Hell worlds.
 
 ### 0.1.31 (2026-11-02)
 

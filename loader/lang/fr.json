@@ -478,6 +478,10 @@
  "unknown error": "erreur inconnue",
  "works only with %s, but version %s is installed": "fonctionne seulement avec %s, mais la version %s est installée",
  "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s a arrêté le jeu pendant son démarrage la dernière fois. Il reste désactivé jusqu'à sa mise à jour.",
- "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.": "Le jeu s'est fermé deux fois de suite après le démarrage des mods, avant l'écran titre. Ce démarrage se fait sans mods. Dans la fenêtre Mods, désactivez le mod qui en est la cause, puis appuyez sur Appliquer.",
+ "The game closed twice in a row while starting with mods, so this start runs without mods. Turn off the mod that causes it, then press Apply.": "Le jeu s'est fermé deux fois de suite en démarrant avec les mods, donc ce démarrage se fait sans mods. Désactivez le mod qui en est la cause, puis appuyez sur Appliquer.",
+ "Do not load %s until the mods are on again.||Do not load these worlds until the mods are on again: %s.": [
+  "Ne chargez pas %s avant que les mods soient de nouveau actifs.",
+  "Ne chargez pas ces mondes avant que les mods soient de nouveau actifs : %s."
+ ],
  "off for this start: the game closed twice in a row while starting with mods": "désactivé pour ce démarrage : le jeu s'est fermé deux fois de suite en démarrant avec les mods"
 }

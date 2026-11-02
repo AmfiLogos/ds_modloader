@@ -4,15 +4,17 @@ window, muted; test copies only, never the owner's install, saves, prefs or scre
 
 The real breaks this catches:
   boot:  two starts in a row died after the modules started and before the title; the next start must run with mods
-         off, say why in a notice at the title and reset the count (else the player is stuck in a crash loop).
+         off, reset the count (else the player is stuck in a crash loop) and OPEN THE MODS WINDOW BY ITSELF with the
+         reason on it (owner 2026-11-02 "Ok": "the Mods window should open by itself, with the message shown on it"):
+         its status line is read through the window's test driver (DSL_UI_TEST), and no notice box comes first.
   crash: the crash guard turned a mod off; a notice at the title must name it, and a mod that REQUIRES it must not run
          (else it runs half-broken).
 Mods: the test module ev-probe (test/mods_src/ev-probe) and ev-dep (the same code, requires ev-probe).
 Runs (a fresh start each): boot (dsload_state/_boot.pending + _boot.count=1 seeded; DSL_BOOTGUARD=1, test copies have
 it off), crash (dsload_state/ev-probe.pending seeded: as if the game died in ev-probe's init last time). Each run takes
-one game frame of the notice into <out>/<run>/notice_<run>.png (for the lead; not a check).
+one game frame of the notice (boot: the Mods window) into <out>/<run>/notice_<run>.png (for the lead; not a check).
 
-Usage: safety_test.py <out> [--copy NSF] [--dsload PATH] [--only boot|crash]
+Usage: safety_test.py <out> [--copy NSF] [--dsload PATH] [--only boot|crash] [--lane NAME (rig lease owner)]
   --dsload: default this tree's loader/build/dsload.dylib (LOADER_ONLY=1 zsh loader/build.sh). About 3 minutes.
 Last line: RESULT safety PASS|FAIL <failed checks>"""
 import json, os, re, shutil, subprocess, sys, time
@@ -104,6 +106,10 @@ def run(mode, rdir):
         q = os.path.join(pd, f)
         if os.path.exists(q): os.replace(q, q + '.prev')
     crt = os.path.join(rdir, 'crt'); os.makedirs(crt, exist_ok=True)
+    ui = os.path.join(rdir, 'ui'); os.makedirs(ui, exist_ok=True)
+    for f in ('cmd.json', 'cmd.done.json', 'result.json'):
+        q = os.path.join(ui, f)
+        if os.path.exists(q): os.replace(q, q + '.prev')
     root = os.path.join(rdir, 'root'); os.makedirs(os.path.join(root, 'crash'), exist_ok=True); os.makedirs(os.path.join(root, 'loader'), exist_ok=True)
     open(os.path.join(root, 'crash', 'consent.json'), 'w').write('{"consent":"no"}\n')
     prof = os.path.join(rdir, 'profile.json'); json.dump({'enabled': ['ev-probe', 'ev-dep'], 'order': ['ev-probe', 'ev-dep']}, open(prof, 'w'))
@@ -117,7 +123,7 @@ def run(mode, rdir):
     # never DSRIG_LIVE here: it turns the hidden-window rule (dsl_quiet_mac.c) off; a window run showed on screen (2026-11-02)
     env = {'SCAN_DRV_DIR': pd, 'DSL_MODS_DIR': mods, 'DSL_PROFILE': prof, 'DSML_ROOT': root, 'DSL_UPDATE': '0',
            'DSML_DSLOAD': DSLOAD, 'DSML_DATA': home_data, 'DSL_CLOUD_API': fake, 'FAKE_CLOUD_DIR': cloud,
-           'DSL_CRASHREP_TEST': crt, 'DSL_SOFT_STAGE': '-20000,-20000', 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NOTCH': '0',
+           'DSL_CRASHREP_TEST': crt, 'DSL_UI_TEST': ui, 'DSL_SOFT_STAGE': '-20000,-20000', 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NOTCH': '0',
            'DSL_PREWARM': '0', **r.soft_test_env()}
     if mode == 'boot': env['DSL_BOOTGUARD'] = '1'
     for k in [k for k in os.environ if k.startswith(('DSL_', 'DSML_', 'DSRIG_', 'FAKE_', 'LRIG_', 'EVPROBE_'))]: os.environ.pop(k)
@@ -136,11 +142,20 @@ def run(mode, rdir):
         wait(lambda: (lambda s: s.get('scene') == '1' and s.get('boot') == '1' and s.get('busy') == '0')(state(pd)), 'title ready', 400)
         log('title ready')
         wait(lambda: 'SAFETY-NOTICE' in dlog(), 'SAFETY-NOTICE', 40)
+        after.update({n: os.path.exists(os.path.join(SD, n)) for n in ('_boot.pending', '_boot.count')})   # the title cleared them
+        if mode == 'boot':                                   # nothing clicks here: an open window opened by itself
+            wait(lambda: 'win: Mods window open' in dlog().split('SAFETY-NOTICE', 1)[1], 'the Mods window (by itself)', 30)
+            open(os.path.join(ui, 'cmd.json'), 'w').write('{"op":"state","seq":"boot1"}')
+            res = wait(lambda: (lambda t: json.loads(t) if '"seq":"boot1"' in t else None)(
+                open(os.path.join(ui, 'result.json'), errors='replace').read() if os.path.exists(os.path.join(ui, 'result.json')) else ''),
+                'the window state', 20)
+            after['win_open'] = res.get('open')
+            after['status'] = next((c.get('text', '') for c in res.get('controls', []) if c.get('name') == 'status'), '')
+            log('window', after['win_open'], 'status:', after['status'])
         time.sleep(2)
         open(os.path.join(crt, 'shot_notice_' + mode), 'w').close()
         try: wait(lambda: os.path.exists(os.path.join(crt, f'notice_{mode}.png')), 'notice shot', 20)
         except RuntimeError as e: log(str(e))
-        after = {n: os.path.exists(os.path.join(SD, n)) for n in ('_boot.pending', '_boot.count')}
     except RuntimeError as e:
         log('FLOW:', e)
     finally:
@@ -161,7 +176,10 @@ def parse(text, mode, after):
     if mode == 'boot':
         chk('boot guard: 2 dead starts in a row -> this start runs with mods off', 'BOOT GUARD: 2 starts in a row ended before the title: this start runs with mods off' in text)
         chk('no mod runs in the mods-off start', not re.search(r'ev-(probe|dep) [0-9.]+: loaded', text))
-        chk('the notice says why (one button, opens the Mods window)', 'SAFETY-NOTICE boot-guard' in text and re.search(r'ui: notice \d+ shown \(one button\): The game closed twice in a row', text))
+        chk('the Mods window opens by itself, the reason on its status line, no box before it',
+            'SAFETY-NOTICE boot-guard' in text and after.get('win_open') == 1
+            and after.get('status', '').startswith('The game closed twice in a row while starting with mods')
+            and not re.search(r'ui: notice \d+ shown [^\n]*The game closed twice', text))
         chk('the title reset the boot guard (no marker, no count)', after and not after.get('_boot.pending') and not after.get('_boot.count'))
     else:
         chk('crash guard turned ev-probe off', 'CRASH GUARD: the game stopped last time while module ev-probe ran' in text)
@@ -175,7 +193,8 @@ def main():
     if not os.path.exists(os.path.join(I, r.EXE_REL)): raise SystemExit(f'no copy {X}: run loader/test/make_instance.sh {X}')
     if owner_playing(): log('the owner\'s game runs: one hidden test copy only (lane rule)')
     rig = os.path.expanduser('~/ds_multiplayer/rig/rig.py')
-    lp = subprocess.run([sys.executable, rig, 'lease', 'nvsafety', '--pid', str(os.getpid())], capture_output=True, text=True)
+    lane = opt('--lane', 'nvsafety')
+    lp = subprocess.run([sys.executable, rig, 'lease', lane, '--pid', str(os.getpid())], capture_output=True, text=True)
     pair = lp.stdout.strip()
     if lp.returncode or not pair: raise SystemExit('no lease: ' + (lp.stderr.strip() or 'no free pair'))
     log('lease', pair)
@@ -189,7 +208,7 @@ def main():
                 print(f'  {"ok  " if ok else "FAIL"} [{mode}] {n}')
                 if not ok: fails.append(f'{mode}: {n}')
     finally:
-        subprocess.run([sys.executable, rig, 'release', pair, 'nvsafety'], capture_output=True)
+        subprocess.run([sys.executable, rig, 'release', pair, lane], capture_output=True)
     json.dump({'ok': not fails, 'failed': fails}, open(os.path.join(OUT, 'result.json'), 'w'), indent=1)
     print(f'RESULT safety {"PASS" if not fails else "FAIL"} {len(fails)}')
     sys.exit(1 if fails else 0)

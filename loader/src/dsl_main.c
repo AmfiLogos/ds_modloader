@@ -209,16 +209,20 @@ static void write_status(int active, const char *reason, const char *uuid, const
     write_file(path, e);
 }
 /* mods off this session: the notice also says which worlds the Load list will not show (dsl_saves.c). Windows: no
-   save-folder redirect, the game lists its own saves, the modded worlds are hidden; Mac copy: the game saves are. */
+   save-folder redirect, the game lists its own saves, the modded worlds are hidden; Mac copy: the game saves are.
+   And, before any world is opened (nothing can refuse a load in this session), which of the listed worlds a turned-off
+   save_dependent mod marks as its own (Hell: worlds on Hell), in that mod's words (dsl_saves_off_marked; nvboot 2). */
 static void hidden_note(void) {
-    char n[900];
+    char n[900], w[1200]; int win = 0;
 #ifdef _WIN32
-    dsl_saves_off_note(1, n, sizeof n);
-#else
-    dsl_saves_off_note(0, n, sizeof n);
+    win = 1;
 #endif
+    dsl_saves_off_note(win, n, sizeof n);
+    dsl_saves_off_marked(win, w, sizeof w);
     size_t k = strlen(status_why);
-    if (n[0]) snprintf(status_why + k, sizeof status_why - k, "%s%s", k ? "\n\n" : "", n);
+    if (n[0]) { snprintf(status_why + k, sizeof status_why - k, "%s%s", k ? "\n\n" : "", n); k = strlen(status_why); }
+    if (w[0]) snprintf(status_why + k, sizeof status_why - k, "%s%s", k ? "\n\n" : "", w);
+    dsi_utf8_fix_end(status_why);
 }
 static void build_refused(const char *reason, const char *uuid, const char *found, const char *pinned) {
     dsl_build_id = NULL;
@@ -967,13 +971,15 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
     return 0;
 }
 
-/* At the first idle title (dsl_reg.c frame list, main thread): the title resets the boot guard; then ONE notice, when no
-   other notice or window shows: the boot guard's mods-off start (button: the Mods window; it opens on any answer), or
-   the mods the crash guard turned off at this start (tModLoader study idea 3b; button "Mods" opens the Mods window).
-   Log line SAFETY-NOTICE <kind> for tests; -batchmode / DSL_NO_ALERT: log only (the boot guard still opens the Mods
-   window). test/safety_test.py starts without DSL_NO_ALERT to see the box. */
+/* At the first idle title (dsl_reg.c frame list, main thread): the title resets the boot guard; then, when no other
+   notice or window shows: the boot guard's mods-off start opens the Mods window BY ITSELF with the reason on its status
+   line (owner 2026-11-02, "Ok" to "the Mods window should open by itself, with the message shown on it"; no box before
+   it, so one Escape closes the window), or ONE notice names the mods the crash guard turned off at this start
+   (tModLoader study idea 3b; button "Mods" opens the Mods window). Log line SAFETY-NOTICE <kind> for tests; -batchmode /
+   DSL_NO_ALERT: no crash-guard box (log only). test/safety_test.py starts without DSL_NO_ALERT to see the box. */
 int dsl_ui_title_shown(void);
 int dsl_ui_notice_shown(void);
+void dsl_win_open_note(const char *tab_id, const char *note);         /* ui/dsl_win.c (weak default in dsl_reg.c) */
 static void open_mods_cb(void *ud, DSLObj w) { (void)ud; (void)w; if (dsl_win_open) dsl_win_open(NULL); }
 void dsl_safety_frame(void) {
     static int titled, done; static struct timeval since;
@@ -995,16 +1001,15 @@ void dsl_safety_frame(void) {
     }
     if (!boot_hatch && !nc) return;
     char t[1400];
-    if (boot_hatch) snprintf(t, sizeof t, "%s", TR("The game closed twice in a row after the mods started, before the title. This start runs "
-                                                   "without mods. In the Mods window, turn off the mod that causes it, then press Apply."));
+    if (boot_hatch) snprintf(t, sizeof t, "%s", TR("The game closed twice in a row while starting with mods, so this start runs without mods. "
+                                                   "Turn off the mod that causes it, then press Apply."));   /* short: the status line has 3 lines */
     else snprintf(t, sizeof t, TR("%s stopped the game while it was starting last time. It stays off until it is updated."), names);
     dsi_utf8_fix_end(t);
     dsl_log("SAFETY-NOTICE %s: %s", boot_hatch ? "boot-guard" : "crash-guard", boot_hatch ? "mods off this start" : names);
-    if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) { if (boot_hatch) open_mods_cb(NULL, NULL); return; }   /* tests: no box (gate tests
-                                                                     set DSL_NO_ALERT; a player's start never does) */
+    if (boot_hatch) { dsl_win_open_note(NULL, t); return; }           /* the window itself, players and tests alike */
+    if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) return;         /* tests: no box (gate tests set DSL_NO_ALERT; a player's start never does) */
     const DSLUi *u = dsl_ui_kit(); if (!u || !u->notice) return;
-    if (boot_hatch) u->notice(t, TR("Mods"), NULL, open_mods_cb, open_mods_cb, NULL);
-    else u->notice(t, TR("Mods"), TR("OK"), open_mods_cb, NULL, NULL);
+    u->notice(t, TR("Mods"), TR("OK"), open_mods_cb, NULL, NULL);
 }
 
 /* The mapped GameAssembly is not the file the build came from (start part's check): mods stay off. */

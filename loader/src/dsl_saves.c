@@ -74,35 +74,56 @@ static int name_guid(const char *f, char *g) {
     for (char *c = g; *c; c++) if (*c >= 'A' && *c <= 'F') *c += 32;
     return 1;
 }
-static void header_str(const char *h, const char *key, char *out, size_t cap) {
-    out[0] = 0; char k[64]; snprintf(k, sizeof k, "\"%s\"", key);
-    const char *p = h ? strstr(h, k) : NULL; if (!p) return;
-    p = strchr(p + strlen(k), ':'); if (!p) return; p = strchr(p, '"'); if (!p) return; p++;
-    size_t i = 0; while (p[i] && p[i] != '"' && i + 1 < cap) { out[i] = p[i]; i++; } out[i] = 0;
-}
-/* the save's "CampaignSaveHeader" block: read in 256 KB steps, stopped once the block is in (not the whole file) */
-static int file_header(const char *path, char *guid, char *clan) {
-    guid[0] = clan[0] = 0;
-    FILE *fp = fopen(path, "rb"); if (!fp) return 0;
+/* the save's "CampaignSaveHeader" object as text (malloc'd; NULL = none): read in 256 KB steps, stopped once the block is
+   in (it is well under 4 KB; never the whole file, never more than 4 KB + 2 steps in memory) */
+static char *header_block(const char *path) {
+    FILE *fp = fopen(path, "rb"); if (!fp) return NULL;
     enum { STEP = 256 << 10, KEEP = 4096 };
-    char *b = malloc(STEP + KEEP + 1); size_t have = 0; const char *h = NULL; int ok = 0;
+    char *b = malloc(STEP + KEEP + 1), *out = NULL; size_t have = 0; int found = 0;
     while (b) {
         size_t r = fread(b + have, 1, STEP, fp); have += r; b[have] = 0;
-        if (!h && (h = strstr(b, "\"CampaignSaveHeader\""))) {              /* the block start; read on until its end is in */
-            size_t at = (size_t)(h - b); memmove(b, h, have - at); have -= at;
-            if (have > KEEP) have = KEEP;
-            b[have] = 0; h = b;
+        if (!found) {
+            char *h = strstr(b, "\"CampaignSaveHeader\"");
+            if (!h) {
+                if (!r) break;
+                if (have > KEEP) { memmove(b, b + have - KEEP, KEEP); have = KEEP; }   /* the key may span two reads */
+                continue;
+            }
+            size_t at = (size_t)(h - b); memmove(b, h, have - at); have -= at; b[have] = 0; found = 1;
         }
-        if (h && (strstr(h, "\"SaveTime\"") || !r)) {
-            header_str(h, "CampaignGuid", guid, 40); header_str(h, "ClanName", clan, 64);
-            for (char *c = guid; *c; c++) if (*c >= 'A' && *c <= 'F') *c += 32;
-            ok = strlen(guid) == 36; break;
+        if (have < KEEP && r) continue;                                 /* the block may go on in the next read */
+        const char *o = b + 20; while (*o == ' ' || *o == '\t' || *o == '\r' || *o == '\n') o++;
+        if (*o++ != ':') break;
+        while (*o == ' ' || *o == '\t' || *o == '\r' || *o == '\n') o++;
+        if (*o != '{') break;
+        const char *c = o; int depth = 0, str = 0;
+        for (; *c; c++) {                                               /* its end: the brace that closes it, outside strings */
+            if (str) { if (*c == '\\' && c[1]) c++; else if (*c == '"') str = 0; }
+            else if (*c == '"') str = 1;
+            else if (*c == '{') depth++;
+            else if (*c == '}' && !--depth) break;
         }
-        if (!r) break;
-        if (!h && have > KEEP) { memmove(b, b + have - KEEP, KEEP); have = KEEP; }   /* the key may span two reads */
+        if (*c == '}') { size_t n = (size_t)(c - o) + 1; out = malloc(n + 1); if (out) { memcpy(out, o, n); out[n] = 0; } }
+        break;
     }
-    free(b); fclose(fp); return ok;
+    free(b); fclose(fp); return out;
 }
+/* the header's world guid (lower case), clan name (JSON-decoded) and, when asked, its combat / management level (-1 =
+   not in it); 1 = a world guid was read */
+static int file_header_lv(const char *path, char *guid, char *clan, int *lc, int *lm) {
+    guid[0] = clan[0] = 0; if (lc) *lc = -1; if (lm) *lm = -1;
+    char *h = header_block(path); JNode *j = h ? json_parse(h) : NULL; free(h);
+    const char *g = json_str(j, "CampaignGuid"), *c = json_str(j, "ClanName");
+    if (g) snprintf(guid, 40, "%s", g);
+    if (c) { snprintf(clan, 64, "%s", c); dsi_utf8_fix_end(clan); }
+    for (char *p = guid; *p; p++) if (*p >= 'A' && *p <= 'F') *p += 32;
+    JNode *a = json_get(j, "CombatDifficulty"), *m = json_get(j, "ManagementDifficulty");
+    if (lc && a && a->t == JN_NUM) *lc = (int)a->num;
+    if (lm && m && m->t == JN_NUM) *lm = (int)m->num;
+    json_free(j);
+    return strlen(guid) == 36;
+}
+static int file_header(const char *path, char *guid, char *clan) { return file_header_lv(path, guid, clan, NULL, NULL); }
 
 /* ------------------------------------------------------------------ the game folder (kept per scan) */
 #define MAXG 512
@@ -221,6 +242,81 @@ void dsl_saves_off_note(int win, char *out, size_t cap) {
                                 "Dungeon Settlers, or here when the mods are on again.", n), n);
     dsi_utf8_fix_end(out);
     dsl_log("saves: mods off: %d %s world(s) not listed this session", n, win ? "modded" : "game");
+}
+/* mods off this session (unknown game build, the launcher's pin of another build, a failed start condition, the loader's
+   own crash guard): no hook is written, so nothing can refuse a world load (dsl_world.c is not installed). The start notice
+   then warns BEFORE (owner 2026-11-02 via the lead, nvboot task 2: the Hell gap of ext/nvsavekeep/AUDIT.md): it names the
+   worlds the game lists now that an installed save_dependent gameplay mod marks as its own, and says it in that mod's own
+   words where it does not run (dsl_save_warning: "Saves made with Hell difficulty may not work without the mod loader.").
+   Marked: a custom difficulty mod (Hell) = the world is on its level (combat or management, from the save header, as
+   dsl_world_save_dependent decides); any other save_dependent mod = the world's set in worlds.json has it. Files only, no
+   game code. Windows (no redirect) lists the game's folder, the Mac copy its own: the folder the game lists. "" = none. */
+int dsl_mod_save_dependent(const char *id);                 /* dsl_reg.c */
+int dsl_mod_difficulty(const char *id);
+int dsl_save_warning(const char *const *ids, int n, char *out, size_t cap);
+static char *tut_slurp(const char *p, size_t *len);
+static int key_has(const char *key, const char *id) {       /* "a+b+c" has id */
+    size_t n = strlen(id);
+    for (const char *k = key; k && *k; ) { const char *e = strchr(k, '+'); size_t l = e ? (size_t)(e - k) : strlen(k);
+        if (l == n && !strncmp(k, id, n)) return 1; k = e ? e + 1 : NULL; }
+    return 0;
+}
+void dsl_saves_off_marked(int win, char *out, size_t cap) {
+    out[0] = 0;
+    const char *gs = getenv("DSML_GAME_SAVES"), *d = getenv("DSML_DATA");
+    if (!d || !*d) return;
+    char m[1100]; snprintf(m, sizeof m, "%s" SEP "Saves", d);
+    const char *dir = win && gs && *gs ? gs : m;
+    const char *dep[64]; int lv[64], nd = 0;
+    for (int i = 0; i < dsl_mods_count() && nd < 64; i++) {
+        const DSLModInfo *x = dsl_mods_at(i);
+        if (!x || x->feature || strcmp(x->scope, "gameplay") || !dsl_mod_save_dependent(x->id)) continue;
+        dep[nd] = x->id; lv[nd++] = dsl_mod_difficulty(x->id);
+    }
+    if (!nd) return;
+    const char *sp = getenv("DSML_SESSION"); char wp[1200];                /* the world sets: read only */
+    if (sp && *sp) snprintf(wp, sizeof wp, "%s", sp); else snprintf(wp, sizeof wp, "%s" SEP "Mods" SEP "worlds.json", d);
+    char *wt = tut_slurp(wp, NULL); JNode *wj = wt ? json_parse(wt) : NULL; free(wt);
+    JNode *ws = json_get(wj, "worlds");
+    char nd_[1300]; dsl_os_native_path(dir, nd_, sizeof nd_);
+    DIR *dd = opendir(nd_); struct dirent *de;
+    static char seen[MAXHW][40]; int ns = 0, nw = 0, used[64] = { 0 };
+    char names[420] = ""; int more = 0;
+    while (dd && (de = readdir(dd)) && ns < MAXHW) {
+        if (de->d_name[0] == '.' || !is_json(de->d_name) || mp_temp(de->d_name)) continue;
+        char p[1600], nm[300], g[40] = "", clan[64] = ""; struct stat st; int lc = -1, lm = -1;
+        snprintf(p, sizeof p, "%s" SEP "%s", nd_, de->d_name);
+        if (stat(p, &st) || !S_ISREG(st.st_mode)) continue;
+        snprintf(nm, sizeof nm, "%.*s", (int)(strlen(de->d_name) - 5), de->d_name);
+        int dup = 0;
+        if (name_guid(nm, g)) for (int i = 0; i < ns && !dup; i++) dup = !strcmp(seen[i], g);   /* one read per world */
+        if (dup) continue;
+        if (!file_header_lv(p, g, clan, &lc, &lm)) continue;              /* no readable header: the game cannot load it */
+        for (int i = 0; i < ns && !dup; i++) dup = !strcmp(seen[i], g);
+        if (dup) continue;
+        snprintf(seen[ns++], 40, "%s", g);
+        const char *key = NULL;
+        if (ws && ws->t == JN_OBJ) for (JNode *c = ws->child; c; c = c->next) if (c->key && c->t == JN_STR && !strcasecmp(c->key, g)) key = c->str;
+        int mk = 0;
+        for (int i = 0; i < nd; i++) if (lv[i] ? (lc == lv[i] || lm == lv[i]) : key_has(key, dep[i])) { used[i] = 1; mk = 1; }
+        if (!mk) continue;
+        const char *w = clan[0] ? clan : nm;
+        if (!more && strlen(names) + strlen(w) + 40 < sizeof names) { if (nw) strlcat(names, ", ", sizeof names); strlcat(names, w, sizeof names); }
+        else more++;                                                    /* the system box keeps ~1000 characters */
+        nw++;
+    }
+    if (dd) closedir(dd);
+    json_free(wj);
+    if (!nw) return;
+    const char *ids[64]; int ni = 0; char idl[400] = "";
+    for (int i = 0; i < nd; i++) if (used[i]) { ids[ni++] = dep[i]; if (idl[0]) strlcat(idl, "+", sizeof idl); strlcat(idl, dep[i], sizeof idl); }
+    char warn[700] = "", head[900];
+    dsl_save_warning(ids, ni, warn, sizeof warn);
+    if (more) { char t[80]; snprintf(t, sizeof t, TR("(and %d more)"), more); strlcat(names, " ", sizeof names); strlcat(names, t, sizeof names); }
+    snprintf(head, sizeof head, TRN("Do not load %s until the mods are on again.", "Do not load these worlds until the mods are on again: %s.", nw), names);
+    snprintf(out, cap, "%s%s%s", head, warn[0] ? " " : "", warn);
+    dsi_utf8_fix_end(out);
+    dsl_log("saves: mods off: %d listed world(s) a save_dependent mod marks as its own (%s): %s", nw, idl, names);
 }
 static int off_worlds;                                   /* this file off with mods on: game worlds not listed */
 static char unread[16][256]; static int nunread;         /* game saves the game could not read (kept, so not listed) */

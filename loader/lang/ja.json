@@ -458,6 +458,9 @@
  "unknown error": "不明なエラー",
  "works only with %s, but version %s is installed": "%sでのみ動作しますが、インストールされているのはバージョン%sです",
  "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s は前回の起動中にゲームを停止させました。更新されるまでオフのままです。",
- "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.": "Mod の起動後、タイトル画面の前にゲームが2回続けて終了しました。今回は Mod なしで起動します。Mod ウィンドウで原因の Mod をオフにしてから「適用」を押してください。",
+ "The game closed twice in a row while starting with mods, so this start runs without mods. Turn off the mod that causes it, then press Apply.": "Mod ありの起動中にゲームが2回続けて終了したため、今回は Mod なしで起動します。原因の Mod をオフにしてから「適用」を押してください。",
+ "Do not load %s until the mods are on again.||Do not load these worlds until the mods are on again: %s.": [
+  "Mod が再びオンになるまで、次のワールドを読み込まないでください：%s。"
+ ],
  "off for this start: the game closed twice in a row while starting with mods": "今回の起動ではオフ：Mod ありの起動中にゲームが2回続けて終了しました"
 }

@@ -114,9 +114,16 @@ static void *my_load(void *self, void *name, const void *mi) {
     dsl_saves_loading(nm, g);                                            /* a game world: its next saves go to the game's folder */
     JNode *worlds = json_get(s, "worlds"), *w = NULL;
     if (worlds && worlds->t == JN_OBJ) for (JNode *c = worlds->child; c; c = c->next) if (c->key && !strcasecmp(c->key, g)) w = c;
-    if (!w || w->t != JN_STR) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return gate(self, it, nm); }
-    char ek[512]; dsl_world_key_eff(g, w->str, ek, sizeof ek);          /* + fixes on in all worlds - the world's offs */
-    if (mine && dsl_world_key_match(g, ek, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
+    char ek[512];
+    if (!w || w->t != JN_STR) {
+        /* not registered, but on the level of a custom difficulty that does not run here (Hell in a boot-guard start):
+           refused as a registered Hell world is (nvboot 2026-11-02: the Hell gap); any other world: allowed */
+        if (!dsl_world_diff_missing(g, mine, ek, sizeof ek)) { dsl_log("world check: %s (world %s) not registered by the launcher: allowed", nm, g); json_free(s); return gate(self, it, nm); }
+        dsl_log("world check: %s (world %s) not registered, on a custom difficulty that does not run here", nm, g);
+    } else {
+        dsl_world_key_eff(g, w->str, ek, sizeof ek);                    /* + fixes on in all worlds - the world's offs */
+        if (mine && dsl_world_key_match(g, ek, mine)) { dsl_log("world check: %s (world %s) uses this mod set: allowed", nm, g); json_free(s); return gate(self, it, nm); }
+    }
     dsl_log("world check: REFUSED %s (world %s): the world's mod set %s, this copy %s", nm, g, ek, mine ? mine : "?");
     int in_world = dsl_reg_scene() == 2;
     if (!in_world) dsl_world_mismatch(nm, g, ek);       /* asks "Load it with them?" (flow K, dsl_reg.c) */
