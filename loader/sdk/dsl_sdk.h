@@ -476,6 +476,18 @@ typedef struct DSLHost {
     int (*on_event)(DSLPlugin *self, int type, int flags, void *klass, dsl_event_cb cb, void *ud);
     int (*off_event)(DSLPlugin *self, int type, dsl_event_cb cb, void *ud);
     int (*view_shown)(void *klass);
+
+    /* ---- appended (kit 0.1.32, no version change: DSL_HAS(host, need), or the dsl_need_* wrappers below): NAME CHECK
+       (tModLoader idea 9: a mod that does not fit the game version is off at START with a clear reason, never broken in
+       the middle of a world). need() looks up a game name the module needs. Look up EVERY game name the module needs
+       in dsl_plugin_init through dsl_need_class / _method / _code / _field: a name this game version does not have is
+       logged ("NAME-MISS <id> <name>", every miss) and the module is turned off when its dsl_plugin_init returns
+       ("not for this game version: <name> missing"), its hooks removed. kind DSL_NEED_CLASS -> Il2CppClass*;
+       DSL_NEED_METHOD -> MethodInfo* (argc = number of arguments, -1 = any); DSL_NEED_CODE -> the method's native code;
+       DSL_NEED_FIELD -> field offset + 1 as an integer (NULL = missing). A name the module can do without (an optional
+       feature) keeps using find_class / find_method / field_offset. After dsl_plugin_init a miss only logs
+       "NAME-RULE <id> late <name>" (test copies: a test fails on it): move that lookup into dsl_plugin_init. */
+    void *(*need)(DSLPlugin *self, int kind, const char *ns, const char *klass, const char *member, int argc);
 } DSLHost;
 #define DSL_HAS_TITLE_BUTTON_ICON 1               /* this header has title_button_icon (older copies of it do not) */
 
@@ -525,6 +537,18 @@ static inline int dsl_on_event(const DSLHost *h, DSLPlugin *self, int type, int 
 static inline int dsl_off_event(const DSLHost *h, DSLPlugin *self, int type, dsl_event_cb cb, void *ud) {
     return DSL_HAS(h, off_event) ? h->off_event(self, type, cb, ud) : 0; }
 static inline int dsl_view_shown(const DSLHost *h, void *klass) { return DSL_HAS(h, view_shown) ? h->view_shown(klass) : 0; }
+/* name check (kit 0.1.32): an older loader looks the name up without the check (the module then sees NULL / -1 as before) */
+enum { DSL_NEED_CLASS = 0, DSL_NEED_METHOD = 1, DSL_NEED_CODE = 2, DSL_NEED_FIELD = 3 };
+static inline void *dsl_need_class(const DSLHost *h, DSLPlugin *self, const char *ns, const char *klass) {
+    return DSL_HAS(h, need) ? h->need(self, DSL_NEED_CLASS, ns, klass, NULL, 0) : h->find_class(ns, klass); }
+static inline void *dsl_need_method(const DSLHost *h, DSLPlugin *self, const char *ns, const char *klass, const char *method, int argc) {
+    if (DSL_HAS(h, need)) return h->need(self, DSL_NEED_METHOD, ns, klass, method, argc);
+    void *k = h->find_class(ns, klass); return k ? h->find_method(k, method, argc) : NULL; }
+static inline void *dsl_need_code(const DSLHost *h, DSLPlugin *self, const char *ns, const char *klass, const char *method, int argc) {
+    return DSL_HAS(h, need) ? h->need(self, DSL_NEED_CODE, ns, klass, method, argc) : h->find_method_address(ns, klass, method, argc); }
+static inline int32_t dsl_need_field(const DSLHost *h, DSLPlugin *self, const char *ns, const char *klass, const char *field) {
+    if (DSL_HAS(h, need)) { uintptr_t v = (uintptr_t)h->need(self, DSL_NEED_FIELD, ns, klass, field, 0); return v ? (int32_t)(v - 1) : -1; }
+    void *k = h->find_class(ns, klass); return k ? h->field_offset(k, field) : -1; }
 static inline int dsl_on_setting_change(const DSLHost *h, DSLPlugin *self, void (*changed)(void *ud, const char *id), void *ud) {
     return DSL_HAS(h, settings_on_change) ? h->settings_on_change(self, changed, ud) : -1; }
 /* Escape wrappers (kit 0.1.28): -1 / nothing with an older kit, whose Escape does nothing for these windows */

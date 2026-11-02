@@ -110,14 +110,16 @@ def run(mode, rdir):
     cloud = os.path.join(rdir, 'fake_cloud'); os.makedirs(cloud, exist_ok=True)
     home_data = os.path.join(I, 'home', 'Library', 'Application Support', 'CanOpener', 'Dungeon Settlers')
     r.prepare_data(X)
+    # never DSRIG_LIVE here: it turns the hidden-window rule (dsl_quiet_mac.c) off; a window run showed on screen (2026-11-02)
     env = {'SCAN_DRV_DIR': pd, 'DSL_MODS_DIR': mods, 'DSL_PROFILE': prof, 'DSML_ROOT': root, 'DSL_UPDATE': '0',
-           'DSML_DSLOAD': DSLOAD, 'DSML_DATA': home_data, 'DSL_CLOUD_API': fake, 'FAKE_CLOUD_DIR': cloud, 'DSRIG_LIVE': '1',
-           'DSL_CRASHREP_TEST': crt}
+           'DSML_DSLOAD': DSLOAD, 'DSML_DATA': home_data, 'DSL_CLOUD_API': fake, 'FAKE_CLOUD_DIR': cloud,
+           'DSL_CRASHREP_TEST': crt, 'DSL_SOFT_STAGE': '-20000,-20000', 'DSL_SOFT_NOACTIVATE': '1', 'DSL_NOTCH': '0',
+           'DSL_PREWARM': '0', **r.soft_test_env()}
     if mode == 'boot': env['DSL_BOOTGUARD'] = '1'
     for k in [k for k in os.environ if k.startswith(('DSL_', 'DSML_', 'DSRIG_', 'FAKE_', 'LRIG_', 'EVPROBE_'))]: os.environ.pop(k)
     os.environ['LRIG_DYLIB'] = DSLOAD; os.environ['LRIG_EXTRA_INSERT'] = drv
     orig = r.ctl_env
-    r.ctl_env = lambda: {k: v for k, v in {**orig(), **env}.items() if k != 'DSRIG_CTL'}   # no control socket (a player's game)
+    r.ctl_env = lambda: {**orig(), **env}       # keep DSRIG_CTL: the test-copy rules (hidden, staged window) need it
     home = os.path.expanduser('~')
     json.dump({'copy': X, 'mode': mode, 'dsload': DSLOAD.replace(home, '~'), 'env': {k: v.replace(home, '~') for k, v in env.items()}},
               open(os.path.join(rdir, 'run.json'), 'w'), indent=1)

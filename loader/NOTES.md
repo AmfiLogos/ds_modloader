@@ -1519,3 +1519,21 @@ vsync the loader forces (A's boot speed-up, a soft-restart B, a prewarm B) goes 
 - Guard: `test/vsync_test.py` (copy Y, batchmode, no multiplayer: its rig mode sets fps + vsync itself; probe
   `test/vsync_probe.c`): base run (speed-up off) = the game's own values; VSync OFF and ON with the speed-up on: vSyncCount
   = the setting and the game's frame cap, at the title and in a world.
+
+## Name check: a mod's game names are checked at START (kit 0.1.32, tModLoader idea 9, lane nvnames) - `src/dsl_main.c` h_need, `sdk/dsl_sdk.h` dsl_need_*
+RULE: a module looks up EVERY game name it needs (class, method, method code, field) in `dsl_plugin_init`, through
+`dsl_need_class / dsl_need_method / dsl_need_code / dsl_need_field` (DSLHost.need, appended after API 7). A name the
+game version does not have is logged `NAME-MISS <id> <name>` (every miss), and when `dsl_plugin_init` returns the
+module is OFF for this start: dsload.log says `<id>: not for this game version: <name> missing`, its hooks and patches
+are removed (the `fail()` path, so a rule that turns off the mods needing a failed mod covers it too), and the Mods
+window says "not loaded: not made for this game version or this computer". A name the module can do WITHOUT (an
+optional feature, a probe) keeps using find_class / find_method / field_offset: those never turn a module off.
+A `dsl_need_*` miss AFTER dsl_plugin_init (a lookup at use time) does not turn the module off; it logs
+`NAME-RULE <id> late <name>`: move that lookup into dsl_plugin_init. In dsl_module_early names do not work yet
+(`NAME-RULE <id> early`). An older loader (no `need`): the wrappers do the plain lookups (NULL / -1, no check).
+WHY: tModLoader forces the compile of every mod method at load, so a mod that uses a member the game lost fails at
+load, named, "likely outdated" (tModLoader Core/AssemblyManager.cs JITAssembliesAsync, ModLoader.cs load error). Our
+lookups made at use time failed in the middle of a world instead (study ~/ds_multiplayer/research/tmodloader_study.md
+row 9). GUARD: test/run_tests.sh T1n (a fake missing class, method and field: the mod must be off at start with the
+name and its hook removed; a mod whose names all exist must run). Existing official mods move onto dsl_need_* at their
+next change.
