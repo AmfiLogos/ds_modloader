@@ -41,10 +41,12 @@ PROBE_SRC = os.path.join(HERE, 'mods_src', 'ev-probe')
 log = lambda *x: print(time.strftime('%H:%M:%S'), X, *x, flush=True)
 
 
+OWNER_GAME = re.compile(r'DSModLauncher/games/[^ ]*/MacOS/Dungeon Settlers|Dungeon Settlers Modded\.app/Contents/MacOS/|steamapps/common/Dungeon Settlers/DungeonSettlers\.app/Contents/MacOS/')
 def owner_playing():
-    p = subprocess.run(['pgrep', '-f', 'DSModLauncher/games/[^ ]*/MacOS/Dungeon Settlers|Dungeon Settlers Modded.app/Contents/MacOS/|steamapps/common/Dungeon Settlers/DungeonSettlers.app/Contents/MacOS/'],
-                       capture_output=True, text=True).stdout.split()
-    return [x for x in p if x]
+    # the EXECUTABLE path only (ps comm): a pgrep -f on whole command lines also matched other agents' shells that
+    # quote these paths (2026-11-02: a lane's wait loop made this test refuse with no game running)
+    out = subprocess.run(['ps', '-axo', 'pid=,comm='], capture_output=True, text=True).stdout
+    return [l.split()[0] for l in out.splitlines() if OWNER_GAME.search(l)]
 
 
 def wait_load(limit=float(os.environ.get('EVENTS_LOAD_MAX', 16))):   # EVENTS_LOAD_MAX: a busy gate Mac (lead 2026-11-02, as SCAN_LOAD_MAX)
