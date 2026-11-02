@@ -48,6 +48,8 @@ struct DSLPlugin {
     int api, order_key, ordered, gameplay;
     int fit;                              /* loadable here (build, platform, files, table) before the dependency rule */
     int crash_off;                        /* state 3 by the crash guard (it stopped the game while starting last time) */
+    int in_init, nmiss, names_off;        /* name check (kit 0.1.32): misses of dsl_need_* during dsl_plugin_init */
+    char miss[200];                       /* the first missing name */
     void *h;
     JNode *mf;                            /* parsed mod.json */
     TabEnt *tab; int ntab;
@@ -293,7 +295,7 @@ int dsl_mod_dep_text(const char *id, char *out, size_t cap) {
 }
 int dsl_mod_state(const char *id, const char **why) {
     struct DSLPlugin *p = find_mod_early(id);
-    if (why) *why = !p ? TR_NOOP("not loaded: not made for this game version or this computer") : p->state == 2 ? TR_NOOP("it crashed while starting")
+    if (why) *why = !p || p->names_off ? TR_NOOP("not loaded: not made for this game version or this computer") : p->state == 2 ? TR_NOOP("it crashed while starting")
                   : p->state == 3 && p->crash_off ? TR_NOOP("it stopped the game while starting last time, so it stays off until it is updated")
                   : p->state == 3 ? TR_NOOP("not loaded: it needs another mod, clashes with one, or crashed last time") : "";   /* keys: the Mods window translates */
     return p ? p->state : 0;
@@ -489,6 +491,32 @@ static int fail(struct DSLPlugin *p, const char *phase, int r) {
     return -1;
 }
 
+/* name check (kit 0.1.32, tModLoader idea 9; ../NOTES.md "Name check"): host->need = the dsl_need_* lookups. A miss
+   while the module's dsl_plugin_init runs is kept; run_init turns the module off when init returns. Later = log only. */
+static void *h_need(DSLPlugin *self, int kind, const char *ns, const char *klass, const char *member, int argc) {
+    const char *id = self ? self->id : "?";
+    if (!dsl_ready) { dsl_log("NAME-RULE %s early %s.%s: game names work only from dsl_plugin_init", id, klass ? klass : "?", member ? member : ""); return NULL; }
+    void *k = klass ? dsl_find_class(ns, klass) : NULL, *r = NULL, *m = NULL;
+    if (k) switch (kind) {
+    case DSL_NEED_CLASS: r = k; break;
+    case DSL_NEED_METHOD: r = member ? dsl_find_method(k, member, argc) : NULL; break;
+    case DSL_NEED_CODE: m = member ? dsl_find_method(k, member, argc) : NULL; r = dsl_method_address(m); break;
+    case DSL_NEED_FIELD: { int32_t o = member ? dsl_field_offset(k, member) : -1; r = o >= 0 ? (void *)(uintptr_t)(o + 1) : NULL; break; }
+    default: break;
+    }
+    if (r) return r;
+    char nm[200];
+    if (!k) snprintf(nm, sizeof nm, "%s%s%s", ns && *ns ? ns : "", ns && *ns ? "." : "", klass ? klass : "?");
+    else if (kind == DSL_NEED_FIELD) snprintf(nm, sizeof nm, "%s.%s", klass, member ? member : "?");
+    else if (kind == DSL_NEED_CLASS) snprintf(nm, sizeof nm, "%s", klass);
+    else snprintf(nm, sizeof nm, "%s.%s(%d args)%s", klass, member ? member : "?", argc, m ? " has no code" : "");
+    if (self && self->in_init) {
+        if (!self->nmiss++) snprintf(self->miss, sizeof self->miss, "%s", nm);
+        dsl_log("NAME-MISS %s %s", id, nm);
+    } else dsl_log("NAME-RULE %s late %s: missing; look game names up in dsl_plugin_init (dsl_need_*)", id, nm);
+    return NULL;
+}
+
 static void open_modules(void) {
     for (int i = 0; i < norder; i++) {
         struct DSLPlugin *p = ORDER[i];
@@ -527,8 +555,13 @@ static void run_init(void) {
         n++;
         if (p->init) {
             guard_enter(p->id, "dsl_plugin_init");
-            int r = p->init(&host, p);
+            p->in_init = 1; int r = p->init(&host, p); p->in_init = 0;
             guard_leave(p->id);
+            if (p->nmiss) {                       /* name check: off at start, not broken later in play */
+                p->names_off = 1;
+                dsl_log("%s: not for this game version: %s missing (%d game name(s) missing, NAME-MISS lines above)", p->id, p->miss, p->nmiss);
+                fail(p, "dsl_plugin_init (name check)", r ? r : -1); continue;
+            }
             if (r) { fail(p, "dsl_plugin_init", r); continue; }
         }
         ok++; dsl_log("%s %s: loaded (%d hook(s))", p->id, p->version, dsl_hook_count(p->idx));
@@ -893,6 +926,7 @@ int dsl_core_start(const char *build, const char *ga_id, const char *modsdir_def
     dsl_settings_host(&host); dsl_settings_init();                    /* mod settings: readable from dsl_module_load on */
     dsl_moddata_host(&host);                                         /* data folder per mod (API 6) */
     dsl_events_host(&host);                                          /* loader events (API 7) */
+    host.need = h_need;                                              /* name check (kit 0.1.32) */
     scan_mods(dsl_build_id);
     if (!norder && !getenv("DSML_SESSION") && !getenv("DSL_PROFILE") && !dsl_soft_wanted()) { dsl_log("no module to load"); return 1; }
     open_modules();

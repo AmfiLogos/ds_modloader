@@ -83,6 +83,25 @@ DSL_EXPORT int dsl_module_early(const DSLHost *h, DSLPlugin *me) {
     int r = h->patch_rva(me, t + 8, &old, &neu, 4, "temp"); h->log(me, "temp patch=%d, now failing", r); return 9;
 }
 DSL_EXPORT int dsl_world_check_skip(void) { return 0; }
+#elif MODE == 11   /* names-bad: needs a class, a method and a field this "game version" lacks; hooks Tick first */
+DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
+    H = h; ME = me;
+    int r = h->hook_method(me, "Refactor.Runtime", "DungeonBehaviorSimulator", "Tick", 0, (void *)my_nothing, (void **)&o_tick);
+    void *k = dsl_need_class(h, me, "Refactor.Runtime", "GoneSimulator");
+    void *m = dsl_need_code(h, me, "Refactor.Runtime", "DungeonBehaviorSimulator", "GoneMethod", 1);
+    int32_t f = dsl_need_field(h, me, "Refactor.Runtime", "DungeonBehaviorSimulator", "_goneField");
+    h->log(me, "names-bad hook=%d class=%p code=%p field=%d", r, k, m, f);
+    return 0;
+}
+#elif MODE == 12   /* names-good: every name it needs exists: it runs */
+DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
+    void *k = dsl_need_class(h, me, "Refactor.Runtime", "DungeonBehaviorSimulator");
+    void *mi = dsl_need_method(h, me, "Refactor.Runtime", "DungeonBehaviorSimulator", "Tick", 0);
+    void *c = dsl_need_code(h, me, "Refactor.Runtime", "DungeonBehaviorSimulator", "Tick", 0);
+    int32_t f = dsl_need_field(h, me, "Refactor.Runtime", "DungeonBehaviorSimulator", "_floorEnteredMin");
+    h->log(me, "names-good class=%d method=%d code=%d field=0x%x", k != NULL, mi != NULL, c == dlsym(RTLD_DEFAULT, "DBS_Tick"), f);
+    return 0;
+}
 #else              /* plain: loads, no hooks */
 DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) { h->log(me, "plain module %s up (table x=%p)", h->plugin_id(me), h->table(me, "x")); return 0; }
 #endif

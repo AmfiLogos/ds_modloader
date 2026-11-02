@@ -112,6 +112,19 @@ check "chain: a mod that never calls orig is logged with the mod it hides" 'log 
 check "chain: the same mod twice and a second method on the same body refused" 'log | grep -q "\[chain-b\] chain hooks=0 again=-1 folded=-1" && log | grep -q "is already hooked by this module" && log | grep -q "two methods share one body"'
 mv "$OUT/profile.json.chain" "$M/profile.json"; for d in chain-a chain-m chain-b skipper; do mv "$M/$d" "$OUT/$d.off"; done
 
+# name check (kit 0.1.32, tModLoader idea 9): a mod that needs a game name this game version lacks is OFF at start,
+# with the name, its hooks removed. Break caught: such a mod runs half-broken and crashes in the middle of a world.
+print "== T1n name check: a missing game name turns the mod off at start"
+mod names-bad 11 '{"id":"names-bad","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}'
+mod names-good 12 '{"id":"names-good","version":"1.0.0","kind":"code","api":2,"game_builds":["test"]}'
+cp "$M/profile.json" "$OUT/profile.json.names"; print '{"enabled":["names-bad","names-good"],"provided":["notch-fix"]}' > "$M/profile.json"
+r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib")
+log | grep -E "NAME-|names-|BAD HOOK" | sed 's/^/     /'
+check "names: every missing class / method / field is logged with the mod" 'log | grep -q "NAME-MISS names-bad Refactor.Runtime.GoneSimulator" && log | grep -q "NAME-MISS names-bad DungeonBehaviorSimulator.GoneMethod(1 args)" && log | grep -q "NAME-MISS names-bad DungeonBehaviorSimulator._goneField"'
+check "names: the mod is off at start with the first missing name, its hook removed and never run" 'log | grep -q "names-bad: not for this game version: Refactor.Runtime.GoneSimulator missing (3 game name(s) missing" && log | grep -q "names-bad: FAILED: dsl_plugin_init (name check) returned -1; 1 hook(s) removed" && ! log | grep -q "names-bad 1.0.0: loaded" && ! log | grep -q "BAD HOOK RAN"'
+check "names: a mod whose names all exist runs (method, code, field offset right)" 'log | grep -q "\[names-good\] names-good class=1 method=1 code=1 field=0x80" && log | grep -q "names-good 1.0.0: loaded" && ! log | grep -q "NAME-MISS names-good"'
+mv "$OUT/profile.json.names" "$M/profile.json"; for d in names-bad names-good; do mv "$M/$d" "$OUT/$d.off"; done
+
 print "== T1b mods per world: session file from the launcher"
 EH=$(shasum -a 256 "$M/early-mod/early-mod.dylib" | cut -c1-64)
 print -r -- "{\"world\":null,\"modset\":\"aaa\",\"rule\":\"mods\",\"worlds\":{\"11111111-1111-1111-1111-111111111111\":\"aaa\",\"22222222-2222-2222-2222-222222222222\":\"bbb\"},\"modset_lines\":[\"early-mod@1.2.0:$EH\",\"floor-logger@1.0.0:00\",\"ghost@1.0.0:\"]}" > "$OUT/session.json"
