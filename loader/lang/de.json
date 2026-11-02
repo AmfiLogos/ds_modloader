@@ -421,5 +421,8 @@
  "this update needs the installer (new game version)": "dieses Update braucht den Installer, weil sich die Spielversion geändert hat",
  "this world": "diese Welt",
  "unknown error": "unbekannter Fehler",
- "works only with %s, but version %s is installed": "funktioniert nur mit %s, aber Version %s ist installiert"
+ "works only with %s, but version %s is installed": "funktioniert nur mit %s, aber Version %s ist installiert",
+ "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s hat das Spiel beim letzten Start beendet. Es bleibt aus, bis es aktualisiert wird.",
+ "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.": "Das Spiel wurde zweimal hintereinander geschlossen, nachdem die Mods gestartet waren und bevor der Titelbildschirm kam. Dieser Start läuft ohne Mods. Schalte im Mods-Fenster den Mod aus, der das verursacht, und drücke dann auf Übernehmen.",
+ "off for this start: the game closed twice in a row while starting with mods": "für diesen Start aus: Das Spiel wurde zweimal hintereinander beim Start mit Mods geschlossen"
 }

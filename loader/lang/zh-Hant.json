@@ -403,5 +403,8 @@
  "this update needs the installer (new game version)": "此更新需要安裝程式：遊戲版本已變更",
  "this world": "此世界",
  "unknown error": "未知錯誤",
- "works only with %s, but version %s is installed": "僅適用於 %s，但已安裝的版本是 %s"
+ "works only with %s, but version %s is installed": "僅適用於 %s，但已安裝的版本是 %s",
+ "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s 上次在遊戲啟動時使遊戲停止。在更新之前它將保持關閉。",
+ "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.": "模組啟動後、標題畫面出現前，遊戲連續兩次關閉。本次啟動不載入模組。請在模組視窗中關閉導致問題的模組，然後點擊套用。",
+ "off for this start: the game closed twice in a row while starting with mods": "本次啟動已關閉：遊戲在載入模組啟動時連續兩次關閉"
 }

@@ -439,5 +439,8 @@
  "this update needs the installer (new game version)": "для этого обновления нужен установщик (новая версия игры)",
  "this world": "этот мир",
  "unknown error": "неизвестная ошибка",
- "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s"
+ "works only with %s, but version %s is installed": "работает только с %s, но установлена версия %s",
+ "%s stopped the game while it was starting last time. It stays off until it is updated.": "%s остановил игру во время прошлого запуска. Он останется выключен, пока не выйдет обновление.",
+ "The game closed twice in a row after the mods started, before the title. This start runs without mods. In the Mods window, turn off the mod that causes it, then press Apply.": "Игра дважды подряд закрылась после запуска модов, до титульного экрана. Этот запуск идёт без модов. В окне «Моды» выключите мод, который это вызывает, затем нажмите «Применить».",
+ "off for this start: the game closed twice in a row while starting with mods": "выключен на этот запуск: игра дважды подряд закрылась при запуске с модами"
 }
