@@ -60,10 +60,15 @@ ct=$({ $CC -O0 -Wall -DCH_FOLD_RISK=1 -I"$L/src" chain_test.c -o "$OUT/chain_win
 print -r -- "$ct" | sed 's/^/     /'
 check "chain rules: orig set first, Windows refuses a mod hook without a method name on a hooked body, loader hooks stay chainable" '[[ $crc -eq 0 && "$ct" != *FAIL* && "$ct" == *"same method by name = chained"* && "$ct" == *"still chain"* ]]'
 
+print "== T0d Mods window switch rule (src/dsl_deps.h dsl_deps_turn_on / _off; tModLoader study idea 5): ON turns on what it requires, OFF offers what needs it"
+dt=$($CC -O0 -Wall -I"$L/src" deps/switch_test.c "$L/src/dsl_json.c" -o "$OUT/deps_switch" && "$OUT/deps_switch" 2>&1); drc=$?
+print -r -- "$dt" | grep -v "^ok " | sed 's/^/     /'
+check "switch rule: required chain on, missing named, dependents (through another mod) offered off, cycles end" '[[ $drc -eq 0 && "$dt" == *PASS* ]]'
+
 print "== T0e loader events: the registry (src/dsl_evreg.h, SDK API 7)"
 et=$($CC -O0 -Wall -I"$L/src" events/ev_test.c -o "$OUT/ev_test" && "$OUT/ev_test"); erc=$?
 print -r -- "$et" | grep -v "^ok " | sed 's/^/     /'
-check "events: order, failed modules skipped, (un)subscribe during a send, frame / class filters" '[[ $erc -eq 0 && "$et" == *PASS* ]]'
+check "events: order, failed modules skipped, (un)subscribe during a send, frame / class filters, time meter (SLOW-MOD)" '[[ $erc -eq 0 && "$et" == *PASS* ]]'
 
 print "== T1 all modules, our loader first, a foreign loader second (with its own detour)"
 r=$(run DYLD_INSERT_LIBRARIES="$FW/dsload.dylib:$FW/foreign.dylib" FOREIGN_HOOK=1)

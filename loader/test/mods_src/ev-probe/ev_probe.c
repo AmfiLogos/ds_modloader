@@ -3,6 +3,8 @@
 // dsload.log (frames: a count line at each scene change). EVPROBE_LANG=1: at the title, after 120 title frames, it sets
 // the game's language static to German (LanguageSetting.currentLanguage = 3) and 120 frames later back (the loader's
 // language poll must send DSL_EV_LANG twice). It hooks nothing.
+// EVPROBE_SLOW=<us>: each frame callback (every frame) busy-waits that long, EVPROBE_SLOW_START=<ms>: dsl_plugin_init
+// busy-waits that long: events_test.py --slow proves the loader's time meter names a slow mod (SLOW-MOD lines).
 #include "dsl_sdk.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -18,6 +20,12 @@ static void *(*domain_get)(void); static void *(*assembly_image)(void *);
 static unsigned long n_title, n_world, n_any, n_tf, n_load, n_bad;   /* n_load: unfiltered frames while loading; n_bad: a
                                                                           title / world frame sent while loading (wrong) */
 static int lang_test, lang_step, lang_old = -1;
+static long slow_us;
+#include <time.h>
+static void busy_us(long us) {
+    struct timespec a, b; clock_gettime(CLOCK_MONOTONIC, &a);
+    do clock_gettime(CLOCK_MONOTONIC, &b); while ((b.tv_sec - a.tv_sec) * 1000000L + (b.tv_nsec - a.tv_nsec) / 1000 < us);
+}
 static void *lang_field;
 
 static const char *ev_name(int t) {
@@ -47,6 +55,7 @@ static void on_ev(void *ud, const DSLEvent *e) {
 }
 static void on_frame(void *ud, const DSLEvent *e) {
     unsigned long *c = ud; (*c)++;
+    if (c == &n_any && slow_us > 0) busy_us(slow_us);
     if (e->loading) { if (c == &n_any) n_load++; else n_bad++; }
     if (c == &n_any && n_any % 300 == 0) H->log(ME, "EVPROBE frames title=%lu world=%lu any=%lu loading=%lu bad=%lu scene=%d", n_title, n_world, n_any, n_load, n_bad, e->scene);
     if (c != &n_title || !lang_test || !lang_field || !static_set) return;
@@ -70,6 +79,9 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *h, DSLPlugin *me) {
     F(domain_get, "il2cpp_domain_get"); F(assembly_image, "il2cpp_assembly_get_image");
 #undef F
     const char *lt = getenv("EVPROBE_LANG"); lang_test = lt && *lt == '1';
+    const char *sl = getenv("EVPROBE_SLOW"), *ss = getenv("EVPROBE_SLOW_START");
+    slow_us = sl ? atol(sl) : 0;
+    if (ss && atol(ss) > 0) { h->log(me, "EVPROBE slow start %ld ms, slow frames %ld us", atol(ss), slow_us); busy_us(atol(ss) * 1000L); }
     if (lang_test) { void *k = find_class("Refactor.Setting", "LanguageSetting"); lang_field = k && field_from_name ? field_from_name(k, "currentLanguage") : NULL; }
     int bad = 0;
     for (int t = DSL_EV_SCENE; t <= DSL_EV_LAST; t++) bad |= dsl_on_event(h, me, t, 0, NULL, on_ev, NULL) != 0;

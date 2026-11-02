@@ -6,7 +6,10 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ### Unreleased (0.1.32)
 
+- Share your mods with friends. In the Mods window, "Share" (next to Groups) copies a short code of the game mods that are on, with their exact versions and settings. Paste it in a chat. Your friend clicks "Import", pastes the code and sees what will change. One click downloads the missing mods from the official releases and saves them as a group; if anything fails, nothing changes. Then pick the group and click Apply to play with the same mods. To share a group, pick it first, then click Share. <!-- roadmap: mod-packs -->
+- Switching a mod on in the Mods window now also switches on the mods it needs. If a needed mod is not installed, the window says which one. Switching a mod off asks if you also want to switch off the mods that need it. <!-- roadmap: deps-auto-switch -->
 - A mod that does not fit your game version is now turned off when the game starts, instead of breaking in the middle of a world. The Mods window says it was not made for this game version, and the log names the missing piece of the game. Mod makers: look up the game names your mod needs with the new dsl_need_ helpers.
+- For mod makers: the mod loader's log (dsload.log) now shows how long each mod took to start and names the slowest one.
 
 ### 0.1.31 (2026-11-02)
 

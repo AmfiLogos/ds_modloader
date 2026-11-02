@@ -112,6 +112,19 @@ Update method for a tick and never polls for these.
   only (ask dsl_view_find later; a shown view primes its cache).
 - Tests: `test/run_tests.sh` T0e (registry), `test/events_test.py` (Mac hidden copy, hook mode + fallback mode),
   Windows VM run (ext/nvevents/NOTES.md).
+- SLOW RULE (time meter, tModLoader study idea 2, lane nvtiming 2026-11-02): an event callback must be cheap. In a test
+  copy (dsl_soft_test_copy) the loader reads the clock before and after each callback it calls (`evm_call` in
+  `src/dsl_evreg.h`; exclusive time: the callbacks of an event a callback caused, a window it opened, count for their own
+  modules). A module over 20 ms per second (2 % of the main thread; 0.33 ms a frame at 60 fps) over a 10 s window, after a
+  state's first 5 s, at the title or in a world (loading is never judged) logs once per state
+  `SLOW-MOD <id> <ms per s> <title|world> (...)`. Each state's end and every 30 s: `modtime: <state> <secs> s: <id> <x> ms/s
+  (<calls> calls, max <ms> ms), ...`. Start (idea 8): EVERY dsload.log has, after the last init, `start times: <id> <ms> ms
+  (open, load, early, init), ...; slowest <id> <ms> ms; ...` (a module's own time = load + early + init; dlopen = the
+  system's file checks); a test copy logs `SLOW-MOD <id> <ms> start (...)` over 2000 ms. A player's copy never reads the
+  clock in the dispatch. Not covered: a mod's own game hooks (the meter only sees what the loader calls).
+  GUARD: `test/events_test.py` and `test/scan_rate_test.py` FAIL on any SLOW-MOD line and when "modtime: meter on" is
+  missing; `test/run_tests.sh` T0e (fake clock: a slow mod is named, a fast one not, a nested event charged to the right
+  mod, nothing judged while loading); `events_test.py --slow` (probe made slow on purpose) fails unless SLOW-MOD names it.
 
 ## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).
@@ -1537,3 +1550,39 @@ lookups made at use time failed in the middle of a world instead (study ~/ds_mul
 row 9). GUARD: test/run_tests.sh T1n (a fake missing class, method and field: the mod must be off at start with the
 name and its hook removed; a mod whose names all exist must run). Existing official mods move onto dsl_need_* at their
 next change.
+
+## "Get these mods": ONE helper brings mods to a player's machine; mod packs (owner 2026-11-02 "share a MOD PACK", PLAN_v013 item 36; lane nvpack) - `src/dsl_hostmods.c`, `ui/dsl_pack.c`
+Rule (lead brief 2026-11-02): downloads only through the "Get the host's mods" path: official signed releases of
+MOD_REPOS (`dsl_update.c`), sha256 checked, every file move recorded and rolled back on any failure. Never a URL from a
+code, a host or a chat; never a second downloader.
+- Template: `dsl_hostmods.c` plan (`make_plan` rows) + get (`get_start`: refusals, jobs, the download thread) + checks
+  (`check_installed`) with two ends: JOIN (`dsl_hostmods_get`: the host's settings as drafts, Apply, soft restart; the
+  multiplayer mod's ABI unchanged) and PACK (`dsl_pack_import`: the group is saved, nothing switched). A new feature that
+  brings mods (a mod browser, a "missing required mod" download) adds an end here; it never calls the download functions.
+- Mod pack code: `DSPACK1.<std base64 of the lines>.<crc32 8 hex>`; lines `kit <loader release>`, `name <group name>`,
+  sorted `<id>@<version>` and `<id>/<setting>@<value>` (gameplay mods only, as host lines; no client mods, launcher
+  features, multiplayer, custom difficulty). The reader is strict: any other line, a bad check value or base64 = "damaged";
+  DSPACK2+ or a newer kit = "update the mod loader". Spaces and line breaks inside a code are skipped (chat apps wrap).
+- Mods window: Groups header "Share" (the switches that are on + the next Apply's values; a group that matches the
+  switches gives its name) and "Import" (title only; the Import window `ui/dsl_pack.c`, window_std modal, Escape = Cancel).
+  The import's end runs in `dsl_win_frame` while the Mods window is open (keep_switches, finish, reload: the mods list
+  strings change), else in `dsl_hostmods_frame`. Apply waits while an import installs. A running mod whose files an
+  import replaced counts as a change ("<mod> new version"): Apply is active even with the same switches.
+- groups.json: optional `"settings": ["<mod>/<setting>@<value>", ...]` per group (old loaders ignore it); picking such a
+  group makes them the drafts; the current-group mark compares them too.
+- Test copies: the clipboard is the file `DSL_PACK_CLIP`; a test copy without it never touches the clipboard.
+- Guard: `test/update/getmods_test.sh` section 9: round trip (share -> import -> the same group, exact versions), a
+  pack name clash keeps the player's group, foreign id / wrong sha256 / missing release / failed group save change
+  nothing and save no group, damaged / cut / DSPACK2 / newer kit / URL codes request nothing; a static check fails when a
+  file other than dsl_hostmods.c, dsl_update.c and the starters calls `dsl_update_fetch`, `dsl_update_find_mod_release`
+  or `dsl_uos_mod_install` (27/0). In the game: `test/pack_test.py` (hidden copy NPK; Share -> code -> Import -> plan ->
+  "Save as a group" -> the group; Escape closes the Import window first; no UI-RULE / ESC-MISSING; the switch rule with
+  two data mods): 16/16 on 2026-11-02.
+
+## Switch rule: ON turns on what a mod requires, OFF asks about the mods that need it (tModLoader study idea 5; lead 2026-11-02; lane nvpack) - `src/dsl_deps.h` dsl_deps_turn_on / _off
+- Only `requires` (never `optional` / `conflicts`), recursive; `loader` and launcher-provided mods are never switched.
+  A required mod that is not installed is named ("X needs Y, which is not installed."), nothing else changes.
+  OFF: a game notice box "... Turn them off too?" (Turn off / Keep on); Keep on leaves them on (their row then says why
+  they do not run). `dsl_main.c dsl_deps_switch` reads every installed mod.json (as `dsl_deps_for_set` does).
+- Guard: `test/run_tests.sh` T0d (`test/deps/switch_test.c`): chain on, missing named, dependents through another mod
+  offered, optional / off ones not, cycles end. UI test op `dep_answer {"yes": true|false}` answers the question.

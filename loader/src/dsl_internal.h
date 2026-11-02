@@ -182,6 +182,7 @@ const char *dsl_plugin_name(struct DSLPlugin *self);
 int dsl_mod_state(const char *id, const char **why);     /* 1 running, 2 failed, 3 skipped, 0 listed / unknown */
 int dsl_mod_dep_text(const char *id, char *out, size_t cap);   /* a dependency reason (dsl_deps.h), 0 = none */
 void dsl_deps_for_set(const char *const *ids, int n, int *ok);   /* the dependency rule for a set to start */
+int dsl_deps_switch(const char *id, const char *const *on_ids, int n_on, char (*out)[64], int max, char (*missing)[96], int *nmiss, int maxmiss);
 int dsl_soft_shot(const char *png_path);                 /* test: full frame incl. UI */
 void *dsl_soft_mainflow(void);                           /* dsl_soft.c: the live MainFlow or NULL */
 void *dsl_soft_fade(void);                               /* dsl_soft.c: the live ScreenFadeEffectView (held from its Awake) or NULL; no scene search */
@@ -203,6 +204,7 @@ const char *dsl_moddata_root(void);                      /* <data>/ModData (UTF-
 void dsl_events_host(struct DSLHost *h);                 /* constructor: fills the API 7 host fields */
 void dsl_events_install(void);                           /* il2cpp ready, after dsl_reg_ready, before the modules' init */
 void dsl_events_frame(void);                             /* the kit tick (end of dsl_frame_hook): frame, scene, world, language */
+void dsl_start_times_check(void);                       /* dsl_main.c, test copies (first event frame): SLOW-MOD <id> <ms> start */
 int dsl_plugin_running(struct DSLPlugin *self);          /* dsl_main.c: 1 = the module runs (not failed, not turned off) */
 int dsl_reg_scene(void);                                 /* dsl_reg.c: MainFlow's scene (1 title, 2 world, 9 loading), -1 = none */
 int dsl_reg_world_guid(char out[40]);                    /* dsl_reg.c: the open world's guid; 0 = none */

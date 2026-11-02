@@ -171,3 +171,57 @@ static inline const char *dsl_dep_text(const DslDep *x, char *out, size_t cap) {
     dsi_utf8_fix_end(out);
     return out;
 }
+/* The Mods window's switch rule (owner 2026-11-02 via the lead, tModLoader study idea 5): a switch turned ON also turns
+   on every mod it requires, and what those require (recursive); OFF offers to turn off every mod that requires it
+   (recursive). Only "requires" (never "optional" or "conflicts"); "loader" and launcher-provided mods are never touched.
+   d[*].on = the switches as they are after the click. add[k] = 1: turn d[k] on too / off too; returns how many.
+   ON: missing[] gets each required entry that no installed mod answers (as written in mod.json, "id>=1.0"). */
+static inline int dsl_deps_turn_on(const DslDep *d, int n, int i, int *add, char (*missing)[96], int *nmiss, int maxmiss) {
+    int na = 0, stack[256], sp = 0;
+    for (int k = 0; k < n; k++) add[k] = 0;
+    if (nmiss) *nmiss = 0;
+    stack[sp++] = i;
+    while (sp > 0) {
+        const DslDep *x = &d[stack[--sp]];
+        if (!x->mf) continue;                                          /* no mod.json (provided): nothing it requires here */
+        const JNode *rq = json_get(x->mf, "requires");
+        if (!rq || rq->t != JN_ARR) continue;
+        for (const JNode *c = rq->child; c; c = c->next) {
+            if (c->t != JN_STR) continue;
+            char rid[64], op[3], ver[32]; dsl_dep_split(c->str, rid, sizeof rid, op, ver);
+            if (!rid[0] || !strcmp(rid, "loader")) continue;
+            const DslDep *o = dsl_dep_find((DslDep *)d, n, rid);
+            if (!o) {
+                int dup = 0; for (int m = 0; nmiss && m < *nmiss; m++) dup |= !strcmp(missing[m], c->str);
+                if (!dup && nmiss && *nmiss < maxmiss) snprintf(missing[(*nmiss)++], 96, "%s", c->str);
+                continue;
+            }
+            int k = (int)(o - d);
+            if (o->fixed || o->on || add[k] || k == i) continue;
+            add[k] = 1; na++;
+            if (sp < 256) stack[sp++] = k;
+        }
+    }
+    return na;
+}
+static inline int dsl_deps_turn_off(const DslDep *d, int n, int i, int *add) {
+    int na = 0;
+    for (int k = 0; k < n; k++) add[k] = 0;
+    for (int changed = 1; changed; ) {
+        changed = 0;
+        for (int k = 0; k < n; k++) {
+            if (k == i || add[k] || !d[k].on || d[k].fixed || !d[k].mf) continue;
+            const JNode *rq = json_get(d[k].mf, "requires");
+            if (!rq || rq->t != JN_ARR) continue;
+            for (const JNode *c = rq->child; c; c = c->next) {
+                if (c->t != JN_STR) continue;
+                char rid[64], op[3], ver[32]; dsl_dep_split(c->str, rid, sizeof rid, op, ver);
+                const DslDep *o = dsl_dep_find((DslDep *)d, n, rid);
+                if (!o || (o != &d[i] && !add[o - d])) continue;
+                add[k] = 1; na++; changed = 1;
+                break;
+            }
+        }
+    }
+    return na;
+}

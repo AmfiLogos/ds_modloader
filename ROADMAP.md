@@ -12,7 +12,8 @@ Dungeon Settlers Modded is made of three repos. Each item below is listed once, 
 
 ## Now
 
-- Nothing is being built right now. New items come here when work starts.
+- **Share mod packs.** A short code of your game mods, their versions and settings that friends paste into their Mods window to get the same mods as a group. <!-- id: mod-packs -->
+- **Needed mods switch on together.** Switching a mod on also switches on the mods it needs; switching one off asks about the mods that need it. <!-- id: deps-auto-switch -->
 
 ## Next
 

@@ -125,7 +125,7 @@ static double now_s(void) { return m_time ? CALL0(m_time, float)(m_time) : 0; }
 
 /* ---------------------------------------------------------------- test registry: named controls */
 typedef struct { char name[80]; DSLObj w; dsl_ui_cb cb; void *ud; int kind; char text[160]; } Reg;   /* kind 0 button, 1 toggle, 2 field, 3 text, 4 value row, 5 slider, 6 number field */
-#define NREG 256
+#define NREG 384
 static Reg reg[NREG]; static int nreg;
 static DSLObj named(DSLObj w, int kind, const char *name, dsl_ui_cb cb, void *ud, const char *text) {
     if (!w || nreg >= NREG) return w;
@@ -139,12 +139,20 @@ static void set_text(DSLObj w, const char *s) {
     for (int i = 0; i < nreg; i++) if (reg[i].w == w) snprintf(reg[i].text, sizeof reg[i].text, "%s", s);
 }
 static void unreg_all(void) { nreg = 0; }
+/* the Import window (ui/dsl_pack.c) registers its controls here ("pack-..."): a name again = the same entry */
+DSLObj dsl_win_named(DSLObj w, int kind, const char *name, dsl_ui_cb cb, void *ud, const char *text) {
+    for (int i = 0; i < nreg; i++) if (!strcmp(reg[i].name, name)) {
+        reg[i].w = w; reg[i].cb = cb; reg[i].ud = ud; reg[i].kind = kind; snprintf(reg[i].text, sizeof reg[i].text, "%s", text ? text : ""); return w; }
+    return named(w, kind, name, cb, ud, text);
+}
+void dsl_win_named_text(DSLObj w, const char *text) { for (int i = 0; i < nreg; i++) if (w && reg[i].w == w) snprintf(reg[i].text, sizeof reg[i].text, "%s", text ? text : ""); }
+void dsl_win_named_drop(const char *prefix) { size_t n = strlen(prefix); for (int i = 0; i < nreg; i++) if (!strncmp(reg[i].name, prefix, n)) reg[i].w = NULL; }
 
 /* ---------------------------------------------------------------- the Mods tab */
 #define NM 64
 static struct { const DSLModInfo *m; int on, base; DSLObj row, warn, allw; } mods[NM]; static int nmods;   /* base: running set, or the world's; warn: save warning line (owner item 9); allw: a fix's "On in all worlds" */
 static int world_mode; static char world_guid[80], world_name[120];   /* Mods tab bound to one world (Load list "Change") */
-static DSLObj m_status, m_apply, m_undo, m_save, m_field, m_fsave, m_fcancel, m_glist, m_gmark, m_gnone;
+static DSLObj m_status, m_apply, m_undo, m_save, m_field, m_fsave, m_fcancel, m_glist, m_gmark, m_gnone, m_share, m_import;
 static DSLObj g_row[32], g_del[32]; static int ng_rows, naming, applying, applying_seen_busy;
 static double applying_t;
 static char carry_note[300];                                           /* shown when the window opens again (failed Apply) */
@@ -152,6 +160,8 @@ static int slogel_files(void);
 static void destroy_all(void);
 static void keep_switches(void);
 static void mods_tab_reload(void);
+static void settings_values(void);
+static void num_commit_all(int quiet);
 static char m_note[300];                                               /* last refusal / failure, cleared by a change */
 static float m_lw, m_rw, m_rx;
 
@@ -181,8 +191,9 @@ static void active_only_save(void) {
 }
 static char set_page[64];                                              /* the Settings page of this mod is open ("" = the list) */
 static size_t cols_at(const char *s, int cols);
+static int stale(int i) { return !world_mode && mods[i].on && mods[i].base && dsl_mod_stale(mods[i].m->id); }   /* a pack import replaced its files */
 static int changed(void) {
-    for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) return 1;
+    for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base || stale(i)) return 1;
     return !world_mode && dsl_settings_pending(NULL) > 0;              /* a gameplay setting waits for Apply */
 }
 static void draft(void) {                                              /* unapplied changes: the loader prewarms that set */
@@ -199,7 +210,8 @@ static int group_is_current(int g) {
         int in = 0; for (int k = 0; k < n; k++) if (!strcmp(ids[k], mods[i].m->id)) in = 1;
         if (in != mods[i].on) return 0;
     }
-    return 1;
+    const char *gs = dsl_group_settings(g);                            /* a mod pack's group: its settings too */
+    return !gs || !*gs || world_mode || dsl_settings_lines_match(gs);
 }
 static void mods_sync(void) {
     for (int i = 0; i < nmods; i++) {
@@ -222,8 +234,9 @@ static void mods_sync(void) {
     else if (!ch) snprintf(s, sizeof s, "%s", TR("Switch mods on or off, then Apply."));
     else {
         char list[500] = "", one[200], t[500]; int k = 0;
-        for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base) {
-            snprintf(one, sizeof one, mods[i].on ? TR("%s on") : TR("%s off"), mods[i].m->name);
+        for (int i = 0; i < nmods; i++) if (mods[i].on != mods[i].base || stale(i)) {
+            if (mods[i].on == mods[i].base) snprintf(one, sizeof one, TR("%s new version"), mods[i].m->name);
+            else snprintf(one, sizeof one, mods[i].on ? TR("%s on") : TR("%s off"), mods[i].m->name);
             if (k++) { snprintf(t, sizeof t, TR("%s, %s"), list, one); snprintf(list, sizeof list, "%s", t); }
             else snprintf(list, sizeof list, "%s", one);
         }
@@ -241,9 +254,12 @@ static void mods_sync(void) {
     }
     dsi_utf8_fix_end(s);
     set_text(m_status, s);
-    U->set_enabled(m_apply, ch && (world_mode || !busy) && !applying && !read_only);
+    int pk = dsl_pack_state(NULL, NULL, 0, NULL, 0), pk_busy = pk >= 1 && pk <= 3;   /* a pack import installs files: no Apply now */
+    U->set_enabled(m_apply, ch && (world_mode || !busy) && !applying && !read_only && !pk_busy);
     U->set_enabled(m_undo, ch && !applying && !read_only);
     U->set_enabled(m_save, !applying && !read_only);
+    if (m_import) U->set_enabled(m_import, !applying && !read_only);
+    if (m_share) U->set_enabled(m_share, !applying);
     for (int i = 0; i < nmods; i++) {
         if (mods[i].row) U->set_enabled(mods[i].row, !applying && !read_only);
         if (mods[i].allw) U->set_enabled(mods[i].allw, !applying && !read_only);
@@ -254,11 +270,57 @@ static void mods_sync(void) {
     for (int g = 0; g < ng_rows; g++) if (group_is_current(g)) { cur_g = g; break; }
     if (m_gmark) { U->set_active(m_gmark, cur_g >= 0); if (cur_g >= 0) U->place(m_gmark, 0, cur_g * 48.0f + 4, 4, 32); }
 }
+/* the switch rule (owner 2026-11-02, tModLoader study idea 5; src/dsl_deps.h dsl_deps_turn_on / _off): ON turns on
+   what the mod requires (recursive) and names what is not installed; OFF asks to turn off the mods that need it */
+static char dq_ids[NM][64]; static int ndq;                            /* the mods the question would turn off */
+static void switch_set(int i, int on) {
+    mods[i].on = on;
+    for (int k = 0; k < nreg; k++) if (reg[k].w && reg[k].w == mods[i].row) snprintf(reg[k].text, sizeof reg[k].text, "%s", on ? "on" : "off");
+}
+static void dep_off_yes(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    for (int q = 0; q < ndq; q++) for (int i = 0; i < nmods; i++) if (!strcmp(mods[i].m->id, dq_ids[q])) switch_set(i, 0);
+    dsl_log("win: %d mod(s) that need it turned off too", ndq);
+    ndq = 0; mods_sync(); draft();
+}
+static void dep_off_no(void *ud, DSLObj w) { (void)ud; (void)w; dsl_log("win: the mods that need it stay on"); ndq = 0; }
+static void deps_after_switch(int i) {
+    const char *on_ids[NM * 2]; int n = 0;
+    for (int k = 0; k < nmods; k++) if (mods[k].on) on_ids[n++] = mods[k].m->id;
+    for (int k = 0; k < dsl_mods_count() && n < NM * 2; k++) { const DSLModInfo *m = dsl_mods_at(k); if (m && m->hidden && m->enabled) on_ids[n++] = m->id; }
+    static char out[NM][64], miss[8][96]; int nmiss = 0;
+    int c = dsl_deps_switch(mods[i].m->id, on_ids, n, out, NM, miss, &nmiss, 8);
+    char list[400] = "", t[500];
+    if (mods[i].on) {
+        for (int q = 0; q < c; q++) for (int k = 0; k < nmods; k++) if (!strcmp(mods[k].m->id, out[q]) && !mods[k].on) {
+            switch_set(k, 1);
+            if (list[0]) { snprintf(t, sizeof t, TR("%s, %s"), list, mods[k].m->name); snprintf(list, sizeof list, "%s", t); } else snprintf(list, sizeof list, "%s", mods[k].m->name);
+        }
+        if (nmiss) {                                                   /* not installed: said, nothing else changes */
+            char ml[300] = ""; for (int q = 0; q < nmiss; q++) { if (q) strlcat(ml, ", ", sizeof ml); strlcat(ml, miss[q], sizeof ml); }
+            snprintf(m_note, sizeof m_note, TR("%s needs %s, which is not installed."), mods[i].m->name, ml);
+        } else if (list[0]) snprintf(m_note, sizeof m_note, TR("Also turned on: %s (needed by %s)."), list, mods[i].m->name);
+        dsi_utf8_fix_end(m_note);
+        return;
+    }
+    ndq = 0;
+    for (int q = 0; q < c; q++) for (int k = 0; k < nmods; k++) if (!strcmp(mods[k].m->id, out[q]) && mods[k].on && ndq < NM) {
+        snprintf(dq_ids[ndq++], 64, "%s", mods[k].m->id);
+        if (list[0]) { snprintf(t, sizeof t, TR("%s, %s"), list, mods[k].m->name); snprintf(list, sizeof list, "%s", t); } else snprintf(list, sizeof list, "%s", mods[k].m->name);
+    }
+    if (!ndq) return;
+    char q[600];
+    if (ndq == 1) snprintf(q, sizeof q, TR("%s needs %s and does not run without it. Turn %s off too?"), list, mods[i].m->name, list);
+    else snprintf(q, sizeof q, TR("These mods need %s and do not run without it: %s. Turn them off too?"), mods[i].m->name, list);
+    dsi_utf8_fix_end(q);
+    U->notice(q, TR("Turn off"), TR("Keep on"), dep_off_yes, dep_off_no, NULL);
+}
 static void mod_change(void *ud, DSLObj w) {
     int i = (int)(intptr_t)ud;
     mods[i].on = U->toggle_get(w);
     m_note[0] = 0;
     for (int k = 0; k < nreg; k++) if (reg[k].w == w) snprintf(reg[k].text, sizeof reg[k].text, "%s", mods[i].on ? "on" : "off");
+    deps_after_switch(i);
     mods_sync(); draft();
 }
 /* a fix's "On in all worlds" (Fixes tab): saved at once (it changes the set of every world that did not turn the fix off).
@@ -283,6 +345,8 @@ static void group_pick(void *ud, DSLObj w) {
     const char *ids[NM]; int n = dsl_group_mods(g, ids, NM);
     for (int i = 0; i < nmods; i++) { int in = 0; for (int k = 0; k < n; k++) if (!strcmp(ids[k], mods[i].m->id)) in = 1; mods[i].on = in && !dsl_mod_is_difficulty(mods[i].m->id); }
     m_note[0] = 0;
+    const char *gs = dsl_group_settings(g);                            /* a mod pack's group: its gameplay values become the drafts */
+    if (gs && *gs && !world_mode) { dsl_settings_undo(); int k = dsl_settings_take_lines(gs); settings_values(); dsl_log("win: group %s: %d setting value(s) taken", dsl_group_name(g), k); }
     dsl_log("win: group %s chosen", dsl_group_name(g));
     if (world_mode && active_only()) { keep_switches(); mods_tab_reload(); return; }   /* the list shows the group's mods */
     mods_sync(); draft();
@@ -315,6 +379,8 @@ static void groups_build(void) {
         }
         g_row[g] = U->button(m_glist, 10, g * 48.0f, m_rw - 70, 40, lb, group_pick, (void *)(intptr_t)g);
         snprintf(nm, sizeof nm, "group:%s", dsl_group_name(g)); named(g_row[g], 0, nm, group_pick, (void *)(intptr_t)g, lb);
+        const char *gs = dsl_group_settings(g); int nset = gs && *gs ? 1 : 0; for (const char *c = gs; c && *c; c++) nset += *c == '\n';
+        if (nset && o < sizeof tip) { char sc[80]; snprintf(sc, sizeof sc, TRN("%d setting", "%d settings", nset), nset); snprintf(tip + o, sizeof tip - o, " (+ %s)", sc); }
         U->tooltip(g_row[g], dsl_group_name(g), n ? tip : TR("No mods: the game without mods."));
         g_del[g] = U->button(m_glist, m_rw - 54, g * 48.0f, 40, 40, "x", del_click, (void *)(intptr_t)g);
         snprintf(nm, sizeof nm, "group-del:%s", dsl_group_name(g)); named(g_del[g], 0, nm, del_click, (void *)(intptr_t)g, "x");
@@ -349,6 +415,28 @@ static void fsave_click(void *ud, DSLObj w) {
     naming_show(0);
     groups_build(); mods_sync();
 }
+/* Share (owner 2026-11-02, mod packs): the switches that are on (gameplay mods, exact versions) + the gameplay values
+   the next Apply uses, as a short code on the clipboard; a group that matches the switches gives its name */
+static void share_click(void *ud, DSLObj w) {
+    (void)ud; (void)w;
+    num_commit_all(1);
+    const char *ids[NM]; int n = 0, cur_g = -1;
+    for (int i = 0; i < nmods; i++) if (mods[i].on) ids[n++] = mods[i].m->id;
+    for (int g = 0; g < ng_rows; g++) if (group_is_current(g)) { cur_g = g; break; }
+    static char code[24000]; char why[400] = "";
+    int k = dsl_pack_code(ids, n, cur_g >= 0 ? dsl_group_name(cur_g) : "", code, sizeof code, why, sizeof why);
+    if (k < 0) snprintf(m_note, sizeof m_note, "%s", why);
+    else if (k == 0) snprintf(m_note, sizeof m_note, "%s", TR("No game mods are on. Turn on the mods you want to share, then click Share."));
+    else {
+        dsl_pack_clip_set(code);
+        snprintf(m_note, sizeof m_note, TRN("Mod pack code copied (%d mod). Paste it in a chat. Your friends click Import in their Mods window.",
+                                            "Mod pack code copied (%d mods). Paste it in a chat. Your friends click Import in their Mods window.", k), k);
+        dsl_log("win: Share: %d mod(s)%s%s, %zu characters", k, cur_g >= 0 ? ", group " : "", cur_g >= 0 ? dsl_group_name(cur_g) : "", strlen(code));
+    }
+    dsi_utf8_fix_end(m_note);
+    mods_sync();
+}
+static void import_click(void *ud, DSLObj w) { (void)ud; (void)w; num_commit_all(1); m_note[0] = 0; mods_sync(); dsl_pack_win_open(); }
 /* "Open mods folder": the player's mods folder (Mac: ROOT/mods from the app, Windows: the loader's mods folder) */
 static void folder_click(void *ud, DSLObj w) {
     (void)ud; (void)w;
@@ -608,7 +696,15 @@ static void mods_open(DSLObj root, float w, float h) {
                   named(et, 3, "mods-empty", NULL, NULL, e); }
     U->scroll_height(list, y);
     /* groups */
-    U->text(root, m_rx, 0, m_rw, 32, TR("Groups"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
+    m_share = m_import = NULL;
+    U->text(root, m_rx, 0, world_mode ? m_rw : m_rw - 236, 32, TR("Groups"), 20, DSL_TXT_LEFT | DSL_TXT_TITLE, GOLD);
+    if (!world_mode) {                                                 /* mod packs: share a group with friends, import theirs */
+        m_share = named(U->button(root, m_rx + m_rw - 228, 0, 110, 34, TR("Share"), share_click, NULL), 0, "group-share", share_click, NULL, TR("Share"));
+        U->tooltip(m_share, TR("Share"), TR("Copy a code of the game mods that are on, with their versions and settings. "
+                                            "Paste it in a chat: friends click Import to get the same mods. Pick a group first to share that group."));
+        m_import = named(U->button(root, m_rx + m_rw - 110, 0, 110, 34, TR("Import"), import_click, NULL), 0, "group-import", import_click, NULL, TR("Import"));
+        U->tooltip(m_import, TR("Import"), TR("Paste a mod pack code from a friend. The missing mods are downloaded from the official releases and saved as a group."));
+    }
     m_save = named(U->button(root, m_rx, 40, m_rw, 40, TR("Save these mods as a group"), save_click, NULL), 0, "group-new", save_click, NULL, TR("Save these mods as a group"));
     m_field = named(U->field(root, m_rx, 40, m_rw - 216, 40, TR("Group name"), "", fsave_click, NULL), 2, "group-name", fsave_click, NULL, "");
     m_fsave = named(U->button(root, m_rx + m_rw - 208, 40, 100, 40, TR("Save"), fsave_click, NULL), 0, "group-save", fsave_click, NULL, TR("Save"));
@@ -949,7 +1045,7 @@ static void tab_close(void) {
     if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->close) t->close(t->ud); }
     U->destroy(w_body); w_body = NULL;
     for (int t = 0; t < 3; t++) if (m_sub[t]) { U->destroy(m_sub[t]); m_sub[t] = NULL; }
-    for (int k = 0; k < nreg; k++) if (strncmp(reg[k].name, "tab:", 4) && strcmp(reg[k].name, "close")) reg[k].w = NULL;
+    for (int k = 0; k < nreg; k++) if (strncmp(reg[k].name, "tab:", 4) && strcmp(reg[k].name, "close") && strncmp(reg[k].name, "pack-", 5)) reg[k].w = NULL;
     cur = -1;
 }
 static int tab_can_close(void) {
@@ -1019,6 +1115,7 @@ static void build(void) {
     w_mark = flat(U->panel(w_win, 24, TAB_Y + TAB_H + 3, TAB_W, 3, 0), GOLD);   /* under the open tab */
 }
 static void destroy_all(void) {
+    dsl_pack_win_close();                                              /* the Import window belongs to this window */
     tab_close();
     if (w_win) U->window_close(w_win);                                 /* the window and its backdrop */
     w_win = w_back = w_mark = NULL; memset(w_tab, 0, sizeof w_tab);
@@ -1155,7 +1252,12 @@ static void test_frame(void) {
         JNode *v = json_get(j, "value");
         if (!r || !v || v->t != JN_NUM || (r->kind != 4 && r->kind != 5)) { ok = 0; snprintf(msg, sizeof msg, "no value control %s", target ? target : ""); }
         else { if (r->kind == 5) U->slider_set(r->w, (int)v->num); else U->value_set(r->w, (int)v->num); if (r->cb) r->cb(r->ud, r->w); }
-    } else if (!strcmp(op, "esc")) { if (is_open && !naming) dsl_win_close(); else if (naming) naming_show(0); }
+    } else if (!strcmp(op, "dep_answer")) {                            /* the switch rule's question (a game notice box) */
+        JNode *v = json_get(j, "yes");
+        if (!ndq) { ok = 0; snprintf(msg, sizeof msg, "no question"); }
+        else { snprintf(msg, sizeof msg, "%d", ndq); if (DSL_UI_HAS(U, notice_close)) U->notice_close();
+               if (v && v->t == JN_BOOL && v->b) dep_off_yes(NULL, NULL); else dep_off_no(NULL, NULL); }
+    } else if (!strcmp(op, "esc")) { if (dsl_pack_win_is_open()) dsl_pack_win_close(); else if (is_open && !naming) dsl_win_close(); else if (naming) naming_show(0); }
     else { ok = 0; snprintf(msg, sizeof msg, "unknown op %s", op); }
     test_answer(seq, ok, msg, dump);
     json_free(j);
@@ -1170,6 +1272,18 @@ void dsl_win_frame(void) {
     if (is_open) {
         int f = (int)(now_s() * 6) % SLOGEL_FRAMES;                   /* Mud Slogel idle, 6 frames per second */
         if (f != slogel_shown && w_slogel[f]) { if (slogel_shown >= 0 && w_slogel[slogel_shown]) U->set_active(w_slogel[slogel_shown], 0); U->set_active(w_slogel[f], 1); slogel_shown = f; }
+        if (dsl_pack_ready()) {                                         /* a pack import's files are in: the group is saved here */
+            keep_switches(); dsl_pack_finish();                         /* the mods list is read again (its strings change) */
+            char t[400] = "", g[80]; int s = dsl_pack_state(NULL, t, sizeof t, g, sizeof g);
+            if (cur == 0) { mods_tab_reload(); snprintf(m_note, sizeof m_note, "%s", t); dsl_log("win: pack import ended (%d): %s", s, t); mods_sync(); }
+        }
+        dsl_pack_win_frame();
+        { static int pk_last; char t[400] = ""; int s = dsl_pack_state(NULL, t, sizeof t, NULL, 0);   /* Apply waits while it installs */
+          if (s != pk_last && cur == 0) {
+              if (s == -1 && pk_last >= 1 && pk_last <= 3 && !dsl_pack_win_is_open()) snprintf(m_note, sizeof m_note, "%s", t);   /* the window is closed */
+              mods_sync();
+          }
+          pk_last = s; }
         if (cur == 0) { mods_update(); num_focus_frame(); }
         else if (cur > 0) { const DSLTab *t = tab_at(cur); if (t && t->update) t->update(t->ud); }
     }

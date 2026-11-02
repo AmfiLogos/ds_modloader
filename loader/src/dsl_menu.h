@@ -75,6 +75,40 @@ const char *dsl_group_name(int i);
 int dsl_group_mods(int i, const char **ids, int max);         /* returns count */
 int dsl_group_save(const char *name, const char *const *ids, int n);   /* add or replace by name; 0 = ok */
 int dsl_group_delete(const char *name);
+/* a mod pack's group also holds gameplay settings ("<mod>/<setting>@<value>" lines, '\n' between; "" = none): picking it
+   makes them the drafts of the next Apply. save_ex: a failed write changes nothing (0 = ok). */
+int dsl_group_save_ex(const char *name, const char *const *ids, int n, const char *settings);
+const char *dsl_group_settings(int i);
+
+/* MOD PACKS (owner 2026-11-02, PLAN_v013 item 36; src/dsl_hostmods.c). A pack = a short text code of gameplay mods with
+   their exact versions and gameplay setting values. "Get these mods" (the host-mods plan + get + rollback) is the ONE
+   helper that brings mods to this machine: the multiplayer join and the pack import both use it (never a second downloader).
+   code: the gameplay mods among ids (installed, switched on) + the values the next Apply uses; name "" = none.
+         Returns how many mods are in it, -1 = refused (why).
+   plan: the rows JSON of dsl_hostmods_plan + "name", "kit", "group" (the group it will be saved as), "error" (refusal
+         text, rows empty). Returns the number of rows that differ, -1 = refused.
+   import: starts the get (downloads only official signed releases, sha256 checked); the end saves the group (pack ids
+         + the client mods and launcher mods that are on) and switches nothing. 0 = started, -1 = refused (why).
+   state: 0 idle, 1 downloading, 2 installing, 4 saved (text = "Saved as the group ..."), -1 failed (text = why, every
+         change rolled back); group = the saved group's name.
+   ready / finish: the import's files are installed; finish (main thread) reads the mods folder again (DSLModInfo
+         strings change: the Mods window keeps its switches first and reloads after) and saves the group. */
+int dsl_pack_code(const char *const *ids, int n, const char *name, char *out, size_t cap, char *why, size_t wcap);
+int dsl_pack_plan(const char *code, char *out, size_t cap);
+int dsl_pack_import(const char *code, char *why, size_t cap);
+int dsl_pack_state(int *pct, char *text, size_t cap, char *group, size_t gcap);
+int dsl_pack_ready(void);
+void dsl_pack_finish(void);
+int dsl_mod_stale(const char *id);   /* 1 = on and running, but its files are now another version (an import): Apply */
+/* the Import window (ui/dsl_pack.c), opened from the Mods window's Groups header; closed with it */
+void dsl_pack_win_open(void);
+void dsl_pack_win_close(void);
+int dsl_pack_win_is_open(void);
+void dsl_pack_win_frame(void);       /* every frame from dsl_win_frame (main thread) */
+void dsl_pack_clip_set(const char *s);   /* the clipboard; a test copy: the file DSL_PACK_CLIP (never the player's) */
+size_t dsl_pack_clip_get(char *out, size_t cap);
+int dsl_settings_lines_edit(const char *id, char *out, size_t cap);   /* the next Apply's values ("<mod>/<set>@<v>") */
+int dsl_settings_lines_match(const char *lines);                     /* 1 = every line is the next Apply's value */
 
 /* Apply: write <data>/Mods/pending.json with these ids enabled and soft restart into it. The new process makes it
    active.json once it runs (commit only on success). Returns 0 = started, -1 = refused (reason copied to why). */

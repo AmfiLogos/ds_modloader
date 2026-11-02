@@ -1020,7 +1020,7 @@ static void commit_pending(void) {
 
 /* ------------------------------------------------------------------ groups */
 #define MAXG 32
-static struct { char name[80]; char ids[MAXM][64]; int n; } G[MAXG]; static int ng, groups_read;
+static struct { char name[80]; char ids[MAXM][64]; int n; char set[2048]; } G[MAXG]; static int ng, groups_read;   /* set: a mod pack's settings lines */
 static void groups_load(void) {
     if (groups_read) return; groups_read = 1;
     char p[1200]; dpath(p, sizeof p, "groups.json");
@@ -1030,17 +1030,30 @@ static void groups_load(void) {
         const char *nm = json_str(g, "name"); JNode *m = json_get(g, "mods"); if (!nm) continue;
         snprintf(G[ng].name, sizeof G[ng].name, "%s", nm); G[ng].n = 0;
         if (m && m->t == JN_ARR) for (JNode *c = m->child; c && G[ng].n < MAXM; c = c->next) if (c->t == JN_STR) snprintf(G[ng].ids[G[ng].n++], 64, "%s", c->str);
+        G[ng].set[0] = 0; JNode *st = json_get(g, "settings");            /* "<mod>/<setting>@<value>" lines (mod packs) */
+        if (st && st->t == JN_ARR) for (JNode *c = st->child; c; c = c->next) if (c->t == JN_STR && c->str[0] && !strchr(c->str, '\n')) {
+            size_t k = strlen(G[ng].set); if (k + strlen(c->str) + 2 >= sizeof G[ng].set) break;
+            snprintf(G[ng].set + k, sizeof G[ng].set - k, "%s%s", k ? "\n" : "", c->str);
+        }
         ng++;
     }
     json_free(j);
 }
 static int groups_save(void) {
-    size_t cap = 1 << 16, k = 0; char *b = malloc(cap); char e[200];
+    size_t cap = 1 << 20, k = 0; char *b = malloc(cap); char e[400];   /* 32 groups x (64 ids + settings) fit */
+    if (!b) return -1;
     k += (size_t)snprintf(b + k, cap - k, "{\"groups\":[");
     for (int i = 0; i < ng; i++) {
         jesc(e, sizeof e, G[i].name); k += (size_t)snprintf(b + k, cap - k, "%s\n {\"name\":\"%s\",\"mods\":[", i ? "," : "", e);
         for (int j = 0; j < G[i].n; j++) { jesc(e, sizeof e, G[i].ids[j]); k += (size_t)snprintf(b + k, cap - k, "%s\"%s\"", j ? "," : "", e); }
-        k += (size_t)snprintf(b + k, cap - k, "]}");
+        k += (size_t)snprintf(b + k, cap - k, "]");
+        if (G[i].set[0]) {                                                 /* only a mod pack's group has it (old loaders skip it) */
+            char tmp[2048]; snprintf(tmp, sizeof tmp, "%s", G[i].set); int f = 0;
+            k += (size_t)snprintf(b + k, cap - k, ",\"settings\":[");
+            for (char *sv = NULL, *t = strtok_r(tmp, "\n", &sv); t; t = strtok_r(NULL, "\n", &sv)) { jesc(e, sizeof e, t); k += (size_t)snprintf(b + k, cap - k, "%s\"%s\"", f++ ? "," : "", e); }
+            k += (size_t)snprintf(b + k, cap - k, "]");
+        }
+        k += (size_t)snprintf(b + k, cap - k, "}");
     }
     snprintf(b + k, cap - k, "\n]}\n");
     char p[1200]; dpath(p, sizeof p, "groups.json");
@@ -1053,15 +1066,27 @@ int dsl_group_mods(int i, const char **ids, int max) {
     int n = 0; for (; n < G[i].n && n < max; n++) ids[n] = G[i].ids[n];
     return n;
 }
-int dsl_group_save(const char *name, const char *const *ids, int n) {
-    groups_load(); if (!name || !*name) return -1;
+int dsl_group_save(const char *name, const char *const *ids, int n) { return dsl_group_save_ex(name, ids, n, NULL); }
+/* a mod pack's group (dsl_hostmods.c): also its gameplay settings ("<mod>/<setting>@<value>" lines, '\n' between).
+   A failed write leaves the groups as they were (also in memory). */
+int dsl_group_save_ex(const char *name, const char *const *ids, int n, const char *settings) {
+    groups_load(); if (!name || !*name || strlen(name) >= sizeof G[0].name) return -1;
+    if (settings && strlen(settings) >= sizeof G[0].set) return -1;
     int i = 0; while (i < ng && strcmp(G[i].name, name)) i++;
-    if (i == ng) { if (ng >= MAXG) return -1; ng++; }
+    if (i == ng && ng >= MAXG) return -1;
+    static char keep[sizeof G[0]]; int was = i < ng; if (was) memcpy(keep, &G[i], sizeof G[0]);
+    if (!was) ng++;
     snprintf(G[i].name, sizeof G[i].name, "%s", name); G[i].n = 0;
     for (int j = 0; j < n && j < MAXM; j++) snprintf(G[i].ids[G[i].n++], 64, "%s", ids[j]);
-    dsl_log("reg: group '%s' saved (%d mod(s))", name, n);
-    return groups_save();
+    snprintf(G[i].set, sizeof G[i].set, "%s", settings ? settings : "");
+    if (groups_save()) {
+        if (was) memcpy(&G[i], keep, sizeof G[0]); else ng--;
+        dsl_log("reg: group '%s' NOT saved (groups.json could not be written)", name); return -1;
+    }
+    dsl_log("reg: group '%s' saved (%d mod(s)%s)", name, n, settings && *settings ? ", with settings" : "");
+    return 0;
 }
+const char *dsl_group_settings(int i) { groups_load(); return i >= 0 && i < ng ? G[i].set : ""; }
 int dsl_group_delete(const char *name) {
     groups_load();
     for (int i = 0; i < ng; i++) if (!strcmp(G[i].name, name)) {
