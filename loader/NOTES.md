@@ -112,6 +112,19 @@ Update method for a tick and never polls for these.
   only (ask dsl_view_find later; a shown view primes its cache).
 - Tests: `test/run_tests.sh` T0e (registry), `test/events_test.py` (Mac hidden copy, hook mode + fallback mode),
   Windows VM run (ext/nvevents/NOTES.md).
+- SLOW RULE (time meter, tModLoader study idea 2, lane nvtiming 2026-11-02): an event callback must be cheap. In a test
+  copy (dsl_soft_test_copy) the loader reads the clock before and after each callback it calls (`evm_call` in
+  `src/dsl_evreg.h`; exclusive time: the callbacks of an event a callback caused, a window it opened, count for their own
+  modules). A module over 20 ms per second (2 % of the main thread; 0.33 ms a frame at 60 fps) over a 10 s window, after a
+  state's first 5 s, at the title or in a world (loading is never judged) logs once per state
+  `SLOW-MOD <id> <ms per s> <title|world> (...)`. Each state's end and every 30 s: `modtime: <state> <secs> s: <id> <x> ms/s
+  (<calls> calls, max <ms> ms), ...`. Start (idea 8): EVERY dsload.log has, after the last init, `start times: <id> <ms> ms
+  (open, load, early, init), ...; slowest <id> <ms> ms; ...` (a module's own time = load + early + init; dlopen = the
+  system's file checks); a test copy logs `SLOW-MOD <id> <ms> start (...)` over 2000 ms. A player's copy never reads the
+  clock in the dispatch. Not covered: a mod's own game hooks (the meter only sees what the loader calls).
+  GUARD: `test/events_test.py` and `test/scan_rate_test.py` FAIL on any SLOW-MOD line and when "modtime: meter on" is
+  missing; `test/run_tests.sh` T0e (fake clock: a slow mod is named, a fast one not, a nested event charged to the right
+  mod, nothing judged while loading); `events_test.py --slow` (probe made slow on purpose) fails unless SLOW-MOD names it.
 
 ## Owner rules 2026-10-14 ~19:45: mods per world, scope, custom difficulty (PLAN.md "Mods per world + scope + difficulty")
 - **Profile per world.** The launcher passes the world's profile path in `DSL_PROFILE` (enabled / order / provided).

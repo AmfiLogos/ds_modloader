@@ -301,6 +301,9 @@ enum { DSL_ESC_EDIT = 1, DSL_ESC_HUD = 2 };   /* esc_push flags (DSL_ESC_HUD: cl
    window shown / hidden LISTENS with dsl_on_event; it never hooks a game Update method for a tick (FRAME RULE: the hook
    list check fails on a new one, tools/hooks/frame_ok.tsv) and never polls for these. The loader owns one game hook
    per event and calls every module that listens, in load order; two mods can share an event.
+   SLOW RULE: a callback must be cheap. Test copies time each module's callbacks; over 20 ms per second at the title or
+   in a world logs "SLOW-MOD <id> ..." and the loader's tests fail (../NOTES.md "Loader events"). A module's start
+   (load + early + init) over 2 s logs "SLOW-MOD <id> <ms> start" there too.
    Types (on_event `type`):
      DSL_EV_FRAME          every frame, main thread, from the kit tick (EventSystem.Update, after the loader's own frame
                            work). flags DSL_EVF_TITLE = only while the scene is the title and nothing loads, DSL_EVF_WORLD =

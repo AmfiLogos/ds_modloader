@@ -9,7 +9,9 @@ audit measured, with no mod at all: the loader's SaveLoadView poll 238 searches 
 window check 1430 slow frames / min at the idle title (ds_multiplayer ext/fpsaudit/mac_measure.md).
 The loader's scan guard (test copies only, the same gate as the kit's UI-RULE lines) counts every such call per calling
 module and logs "SCAN-RULE <module> <n>/min <state>" when a module goes over its steady-state limit. This test FAILS on
-any SCAN-RULE line, and when the guard is not active (no "scan guard: on" line).
+any SCAN-RULE line, and when the guard is not active (no "scan guard: on" line). The same run checks the loader's time
+meter: it FAILS on any SLOW-MOD line (a mod whose event callbacks take over 20 ms per second in a state, or whose start
+takes over 2 s) and when the meter is not on (no "modtime: meter on" line).
 
 Flow (loader/test/scanrate/scan_drv.c drives the copy by file commands, it hooks nothing): title idle 60 s; the Load
 Campaign list open 30 s; list closed; the wiki's public base save under a fresh world id loaded, speed 1, world idle 60 s;
@@ -49,10 +51,12 @@ log = lambda *x: print(time.strftime('%H:%M:%S'), X, *x, flush=True)
 phases = []
 
 
+OWNER_GAME = re.compile(r'DSModLauncher/games/[^ ]*/MacOS/Dungeon Settlers|Dungeon Settlers Modded\.app/Contents/MacOS/|steamapps/common/Dungeon Settlers/DungeonSettlers\.app/Contents/MacOS/')
 def owner_playing():
-    p = subprocess.run(['pgrep', '-f', 'DSModLauncher/games/[^ ]*/MacOS/Dungeon Settlers|Dungeon Settlers Modded.app/Contents/MacOS/|steamapps/common/Dungeon Settlers/DungeonSettlers.app/Contents/MacOS/'],
-                       capture_output=True, text=True).stdout.split()
-    return [x for x in p if x]
+    # the EXECUTABLE path only (ps comm): a pgrep -f on whole command lines also matched other agents' shells that
+    # quote these paths (2026-11-02: a lane's wait loop made this test refuse with no game running)
+    out = subprocess.run(['ps', '-axo', 'pid=,comm='], capture_output=True, text=True).stdout
+    return [l.split()[0] for l in out.splitlines() if OWNER_GAME.search(l)]
 
 
 def wait_load(limit=float(os.environ.get('SCAN_LOAD_MAX', '16'))):   # SCAN_LOAD_MAX (default 16): a higher load slows the copy's frames;
@@ -138,8 +142,14 @@ def report(text):
         print('  %-8s %7s  ' % ('state', 'secs') + '  '.join('%12s' % m for m in mods))
         for st, secs, d in summ: print('  %-8s %7.1f  ' % (st, secs) + '  '.join('%12s' % d.get(m, 0) for m in mods))
     for l in rules: print('RULE', l)
+    L = text.splitlines(); slow = [l.strip() for l in L if re.search(r'SLOW-MOD \S+ \d+ (title|world|start) \(', l)]
+    for l in L:
+        if 'modtime: ' in l or 'start times: ' in l: print('time', l.strip()[:300])
+    for l in slow: print('SLOW', l)
     if not any(g.startswith('on') for g in guard): return False, len(rules), 'guard not active (no "scan guard: on" line)'
-    return not rules, len(rules), f'{len(rules)} SCAN-RULE line(s)' if rules else 'no SCAN-RULE line'
+    if not any('modtime: meter on' in l for l in L): return False, len(rules), 'time meter not on (no "modtime: meter on" line)'
+    if slow: return False, len(rules), f'{len(slow)} SLOW-MOD line(s)' + (f', {len(rules)} SCAN-RULE line(s)' if rules else '')
+    return not rules, len(rules), f'{len(rules)} SCAN-RULE line(s)' if rules else 'no SCAN-RULE line, no SLOW-MOD line'
 
 
 def run():
