@@ -41,7 +41,7 @@ def attack(w, d):
     """the player's attack order, as dps_test.py order_attack on the Mac (the squad does not hit the scarecrow without one):
     a left click on each squad unit, a right click on the scarecrow. Game screen points (Unity: client pixels, y up) ->
     desktop pixels through the game window (client 1728x1000, winrig's windowed prefs; frame borders split evenly)."""
-    try: w.wait(lambda: 'sent next to the scarecrow' in (w.text(W.PROF + r'\dsload.log') or ''), 'the start move', 120, 2)
+    try: w.wait(lambda: 'tf: DPS Check: start move (' in (w.text(W.PROF + r'\dsload.log') or ''), 'the start move', 120, 2)   # 0.1.49 line
     except Exception as e: log('start move wait:', e)
     time.sleep(12)                                                   # the squad walks next to the scarecrow
     win = next((x for p in w.procs() if p['pid'] == w.pid or not w.pid for x in p.get('windows', []) if x.get('w', 0) > 600), None)
@@ -167,8 +167,10 @@ def main():
           any('start move on (0)' in l for l in hook) and not any('refused' in l or ' off ' in l for l in hook), hook[:3])
     found = [l for l in L if "tf: DPS Check: start move: the map's orders found" in l]
     check('dsload.log: "tf: DPS Check: start move: the map\'s orders found"', bool(found), len(found))
-    sent = [l for l in L if 'squad unit(s) sent next to the scarecrow' in l]
+    sent = [l for l in L if 'tf: DPS Check: start move (' in l and 'squad unit(s)' in l]   # 0.1.49: "start move (own tile|next to the scarecrow, how): N of M squad unit(s), ..."
     log('start move sent:', sent[:2])
+    n_sent = [int(m.group(1)) for l in sent for m in [re.search(r': (\d+) of \d+ squad unit', l)] if m]
+    check('dsload.log: the start move gave its order to the squad units ("N of M squad unit(s)", N > 0)', any(n > 0 for n in n_sent), sent[:2])
     refused = [l for l in L if 'refused' in l and 'scan guard' not in l]   # the loader's own test-only guard
     log('loader test-copy guard lines (not a mod hook):', [l[:160] for l in L if 'refused' in l and 'scan guard' in l][:2])
     check('dsload.log: no mod hook refused (no custom-modes hook on a shared stub)', not refused, refused[:5])
