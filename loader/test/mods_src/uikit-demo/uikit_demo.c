@@ -404,7 +404,7 @@ static void state(char *out, size_t cap) {
          (W) moves it (lane nvdrag: a size key kept from the game) */
       static Obj (*ci)(const void *); static V3 (*cw)(const void *);
       if (!ci) { ci = H->find_method_address("Refactor", "MainCamera", "get_Instance", 0); cw = H->find_method_address("Refactor", "MainCamera", "get_CameraWorldPosition", 0);
-                 void *k = H->find_class("Refactor", "MainCamera"); void (*cinit)(void *) = (void (*)(void *))dlsym(RTLD_DEFAULT, "il2cpp_runtime_class_init");
+                 void *k = H->find_class("Refactor", "MainCamera"); void (*cinit)(void *) = H->il2cpp_fn ? (void (*)(void *))H->il2cpp_fn("il2cpp_runtime_class_init") : NULL;
                  if (k && cinit) cinit(k); else ci = NULL; }                 /* its statics exist before the first read */
       int has = ci && cw && ci(NULL) != NULL; V3 cp = has ? cw(NULL) : (V3){ 0, 0, 0 };
       o += (size_t)snprintf(out + o, cap - o, ",\"cam\":[%.3f,%.3f,%d]", cp.x, cp.y, has); }

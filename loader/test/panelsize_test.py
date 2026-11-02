@@ -344,7 +344,7 @@ def start2():
 def speed(): return (E.ctl({'cmd': 'status'}, 5) or {}).get('speed')
 
 
-def cam(): return st().get('cam', [0, 0, 0])
+def cam(): return st().get('w', {}).get('cam', [0, 0, 0])               # [x, y, 1 = the game camera was read]
 
 
 def moved(a, b): return abs(b[0] - a[0]) + abs(b[1] - a[1])
