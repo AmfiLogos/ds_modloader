@@ -7,7 +7,10 @@
 //                  path from the button on (SkillSlotUI listener -> QuickSlotUI -> input -> event queue -> handler)
 //   key <i>        UseQuickSlotSkillRequested(i): the skill key of bar slot i (stock input path)
 //   state          every QuickSlotUI (the real bar + the cards): name, active, slots, shown unit; the summary card's body;
-//                  per shown card its size and place on screen ("geo": fractions of the root canvas width)
+//                  per shown card its size and place on screen ("geo": fractions of the root canvas width); per bar with a
+//                  6th slot (weapon-slot) that button's state ("wbtn": usable look, hover on, the hover card's simple text)
+//   hoverw <0|1>   the pointer enters (1) / leaves (0) the real bar's 6th slot: its TooltipFeedback.OnInteractStart / End,
+//                  as the EventSystem does it (only when its InteractableUI is on)
 // and logs, as they happen, every UseSkillModeContext.AddUseSkill (unit, skill): who the game will use a skill with.
 // Each answer is one dsload.log line "multibar-probe: ...". Every game call by il2cpp name.
 #include "dsl_sdk.h"
@@ -40,6 +43,8 @@ static void *m_find_any, *m_find_all, *m_go_find, *m_get_comp, *m_name, *m_go, *
 static int32_t f_slots, f_selected, f_tabs, f_guid, f_key, f_slot_key;
 static void *graphic_k, *canvas_k, *v3_k, *m_child_n, *m_child, *m_corners, *m_comp_parent, *m_root_canvas, *m_act_en, *m_color;
 static Obj (*arr_new)(void *, uintptr_t);
+static int32_t f_ss_act = -1, f_ss_iui = -1, f_fb_simple = -1, f_fb_type = -1;
+static void *m_getfb, *m_beh_en, *m_fb_start, *m_fb_end;
 
 static void *msig(void *k, const char *name, int argc) {
     void *(*parent)(void *) = H->il2cpp_fn("il2cpp_class_get_parent");
@@ -119,6 +124,34 @@ static void geo(Obj v, const char *nm) {
     H->log(ME, "multibar-probe: geo [%s panel=%.4f x=%.4f..%.4f graphics=%d]", nm, (p1 - p0) / w, (lo - c0) / w, (hi - c0) / w, used);
 }
 
+/* the 6th slot's TooltipFeedback (InteractableUI.GetFeedback(Tooltip = 0)); *on = its InteractableUI is enabled */
+static Obj wfb(Obj b, int *on) {
+    Obj iu = b && f_ss_iui > 0 ? AT(b, f_ss_iui, Obj) : NULL;
+    *on = iu && m_beh_en ? MC(m_beh_en, uint8_t, Obj, void *)(iu, m_beh_en) & 1 : 0;
+    return iu && m_getfb ? MC(m_getfb, Obj, Obj, int32_t, void *)(iu, 0, m_getfb) : NULL;
+}
+static void wbtn(const char *nm, Obj b) {
+    int on; Obj fb = wfb(b, &on);
+    char tip[300] = ""; if (fb && f_fb_simple > 0) u8(AT(fb, f_fb_simple, Obj), tip, sizeof tip);
+    H->log(ME, "multibar-probe: wbtn [%s act=%d hover=%d type=%d tip=%s]", nm, b && f_ss_act > 0 ? AT(b, f_ss_act, uint8_t) : -1, on,
+           fb && f_fb_type > 0 ? AT(fb, f_fb_type, int32_t) : -1, tip);
+}
+static void do_hoverw(int in) {
+    Obj arr = MC(m_find_all, Obj, Obj, uint8_t, void *)(tobj(ctype(qsui_k)), 1, m_find_all);
+    int n = arr ? (int)AT(arr, 0x18, uintptr_t) : 0;
+    for (int i = 0; i < n; i++) {
+        Obj v = AT(arr, 0x20 + 8 * i, Obj); char nm[64]; if (!v) continue;
+        obj_name(go_of(v), nm, sizeof nm);
+        if (!strncmp(nm, "QuickSlotUI_Multi", 17) || !active_h(v) || list_n(AT(v, f_slots, Obj)) <= 5) continue;
+        int on; Obj fb = wfb(list_at(AT(v, f_slots, Obj), 5), &on);
+        void *m = in ? m_fb_start : m_fb_end;
+        if (fb && on && m) MC(m, void, Obj, void *)(fb, m);
+        H->log(ME, "multibar-probe: hoverw %d: %s", in, fb && on && m ? "done" : "no hover (InteractableUI off)");
+        return;
+    }
+    H->log(ME, "multibar-probe: hoverw %d: no 6-slot bar shown", in);
+}
+
 static void do_state(void) {
     Obj arr = MC(m_find_all, Obj, Obj, uint8_t, void *)(tobj(ctype(qsui_k)), 1, m_find_all);   /* FindObjectsOfType(Type, true) */
     int n = arr ? (int)AT(arr, 0x18, uintptr_t) : 0;
@@ -134,6 +167,7 @@ static void do_state(void) {
             ko += (size_t)snprintf(keys + ko, ko < sizeof keys ? sizeof keys - ko : 0, "%s%s", j ? "," : "", kk);
         }
         H->log(ME, "multibar-probe: bar [%s active=%d slots=%d unit=%s keys=%s]", nm, active_h(v), list_n(sl), g, keys);   /* one line each: log lines stop at 1 KB */
+        if (list_n(sl) > 5) wbtn(nm, list_at(sl, 5));
         if (!strncmp(nm, "QuickSlotUI_Multi", 17) && active_h(v)) geo(v, nm);
         o++;
     }
@@ -178,6 +212,7 @@ static void run_req(Obj eq, const char *line) {
     sscanf(line, "%31s %d %d", cmd, &a, &b);
     if (!strcmp(cmd, "state")) { do_state(); return; }
     if (!strcmp(cmd, "click")) { do_click(a, b); return; }
+    if (!strcmp(cmd, "hoverw")) { do_hoverw(a); return; }
     Obj ev = NULL;
     if (!strcmp(cmd, "sel")) ev = new_event("SelectPlayerUnitRequested", a);
     else if (!strcmp(cmd, "add")) ev = new_event("ToggleSelectUnitRequested", a);
@@ -227,6 +262,12 @@ DSL_EXPORT int dsl_plugin_init(const DSLHost *host, DSLPlugin *self) {
     f_slots = fofs(qsui_k, "_skillSlots"); f_selected = fofs(qsui_k, "_selected"); f_tabs = fofs(esv_k, "_toggleButtons");
     f_guid = fofs(unit_k, "<Guid>k__BackingField"); f_key = fofs(H->find_class("Refactor", "Skill_Base"), "<Key>k__BackingField");
     f_slot_key = fofs(H->find_class("Refactor.UI", "SkillSlotUI"), "_key");
+    void *ss_k = H->find_class("Refactor.UI", "SkillSlotUI"), *fb_k = H->find_class("Refactor.UI.Util", "TooltipFeedback");
+    f_ss_act = fofs(ss_k, "_activated"); f_ss_iui = fofs(ss_k, "_interactableUI");
+    f_fb_simple = fofs(fb_k, "_simpleText"); f_fb_type = fofs(fb_k, "_tooltipType");
+    m_getfb = msig(H->find_class("Refactor.UI.Util", "InteractableUI"), "GetFeedback", 1);
+    m_beh_en = msig(H->find_class("UnityEngine", "Behaviour"), "get_enabled", 0);
+    m_fb_start = msig(fb_k, "OnInteractStart", 0); m_fb_end = msig(fb_k, "OnInteractEnd", 0);
     *(void **)&arr_new = H->il2cpp_fn("il2cpp_array_new");
     graphic_k = H->find_class("UnityEngine.UI", "Graphic"); canvas_k = H->find_class("UnityEngine", "Canvas"); v3_k = H->find_class("UnityEngine", "Vector3");
     m_child_n = msig(kt, "get_childCount", 0); m_child = msig(kt, "GetChild", 1); m_comp_parent = msig(kc, "GetComponentInParent", 1);

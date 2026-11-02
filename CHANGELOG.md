@@ -4,6 +4,10 @@ What changed in each version, newest first. Downloads: the GitHub releases of th
 
 ## Dungeon Settlers Modded (kit)
 
+### Unreleased (0.1.31)
+
+- Weapon skill slot 0.2.0 now changes only your own screen. Its button next to the basic attack shows the skill of your unit's weapon and uses it with a click. Friends in your multiplayer game no longer need the mod, and your saves stay the game's own. In the game, a unit has its weapon's skill only while that skill sits in one of its 4 skill slots, so the skill now also stays there. A new setting of the mod, "Hide the copy in the skill bar" (off by default), shows that slot empty on your screen; its key still uses the skill. If a unit got its weapon while its 4 skill slots were full, the game did not give it the skill: the button then shows the skill greyed out, and its hover card says to free a quick slot and equip the weapon again. The mod no longer puts the weapon skill first for automatic use. <!-- roadmap: weapon-slot-local -->
+
 ### 0.1.30 (2026-11-02)
 
 - Load Campaign in single player now shows only your solo worlds at first: the Multiplayer box on the right of the list is off by default. Tick it to also see the worlds you played with friends; the list keeps your choice. If you changed the filter boxes before, your other choices stay, but the Multiplayer box starts off once. <!-- roadmap: load-solo-default -->
