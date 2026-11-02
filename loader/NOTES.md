@@ -1514,3 +1514,37 @@ lookups made at use time failed in the middle of a world instead (study ~/ds_mul
 row 9). GUARD: test/run_tests.sh T1n (a fake missing class, method and field: the mod must be off at start with the
 name and its hook removed; a mod whose names all exist must run). Existing official mods move onto dsl_need_* at their
 next change.
+
+## "Get these mods": ONE helper brings mods to a player's machine; mod packs (owner 2026-11-02 "share a MOD PACK", PLAN_v013 item 36; lane nvpack) - `src/dsl_hostmods.c`, `ui/dsl_pack.c`
+Rule (lead brief 2026-11-02): downloads only through the "Get the host's mods" path: official signed releases of
+MOD_REPOS (`dsl_update.c`), sha256 checked, every file move recorded and rolled back on any failure. Never a URL from a
+code, a host or a chat; never a second downloader.
+- Template: `dsl_hostmods.c` plan (`make_plan` rows) + get (`get_start`: refusals, jobs, the download thread) + checks
+  (`check_installed`) with two ends: JOIN (`dsl_hostmods_get`: the host's settings as drafts, Apply, soft restart; the
+  multiplayer mod's ABI unchanged) and PACK (`dsl_pack_import`: the group is saved, nothing switched). A new feature that
+  brings mods (a mod browser, a "missing required mod" download) adds an end here; it never calls the download functions.
+- Mod pack code: `DSPACK1.<std base64 of the lines>.<crc32 8 hex>`; lines `kit <loader release>`, `name <group name>`,
+  sorted `<id>@<version>` and `<id>/<setting>@<value>` (gameplay mods only, as host lines; no client mods, launcher
+  features, multiplayer, custom difficulty). The reader is strict: any other line, a bad check value or base64 = "damaged";
+  DSPACK2+ or a newer kit = "update the mod loader". Spaces and line breaks inside a code are skipped (chat apps wrap).
+- Mods window: Groups header "Share" (the switches that are on + the next Apply's values; a group that matches the
+  switches gives its name) and "Import" (title only; the Import window `ui/dsl_pack.c`, window_std modal, Escape = Cancel).
+  The import's end runs in `dsl_win_frame` while the Mods window is open (keep_switches, finish, reload: the mods list
+  strings change), else in `dsl_hostmods_frame`. Apply waits while an import installs. A running mod whose files an
+  import replaced counts as a change ("<mod> new version"): Apply is active even with the same switches.
+- groups.json: optional `"settings": ["<mod>/<setting>@<value>", ...]` per group (old loaders ignore it); picking such a
+  group makes them the drafts; the current-group mark compares them too.
+- Test copies: the clipboard is the file `DSL_PACK_CLIP`; a test copy without it never touches the clipboard.
+- Guard: `test/update/getmods_test.sh` section 9: round trip (share -> import -> the same group, exact versions), a
+  pack name clash keeps the player's group, foreign id / wrong sha256 / missing release / failed group save change
+  nothing and save no group, damaged / cut / DSPACK2 / newer kit / URL codes request nothing; a static check fails when a
+  file other than dsl_hostmods.c, dsl_update.c and the starters calls `dsl_update_fetch`, `dsl_update_find_mod_release`
+  or `dsl_uos_mod_install` (27/0).
+
+## Switch rule: ON turns on what a mod requires, OFF asks about the mods that need it (tModLoader study idea 5; lead 2026-11-02; lane nvpack) - `src/dsl_deps.h` dsl_deps_turn_on / _off
+- Only `requires` (never `optional` / `conflicts`), recursive; `loader` and launcher-provided mods are never switched.
+  A required mod that is not installed is named ("X needs Y, which is not installed."), nothing else changes.
+  OFF: a game notice box "... Turn them off too?" (Turn off / Keep on); Keep on leaves them on (their row then says why
+  they do not run). `dsl_main.c dsl_deps_switch` reads every installed mod.json (as `dsl_deps_for_set` does).
+- Guard: `test/run_tests.sh` T0d (`test/deps/switch_test.c`): chain on, missing named, dependents through another mod
+  offered, optional / off ones not, cycles end. UI test op `dep_answer {"yes": true|false}` answers the question.
