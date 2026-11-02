@@ -110,6 +110,10 @@ def run(mode, rdir):
     cloud = os.path.join(rdir, 'fake_cloud'); os.makedirs(cloud, exist_ok=True)
     home_data = os.path.join(I, 'home', 'Library', 'Application Support', 'CanOpener', 'Dungeon Settlers')
     r.prepare_data(X)
+    os.makedirs(os.path.join(home_data, 'Saves'), exist_ok=True)      # the game's own data folder in the copy: windowed
+    for f in ('UserSetting.json', 'OutGame.json'):                     # settings + language picked (else the first-start
+        q = os.path.join(I, 'data', f)                                 # language box covers the title: no idle title)
+        if os.path.exists(q): shutil.copy2(q, os.path.join(home_data, f))
     # never DSRIG_LIVE here: it turns the hidden-window rule (dsl_quiet_mac.c) off; a window run showed on screen (2026-11-02)
     env = {'SCAN_DRV_DIR': pd, 'DSL_MODS_DIR': mods, 'DSL_PROFILE': prof, 'DSML_ROOT': root, 'DSL_UPDATE': '0',
            'DSML_DSLOAD': DSLOAD, 'DSML_DATA': home_data, 'DSL_CLOUD_API': fake, 'FAKE_CLOUD_DIR': cloud,
