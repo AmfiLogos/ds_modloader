@@ -57,7 +57,7 @@ def owner_playing():
     return [x for x in p if x]
 
 
-def wait_load(limit=16.0):
+def wait_load(limit=float(os.environ.get('SCAN_LOAD_MAX', 16))):   # SCAN_LOAD_MAX: a busy gate Mac (lead 2026-11-02)
     t0 = time.time()
     while os.getloadavg()[0] > limit:
         if time.time() - t0 > 1200: raise SystemExit(f'load stayed above {limit} for 20 min')
