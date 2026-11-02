@@ -49,7 +49,7 @@ not in this lane. Logged in MORNING_QUESTIONS.md.
 - The unit does not have its weapon's skill: the button shows the skill greyed (SkillSlotUI.SetActivate(false)), no
   auto-use mark, and the game's simple hover card (TooltipFeedback.SetSimpleText, the locked-slots pattern): "Free a quick
   slot, then equip the weapon again" (10 languages). A click does nothing (GetSkillAt answers null).
-- Setting "hide_copy" (mod.json settings, scope local, default off until the owner picks): the free slot that holds the
+- Setting "hide_copy" (mod.json settings, scope local, default off: owner 2026-11-02): the free slot that holds the
   weapon skill is drawn empty on this screen (the view array gets null there; its per-frame refresh goes to the weapon
   button). Game data unchanged: that slot's key still casts it, auto-use is the same, a dropped skill replaces it (stock).
   Live: dsl_on_setting_change. Test request {"cmd":"setting",...} (loader/src/dsl_reg.c, DSL_SOFT_TEST only) sets it as

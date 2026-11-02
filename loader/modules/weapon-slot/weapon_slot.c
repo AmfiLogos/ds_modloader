@@ -20,7 +20,7 @@
 //    (SkillComponent.RemoveSkill). Then the button shows the weapon's skill GREYED (the stock "cannot use now" look,
 //    SkillSlotUI.SetActivate(false)) with the game's simple hover card "free a quick slot, then equip the weapon again"
 //    (its own TooltipFeedback.SetSimpleText, the locked-slots pattern); a click does nothing (GetSkillAt answers null).
-//  - setting "hide_copy" (local, default off; ext/nvwslot3 plan, the owner picks the default): the weapon skill's own free
+//  - setting "hide_copy" (local, default off: owner 2026-11-02): the weapon skill's own free
 //    slot is drawn EMPTY on this screen (the view array gets null there) and its per-frame refresh goes to the weapon button.
 //    The game's data still has it there: that slot's key still uses it, auto-use is unchanged. View only.
 // Hooks by il2cpp name (Mac and Windows); GameAssembly and the game's UI bundle unchanged. Build 25846389.
