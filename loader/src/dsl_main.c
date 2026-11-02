@@ -894,7 +894,8 @@ int dsl_core_ga_mapped(uintptr_t base, const char *ga_path) {
 /* At the first idle title (dsl_reg.c frame list, main thread): the title resets the boot guard; then ONE notice, when no
    other notice or window shows: the boot guard's mods-off start (button: the Mods window; it opens on any answer), or
    the mods the crash guard turned off at this start (tModLoader study idea 3b; button "Mods" opens the Mods window).
-   Log line SAFETY-NOTICE <kind> for tests; -batchmode: log only (the boot guard still opens the Mods window). */
+   Log line SAFETY-NOTICE <kind> for tests; -batchmode / DSL_NO_ALERT: log only (the boot guard still opens the Mods
+   window). test/safety_test.py starts without DSL_NO_ALERT to see the box. */
 int dsl_ui_title_shown(void);
 int dsl_ui_notice_shown(void);
 static void open_mods_cb(void *ud, DSLObj w) { (void)ud; (void)w; if (dsl_win_open) dsl_win_open(NULL); }
@@ -923,7 +924,8 @@ void dsl_safety_frame(void) {
     else snprintf(t, sizeof t, TR("%s stopped the game while it was starting last time. It stays off until it is updated."), names);
     dsi_utf8_fix_end(t);
     dsl_log("SAFETY-NOTICE %s: %s", boot_hatch ? "boot-guard" : "crash-guard", boot_hatch ? "mods off this start" : names);
-    if (dsl_os_batchmode()) { if (boot_hatch) open_mods_cb(NULL, NULL); return; }   /* no box drawn: the Mods window only */
+    if (dsl_os_batchmode() || getenv("DSL_NO_ALERT")) { if (boot_hatch) open_mods_cb(NULL, NULL); return; }   /* tests: no box (gate tests
+                                                                     set DSL_NO_ALERT; a player's start never does) */
     const DSLUi *u = dsl_ui_kit(); if (!u || !u->notice) return;
     if (boot_hatch) u->notice(t, TR("Mods"), NULL, open_mods_cb, open_mods_cb, NULL);
     else u->notice(t, TR("Mods"), TR("OK"), open_mods_cb, NULL, NULL);
