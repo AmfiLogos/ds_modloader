@@ -516,6 +516,7 @@ def start(x, window=False, fps=30, show=None):
     else:
         env['DSRIG_BATCH'] = '1'
         args.append('-batchmode')
+    rigports.check_live_window(args, env, f'{x}: start')       # GUARD: DSRIG_LIVE in a window / demo run = refused (2026-11-02)
     # The guard process is the game's parent: it lowers the priority, execs the game, watches its
     # windows / front state for its whole life and logs how it ended (exit code or signal).
     spec = json.dumps({'args': args, 'env': env, 'front_before': front_before or 0, 'bg': bool(os.environ.get('DSRIG_BG')), 'show': bool(window and show)})
