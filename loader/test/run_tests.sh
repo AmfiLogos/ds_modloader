@@ -248,7 +248,7 @@ check "cloud backup host test" '(( rc == 0 )) && grep -q "^== [0-9]* ok, 0 faile
 (( rc == 0 )) || grep -v "^ok " "$OUT/cloud.txt"
 
 print "== T10 test launches never fail on the priority call (lead task 12: SubprocessError(preexec_fn) hit ~38 gate checks)"
-bare=$(grep -rln "preexec_fn=lambda: os.nice" "$L/test" 2>/dev/null)
+bare=$(grep -rln --include='*.py' "preexec_fn=lambda: os.nice" "$L/test" 2>/dev/null)
 check "no bare os.nice preexec_fn in loader/test (use _soft_nice)" '[[ -z "$bare" ]]'
 [[ -z "$bare" ]] || print -l $bare
 
